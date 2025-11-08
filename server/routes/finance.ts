@@ -753,4 +753,23 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
   }
 });
 
+// Get Xero sync history
+router.get('/xero/sync-history', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const organizationId = req.user?.organizationId || 3;
+
+    const history = await db
+      .select()
+      .from(xeroSyncStatus)
+      .where(eq(xeroSyncStatus.organizationId, organizationId))
+      .orderBy(desc(xeroSyncStatus.lastSyncAt))
+      .limit(20);
+
+    res.json(history);
+  } catch (error: any) {
+    console.error('Error fetching sync history:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
