@@ -31,11 +31,27 @@ export default function FinanceDashboard() {
       });
     },
     onError: (error: any) => {
+      const needsReconnect = error.message?.includes('reconnect') || 
+                            error.message?.includes('refresh token') ||
+                            error.message?.includes('connection lost');
+      
       toast({
         title: 'Sync failed',
         description: error.message || 'Failed to sync transactions from Xero',
         variant: 'destructive',
+        action: needsReconnect ? (
+          <Button 
+            size="sm" 
+            variant="outline" 
+            onClick={() => window.location.href = '/integrations/xero/setup'}
+          >
+            Reconnect
+          </Button>
+        ) : undefined,
       });
+      
+      // Refresh Xero status to update UI
+      queryClient.invalidateQueries({ queryKey: ['/api/finance/xero/status'] });
     },
   });
 

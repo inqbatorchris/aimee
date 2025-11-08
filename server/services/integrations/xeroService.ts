@@ -72,7 +72,7 @@ export class XeroService {
 
   async refreshAccessToken(): Promise<void> {
     if (!this.refreshToken) {
-      throw new Error('No refresh token available');
+      throw new Error('No refresh token available. Please reconnect your Xero account.');
     }
 
     const integration = await storage.getIntegration(this.organizationId, 'xero');
@@ -84,7 +84,7 @@ export class XeroService {
     const clientSecret = integration.connectionConfig?.clientSecret;
 
     if (!clientId || !clientSecret) {
-      throw new Error('Xero OAuth credentials not configured');
+      throw new Error('Xero OAuth credentials not configured. Please set up the Xero integration again.');
     }
 
     // Refresh the access token
@@ -108,15 +108,41 @@ export class XeroService {
 
       await storage.updateIntegration(integration.id, {
         credentialsEncrypted: encryptedCredentials,
+        connectionStatus: 'connected',
       });
 
       // Update axios client headers
       if (this.client) {
         this.client.defaults.headers['Authorization'] = `Bearer ${this.accessToken}`;
       }
-    } catch (error) {
-      console.error('Failed to refresh Xero access token:', error);
-      throw new Error('Failed to refresh Xero access token');
+    } catch (error: any) {
+      console.error('Failed to refresh Xero access token:', error.response?.data || error.message);
+      
+      // Mark integration as disconnected on auth failure
+      await storage.updateIntegration(integration.id, {
+        connectionStatus: 'disconnected',
+      });
+
+      // Provide specific error messages based on the error
+      if (error.response) {
+        const status = error.response.status;
+        const errorData = error.response.data;
+        
+        if (status === 400) {
+          if (errorData?.error === 'invalid_grant') {
+            throw new Error('Xero refresh token has expired or been revoked. Please reconnect your Xero account.');
+          }
+          throw new Error(`Xero token refresh failed: ${errorData?.error_description || 'Invalid request'}`);
+        }
+        
+        if (status === 401) {
+          throw new Error('Xero authentication failed. Please reconnect your Xero account.');
+        }
+        
+        throw new Error(`Xero API error (${status}): ${errorData?.error_description || 'Unknown error'}`);
+      }
+      
+      throw new Error('Failed to refresh Xero access token. Please check your connection and try again.');
     }
   }
 

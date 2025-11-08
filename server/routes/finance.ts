@@ -555,6 +555,26 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
   try {
     const organizationId = req.user?.organizationId || 3;
 
+    // Verify Xero integration exists and is connected
+    const integration = await storage.getIntegration(organizationId, 'xero');
+    if (!integration) {
+      return res.status(404).json({ 
+        error: 'Xero integration not found. Please set up Xero integration first.' 
+      });
+    }
+
+    if (!integration.credentialsEncrypted) {
+      return res.status(400).json({ 
+        error: 'Xero not connected. Please connect your Xero account.' 
+      });
+    }
+
+    if (integration.connectionStatus === 'disconnected') {
+      return res.status(400).json({ 
+        error: 'Xero connection lost. Please reconnect your Xero account.' 
+      });
+    }
+
     const xeroService = new XeroService(organizationId);
     await xeroService.initialize();
 
@@ -705,13 +725,26 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
 
     res.json({
       success: true,
+      recordsSynced: syncedCount,
       synced: syncedCount,
       failed: failedCount,
       errors: errors.slice(0, 10),
     });
   } catch (error: any) {
     console.error('Error running Xero sync:', error);
-    res.status(500).json({ error: error.message });
+    
+    // Provide specific error message based on the error type
+    let errorMessage = error.message || 'Failed to sync transactions from Xero';
+    let statusCode = 500;
+    
+    // Check if it's an auth-related error
+    if (errorMessage.includes('refresh token') || errorMessage.includes('reconnect')) {
+      statusCode = 401;
+    } else if (errorMessage.includes('not found') || errorMessage.includes('not configured')) {
+      statusCode = 400;
+    }
+    
+    res.status(statusCode).json({ error: errorMessage });
   }
 });
 
