@@ -1,0 +1,27 @@
+{
+  "name": "aimee.works Offline",
+  "short_name": "aimee offline",
+  "description": "Offline field work app for aimee.works - Complete work items without connectivity",
+  "start_url": "/offline-app",
+  "scope": "/offline-app",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#10b981",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "categories": ["productivity", "business"],
+  "screenshots": []
+}

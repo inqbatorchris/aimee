@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear and Test Auth</title>
+</head>
+<body>
+    <h1>Clear Authentication and Test</h1>
+    <button onclick="clearAndTest()">Clear LocalStorage and Test Login</button>
+    <div id="result"></div>
+    
+    <script>
+    function clearAndTest() {
+        // Clear everything first
+        localStorage.clear();
+        sessionStorage.clear();
+        document.getElementById('result').innerHTML = '<p>✅ Storage cleared</p>';
+        
+        // Now test login
+        setTimeout(async () => {
+            try {
+                const response = await fetch('/api/auth/login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        email: 'admin@aimee.works',
+                        password: 'admin123'
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.token) {
+                    localStorage.setItem('authToken', data.token);
+                    localStorage.setItem('user', JSON.stringify(data.user));
+                    document.getElementById('result').innerHTML += '<p style="color: green;">✅ Login successful! Redirecting...</p>';
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1000);
+                } else {
+                    document.getElementById('result').innerHTML += '<p style="color: red;">❌ Login failed: ' + (data.error || 'Unknown error') + '</p>';
+                }
+            } catch (error) {
+                document.getElementById('result').innerHTML += '<p style="color: red;">❌ Error: ' + error.message + '</p>';
+            }
+        }, 500);
+    }
+    </script>
+</body>
+</html>

@@ -1,0 +1,443 @@
+/* Enhanced Editor Styles */
+.enhanced-editor {
+  --editor-font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  --editor-line-height: 1.6;
+  --editor-max-width: 65ch;
+  font-family: var(--editor-font-family);
+}
+
+/* Toolbar Styles */
+.enhanced-editor .toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  background: hsl(var(--card));
+  border-bottom: 1px solid hsl(var(--border));
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+/* Editor Content Area */
+.enhanced-editor .editor-content {
+  position: relative;
+  min-height: 400px;
+  background: hsl(var(--background));
+}
+
+/* ProseMirror Editor Styles */
+.enhanced-editor .ProseMirror {
+  min-height: 400px;
+  padding: 2rem;
+  outline: none;
+  line-height: var(--editor-line-height);
+  font-size: 16px;
+  color: hsl(var(--foreground));
+}
+
+.enhanced-editor .ProseMirror > * {
+  max-width: var(--editor-max-width);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* Focus State */
+.enhanced-editor .ProseMirror:focus {
+  outline: none;
+}
+
+.enhanced-editor .ProseMirror-focused {
+  outline: none;
+}
+
+/* Placeholder */
+.enhanced-editor .ProseMirror p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  color: hsl(var(--muted-foreground));
+  pointer-events: none;
+  height: 0;
+}
+
+/* Headings */
+.enhanced-editor .ProseMirror h1 {
+  font-size: 2.5em;
+  font-weight: 700;
+  margin: 1.5rem 0 1rem;
+  line-height: 1.2;
+}
+
+.enhanced-editor .ProseMirror h2 {
+  font-size: 2em;
+  font-weight: 600;
+  margin: 1.25rem 0 0.875rem;
+  line-height: 1.3;
+}
+
+.enhanced-editor .ProseMirror h3 {
+  font-size: 1.5em;
+  font-weight: 600;
+  margin: 1rem 0 0.75rem;
+  line-height: 1.4;
+}
+
+.enhanced-editor .ProseMirror h4 {
+  font-size: 1.25em;
+  font-weight: 600;
+  margin: 0.875rem 0 0.625rem;
+  line-height: 1.4;
+}
+
+.enhanced-editor .ProseMirror h5 {
+  font-size: 1.125em;
+  font-weight: 600;
+  margin: 0.75rem 0 0.5rem;
+  line-height: 1.5;
+}
+
+.enhanced-editor .ProseMirror h6 {
+  font-size: 1em;
+  font-weight: 600;
+  margin: 0.625rem 0 0.5rem;
+  line-height: 1.5;
+}
+
+/* Paragraphs */
+.enhanced-editor .ProseMirror p {
+  margin: 0.75rem 0;
+}
+
+/* Links */
+.enhanced-editor .ProseMirror a {
+  color: hsl(var(--primary));
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.enhanced-editor .ProseMirror a:hover {
+  opacity: 0.8;
+}
+
+/* Lists */
+.enhanced-editor .ProseMirror ul,
+.enhanced-editor .ProseMirror ol {
+  margin: 0.75rem 0;
+  padding-left: 1.5rem;
+}
+
+.enhanced-editor .ProseMirror li {
+  margin: 0.25rem 0;
+}
+
+.enhanced-editor .ProseMirror ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.enhanced-editor .ProseMirror ul[data-type="taskList"] li {
+  display: flex;
+  align-items: flex-start;
+  margin: 0.25rem 0;
+}
+
+.enhanced-editor .ProseMirror ul[data-type="taskList"] li input[type="checkbox"] {
+  margin-right: 0.5rem;
+  margin-top: 0.25rem;
+}
+
+/* Blockquotes */
+.enhanced-editor .ProseMirror blockquote {
+  border-left: 4px solid hsl(var(--primary));
+  padding-left: 1rem;
+  margin: 1rem 0;
+  font-style: italic;
+  background: hsl(var(--muted));
+  padding: 1rem;
+  border-radius: 0.25rem;
+}
+
+/* Code */
+.enhanced-editor .ProseMirror code {
+  background: hsl(var(--muted));
+  padding: 0.125rem 0.25rem;
+  border-radius: 0.25rem;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.875em;
+}
+
+.enhanced-editor .ProseMirror pre {
+  background: hsl(var(--muted));
+  padding: 1rem;
+  border-radius: 0.375rem;
+  overflow-x: auto;
+  margin: 1rem 0;
+  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+
+.enhanced-editor .ProseMirror pre code {
+  background: transparent;
+  padding: 0;
+  font-size: inherit;
+}
+
+/* Horizontal Rule */
+.enhanced-editor .ProseMirror hr {
+  border: none;
+  border-top: 2px solid hsl(var(--border));
+  margin: 2rem 0;
+}
+
+/* Images */
+.enhanced-editor .ProseMirror img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 1.5rem auto;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+}
+
+.enhanced-editor .ProseMirror img.ProseMirror-selectednode {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+
+/* YouTube Embeds */
+.enhanced-editor .ProseMirror iframe {
+  max-width: 100%;
+  margin: 1.5rem auto;
+  display: block;
+  border-radius: 0.5rem;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+}
+
+/* Tables */
+.enhanced-editor .ProseMirror table {
+  border-collapse: collapse;
+  margin: 1.5rem 0;
+  width: 100%;
+  overflow: auto;
+}
+
+.enhanced-editor .ProseMirror th,
+.enhanced-editor .ProseMirror td {
+  border: 1px solid hsl(var(--border));
+  padding: 0.5rem 1rem;
+  text-align: left;
+  position: relative;
+}
+
+.enhanced-editor .ProseMirror th {
+  background: hsl(var(--muted));
+  font-weight: 600;
+}
+
+.enhanced-editor .ProseMirror .selectedCell {
+  background: hsl(var(--accent));
+}
+
+.enhanced-editor .ProseMirror .column-resize-handle {
+  position: absolute;
+  right: -2px;
+  top: 0;
+  bottom: -2px;
+  width: 4px;
+  background-color: hsl(var(--primary));
+  pointer-events: none;
+}
+
+.enhanced-editor .ProseMirror .tableWrapper {
+  overflow-x: auto;
+  margin: 1.5rem 0;
+}
+
+/* Text Alignment */
+.enhanced-editor .ProseMirror p[style*="text-align: center"],
+.enhanced-editor .ProseMirror h1[style*="text-align: center"],
+.enhanced-editor .ProseMirror h2[style*="text-align: center"],
+.enhanced-editor .ProseMirror h3[style*="text-align: center"],
+.enhanced-editor .ProseMirror h4[style*="text-align: center"],
+.enhanced-editor .ProseMirror h5[style*="text-align: center"],
+.enhanced-editor .ProseMirror h6[style*="text-align: center"] {
+  text-align: center;
+}
+
+.enhanced-editor .ProseMirror p[style*="text-align: right"],
+.enhanced-editor .ProseMirror h1[style*="text-align: right"],
+.enhanced-editor .ProseMirror h2[style*="text-align: right"],
+.enhanced-editor .ProseMirror h3[style*="text-align: right"],
+.enhanced-editor .ProseMirror h4[style*="text-align: right"],
+.enhanced-editor .ProseMirror h5[style*="text-align: right"],
+.enhanced-editor .ProseMirror h6[style*="text-align: right"] {
+  text-align: right;
+}
+
+.enhanced-editor .ProseMirror p[style*="text-align: justify"],
+.enhanced-editor .ProseMirror h1[style*="text-align: justify"],
+.enhanced-editor .ProseMirror h2[style*="text-align: justify"],
+.enhanced-editor .ProseMirror h3[style*="text-align: justify"],
+.enhanced-editor .ProseMirror h4[style*="text-align: justify"],
+.enhanced-editor .ProseMirror h5[style*="text-align: justify"],
+.enhanced-editor .ProseMirror h6[style*="text-align: justify"] {
+  text-align: justify;
+}
+
+/* Highlights */
+.enhanced-editor .ProseMirror mark {
+  background-color: #ffeb3b;
+  padding: 0.125rem 0;
+  border-radius: 0.125rem;
+}
+
+/* Floating Menu (Slash Commands) */
+.floating-menu {
+  z-index: 1000;
+}
+
+/* Bubble Menu (Text Selection) */
+.bubble-menu {
+  z-index: 1000;
+}
+
+/* Table Controls */
+.table-controls {
+  animation: fadeIn 0.2s ease-in-out;
+}
+
+/* Status Bar */
+.enhanced-editor .status-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  font-size: 0.75rem;
+  color: hsl(var(--muted-foreground));
+  background: hsl(var(--muted));
+  border-top: 1px solid hsl(var(--border));
+}
+
+/* Dark Mode Support */
+@media (prefers-color-scheme: dark) {
+  .enhanced-editor .ProseMirror mark {
+    background-color: #ffc107;
+    color: #000;
+  }
+  
+  .enhanced-editor .ProseMirror pre {
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+  }
+  
+  .enhanced-editor .ProseMirror code {
+    background: hsl(var(--card));
+    border: 1px solid hsl(var(--border));
+  }
+}
+
+/* Print Styles */
+@media print {
+  .enhanced-editor .toolbar,
+  .enhanced-editor .status-bar,
+  .table-controls,
+  .floating-menu,
+  .bubble-menu {
+    display: none !important;
+  }
+  
+  .enhanced-editor .ProseMirror {
+    padding: 0;
+    min-height: auto;
+  }
+  
+  .enhanced-editor .ProseMirror > * {
+    max-width: none;
+  }
+  
+  .enhanced-editor .ProseMirror img,
+  .enhanced-editor .ProseMirror iframe {
+    page-break-inside: avoid;
+  }
+  
+  .enhanced-editor .ProseMirror h1,
+  .enhanced-editor .ProseMirror h2,
+  .enhanced-editor .ProseMirror h3,
+  .enhanced-editor .ProseMirror h4,
+  .enhanced-editor .ProseMirror h5,
+  .enhanced-editor .ProseMirror h6 {
+    page-break-after: avoid;
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .enhanced-editor .ProseMirror {
+    padding: 1rem;
+    font-size: 14px;
+  }
+  
+  .enhanced-editor .toolbar {
+    position: relative;
+    padding: 0.375rem;
+  }
+  
+  .enhanced-editor .ProseMirror > * {
+    max-width: 100%;
+  }
+  
+  .enhanced-editor .ProseMirror table {
+    font-size: 0.875rem;
+  }
+  
+  .enhanced-editor .ProseMirror th,
+  .enhanced-editor .ProseMirror td {
+    padding: 0.375rem 0.5rem;
+  }
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Custom Scrollbar */
+.enhanced-editor .ProseMirror::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.enhanced-editor .ProseMirror::-webkit-scrollbar-track {
+  background: hsl(var(--muted));
+  border-radius: 4px;
+}
+
+.enhanced-editor .ProseMirror::-webkit-scrollbar-thumb {
+  background: hsl(var(--border));
+  border-radius: 4px;
+}
+
+.enhanced-editor .ProseMirror::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground));
+}
+
+/* Focus Visible */
+.enhanced-editor button:focus-visible,
+.enhanced-editor input:focus-visible,
+.enhanced-editor select:focus-visible {
+  outline: 2px solid hsl(var(--primary));
+  outline-offset: 2px;
+}
+
+/* Selection */
+.enhanced-editor .ProseMirror ::selection {
+  background: hsl(var(--primary) / 0.2);
+}

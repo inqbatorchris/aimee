@@ -1,0 +1,122 @@
+name: Build and Deploy (Development)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  build-and-push:
+    name: Build and push image
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.set-image.outputs.image }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4.0.1
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Determine app version
+        run: |
+          APP_VERSION=$(jq -r .version package.json)
+          echo "IMAGE_TAG=$APP_VERSION" >> $GITHUB_ENV
+
+      - name: Build, tag, and push Docker image
+        id: set-image
+        run: |
+          set -euo pipefail
+
+          ECR_REGISTRY="${{ steps.login-ecr.outputs.registry }}"
+          IMAGE_URI="$ECR_REGISTRY/aimee-works:dev-${IMAGE_TAG}"
+          IMAGE_URI_LATEST="$ECR_REGISTRY/aimee-works:dev-latest"
+
+          echo "Building image $IMAGE_URI"
+          docker build \
+            -t "$IMAGE_URI" \
+            -t "$IMAGE_URI_LATEST" \
+            .
+
+          echo "Pushing images to ECR"
+          docker push "$IMAGE_URI"
+          docker push "$IMAGE_URI_LATEST"
+
+          # Expose the fully-qualified image URI as a *step output* for use by other jobs
+          echo "image=$IMAGE_URI" >> "$GITHUB_OUTPUT"
+
+      - name: Confirm pushed image
+        run: | 
+          echo "Pushed image: ${{ steps.set-image.outputs.image }}"
+
+  deploy:
+    name: Deploy to Development
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4.0.1
+        with:
+          aws-region: ${{ vars.AWS_REGION }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+
+      - name: Login to Amazon ECR (runner)
+        id: login-ecr-deploy
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Get short-lived ECR password on the runner and mask it
+      - name: Get ECR password
+        id: ecr-pass
+        shell: bash
+        run: |
+          set -euo pipefail
+          PASS="$(aws ecr get-login-password --region "${{ vars.AWS_REGION }}")"
+          echo "::add-mask::$PASS"
+          echo "password=$PASS" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy stack
+        uses: appleboy/ssh-action@v1.0.3
+        env:
+          COMPOSE_PATH: /home/cc/BusinessManagementPlatform
+          IMAGE_URI: ${{ needs.build-and-push.outputs.image }}
+          ECR_REGISTRY: ${{ steps.login-ecr-deploy.outputs.registry }}
+          ECR_PASSWORD: ${{ steps.ecr-pass.outputs.password }}
+        with:
+          host: ${{ vars.DEV_SSH_HOST }}
+          username: ${{ vars.DEV_SSH_USER }}
+          password: ${{ secrets.DEV_PASSWORD }}
+          port: 22
+          envs: COMPOSE_PATH,IMAGE_URI,ECR_REGISTRY,ECR_PASSWORD
+          script: |
+            set -euo pipefail
+
+            # Log in to ECR on the remote host using the passed password
+            echo "$ECR_PASSWORD" | docker login --username AWS --password-stdin "$ECR_REGISTRY"
+
+            echo "Pulling image: $IMAGE_URI"
+            docker pull "$IMAGE_URI"
+
+            cd "$COMPOSE_PATH"
+            cat > docker-compose.override.yml <<'OVERRIDE'
+            services:
+              aimee-works:
+                image: ${IMAGE_URI}
+            OVERRIDE
+
+            # Substitute IMAGE_URI into the override file
+            sed -i "s|\${IMAGE_URI}|$IMAGE_URI|g" docker-compose.override.yml
+
+            docker compose -f docker-compose.yml -f docker-compose.override.yml pull
+            docker compose -f docker-compose.yml -f docker-compose.override.yml up -d --remove-orphans

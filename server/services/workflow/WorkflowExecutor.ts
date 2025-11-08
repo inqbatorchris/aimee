@@ -1,0 +1,793 @@
+import { db } from '../../db';
+import { eq } from 'drizzle-orm';
+import { agentWorkflows, agentWorkflowRuns, integrations, keyResults, objectives, activityLogs, users } from '@shared/schema';
+import { ActionHandlers } from './ActionHandlers';
+import crypto from 'crypto';
+
+// Use the same encryption key from environment (set in Replit Secrets)
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+
+interface ExecutionContext {
+  triggerSource?: string;
+  scheduleId?: number;
+  organizationId: string;
+  userId?: number;
+  webhookData?: any;
+  manualData?: any;
+}
+
+interface StepExecutionResult {
+  success: boolean;
+  output?: any;
+  error?: string;
+  stack?: string;
+}
+
+export class WorkflowExecutor {
+  private actionHandlers: ActionHandlers;
+  
+  constructor() {
+    this.actionHandlers = new ActionHandlers();
+  }
+
+  async executeWorkflow(workflow: any, context: ExecutionContext): Promise<number> {
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.log(`[WorkflowExecutor] ▶ WORKFLOW EXECUTION STARTED`);
+    console.log(`  Workflow ID: ${workflow.id}`);
+    console.log(`  Workflow Name: ${workflow.name}`);
+    console.log(`  Organization ID: ${context.organizationId}`);
+    console.log(`  Trigger Source: ${context.triggerSource || 'manual'}`);
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    
+    const startTime = new Date();
+    
+    console.log(`[WorkflowExecutor] 📝 Creating workflow run record...`);
+    
+    // Create a new workflow run
+    const [run] = await db
+      .insert(agentWorkflowRuns)
+      .values({
+        workflowId: workflow.id,
+        status: 'running',
+        triggerSource: context.triggerSource || 'manual',
+        executionLog: [],
+        resultData: {},
+        startedAt: startTime,
+        contextData: context,
+        totalSteps: workflow.configuration?.steps?.length || 0,
+        stepsCompleted: 0,
+        retryCount: 0,
+      })
+      .returning();
+    
+    console.log(`[WorkflowExecutor] ✅ Workflow run created: ID ${run.id}`);
+
+    try {
+      // Parse workflow configuration
+      const config = typeof workflow.configuration === 'string' 
+        ? JSON.parse(workflow.configuration) 
+        : workflow.configuration;
+      
+      if (!config?.steps || !Array.isArray(config.steps)) {
+        throw new Error('Invalid workflow configuration: missing steps');
+      }
+
+      console.log(`[WorkflowExecutor] 📋 Configuration parsed. Total steps: ${config.steps.length}`);
+      
+      // Fetch the assigned agent user for activity logging
+      let agentUser = null;
+      if (workflow.assignedUserId) {
+        const [user] = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, workflow.assignedUserId))
+          .limit(1);
+        agentUser = user;
+        console.log(`[WorkflowExecutor] 👤 Assigned agent user: ${agentUser?.fullName || agentUser?.username || 'Unknown'}`);
+      }
+      
+      // Execute each step in sequence
+      // Add workflow info to context for activity logging
+      let stepContext = { 
+        ...context, 
+        workflowId: workflow.id, 
+        workflowName: workflow.name,
+        runId: run.id,
+        assignedUserId: workflow.assignedUserId,
+        assignedUserName: agentUser?.fullName || agentUser?.username || 'Unknown Agent',
+        lastSuccessfulRunAt: workflow.lastSuccessfulRunAt // For incremental data fetching
+      };
+      const executionLog: any[] = [];
+      
+      for (let i = 0; i < config.steps.length; i++) {
+        const step = config.steps[i];
+        const stepStartTime = Date.now();
+        
+        console.log(`\n[WorkflowExecutor] ═══ STEP ${i + 1}/${config.steps.length} ═══`);
+        console.log(`[WorkflowExecutor]   Name: ${step.name || 'Unnamed'}`);
+        console.log(`[WorkflowExecutor]   Type: ${step.type}`);
+        console.log(`[WorkflowExecutor]   Config:`, JSON.stringify(step.config || {}, null, 2));
+        
+        // Execute the step with retry logic
+        const result = await this.executeStepWithRetry(
+          step,
+          stepContext,
+          workflow.retryConfig || { maxRetries: 3, retryDelay: 60 }
+        );
+        
+        const stepEndTime = Date.now();
+        const stepDuration = stepEndTime - stepStartTime;
+        
+        console.log(`[WorkflowExecutor]   ⏱️ Duration: ${stepDuration}ms`);
+        console.log(`[WorkflowExecutor]   ${result.success ? '✅ SUCCESS' : '❌ FAILED'}`);
+        if (result.output) {
+          console.log(`[WorkflowExecutor]   📤 Output:`, JSON.stringify(result.output, null, 2));
+        }
+        if (result.error) {
+          console.log(`[WorkflowExecutor]   ⚠️ Error: ${result.error}`);
+        }
+        
+        // Log step execution
+        executionLog.push({
+          step: i + 1,
+          type: step.type,
+          name: step.name || step.type,
+          startTime: new Date(stepStartTime),
+          endTime: new Date(stepEndTime),
+          duration: stepDuration,
+          success: result.success,
+          output: result.output,
+          error: result.error,
+          stack: result.stack,
+        });
+        
+        // Update run progress
+        await db
+          .update(agentWorkflowRuns)
+          .set({
+            stepsCompleted: i + 1,
+            executionLog,
+            contextData: stepContext,
+          })
+          .where(eq(agentWorkflowRuns.id, run.id));
+        
+        if (!result.success) {
+          throw new Error(`Step ${i + 1} failed: ${result.error}`);
+        }
+        
+        // Pass step output to next step context
+        if (result.output) {
+          stepContext = { ...stepContext, [`step${i + 1}Output`]: result.output };
+        }
+      }
+      
+      // Calculate total execution duration
+      const executionDuration = Date.now() - startTime.getTime();
+      
+      // Mark workflow as completed
+      await db
+        .update(agentWorkflowRuns)
+        .set({
+          status: 'completed',
+          completedAt: new Date(),
+          executionDuration,
+          executionLog,
+          resultData: stepContext,
+        })
+        .where(eq(agentWorkflowRuns.id, run.id));
+      
+      console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      console.log(`[WorkflowExecutor] ✅ WORKFLOW COMPLETED SUCCESSFULLY`);
+      console.log(`  Workflow ID: ${workflow.id}`);
+      console.log(`  Run ID: ${run.id}`);
+      console.log(`  Duration: ${executionDuration}ms`);
+      console.log(`  Steps Completed: ${config.steps.length}/${config.steps.length}`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+      
+      // Update workflow's lastSuccessfulRunAt for incremental data fetching
+      await db
+        .update(agentWorkflows)
+        .set({ 
+          lastSuccessfulRunAt: new Date(),
+          lastRunAt: new Date(),
+          lastRunStatus: 'completed'
+        })
+        .where(eq(agentWorkflows.id, workflow.id));
+      
+      console.log(`[WorkflowExecutor] 📅 Updated lastSuccessfulRunAt for incremental fetching`);
+      
+      // Execute post-completion actions if configured
+      await this.handlePostCompletion(workflow, stepContext);
+      
+      return run.id;
+      
+    } catch (error: any) {
+      console.log(`\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      console.error(`[WorkflowExecutor] ❌ WORKFLOW FAILED`);
+      console.error(`  Workflow ID: ${workflow.id}`);
+      console.error(`  Run ID: ${run.id}`);
+      console.error(`  Error: ${error.message}`);
+      console.error(`  Stack:`, error.stack);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+      
+      // Mark workflow as failed
+      await db
+        .update(agentWorkflowRuns)
+        .set({
+          status: 'failed',
+          completedAt: new Date(),
+          executionDuration: Date.now() - startTime.getTime(),
+          errorMessage: error.message,
+        })
+        .where(eq(agentWorkflowRuns.id, run.id));
+      
+      throw error;
+    }
+  }
+
+  private async executeStepWithRetry(
+    step: any,
+    context: any,
+    retryConfig: { maxRetries: number; retryDelay: number }
+  ): Promise<StepExecutionResult> {
+    let lastError: Error | null = null;
+    
+    for (let attempt = 1; attempt <= retryConfig.maxRetries; attempt++) {
+      try {
+        const result = await this.executeStep(step, context);
+        return result;
+      } catch (error: any) {
+        lastError = error;
+        console.warn(`[WorkflowExecutor]   ⚠️ Step failed (attempt ${attempt}/${retryConfig.maxRetries})`);
+        console.warn(`[WorkflowExecutor]   Error: ${error.message}`);
+        if (error.stack) {
+          console.warn(`[WorkflowExecutor]   Stack:`, error.stack);
+        }
+        
+        if (attempt < retryConfig.maxRetries) {
+          // Wait before retry
+          console.log(`[WorkflowExecutor]   ⏳ Waiting ${retryConfig.retryDelay}s before retry...`);
+          await new Promise(resolve => setTimeout(resolve, retryConfig.retryDelay * 1000));
+        }
+      }
+    }
+    
+    return {
+      success: false,
+      error: lastError?.message || 'Step execution failed after retries',
+      stack: lastError?.stack,
+    };
+  }
+
+  private async executeStep(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      switch (step.type) {
+        case 'log_event':
+          return await this.executeLogEvent(step, context);
+        
+        case 'notification':
+          return await this.executeNotification(step, context);
+        
+        case 'api_call':
+          return await this.executeApiCall(step, context);
+        
+        case 'data_transformation':
+          return await this.executeDataTransformation(step, context);
+        
+        case 'condition':
+          return await this.executeCondition(step, context);
+        
+        case 'integration_action':
+          return await this.executeIntegrationAction(step, context);
+        
+        case 'database_query':
+          return await this.executeDatabaseQuery(step, context);
+        
+        case 'strategy_update':
+          return await this.executeStrategyUpdate(step, context);
+        
+        case 'wait':
+          return await this.executeWait(step, context);
+        
+        default:
+          throw new Error(`Unknown step type: ${step.type}`);
+      }
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  private async executeLogEvent(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      console.log(`[WorkflowExecutor] Logging event data for step: ${step.name || 'Log Event'}`);
+      
+      // Extract webhook data from context
+      const webhookData = context.webhookData || {};
+      const timestamp = new Date();
+      
+      // Log the event details
+      const logEntry = {
+        timestamp,
+        stepName: step.name || 'Log Event',
+        eventType: webhookData.event || 'unknown',
+        integration: webhookData.integration || 'unknown',
+        eventData: webhookData.data || {},
+        eventId: webhookData.eventId,
+        context: {
+          organizationId: context.organizationId,
+          triggerSource: context.triggerSource,
+        }
+      };
+      
+      console.log(`[WorkflowExecutor] Event logged:`, JSON.stringify(logEntry, null, 2));
+      
+      return {
+        success: true,
+        output: logEntry,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  private async executeApiCall(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      const { url, method = 'GET', headers = {}, body } = step.config || {};
+      
+      // Replace variables in URL
+      const processedUrl = this.processTemplate(url, context);
+      
+      // Make the API call
+      const response = await fetch(processedUrl, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers,
+        },
+        body: body ? JSON.stringify(this.processTemplate(body, context)) : undefined,
+      });
+      
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(`API call failed: ${response.status} - ${JSON.stringify(data)}`);
+      }
+      
+      return {
+        success: true,
+        output: data,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  private async executeDataTransformation(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      const { transformation } = step.config || {};
+      
+      // Simple JSON path transformations
+      let result = context;
+      
+      if (transformation?.type === 'json_path') {
+        result = this.extractJsonPath(context, transformation.path);
+      } else if (transformation?.type === 'mapping') {
+        result = this.mapData(context, transformation.mapping);
+      }
+      
+      return {
+        success: true,
+        output: result,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  private async executeCondition(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      const { condition, ifTrue, ifFalse } = step.config || {};
+      
+      // Evaluate condition
+      const conditionMet = this.evaluateCondition(condition, context);
+      
+      // Execute appropriate branch
+      if (conditionMet && ifTrue) {
+        return await this.executeStep(ifTrue, context);
+      } else if (!conditionMet && ifFalse) {
+        return await this.executeStep(ifFalse, context);
+      }
+      
+      return {
+        success: true,
+        output: { conditionMet },
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  private async executeIntegrationAction(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      const { integrationId, action, parameters } = step.config || {};
+      
+      console.log(`[WorkflowExecutor]   🔌 Fetching integration ID: ${integrationId}`);
+      
+      // Get integration configuration
+      const [integration] = await db
+        .select()
+        .from(integrations)
+        .where(eq(integrations.id, integrationId))
+        .limit(1);
+      
+      if (!integration) {
+        throw new Error(`Integration ${integrationId} not found`);
+      }
+      
+      console.log(`[WorkflowExecutor]   ✓ Integration found: ${integration.name} (${integration.platformType})`);
+      
+      // Decrypt credentials
+      const credentials = this.decryptCredentials(integration.credentialsEncrypted || '');
+      
+      console.log(`[WorkflowExecutor]   🔐 Credentials decrypted`);
+      console.log(`[WorkflowExecutor]   🎬 Executing action: ${action}`);
+      console.log(`[WorkflowExecutor]   📝 Parameters:`, JSON.stringify(parameters, null, 2));
+      
+      // Execute integration-specific action
+      const result = await this.actionHandlers.executeIntegrationAction(
+        integration.platformType,
+        action,
+        parameters,
+        credentials,
+        context
+      );
+      
+      console.log(`[WorkflowExecutor]   ✓ Action completed successfully`);
+      
+      // Store the result in context if a result variable is specified
+      if (step.config?.resultVariable) {
+        context[step.config.resultVariable] = result;
+        console.log(`[WorkflowExecutor]   💾 Result stored in context as: ${step.config.resultVariable}`);
+      }
+      
+      return {
+        success: true,
+        output: result,
+      };
+    } catch (error: any) {
+      console.error(`[WorkflowExecutor]   ❌ Integration action failed: ${error.message}`);
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  private async executeNotification(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      const { type, recipient, message, template } = step.config || {};
+      
+      // Process message template
+      const processedMessage = template 
+        ? this.processTemplate(template, context)
+        : message;
+      
+      // Send notification based on type
+      if (type === 'email') {
+        // TODO: Implement email sending
+        console.log(`[WorkflowExecutor] Would send email to ${recipient}: ${processedMessage}`);
+      } else if (type === 'webhook') {
+        await fetch(recipient, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: processedMessage, context }),
+        });
+      }
+      
+      return {
+        success: true,
+        output: { sent: true, message: processedMessage },
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  private async executeDatabaseQuery(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      const { query, parameters } = step.config || {};
+      
+      // For now, we'll limit to safe read queries
+      if (!query.toLowerCase().startsWith('select')) {
+        throw new Error('Only SELECT queries are allowed in workflows');
+      }
+      
+      // Execute query with parameters
+      const result = await db.execute(query);
+      
+      return {
+        success: true,
+        output: result,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  private async executeStrategyUpdate(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      const { type, targetId, updateType = 'set_value', value } = step.config || {};
+      
+      if (!type || !targetId) {
+        throw new Error('Strategy update requires type and targetId');
+      }
+      
+      // Process value - it might be a variable reference
+      let processedValue = value;
+      if (typeof value === 'string' && value.match(/\{(\w+)\}/)) {
+        const varName = value.replace(/[{}]/g, '');
+        // Check both context[varName] and context[value] for flexibility
+        processedValue = context[varName] || context[value] || value;
+        
+        console.log(`[WorkflowExecutor]   🔄 Variable substitution: ${value} → ${JSON.stringify(processedValue)}`);
+      }
+      
+      console.log(`[WorkflowExecutor] Updating ${type} ${targetId} with value:`, processedValue, `(updateType: ${updateType})`);
+      
+      if (type === 'key_result') {
+        // Get the key result details before updating (for activity log)
+        const [kr] = await db
+          .select()
+          .from(keyResults)
+          .where(eq(keyResults.id, targetId))
+          .limit(1);
+        
+        if (!kr) {
+          throw new Error(`Key Result ${targetId} not found`);
+        }
+        
+        const oldValue = kr.currentValue;
+        let newValue = processedValue;
+        
+        // Update Key Result
+        if (updateType === 'set_value') {
+          await db
+            .update(keyResults)
+            .set({ 
+              currentValue: String(processedValue),
+              updatedAt: new Date()
+            })
+            .where(eq(keyResults.id, targetId));
+        } else if (updateType === 'increment') {
+          const currentVal = parseFloat(kr.currentValue || '0');
+          const incrementBy = parseFloat(processedValue || '0');
+          newValue = currentVal + incrementBy;
+          await db
+            .update(keyResults)
+            .set({ 
+              currentValue: String(newValue),
+              updatedAt: new Date()
+            })
+            .where(eq(keyResults.id, targetId));
+        } else if (updateType === 'percentage') {
+          if (kr.targetValue) {
+            const targetVal = parseFloat(kr.targetValue || '100');
+            const percentage = parseFloat(processedValue || '0');
+            newValue = (targetVal * percentage) / 100;
+            await db
+              .update(keyResults)
+              .set({ 
+                currentValue: String(newValue),
+                updatedAt: new Date()
+              })
+              .where(eq(keyResults.id, targetId));
+          }
+        }
+        
+        // Create activity log for agent-generated update
+        // Use the assigned agent user for all workflow executions
+        const userId = context.assignedUserId || null;
+        const orgId = parseInt(context.organizationId);
+        
+        if (!isNaN(orgId)) {
+          try {
+            // Create description in format: "AgentName performed WorkflowName"
+            const agentName = context.assignedUserName || 'Unknown Agent';
+            const workflowName = context.workflowName || 'Workflow';
+            const description = `${agentName} performed ${workflowName}`;
+            
+            await db.insert(activityLogs).values({
+              organizationId: orgId,
+              userId: userId,
+              actionType: 'agent_action',
+              entityType: 'key_result',
+              entityId: targetId,
+              description: description,
+              metadata: {
+                title: kr.title,
+                newValue: String(newValue),
+                oldValue: String(oldValue),
+                updateType: updateType,
+                triggerSource: context.triggerSource || 'workflow',
+                workflowId: context.workflowId,
+                workflowName: context.workflowName,
+                runId: context.runId
+              }
+            });
+            console.log(`[WorkflowExecutor] ✓ Activity log created: "${description}"`);
+          } catch (error) {
+            console.error('[WorkflowExecutor] Failed to log activity:', error);
+            // Don't throw - activity log failure shouldn't break the workflow
+          }
+        }
+      } else if (type === 'objective') {
+        // Update Objective status or other fields
+        // TODO: Implement objective updates if needed
+      }
+      
+      return {
+        success: true,
+        output: { 
+          updated: true, 
+          type, 
+          targetId, 
+          updateType,
+          newValue: processedValue 
+        },
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  private async executeWait(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      const { duration = 1000 } = step.config || {};
+      
+      await new Promise(resolve => setTimeout(resolve, duration));
+      
+      return {
+        success: true,
+        output: { waited: duration },
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message,
+      };
+    }
+  }
+
+  private async handlePostCompletion(workflow: any, context: any) {
+    // Handle post-completion actions like updating related records
+    if (workflow.targetKeyResultId) {
+      console.log(`[WorkflowExecutor] Would update Key Result ${workflow.targetKeyResultId}`);
+    }
+    
+    if (workflow.targetObjectiveId) {
+      console.log(`[WorkflowExecutor] Would update Objective ${workflow.targetObjectiveId}`);
+    }
+    
+    if (workflow.assignedTeamId) {
+      console.log(`[WorkflowExecutor] Would notify Team ${workflow.assignedTeamId}`);
+    }
+  }
+
+  private processTemplate(template: string, context: any): any {
+    if (typeof template !== 'string') return template;
+    
+    // Replace {{variable}} with context values
+    return template.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, (match, path) => {
+      return this.getNestedValue(context, path) || match;
+    });
+  }
+
+  private getNestedValue(obj: any, path: string): any {
+    return path.split('.').reduce((current, key) => current?.[key], obj);
+  }
+
+  private extractJsonPath(data: any, path: string): any {
+    return this.getNestedValue(data, path);
+  }
+
+  private mapData(data: any, mapping: Record<string, string>): any {
+    const result: any = {};
+    for (const [targetKey, sourcePath] of Object.entries(mapping)) {
+      result[targetKey] = this.getNestedValue(data, sourcePath);
+    }
+    return result;
+  }
+
+  private evaluateCondition(condition: any, context: any): boolean {
+    const { field, operator, value } = condition || {};
+    const fieldValue = this.getNestedValue(context, field);
+    
+    switch (operator) {
+      case 'equals':
+        return fieldValue === value;
+      case 'notEquals':
+        return fieldValue !== value;
+      case 'contains':
+        return String(fieldValue).includes(value);
+      case 'greaterThan':
+        return fieldValue > value;
+      case 'lessThan':
+        return fieldValue < value;
+      case 'exists':
+        return fieldValue !== undefined && fieldValue !== null;
+      default:
+        return false;
+    }
+  }
+
+  private decryptCredentials(encryptedCreds: string): any {
+    if (!encryptedCreds) return null;
+    
+    try {
+      // Use module-level ENCRYPTION_KEY constant (captured at load time, same as integrations.ts)
+      // This will be undefined, matching how the credentials were encrypted
+      const IV_LENGTH = 16;
+      
+      // DEBUG: Log encryption key info
+      console.log('[WorkflowExecutor] 🔐 DECRYPTION DEBUG:');
+      console.log('  ENCRYPTION_KEY defined:', ENCRYPTION_KEY !== undefined);
+      console.log('  ENCRYPTION_KEY value:', ENCRYPTION_KEY);
+      console.log('  ENCRYPTION_KEY type:', typeof ENCRYPTION_KEY);
+      console.log('  process.env.ENCRYPTION_KEY:', process.env.ENCRYPTION_KEY);
+      console.log('  Encrypted creds preview:', encryptedCreds.substring(0, 50) + '...');
+      console.log('  Encrypted creds length:', encryptedCreds.length);
+      
+      // Decrypt the credentials
+      const parts = encryptedCreds.split(':');
+      if (parts.length !== 2) {
+        throw new Error('Invalid encrypted credentials format');
+      }
+      
+      console.log('  IV (first part):', parts[0]);
+      console.log('  Encrypted text preview:', parts[1].substring(0, 50) + '...');
+      
+      const iv = Buffer.from(parts[0], 'hex');
+      const encryptedText = parts[1];
+      const key = crypto.createHash('sha256').update(String(ENCRYPTION_KEY)).digest();
+      
+      console.log('  Key hash (first 16 bytes):', key.toString('hex').substring(0, 32));
+      
+      const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+      let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+      decrypted += decipher.final('utf8');
+      
+      console.log('  ✓ Decryption successful!');
+      
+      // Parse and return the credentials object
+      return JSON.parse(decrypted);
+    } catch (error: any) {
+      console.error('[WorkflowExecutor] ❌ Credential decryption failed:', error.message);
+      console.error('[WorkflowExecutor] Stack:', error.stack);
+      throw new Error('Failed to decrypt integration credentials');
+    }
+  }
+}

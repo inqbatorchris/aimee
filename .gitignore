@@ -1,0 +1,28 @@
+node_modules
+dist
+.DS_Store
+server/public
+vite.config.ts.*
+*.tar.gz
+
+# Prevent temporary files and screenshots from being committed
+attached_assets/Screenshot*.png
+attached_assets/Screenshot*.jpg
+attached_assets/*.rtf
+attached_assets/*.csv
+attached_assets/*.xlsx
+attached_assets/*.kmz
+attached_assets/*.apib
+attached_assets/*.tsx
+attached_assets/*.dart
+attached_assets/*.json
+attached_assets/*.txt
+attached_assets/Pasted*
+attached_assets/temp_*
+attached_assets/*workflow*
+attached_assets/targeted_element_*
+attached_assets/IMG_*
+attached_assets/consol*
+
+# Git backup folder
+.git_backup_old_repo/

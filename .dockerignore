@@ -1,0 +1,6 @@
+.git
+node_modules
+dist
+uploads
+client/node_modules
+**/*.log

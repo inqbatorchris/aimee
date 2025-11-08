@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Edge Test</title>
+</head>
+<body>
+    <h1>Testing Edge Visibility</h1>
+    <p>Open the React Flow mind map in another tab, then check the console here.</p>
+    
+    <script>
+        // This script checks if edges are rendered in the DOM
+        function checkEdges() {
+            // Open the dev console and run this in the mind map page:
+            const edges = document.querySelectorAll('.react-flow__edge-path');
+            const edgeDetails = Array.from(edges).map(edge => {
+                const path = edge.getAttribute('d');
+                const stroke = window.getComputedStyle(edge).stroke;
+                const strokeWidth = window.getComputedStyle(edge).strokeWidth;
+                const opacity = window.getComputedStyle(edge).opacity;
+                const visibility = window.getComputedStyle(edge).visibility;
+                const display = window.getComputedStyle(edge).display;
+                
+                return {
+                    hasPath: !!path,
+                    pathLength: path ? path.length : 0,
+                    stroke,
+                    strokeWidth,
+                    opacity,
+                    visibility,
+                    display,
+                    parent: edge.parentElement?.className
+                };
+            });
+            
+            console.log('Edge count:', edges.length);
+            console.log('Edge details:', edgeDetails);
+            
+            // Check handles
+            const handles = document.querySelectorAll('.react-flow__handle');
+            console.log('Handle count:', handles.length);
+            console.log('Handle visibility:', Array.from(handles).map(h => ({
+                opacity: window.getComputedStyle(h).opacity,
+                display: window.getComputedStyle(h).display,
+                visibility: window.getComputedStyle(h).visibility
+            })));
+        }
+        
+        // Copy this function to run in the console
+        console.log('Copy and run this in the mind map page console:');
+        console.log(checkEdges.toString());
+        console.log('checkEdges();');
+    </script>
+</body>
+</html>

@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear Theme Settings</title>
+</head>
+<body>
+    <script>
+        // Clear all theme-related localStorage items
+        localStorage.removeItem('customLightTheme');
+        localStorage.removeItem('customDarkTheme');
+        localStorage.removeItem('brandSettings');
+        console.log('Theme settings cleared');
+        document.write('<h1>Theme settings have been cleared</h1>');
+        document.write('<p>Please refresh the application.</p>');
+    </script>
+</body>
+</html>
