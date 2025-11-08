@@ -62,6 +62,13 @@ export default function ProfitCenters() {
       });
       handleCloseDialog();
     },
+    onError: (error: any) => {
+      toast({
+        title: 'Failed to create profit center',
+        description: error.message || 'An error occurred while creating the profit center',
+        variant: 'destructive',
+      });
+    },
   });
 
   const updateMutation = useMutation({
@@ -78,6 +85,13 @@ export default function ProfitCenters() {
         description: 'Profit center has been successfully updated',
       });
       handleCloseDialog();
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Failed to update profit center',
+        description: error.message || 'An error occurred while updating the profit center',
+        variant: 'destructive',
+      });
     },
   });
 

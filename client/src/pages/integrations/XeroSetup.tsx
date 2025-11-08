@@ -4,7 +4,16 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { CheckCircle2, AlertCircle, ExternalLink } from 'lucide-react';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Badge } from '@/components/ui/badge';
+import { CheckCircle2, AlertCircle, ExternalLink, Clock, XCircle } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useLocation } from 'wouter';
@@ -17,6 +26,11 @@ export default function XeroSetup() {
 
   const { data: status } = useQuery<any>({
     queryKey: ['/api/finance/xero/status'],
+  });
+
+  const { data: syncHistory } = useQuery<any[]>({
+    queryKey: ['/api/finance/xero/sync-history'],
+    enabled: !!status?.connected,
   });
 
   const oauthMutation = useMutation({
@@ -121,6 +135,72 @@ export default function XeroSetup() {
             </div>
           )}
         </Card>
+
+        {syncHistory && syncHistory.length > 0 && (
+          <Card className="p-6 mt-6">
+            <h3 className="text-xl font-semibold mb-4">Sync History</h3>
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date & Time</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Records Synced</TableHead>
+                    <TableHead>Errors</TableHead>
+                    <TableHead>Details</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {syncHistory.map((sync: any, index: number) => (
+                    <TableRow key={sync.id || index}>
+                      <TableCell className="whitespace-nowrap">
+                        {new Date(sync.lastSyncAt || sync.createdAt).toLocaleString()}
+                      </TableCell>
+                      <TableCell>
+                        {sync.status === 'completed' || sync.status === 'success' ? (
+                          <Badge className="bg-green-500">
+                            <CheckCircle2 className="w-3 h-3 mr-1" />
+                            Success
+                          </Badge>
+                        ) : sync.status === 'in_progress' || sync.status === 'pending' ? (
+                          <Badge variant="secondary">
+                            <Clock className="w-3 h-3 mr-1" />
+                            {sync.status === 'in_progress' ? 'In Progress' : 'Pending'}
+                          </Badge>
+                        ) : (
+                          <Badge variant="destructive">
+                            <XCircle className="w-3 h-3 mr-1" />
+                            Failed
+                          </Badge>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <div className="text-sm">
+                          <div className="text-green-600">{sync.recordsSynced || 0} synced</div>
+                          {sync.recordsFailed > 0 && (
+                            <div className="text-red-600">{sync.recordsFailed} failed</div>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        {sync.errors && (
+                          <div className="text-xs text-red-600 max-w-xs truncate" title={JSON.stringify(sync.errors)}>
+                            {typeof sync.errors === 'string' ? sync.errors : JSON.stringify(sync.errors)}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <span className="text-xs text-muted-foreground">
+                          {sync.syncType || 'transactions'}
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </Card>
+        )}
       </div>
     );
   }
