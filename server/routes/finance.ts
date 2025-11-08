@@ -186,8 +186,13 @@ router.get('/xero/status', authenticateToken, async (req: Request, res: Response
       .orderBy(desc(xeroSyncStatus.lastSyncAt))
       .limit(1);
 
+    // Consider connection active only if both enabled AND status is connected
+    const isConnected = integration.isEnabled && integration.connectionStatus === 'connected';
+
     res.json({
-      connected: integration.isEnabled,
+      connected: isConnected,
+      connectionStatus: integration.connectionStatus,
+      isEnabled: integration.isEnabled,
       tenantName: (integration.connectionConfig as any)?.tenantName,
       lastSync: lastSyncData[0] || null,
     });

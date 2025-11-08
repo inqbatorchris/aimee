@@ -121,6 +121,7 @@ export class XeroService {
       // Mark integration as disconnected on auth failure
       await storage.updateIntegration(integration.id, {
         connectionStatus: 'disconnected',
+        isEnabled: false,
       });
 
       // Provide specific error messages based on the error
