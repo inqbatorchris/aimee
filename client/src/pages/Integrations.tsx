@@ -103,13 +103,13 @@ export default function Integrations() {
 
   // Test connection mutation
   const testConnectionMutation = useMutation({
-    mutationFn: async (integrationId: number) => {
-      const response = await apiRequest(`/api/integrations/${integrationId}/test`, {
+    mutationFn: async (platformType: string) => {
+      const response = await apiRequest(`/api/integrations/${platformType}/test`, {
         method: 'POST',
       });
       return response;
     },
-    onSuccess: (data, integrationId) => {
+    onSuccess: (data, platformType) => {
       toast({
         title: 'Connection test successful',
         description: 'The integration is working correctly.',
@@ -262,7 +262,7 @@ export default function Integrations() {
                           variant="outline"
                           className="w-full"
                           size="sm"
-                          onClick={() => testConnectionMutation.mutate(integration.id)}
+                          onClick={() => testConnectionMutation.mutate(integration.platformType)}
                           disabled={testConnectionMutation.isPending}
                           data-testid={`button-test-${integration.platformType}`}
                         >
