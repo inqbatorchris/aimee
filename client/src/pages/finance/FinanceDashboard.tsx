@@ -21,13 +21,19 @@ export default function FinanceDashboard() {
   });
 
   const syncMutation = useMutation({
-    mutationFn: () => apiRequest('/api/finance/sync/run', { method: 'POST' }),
+    mutationFn: () => {
+      toast({
+        title: 'Syncing transactions...',
+        description: 'Fetching data from Xero. This may take a moment.',
+      });
+      return apiRequest('/api/finance/sync/run', { method: 'POST' });
+    },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['/api/finance/dashboard/metrics'] });
       queryClient.invalidateQueries({ queryKey: ['/api/finance/xero/status'] });
       toast({
         title: 'Sync completed',
-        description: `Synced ${data?.recordsSynced || 0} transactions from Xero`,
+        description: `Successfully synced ${data?.recordsSynced || 0} transactions from Xero`,
       });
     },
     onError: (error: any) => {
@@ -94,7 +100,7 @@ export default function FinanceDashboard() {
             data-testid="button-sync"
           >
             <RefreshCw className={`w-4 h-4 mr-2 ${syncMutation.isPending ? 'animate-spin' : ''}`} />
-            Sync Xero
+            {syncMutation.isPending ? 'Syncing...' : 'Sync Xero'}
           </Button>
           <Button variant="outline" data-testid="button-export">
             <Download className="w-4 h-4 mr-2" />
