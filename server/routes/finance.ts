@@ -90,11 +90,15 @@ router.post('/xero/oauth/callback', authenticateToken, async (req: Request, res:
 
     const tenants = tenantsResponse.data;
     const tenantId = tenants[0]?.tenantId;
+    
+    const expiresInSeconds = expires_in || 1800;
+    const expiresAt = new Date(Date.now() + expiresInSeconds * 1000);
 
     const credentialsEncrypted = encrypt(JSON.stringify({
       accessToken: access_token,
       refreshToken: refresh_token,
       tenantId,
+      expiresAt: expiresAt.toISOString(),
     }));
 
     const existing = await storage.getIntegration(organizationId, 'xero');

@@ -89,21 +89,30 @@ export class XeroService {
 
     // Refresh the access token
     try {
-      const response = await axios.post('https://identity.xero.com/connect/token', {
-        grant_type: 'refresh_token',
-        refresh_token: this.refreshToken,
-        client_id: clientId,
-        client_secret: clientSecret,
-      });
+      const response = await axios.post('https://identity.xero.com/connect/token',
+        new URLSearchParams({
+          grant_type: 'refresh_token',
+          refresh_token: this.refreshToken,
+          client_id: clientId,
+          client_secret: clientSecret,
+        }), {
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+        }
+      );
 
       this.accessToken = response.data.access_token;
       this.refreshToken = response.data.refresh_token;
+      const expiresIn = response.data.expires_in || 1800; // Default 30 minutes
+      const expiresAt = new Date(Date.now() + expiresIn * 1000);
 
       // Update stored credentials
       const encryptedCredentials = this.encrypt(JSON.stringify({
         accessToken: this.accessToken,
         refreshToken: this.refreshToken,
         tenantId: this.tenantId,
+        expiresAt: expiresAt.toISOString(),
       }));
 
       await storage.updateIntegration(integration.id, {
