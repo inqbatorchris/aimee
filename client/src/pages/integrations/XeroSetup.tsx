@@ -40,7 +40,7 @@ export default function XeroSetup() {
 
   const syncNowMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('/api/finance/xero/sync', {
+      const response = await apiRequest('/api/finance/sync/run', {
         method: 'POST',
       });
       return response.json();
