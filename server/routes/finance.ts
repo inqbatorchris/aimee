@@ -749,6 +749,79 @@ router.post('/transactions/bulk-categorize', authenticateToken, async (req: Requ
   }
 });
 
+// Backfill transaction account codes from Xero metadata
+router.post('/transactions/backfill-account-codes', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const organizationId = req.user?.organizationId || 3;
+
+    // Find all transactions with metadata but missing account code
+    const transactionsToBackfill = await db
+      .select()
+      .from(financialTransactions)
+      .where(
+        and(
+          eq(financialTransactions.organizationId, organizationId),
+          sql`${financialTransactions.xeroMetadata} IS NOT NULL`,
+          or(
+            isNull(financialTransactions.xeroAccountCode),
+            eq(financialTransactions.xeroAccountCode, '')
+          )
+        )
+      );
+
+    let updated = 0;
+    let skipped = 0;
+    const errors: any[] = [];
+
+    // Process each transaction
+    for (const transaction of transactionsToBackfill) {
+      try {
+        const metadata = transaction.xeroMetadata as any;
+        
+        // Extract account info from metadata
+        const accountCode = metadata?.Account?.Code || metadata?.accountCode || null;
+        const accountName = metadata?.Account?.Name || metadata?.accountName || null;
+        const accountType = metadata?.Account?.Type || metadata?.accountType || null;
+
+        if (!accountCode) {
+          skipped++;
+          continue;
+        }
+
+        // Update transaction with extracted account info
+        await db
+          .update(financialTransactions)
+          .set({
+            xeroAccountCode: accountCode,
+            xeroAccountName: accountName,
+            xeroAccountType: accountType,
+            updatedAt: new Date(),
+          })
+          .where(eq(financialTransactions.id, transaction.id));
+
+        updated++;
+      } catch (error: any) {
+        console.error(`Error backfilling transaction ${transaction.id}:`, error);
+        errors.push({
+          transactionId: transaction.id,
+          error: error.message,
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      total: transactionsToBackfill.length,
+      updated,
+      skipped,
+      errors: errors.length > 0 ? errors : undefined,
+    });
+  } catch (error: any) {
+    console.error('Error backfilling account codes:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ========================================
 // PROFIT CENTER MANAGEMENT
 // ========================================
