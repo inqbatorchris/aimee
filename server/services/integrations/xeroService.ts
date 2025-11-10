@@ -369,16 +369,36 @@ export class XeroService {
     }
   }
 
+  // Build date filter for FIRST SYNC ONLY (limits historical data)
+  private buildInitialDateFilter(since: Date): string {
+    const sinceStr = since.toISOString();
+    return `Date >= DateTime.Parse("${sinceStr}")`;
+  }
+
   // Sync all transactions (invoices, bank transactions, payments) since a date
-  async syncAllTransactions(since?: Date) {
+  // For first sync: uses 'where' clause to limit historical data
+  // For subsequent syncs: uses 'modifiedAfter' to get updated records
+  async syncAllTransactions(since?: Date, isFirstSync: boolean = false) {
     this.ensureInitialized();
     
-    const sinceParam = since ? { modifiedAfter: since.toISOString() } : {};
+    let params: any = {};
+    
+    if (isFirstSync && since) {
+      // First sync: limit by Date to prevent fetching all historical data
+      params.where = this.buildInitialDateFilter(since);
+      console.log('Xero FIRST sync - filtering by Date:', { since: since.toISOString(), where: params.where });
+    } else if (since) {
+      // Subsequent syncs: use modifiedAfter to get records updated since last sync
+      params.modifiedAfter = since.toISOString();
+      console.log('Xero INCREMENTAL sync - filtering by modifiedAfter:', { modifiedAfter: params.modifiedAfter });
+    } else {
+      console.log('Xero sync - fetching all transactions (no filters)');
+    }
     
     const [invoices, bankTransactions, payments] = await Promise.all([
-      this.callWithRetry(() => this.getInvoices(sinceParam)),
-      this.callWithRetry(() => this.getBankTransactions(sinceParam)),
-      this.callWithRetry(() => this.getPayments(sinceParam)),
+      this.callWithRetry(() => this.getInvoices(params)),
+      this.callWithRetry(() => this.getBankTransactions(params)),
+      this.callWithRetry(() => this.getPayments(params)),
     ]);
     
     return {
