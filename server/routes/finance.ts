@@ -54,6 +54,58 @@ function parseXeroDate(dateValue: any): Date {
   return new Date();
 }
 
+// Helper function to process transactions in batches with upsert
+async function upsertTransactionsBatch(
+  organizationId: number,
+  transactions: any[],
+  batchSize: number = 250
+): Promise<{ synced: number; failed: number; errors: any[] }> {
+  let syncedCount = 0;
+  let failedCount = 0;
+  const errors: any[] = [];
+
+  // Process in batches
+  for (let i = 0; i < transactions.length; i += batchSize) {
+    const batch = transactions.slice(i, i + batchSize);
+    
+    try {
+      // Batch upsert using onConflictDoUpdate
+      await db.insert(financialTransactions)
+        .values(batch)
+        .onConflictDoUpdate({
+          target: [
+            financialTransactions.organizationId,
+            financialTransactions.xeroTransactionId,
+            financialTransactions.xeroTransactionType
+          ],
+          set: {
+            transactionDate: sql`EXCLUDED.transaction_date`,
+            amount: sql`EXCLUDED.amount`,
+            description: sql`EXCLUDED.description`,
+            contactName: sql`EXCLUDED.contact_name`,
+            xeroContactId: sql`EXCLUDED.xero_contact_id`,
+            currency: sql`EXCLUDED.currency`,
+            metadata: sql`EXCLUDED.metadata`,
+            updatedAt: new Date(),
+          }
+        });
+      
+      syncedCount += batch.length;
+      console.log(`[BATCH] Processed ${syncedCount}/${transactions.length} transactions`);
+    } catch (error: any) {
+      failedCount += batch.length;
+      errors.push({ 
+        batch: `${i}-${i + batch.length}`, 
+        error: error.message,
+        count: batch.length
+      });
+      console.error(`[BATCH ERROR] Failed to process batch ${i}-${i + batch.length}:`, error.message);
+    }
+  }
+
+  return { synced: syncedCount, failed: failedCount, errors };
+}
+
 // ========================================
 // XERO OAUTH & CONNECTION MANAGEMENT
 // ========================================
@@ -664,109 +716,134 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
 
     const xeroData = await xeroService.syncAllTransactions(since, isFirstSync);
 
-    console.log(`Xero sync fetched: ${xeroData.invoices.length} invoices, ${xeroData.bankTransactions.length} bank transactions, ${xeroData.payments.length} payments`);
+    const totalRecords = xeroData.invoices.length + xeroData.bankTransactions.length + xeroData.payments.length;
+    console.log(`Xero sync fetched: ${xeroData.invoices.length} invoices, ${xeroData.bankTransactions.length} bank transactions, ${xeroData.payments.length} payments (Total: ${totalRecords})`);
+
+    // Update total records count for progress tracking
+    await db
+      .update(xeroSyncStatus)
+      .set({
+        totalRecordsToSync: totalRecords,
+        lastProgressAt: new Date(),
+      })
+      .where(
+        and(
+          eq(xeroSyncStatus.organizationId, organizationId),
+          eq(xeroSyncStatus.syncType, 'transactions')
+        )!
+      );
 
     let syncedCount = 0;
     let failedCount = 0;
     const errors: any[] = [];
 
-    for (const invoice of xeroData.invoices) {
-      try {
-        const existing = await db
-          .select()
-          .from(financialTransactions)
-          .where(
-            and(
-              eq(financialTransactions.organizationId, organizationId),
-              eq(financialTransactions.xeroTransactionId, invoice.InvoiceID),
-              eq(financialTransactions.xeroTransactionType, 'invoice' as any)
-            )!
-          )
-          .limit(1);
+    // Transform invoices to database format
+    const invoiceRecords = xeroData.invoices.map((invoice: any) => ({
+      organizationId,
+      xeroTransactionId: invoice.InvoiceID,
+      xeroTransactionType: 'invoice' as const,
+      transactionDate: parseXeroDate(invoice.Date),
+      amount: String(invoice.Total || 0),
+      description: invoice.Reference || invoice.InvoiceNumber || '',
+      contactName: invoice.Contact?.Name,
+      xeroContactId: invoice.Contact?.ContactID,
+      currency: invoice.CurrencyCode || 'USD',
+      metadata: invoice,
+    }));
 
-        if (existing[0]) {
-          await db
-            .update(financialTransactions)
-            .set({
-              amount: String(invoice.Total || 0),
-              description: invoice.Reference || invoice.InvoiceNumber,
-              contactName: invoice.Contact?.Name,
-              xeroContactId: invoice.Contact?.ContactID,
-              metadata: invoice,
-              updatedAt: new Date(),
-            })
-            .where(eq(financialTransactions.id, existing[0].id));
-        } else {
-          await db
-            .insert(financialTransactions)
-            .values({
-              organizationId,
-              xeroTransactionId: invoice.InvoiceID,
-              xeroTransactionType: 'invoice' as any,
-              transactionDate: parseXeroDate(invoice.Date),
-              amount: String(invoice.Total || 0),
-              description: invoice.Reference || invoice.InvoiceNumber,
-              contactName: invoice.Contact?.Name,
-              xeroContactId: invoice.Contact?.ContactID,
-              currency: invoice.CurrencyCode || 'USD',
-              metadata: invoice,
-            });
-        }
-        syncedCount++;
-      } catch (error: any) {
-        failedCount++;
-        errors.push({ invoiceId: invoice.InvoiceID, error: error.message });
-      }
-    }
+    // Transform bank transactions to database format
+    const bankTxRecords = xeroData.bankTransactions.map((bankTx: any) => ({
+      organizationId,
+      xeroTransactionId: bankTx.BankTransactionID,
+      xeroTransactionType: 'bank_transaction' as const,
+      transactionDate: parseXeroDate(bankTx.Date),
+      amount: String(bankTx.Total || 0),
+      description: bankTx.Reference || '',
+      contactName: bankTx.Contact?.Name,
+      xeroContactId: bankTx.Contact?.ContactID,
+      currency: bankTx.CurrencyCode || 'USD',
+      metadata: bankTx,
+    }));
 
-    for (const bankTx of xeroData.bankTransactions) {
-      try {
-        const existing = await db
-          .select()
-          .from(financialTransactions)
-          .where(
-            and(
-              eq(financialTransactions.organizationId, organizationId),
-              eq(financialTransactions.xeroTransactionId, bankTx.BankTransactionID),
-              eq(financialTransactions.xeroTransactionType, 'bank_transaction' as any)
-            )!
-          )
-          .limit(1);
+    // Transform payments to database format
+    const paymentRecords = xeroData.payments.map((payment: any) => ({
+      organizationId,
+      xeroTransactionId: payment.PaymentID,
+      xeroTransactionType: 'payment' as const,
+      transactionDate: parseXeroDate(payment.Date),
+      amount: String(payment.Amount || 0),
+      description: payment.Reference || `Payment for ${payment.Invoice?.InvoiceNumber || 'invoice'}`,
+      contactName: payment.Invoice?.Contact?.Name,
+      xeroContactId: payment.Invoice?.Contact?.ContactID,
+      currency: payment.CurrencyCode || 'USD',
+      metadata: payment,
+    }));
 
-        if (existing[0]) {
-          await db
-            .update(financialTransactions)
-            .set({
-              amount: String(bankTx.Total || 0),
-              description: bankTx.Reference,
-              contactName: bankTx.Contact?.Name,
-              xeroContactId: bankTx.Contact?.ContactID,
-              metadata: bankTx,
-              updatedAt: new Date(),
-            })
-            .where(eq(financialTransactions.id, existing[0].id));
-        } else {
-          await db
-            .insert(financialTransactions)
-            .values({
-              organizationId,
-              xeroTransactionId: bankTx.BankTransactionID,
-              xeroTransactionType: 'bank_transaction' as any,
-              transactionDate: parseXeroDate(bankTx.Date),
-              amount: String(bankTx.Total || 0),
-              description: bankTx.Reference,
-              contactName: bankTx.Contact?.Name,
-              xeroContactId: bankTx.Contact?.ContactID,
-              currency: bankTx.CurrencyCode || 'USD',
-              metadata: bankTx,
-            });
-        }
-        syncedCount++;
-      } catch (error: any) {
-        failedCount++;
-        errors.push({ transactionId: bankTx.BankTransactionID, error: error.message });
-      }
-    }
+    // Process invoices in batches
+    console.log('[SYNC] Processing invoices...');
+    const invoiceResult = await upsertTransactionsBatch(organizationId, invoiceRecords, 250);
+    syncedCount += invoiceResult.synced;
+    failedCount += invoiceResult.failed;
+    errors.push(...invoiceResult.errors);
+
+    // Update progress after invoices
+    await db
+      .update(xeroSyncStatus)
+      .set({
+        recordsSynced: syncedCount,
+        recordsFailed: failedCount,
+        lastProgressAt: new Date(),
+      })
+      .where(
+        and(
+          eq(xeroSyncStatus.organizationId, organizationId),
+          eq(xeroSyncStatus.syncType, 'transactions')
+        )!
+      );
+
+    // Process bank transactions in batches
+    console.log('[SYNC] Processing bank transactions...');
+    const bankTxResult = await upsertTransactionsBatch(organizationId, bankTxRecords, 250);
+    syncedCount += bankTxResult.synced;
+    failedCount += bankTxResult.failed;
+    errors.push(...bankTxResult.errors);
+
+    // Update progress after bank transactions
+    await db
+      .update(xeroSyncStatus)
+      .set({
+        recordsSynced: syncedCount,
+        recordsFailed: failedCount,
+        lastProgressAt: new Date(),
+      })
+      .where(
+        and(
+          eq(xeroSyncStatus.organizationId, organizationId),
+          eq(xeroSyncStatus.syncType, 'transactions')
+        )!
+      );
+
+    // Process payments in batches
+    console.log('[SYNC] Processing payments...');
+    const paymentResult = await upsertTransactionsBatch(organizationId, paymentRecords, 250);
+    syncedCount += paymentResult.synced;
+    failedCount += paymentResult.failed;
+    errors.push(...paymentResult.errors);
+
+    // Update progress after payments
+    await db
+      .update(xeroSyncStatus)
+      .set({
+        recordsSynced: syncedCount,
+        recordsFailed: failedCount,
+        lastProgressAt: new Date(),
+      })
+      .where(
+        and(
+          eq(xeroSyncStatus.organizationId, organizationId),
+          eq(xeroSyncStatus.syncType, 'transactions')
+        )!
+      );
 
     // Refresh sync data to get the ID if we just created it
     const finalSyncData = await db

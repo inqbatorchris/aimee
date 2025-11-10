@@ -4126,10 +4126,14 @@ export const xeroSyncStatus = pgTable("xero_sync_status", {
   // Sync results
   recordsSynced: integer("records_synced").default(0),
   recordsFailed: integer("records_failed").default(0),
+  totalRecordsToSync: integer("total_records_to_sync").default(0), // Total records to process in this sync
   errors: jsonb("errors").default([]),
   
+  // Progress tracking (for UI display and hang detection)
+  lastProgressAt: timestamp("last_progress_at").defaultNow(), // Last time progress was made (for timeout detection)
+  
   // Status
-  status: varchar("status", { length: 50 }).default("pending"), // 'pending', 'running', 'completed', 'failed'
+  status: varchar("status", { length: 50 }).default("pending"), // 'pending', 'in_progress', 'completed', 'failed'
   
   // Audit
   createdAt: timestamp("created_at").defaultNow(),
