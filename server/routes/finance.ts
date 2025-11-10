@@ -174,6 +174,121 @@ async function verifyOkrEntityExists(
   }
 }
 
+/**
+ * Enriches multiple profit centers with linked OKR details and Xero account information
+ * Uses batch loading to avoid N+1 queries and includes organizationId filters for security
+ */
+async function enrichProfitCenters(profitCenters: any[], organizationId: number) {
+  if (profitCenters.length === 0) return [];
+
+  // Collect all unique IDs for batch loading
+  const objectiveIds = profitCenters
+    .filter(pc => pc.linkedOkrType === 'objective' && pc.objectiveId)
+    .map(pc => pc.objectiveId);
+  
+  const keyResultIds = profitCenters
+    .filter(pc => pc.linkedOkrType === 'key_result' && pc.keyResultId)
+    .map(pc => pc.keyResultId);
+  
+  const taskIds = profitCenters
+    .filter(pc => pc.linkedOkrType === 'task' && pc.keyResultTaskId)
+    .map(pc => pc.keyResultTaskId);
+  
+  const xeroAccountIds = profitCenters
+    .filter(pc => pc.xeroAccountId)
+    .map(pc => pc.xeroAccountId);
+
+  // Batch fetch all related data with organizationId filters for security
+  const [objectivesData, keyResultsData, tasksData, xeroAccountsData] = await Promise.all([
+    objectiveIds.length > 0
+      ? db.select().from(objectives).where(
+          and(
+            inArray(objectives.id, objectiveIds),
+            eq(objectives.organizationId, organizationId)
+          )
+        )
+      : Promise.resolve([]),
+    
+    keyResultIds.length > 0
+      ? db.select().from(keyResults).where(
+          and(
+            inArray(keyResults.id, keyResultIds),
+            eq(keyResults.organizationId, organizationId)
+          )
+        )
+      : Promise.resolve([]),
+    
+    taskIds.length > 0
+      ? db.select().from(keyResultTasks).where(
+          and(
+            inArray(keyResultTasks.id, taskIds),
+            eq(keyResultTasks.organizationId, organizationId)
+          )
+        )
+      : Promise.resolve([]),
+    
+    xeroAccountIds.length > 0
+      ? db.select().from(xeroChartOfAccounts).where(
+          and(
+            inArray(xeroChartOfAccounts.xeroAccountId, xeroAccountIds),
+            eq(xeroChartOfAccounts.organizationId, organizationId)
+          )
+        )
+      : Promise.resolve([]),
+  ]);
+
+  // Build lookup maps for O(1) access
+  const objectivesMap = new Map(objectivesData.map(obj => [obj.id, obj]));
+  const keyResultsMap = new Map(keyResultsData.map(kr => [kr.id, kr]));
+  const tasksMap = new Map(tasksData.map(task => [task.id, task]));
+  const xeroAccountsMap = new Map(xeroAccountsData.map(acc => [acc.xeroAccountId, acc]));
+
+  // Enrich each profit center using the lookup maps
+  return profitCenters.map(profitCenter => {
+    const enriched: any = { ...profitCenter };
+
+    // Add OKR details
+    if (profitCenter.linkedOkrType === 'objective' && profitCenter.objectiveId) {
+      const objective = objectivesMap.get(profitCenter.objectiveId);
+      enriched.okrDetails = objective ? {
+        type: 'objective',
+        id: objective.id,
+        name: objective.name,
+        description: objective.description,
+      } : null;
+    } else if (profitCenter.linkedOkrType === 'key_result' && profitCenter.keyResultId) {
+      const keyResult = keyResultsMap.get(profitCenter.keyResultId);
+      enriched.okrDetails = keyResult ? {
+        type: 'key_result',
+        id: keyResult.id,
+        name: keyResult.description,
+        objectiveId: keyResult.objectiveId,
+      } : null;
+    } else if (profitCenter.linkedOkrType === 'task' && profitCenter.keyResultTaskId) {
+      const task = tasksMap.get(profitCenter.keyResultTaskId);
+      enriched.okrDetails = task ? {
+        type: 'task',
+        id: task.id,
+        name: task.title,
+        keyResultId: task.keyResultId,
+      } : null;
+    }
+
+    // Add Xero account details
+    if (profitCenter.xeroAccountId) {
+      const xeroAccount = xeroAccountsMap.get(profitCenter.xeroAccountId);
+      enriched.xeroAccountDetails = xeroAccount ? {
+        accountCode: xeroAccount.accountCode,
+        accountName: xeroAccount.accountName,
+        accountType: xeroAccount.accountType,
+        status: xeroAccount.status,
+      } : null;
+    }
+
+    return enriched;
+  });
+}
+
 function encrypt(text: string): string {
   const key = crypto.createHash('sha256').update(String(ENCRYPTION_KEY)).digest();
   const iv = crypto.randomBytes(IV_LENGTH);
@@ -648,7 +763,10 @@ router.get('/profit-centers', authenticateToken, async (req: Request, res: Respo
       .where(eq(profitCenters.organizationId, organizationId))
       .orderBy(asc(profitCenters.displayOrder));
 
-    res.json(results);
+    // Enrich profit centers with OKR details and Xero account information using batch loading
+    const enriched = await enrichProfitCenters(results, organizationId);
+
+    res.json(enriched);
   } catch (error: any) {
     console.error('Error fetching profit centers:', error);
     res.status(500).json({ error: error.message });
@@ -801,8 +919,13 @@ router.get('/profit-centers/:id/performance', authenticateToken, async (req: Req
       .where(eq(profitCenters.id, parseInt(id)))
       .limit(1);
 
+    // Enrich profit center with OKR and Xero account details using batch loading
+    const enriched = profitCenterData[0] 
+      ? await enrichProfitCenters([profitCenterData[0]], organizationId)
+      : [];
+
     res.json({
-      profitCenter: profitCenterData[0] || null,
+      profitCenter: enriched[0] || null,
       metrics,
     });
   } catch (error: any) {
