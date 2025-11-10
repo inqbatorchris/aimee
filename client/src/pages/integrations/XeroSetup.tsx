@@ -195,70 +195,77 @@ export default function XeroSetup() {
             <TabsContent value="logs" className="mt-4">
               {syncHistory && syncHistory.length > 0 ? (
                 <div className="space-y-2">
-                  {syncHistory.map((sync: any, index: number) => (
-                    <Card key={sync.id || index} className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4 flex-1">
-                          <div className="flex-shrink-0">
-                            {sync.status === 'completed' || sync.status === 'success' ? (
-                              <Badge className="bg-green-500">
-                                <CheckCircle2 className="w-3 h-3 mr-1" />
-                                Completed
-                              </Badge>
-                            ) : sync.status === 'in_progress' ? (
-                              <Badge variant="secondary">
-                                <Clock className="w-3 h-3 mr-1 animate-spin" />
-                                In Progress
-                              </Badge>
-                            ) : sync.status === 'pending' ? (
-                              <Badge variant="secondary">
-                                <Clock className="w-3 h-3 mr-1" />
-                                Pending
-                              </Badge>
-                            ) : (
-                              <Badge variant="destructive">
-                                <XCircle className="w-3 h-3 mr-1" />
-                                Failed
-                              </Badge>
+                  {syncHistory.map((sync: any, index: number) => {
+                    const durationDisplay = sync.durationMs 
+                      ? `${(sync.durationMs / 1000).toFixed(1)}s`
+                      : 'N/A';
+                    
+                    return (
+                      <Card key={sync.id || index} className="p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-4 flex-1">
+                            <div className="flex-shrink-0">
+                              {sync.status === 'completed' ? (
+                                <Badge className="bg-green-500">
+                                  <CheckCircle2 className="w-3 h-3 mr-1" />
+                                  Completed
+                                </Badge>
+                              ) : sync.status === 'partial' ? (
+                                <Badge variant="secondary" className="bg-yellow-500">
+                                  <AlertCircle className="w-3 h-3 mr-1" />
+                                  Partial
+                                </Badge>
+                              ) : sync.status === 'in_progress' ? (
+                                <Badge variant="secondary">
+                                  <Clock className="w-3 h-3 mr-1 animate-spin" />
+                                  In Progress
+                                </Badge>
+                              ) : (
+                                <Badge variant="destructive">
+                                  <XCircle className="w-3 h-3 mr-1" />
+                                  Failed
+                                </Badge>
+                              )}
+                            </div>
+                            <div className="flex-1">
+                              <div className="text-sm font-medium">
+                                {new Date(sync.startedAt).toLocaleString()}
+                              </div>
+                              <div className="text-xs text-muted-foreground">
+                                {sync.recordsSynced || 0} synced
+                                {sync.recordsFailed > 0 && ` • ${sync.recordsFailed} failed`}
+                                {sync.durationMs && ` • ${durationDisplay}`}
+                              </div>
+                            </div>
+                            {(sync.errors && sync.errors.length > 0 || sync.status === 'failed') && (
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setExpandedLog(expandedLog === sync.id ? null : sync.id)}
+                                data-testid={`button-toggle-log-${sync.id}`}
+                              >
+                                {expandedLog === sync.id ? (
+                                  <ChevronDown className="w-4 h-4" />
+                                ) : (
+                                  <ChevronRight className="w-4 h-4" />
+                                )}
+                              </Button>
                             )}
                           </div>
-                          <div className="flex-1">
-                            <div className="text-sm font-medium">
-                              {new Date(sync.lastSyncAt || sync.createdAt).toLocaleString()}
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                              {sync.recordsSynced || 0} synced
-                              {sync.recordsFailed > 0 && ` • ${sync.recordsFailed} failed`}
-                            </div>
+                        </div>
+                        {expandedLog === sync.id && sync.errors && (
+                          <div className="mt-4 p-3 bg-destructive/10 border border-destructive/20 rounded text-xs">
+                            <div className="font-semibold text-destructive mb-2">Error Details:</div>
+                            <pre className="whitespace-pre-wrap overflow-x-auto">
+                              {typeof sync.errors === 'string' 
+                                ? sync.errors 
+                                : JSON.stringify(sync.errors, null, 2)}
+                            </pre>
                           </div>
-                          {(sync.errors && sync.errors.length > 0 || sync.status === 'failed') && (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => setExpandedLog(expandedLog === sync.id ? null : sync.id)}
-                              data-testid={`button-toggle-log-${sync.id}`}
-                            >
-                              {expandedLog === sync.id ? (
-                                <ChevronDown className="w-4 h-4" />
-                              ) : (
-                                <ChevronRight className="w-4 h-4" />
-                              )}
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                      {expandedLog === sync.id && sync.errors && (
-                        <div className="mt-4 p-3 bg-destructive/10 border border-destructive/20 rounded text-xs">
-                          <div className="font-semibold text-destructive mb-2">Error Details:</div>
-                          <pre className="whitespace-pre-wrap overflow-x-auto">
-                            {typeof sync.errors === 'string' 
-                              ? sync.errors 
-                              : JSON.stringify(sync.errors, null, 2)}
-                          </pre>
-                        </div>
-                      )}
-                    </Card>
-                  ))}
+                        )}
+                      </Card>
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="text-center py-12 text-muted-foreground">
