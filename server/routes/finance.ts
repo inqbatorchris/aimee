@@ -367,7 +367,7 @@ router.get('/transactions', authenticateToken, async (req: Request, res: Respons
       dateTo, 
       search, 
       profitCenterId,
-      limit = '100',
+      limit = '5000',
       offset = '0' 
     } = req.query;
 
@@ -402,15 +402,7 @@ router.get('/transactions', authenticateToken, async (req: Request, res: Respons
       .limit(parseInt(limit as string))
       .offset(parseInt(offset as string));
 
-    const countResult = await db
-      .select({ count: sql`count(*)` })
-      .from(financialTransactions)
-      .where(eq(financialTransactions.organizationId, organizationId));
-
-    res.json({ 
-      transactions, 
-      total: Number(countResult[0].count) 
-    });
+    res.json(transactions);
   } catch (error: any) {
     console.error('Error fetching transactions:', error);
     res.status(500).json({ error: error.message });
