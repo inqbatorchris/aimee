@@ -583,10 +583,15 @@ router.get('/dashboard/metrics', authenticateToken, async (req: Request, res: Re
 
 router.post('/sync/run', authenticateToken, async (req: Request, res: Response) => {
   try {
+    console.log('[SYNC] Starting sync request');
     const organizationId = req.user?.organizationId || 3;
+    console.log('[SYNC] Organization ID:', organizationId);
 
     // Verify Xero integration exists and is connected
+    console.log('[SYNC] Fetching Xero integration...');
     const integration = await storage.getIntegration(organizationId, 'xero');
+    console.log('[SYNC] Integration fetched:', integration ? 'found' : 'not found');
+    
     if (!integration) {
       return res.status(404).json({ 
         error: 'Xero integration not found. Please set up Xero integration first.' 
@@ -605,8 +610,11 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
       });
     }
 
+    console.log('[SYNC] Creating XeroService instance...');
     const xeroService = new XeroService(organizationId);
+    console.log('[SYNC] Initializing XeroService...');
     await xeroService.initialize();
+    console.log('[SYNC] XeroService initialized successfully');
 
     const lastSyncData = await db
       .select()
