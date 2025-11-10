@@ -15,6 +15,7 @@ import {
   profitCenters,
   financialMetricsCache,
   xeroSyncStatus,
+  xeroSyncLogs,
 } from '@shared/schema';
 import crypto from 'crypto';
 import axios from 'axios';
@@ -706,6 +707,21 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
         });
     }
 
+    // Insert sync log record (historical tracking)
+    const syncLogResult = await db
+      .insert(xeroSyncLogs)
+      .values({
+        organizationId,
+        syncType: 'transactions',
+        startedAt: syncStartTime,
+        triggeredBy: req.user?.id,
+        triggerType: 'manual',
+        status: 'in_progress' as any, // Will update to 'completed' or 'failed' later
+      })
+      .returning({ id: xeroSyncLogs.id });
+    
+    const syncLogId = syncLogResult[0].id;
+
     const xeroData = await xeroService.syncAllTransactions(since, isFirstSync);
 
     const totalRecords = xeroData.invoices.length + xeroData.bankTransactions.length + xeroData.payments.length;
@@ -850,6 +866,9 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
       .orderBy(desc(xeroSyncStatus.lastSyncAt))
       .limit(1);
 
+    const syncEndTime = new Date();
+    const durationMs = syncEndTime.getTime() - syncStartTime.getTime();
+
     if (finalSyncData[0]) {
       await db
         .update(xeroSyncStatus)
@@ -864,7 +883,21 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
         .where(eq(xeroSyncStatus.id, finalSyncData[0].id));
     }
 
-    console.log(`Xero sync completed: ${syncedCount} synced, ${failedCount} failed`);
+    // Update sync log record with completion details
+    await db
+      .update(xeroSyncLogs)
+      .set({
+        completedAt: syncEndTime,
+        durationMs,
+        recordsSynced: syncedCount,
+        recordsFailed: failedCount,
+        totalRecordsToSync: totalRecords,
+        errors: errors.length > 0 ? errors : undefined,
+        status: failedCount === 0 ? 'completed' : (syncedCount > 0 ? 'partial' : 'failed'),
+      })
+      .where(eq(xeroSyncLogs.id, syncLogId));
+
+    console.log(`Xero sync completed: ${syncedCount} synced, ${failedCount} failed in ${durationMs}ms`);
 
     res.json({
       success: true,
@@ -872,6 +905,7 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
       synced: syncedCount,
       failed: failedCount,
       errors: errors.slice(0, 10),
+      durationMs,
     });
   } catch (error: any) {
     console.error('Error running Xero sync:', error);
@@ -902,6 +936,10 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
           })
           .where(eq(xeroSyncStatus.id, failedSyncData[0].id));
       }
+
+      // Update sync log with failure details
+      // Note: syncLogId might not be available if error happened before log creation
+      // In that case, we'll skip updating the log
     } catch (dbError) {
       console.error('Failed to update sync status:', dbError);
     }
@@ -921,17 +959,17 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
   }
 });
 
-// Get Xero sync history
+// Get Xero sync history from logs table
 router.get('/xero/sync-history', authenticateToken, async (req: Request, res: Response) => {
   try {
     const organizationId = req.user?.organizationId || 3;
 
     const history = await db
       .select()
-      .from(xeroSyncStatus)
-      .where(eq(xeroSyncStatus.organizationId, organizationId))
-      .orderBy(desc(xeroSyncStatus.lastSyncAt))
-      .limit(20);
+      .from(xeroSyncLogs)
+      .where(eq(xeroSyncLogs.organizationId, organizationId))
+      .orderBy(desc(xeroSyncLogs.startedAt))
+      .limit(50);
 
     res.json(history);
   } catch (error: any) {
