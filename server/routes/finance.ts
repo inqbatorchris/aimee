@@ -598,9 +598,44 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
       )
       .limit(1);
 
-    const since = lastSyncData[0]?.lastSuccessfulSyncAt || undefined;
+    // Determine if this is the first sync
+    const isFirstSync = !lastSyncData[0]?.lastSuccessfulSyncAt;
+    
+    // For first sync: default to 90 days ago to prevent fetching all historical data
+    // For subsequent syncs: use last successful sync time
+    const default90DaysAgo = new Date();
+    default90DaysAgo.setDate(default90DaysAgo.getDate() - 90);
 
-    const xeroData = await xeroService.syncAllTransactions(since);
+    const since = lastSyncData[0]?.lastSuccessfulSyncAt || default90DaysAgo;
+
+    console.log(`Starting Xero sync for organization ${organizationId} from ${since.toISOString()} (isFirstSync: ${isFirstSync})`);
+
+    // Log sync start with in_progress status
+    const syncStartTime = new Date();
+    if (lastSyncData[0]) {
+      await db
+        .update(xeroSyncStatus)
+        .set({
+          lastSyncAt: syncStartTime,
+          syncStatus: 'in_progress',
+        })
+        .where(eq(xeroSyncStatus.id, lastSyncData[0].id));
+    } else {
+      await db
+        .insert(xeroSyncStatus)
+        .values({
+          organizationId,
+          syncType: 'transactions',
+          lastSyncAt: syncStartTime,
+          syncStatus: 'in_progress',
+          recordsSynced: 0,
+          recordsFailed: 0,
+        });
+    }
+
+    const xeroData = await xeroService.syncAllTransactions(since, isFirstSync);
+
+    console.log(`Xero sync fetched: ${xeroData.invoices.length} invoices, ${xeroData.bankTransactions.length} bank transactions, ${xeroData.payments.length} payments`);
 
     let syncedCount = 0;
     let failedCount = 0;
@@ -704,33 +739,34 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
       }
     }
 
-    if (lastSyncData[0]) {
+    // Refresh sync data to get the ID if we just created it
+    const finalSyncData = await db
+      .select()
+      .from(xeroSyncStatus)
+      .where(
+        and(
+          eq(xeroSyncStatus.organizationId, organizationId),
+          eq(xeroSyncStatus.syncType, 'transactions')
+        )!
+      )
+      .orderBy(desc(xeroSyncStatus.lastSyncAt))
+      .limit(1);
+
+    if (finalSyncData[0]) {
       await db
         .update(xeroSyncStatus)
         .set({
-          lastSyncAt: new Date(),
-          lastSuccessfulSyncAt: failedCount === 0 ? new Date() : lastSyncData[0].lastSuccessfulSyncAt,
+          lastSuccessfulSyncAt: failedCount === 0 ? new Date() : finalSyncData[0].lastSuccessfulSyncAt,
           recordsSynced: syncedCount,
           recordsFailed: failedCount,
-          errors: errors.length > 0 ? errors : [],
-          status: 'completed',
+          errors: errors.length > 0 ? errors : undefined,
+          syncStatus: 'completed',
           updatedAt: new Date(),
         })
-        .where(eq(xeroSyncStatus.id, lastSyncData[0].id));
-    } else {
-      await db
-        .insert(xeroSyncStatus)
-        .values({
-          organizationId,
-          syncType: 'transactions',
-          lastSyncAt: new Date(),
-          lastSuccessfulSyncAt: new Date(),
-          recordsSynced: syncedCount,
-          recordsFailed: failedCount,
-          errors: errors.length > 0 ? errors : [],
-          status: 'completed',
-        });
+        .where(eq(xeroSyncStatus.id, finalSyncData[0].id));
     }
+
+    console.log(`Xero sync completed: ${syncedCount} synced, ${failedCount} failed`);
 
     res.json({
       success: true,
@@ -741,6 +777,36 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
     });
   } catch (error: any) {
     console.error('Error running Xero sync:', error);
+    
+    const organizationId = req.user?.organizationId || 3;
+    
+    // Mark sync as failed in database
+    try {
+      const failedSyncData = await db
+        .select()
+        .from(xeroSyncStatus)
+        .where(
+          and(
+            eq(xeroSyncStatus.organizationId, organizationId),
+            eq(xeroSyncStatus.syncType, 'transactions')
+          )!
+        )
+        .orderBy(desc(xeroSyncStatus.lastSyncAt))
+        .limit(1);
+
+      if (failedSyncData[0]) {
+        await db
+          .update(xeroSyncStatus)
+          .set({
+            syncStatus: 'failed',
+            errors: [{ message: error.message }],
+            updatedAt: new Date(),
+          })
+          .where(eq(xeroSyncStatus.id, failedSyncData[0].id));
+      }
+    } catch (dbError) {
+      console.error('Failed to update sync status:', dbError);
+    }
     
     // Provide specific error message based on the error type
     let errorMessage = error.message || 'Failed to sync transactions from Xero';
