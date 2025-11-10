@@ -13,16 +13,20 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle2, AlertCircle, ExternalLink, Clock, XCircle } from 'lucide-react';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { CheckCircle2, AlertCircle, ExternalLink, Clock, XCircle, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useLocation } from 'wouter';
+import { useToast } from '@/hooks/use-toast';
 
 export default function XeroSetup() {
   const [, setLocation] = useLocation();
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
   const [error, setError] = useState('');
+  const [expandedLog, setExpandedLog] = useState<number | null>(null);
+  const { toast } = useToast();
 
   const { data: status } = useQuery<any>({
     queryKey: ['/api/finance/xero/status'],
@@ -31,6 +35,32 @@ export default function XeroSetup() {
   const { data: syncHistory } = useQuery<any[]>({
     queryKey: ['/api/finance/xero/sync-history'],
     enabled: !!status?.connected,
+    refetchInterval: 5000, // Auto-refresh every 5 seconds to show real-time status
+  });
+
+  const syncNowMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('/api/finance/xero/sync', {
+        method: 'POST',
+      });
+      return response.json();
+    },
+    onSuccess: (data: any) => {
+      toast({
+        title: 'Sync Complete',
+        description: `Synced ${data.synced} transactions successfully${data.failed > 0 ? `, ${data.failed} failed` : ''}`,
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/finance/xero/sync-history'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/finance/xero/status'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/finance/transactions'] });
+    },
+    onError: (err: any) => {
+      toast({
+        title: 'Sync Failed',
+        description: err.message || 'Failed to sync transactions from Xero',
+        variant: 'destructive',
+      });
+    },
   });
 
   const oauthMutation = useMutation({
@@ -90,117 +120,156 @@ export default function XeroSetup() {
 
   if (status?.connected) {
     return (
-      <div className="container mx-auto p-6 max-w-4xl">
+      <div className="container mx-auto p-6 max-w-6xl">
         <Card className="p-8">
-          <div className="flex items-center gap-4 mb-6">
-            <CheckCircle2 className="w-12 h-12 text-green-600" />
-            <div>
-              <h2 className="text-2xl font-bold">Xero Connected Successfully</h2>
-              <p className="text-muted-foreground">
-                Connected to: {status.tenantName || 'Xero Organization'}
-              </p>
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-4">
+              <CheckCircle2 className="w-12 h-12 text-green-600" />
+              <div>
+                <h2 className="text-2xl font-bold">Xero Connected Successfully</h2>
+                <p className="text-muted-foreground">
+                  Connected to: {status.tenantName || 'Xero Organization'}
+                </p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <Button 
+                onClick={() => syncNowMutation.mutate()}
+                disabled={syncNowMutation.isPending}
+                data-testid="button-sync-now"
+                variant="outline"
+              >
+                <RefreshCw className={`w-4 h-4 mr-2 ${syncNowMutation.isPending ? 'animate-spin' : ''}`} />
+                {syncNowMutation.isPending ? 'Syncing...' : 'Sync Now'}
+              </Button>
             </div>
           </div>
 
-          <div className="flex gap-3">
-            <Button onClick={() => setLocation('/finance')} data-testid="button-view-dashboard">
-              View Financial Dashboard
-            </Button>
-            <Button 
-              variant="outline" 
-              onClick={() => {
-                queryClient.invalidateQueries({ queryKey: ['/api/finance/xero/status'] });
-              }}
-              data-testid="button-refresh-status"
-            >
-              Refresh Connection Status
-            </Button>
-            <Button 
-              variant="destructive" 
-              onClick={handleDisconnect}
-              disabled={disconnectMutation.isPending}
-              data-testid="button-disconnect"
-            >
-              {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect'}
-            </Button>
-          </div>
+          <Tabs defaultValue="connection" className="mt-6">
+            <TabsList className="grid w-full grid-cols-2">
+              <TabsTrigger value="connection">Connection Status</TabsTrigger>
+              <TabsTrigger value="logs">Sync Logs</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value="connection" className="space-y-4 mt-4">
+              <div className="flex gap-3">
+                <Button onClick={() => setLocation('/finance')} data-testid="button-view-dashboard">
+                  View Financial Dashboard
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => {
+                    queryClient.invalidateQueries({ queryKey: ['/api/finance/xero/status'] });
+                  }}
+                  data-testid="button-refresh-status"
+                >
+                  Refresh Connection Status
+                </Button>
+                <Button 
+                  variant="destructive" 
+                  onClick={handleDisconnect}
+                  disabled={disconnectMutation.isPending}
+                  data-testid="button-disconnect"
+                >
+                  {disconnectMutation.isPending ? 'Disconnecting...' : 'Disconnect'}
+                </Button>
+              </div>
 
-          {status.lastSync && (
-            <div className="mt-6 p-4 bg-muted rounded-lg">
-              <p className="text-sm text-muted-foreground">
-                Last synced: {new Date(status.lastSync.lastSyncAt).toLocaleString()}
-                <br />
-                Transactions synced: {status.lastSync.recordsSynced || 0}
-              </p>
-            </div>
-          )}
-        </Card>
-
-        {syncHistory && syncHistory.length > 0 && (
-          <Card className="p-6 mt-6">
-            <h3 className="text-xl font-semibold mb-4">Sync History</h3>
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Date & Time</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Records Synced</TableHead>
-                    <TableHead>Errors</TableHead>
-                    <TableHead>Details</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
+              {status.lastSync && (
+                <div className="p-4 bg-muted rounded-lg">
+                  <p className="text-sm text-muted-foreground">
+                    Last synced: {new Date(status.lastSync.lastSyncAt).toLocaleString()}
+                    <br />
+                    Transactions synced: {status.lastSync.recordsSynced || 0}
+                    {status.lastSync.recordsFailed > 0 && (
+                      <>
+                        <br />
+                        <span className="text-red-600">Failed: {status.lastSync.recordsFailed}</span>
+                      </>
+                    )}
+                  </p>
+                </div>
+              )}
+            </TabsContent>
+            
+            <TabsContent value="logs" className="mt-4">
+              {syncHistory && syncHistory.length > 0 ? (
+                <div className="space-y-2">
                   {syncHistory.map((sync: any, index: number) => (
-                    <TableRow key={sync.id || index}>
-                      <TableCell className="whitespace-nowrap">
-                        {new Date(sync.lastSyncAt || sync.createdAt).toLocaleString()}
-                      </TableCell>
-                      <TableCell>
-                        {sync.status === 'completed' || sync.status === 'success' ? (
-                          <Badge className="bg-green-500">
-                            <CheckCircle2 className="w-3 h-3 mr-1" />
-                            Success
-                          </Badge>
-                        ) : sync.status === 'in_progress' || sync.status === 'pending' ? (
-                          <Badge variant="secondary">
-                            <Clock className="w-3 h-3 mr-1" />
-                            {sync.status === 'in_progress' ? 'In Progress' : 'Pending'}
-                          </Badge>
-                        ) : (
-                          <Badge variant="destructive">
-                            <XCircle className="w-3 h-3 mr-1" />
-                            Failed
-                          </Badge>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm">
-                          <div className="text-green-600">{sync.recordsSynced || 0} synced</div>
-                          {sync.recordsFailed > 0 && (
-                            <div className="text-red-600">{sync.recordsFailed} failed</div>
+                    <Card key={sync.id || index} className="p-4">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-4 flex-1">
+                          <div className="flex-shrink-0">
+                            {sync.status === 'completed' || sync.status === 'success' ? (
+                              <Badge className="bg-green-500">
+                                <CheckCircle2 className="w-3 h-3 mr-1" />
+                                Completed
+                              </Badge>
+                            ) : sync.status === 'in_progress' ? (
+                              <Badge variant="secondary">
+                                <Clock className="w-3 h-3 mr-1 animate-spin" />
+                                In Progress
+                              </Badge>
+                            ) : sync.status === 'pending' ? (
+                              <Badge variant="secondary">
+                                <Clock className="w-3 h-3 mr-1" />
+                                Pending
+                              </Badge>
+                            ) : (
+                              <Badge variant="destructive">
+                                <XCircle className="w-3 h-3 mr-1" />
+                                Failed
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="flex-1">
+                            <div className="text-sm font-medium">
+                              {new Date(sync.lastSyncAt || sync.createdAt).toLocaleString()}
+                            </div>
+                            <div className="text-xs text-muted-foreground">
+                              {sync.recordsSynced || 0} synced
+                              {sync.recordsFailed > 0 && ` • ${sync.recordsFailed} failed`}
+                            </div>
+                          </div>
+                          {(sync.errors && sync.errors.length > 0 || sync.status === 'failed') && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setExpandedLog(expandedLog === sync.id ? null : sync.id)}
+                              data-testid={`button-toggle-log-${sync.id}`}
+                            >
+                              {expandedLog === sync.id ? (
+                                <ChevronDown className="w-4 h-4" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4" />
+                              )}
+                            </Button>
                           )}
                         </div>
-                      </TableCell>
-                      <TableCell>
-                        {sync.errors && (
-                          <div className="text-xs text-red-600 max-w-xs truncate" title={JSON.stringify(sync.errors)}>
-                            {typeof sync.errors === 'string' ? sync.errors : JSON.stringify(sync.errors)}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <span className="text-xs text-muted-foreground">
-                          {sync.syncType || 'transactions'}
-                        </span>
-                      </TableCell>
-                    </TableRow>
+                      </div>
+                      {expandedLog === sync.id && sync.errors && (
+                        <div className="mt-4 p-3 bg-destructive/10 border border-destructive/20 rounded text-xs">
+                          <div className="font-semibold text-destructive mb-2">Error Details:</div>
+                          <pre className="whitespace-pre-wrap overflow-x-auto">
+                            {typeof sync.errors === 'string' 
+                              ? sync.errors 
+                              : JSON.stringify(sync.errors, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </Card>
                   ))}
-                </TableBody>
-              </Table>
-            </div>
-          </Card>
-        )}
+                </div>
+              ) : (
+                <div className="text-center py-12 text-muted-foreground">
+                  <Clock className="w-12 h-12 mx-auto mb-4 opacity-20" />
+                  <p>No sync history yet</p>
+                  <p className="text-sm mt-1">Click "Sync Now" to start your first sync</p>
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
+        </Card>
       </div>
     );
   }
