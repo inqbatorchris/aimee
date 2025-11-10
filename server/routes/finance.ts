@@ -1101,6 +1101,190 @@ router.get('/dashboard/metrics', authenticateToken, async (req: Request, res: Re
 });
 
 // ========================================
+// OKR FINANCIAL ANALYSIS
+// ========================================
+
+router.get('/analysis/okr-hierarchy', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const organizationId = req.user?.organizationId || 3;
+    const { dateFrom, dateTo } = req.query;
+
+    // Helper function to calculate financial metrics from transactions
+    const calculateMetrics = (transactions: any[]) => {
+      const revenue = transactions
+        .filter(t => parseFloat(t.amount || '0') > 0)
+        .reduce((sum, t) => sum + parseFloat(t.amount || '0'), 0);
+      
+      const expenses = Math.abs(transactions
+        .filter(t => parseFloat(t.amount || '0') < 0)
+        .reduce((sum, t) => sum + parseFloat(t.amount || '0'), 0));
+      
+      return {
+        revenue: parseFloat(revenue.toFixed(2)),
+        expenses: parseFloat(expenses.toFixed(2)),
+        profit: parseFloat((revenue - expenses).toFixed(2)),
+        transactionCount: transactions.length,
+      };
+    };
+
+    // Get all transactions for the organization within date range
+    const dateConditions = [eq(financialTransactions.organizationId, organizationId)];
+    
+    if (dateFrom) {
+      dateConditions.push(gte(financialTransactions.transactionDate, new Date(dateFrom as string)));
+    }
+    
+    if (dateTo) {
+      dateConditions.push(lte(financialTransactions.transactionDate, new Date(dateTo as string)));
+    }
+
+    const allTransactions = await db
+      .select()
+      .from(financialTransactions)
+      .where(and(...dateConditions)!);
+
+    // Get all profit centers with their OKR linkages
+    const allProfitCenters = await db
+      .select()
+      .from(profitCenters)
+      .where(eq(profitCenters.organizationId, organizationId));
+
+    // Get all OKR entities
+    const allObjectives = await db
+      .select()
+      .from(objectives)
+      .where(eq(objectives.organizationId, organizationId))
+      .orderBy(asc(objectives.id));
+
+    const allKeyResults = await db
+      .select()
+      .from(keyResults)
+      .where(eq(keyResults.organizationId, organizationId))
+      .orderBy(asc(keyResults.id));
+
+    const allTasks = await db
+      .select()
+      .from(keyResultTasks)
+      .where(eq(keyResultTasks.organizationId, organizationId))
+      .orderBy(asc(keyResultTasks.id));
+
+    // Build hierarchy with financial metrics
+    const result = allObjectives.map(objective => {
+      // Find key results for this objective
+      const objectiveKeyResults = allKeyResults.filter(kr => kr.objectiveId === objective.id);
+
+      // Find profit centers linked to this objective
+      const objectiveProfitCenters = allProfitCenters.filter(pc => pc.objectiveId === objective.id);
+      const objectiveProfitCenterIds = objectiveProfitCenters.map(pc => pc.id);
+
+      // Find transactions for objective-level profit centers
+      const objectiveTransactions = allTransactions.filter(t => 
+        t.profitCenterTags?.some((tag: number) => objectiveProfitCenterIds.includes(tag))
+      );
+
+      // Process key results with their tasks
+      const keyResultsWithData = objectiveKeyResults.map(kr => {
+        const krTasks = allTasks.filter(task => task.keyResultId === kr.id);
+
+        // Find profit centers linked to this key result
+        const krProfitCenters = allProfitCenters.filter(pc => pc.keyResultId === kr.id);
+        const krProfitCenterIds = krProfitCenters.map(pc => pc.id);
+
+        // Find transactions for key result-level profit centers
+        const krTransactions = allTransactions.filter(t =>
+          t.profitCenterTags?.some((tag: number) => krProfitCenterIds.includes(tag))
+        );
+
+        // Process tasks
+        const tasksWithData = krTasks.map(task => {
+          // Find profit centers linked to this task
+          const taskProfitCenters = allProfitCenters.filter(pc => pc.keyResultTaskId === task.id);
+          const taskProfitCenterIds = taskProfitCenters.map(pc => pc.id);
+
+          // Find transactions for task-level profit centers
+          const taskTransactions = allTransactions.filter(t =>
+            t.profitCenterTags?.some((tag: number) => taskProfitCenterIds.includes(tag))
+          );
+
+          return {
+            id: task.id,
+            title: task.title,
+            description: task.description,
+            status: task.status,
+            profitCenterCount: taskProfitCenters.length,
+            financials: calculateMetrics(taskTransactions),
+          };
+        });
+
+        // Roll up task metrics to key result level
+        const krDirectFinancials = calculateMetrics(krTransactions);
+        const krTasksFinancials = tasksWithData.reduce((acc, task) => ({
+          revenue: acc.revenue + task.financials.revenue,
+          expenses: acc.expenses + task.financials.expenses,
+          profit: acc.profit + task.financials.profit,
+          transactionCount: acc.transactionCount + task.financials.transactionCount,
+        }), { revenue: 0, expenses: 0, profit: 0, transactionCount: 0 });
+
+        const krTotalFinancials = {
+          revenue: parseFloat((krDirectFinancials.revenue + krTasksFinancials.revenue).toFixed(2)),
+          expenses: parseFloat((krDirectFinancials.expenses + krTasksFinancials.expenses).toFixed(2)),
+          profit: parseFloat((krDirectFinancials.profit + krTasksFinancials.profit).toFixed(2)),
+          transactionCount: krDirectFinancials.transactionCount + krTasksFinancials.transactionCount,
+        };
+
+        return {
+          id: kr.id,
+          title: kr.title,
+          description: kr.description,
+          targetValue: kr.targetValue,
+          currentValue: kr.currentValue,
+          type: kr.type,
+          profitCenterCount: krProfitCenters.length,
+          financials: krTotalFinancials,
+          tasks: tasksWithData,
+        };
+      });
+
+      // Roll up key result metrics to objective level
+      const objectiveDirectFinancials = calculateMetrics(objectiveTransactions);
+      const objectiveKrFinancials = keyResultsWithData.reduce((acc, kr) => ({
+        revenue: acc.revenue + kr.financials.revenue,
+        expenses: acc.expenses + kr.financials.expenses,
+        profit: acc.profit + kr.financials.profit,
+        transactionCount: acc.transactionCount + kr.financials.transactionCount,
+      }), { revenue: 0, expenses: 0, profit: 0, transactionCount: 0 });
+
+      const objectiveTotalFinancials = {
+        revenue: parseFloat((objectiveDirectFinancials.revenue + objectiveKrFinancials.revenue).toFixed(2)),
+        expenses: parseFloat((objectiveDirectFinancials.expenses + objectiveKrFinancials.expenses).toFixed(2)),
+        profit: parseFloat((objectiveDirectFinancials.profit + objectiveKrFinancials.profit).toFixed(2)),
+        transactionCount: objectiveDirectFinancials.transactionCount + objectiveKrFinancials.transactionCount,
+      };
+
+      return {
+        id: objective.id,
+        title: objective.title,
+        description: objective.description,
+        category: objective.category,
+        priority: objective.priority,
+        profitCenterCount: objectiveProfitCenters.length,
+        financials: objectiveTotalFinancials,
+        keyResults: keyResultsWithData,
+      };
+    });
+
+    res.json({
+      dateFrom: dateFrom || null,
+      dateTo: dateTo || null,
+      objectives: result,
+    });
+  } catch (error: any) {
+    console.error('Error fetching OKR financial analysis:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========================================
 // SYNC OPERATIONS
 // ========================================
 
