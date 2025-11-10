@@ -632,6 +632,11 @@ router.get('/transactions', authenticateToken, async (req: Request, res: Respons
       dateTo, 
       search, 
       profitCenterId,
+      accountCode,
+      accountType,
+      objectiveId,
+      keyResultId,
+      keyResultTaskId,
       limit = '5000',
       offset = '0' 
     } = req.query;
@@ -657,6 +662,62 @@ router.get('/transactions', authenticateToken, async (req: Request, res: Respons
           ilike(financialTransactions.contactName, `%${search}%`)
         )!
       );
+    }
+
+    // Filter by Chart of Accounts
+    if (accountCode) {
+      conditions.push(eq(financialTransactions.xeroAccountCode, accountCode as string));
+    }
+
+    if (accountType) {
+      conditions.push(eq(financialTransactions.xeroAccountType, accountType as string));
+    }
+
+    // Filter by direct profit center ID
+    if (profitCenterId) {
+      conditions.push(
+        sql`${profitCenterId} = ANY(${financialTransactions.profitCenterTags})`
+      );
+    }
+
+    // Filter by OKR linkage (find profit centers linked to the OKR, then filter transactions)
+    if (objectiveId || keyResultId || keyResultTaskId) {
+      const okrConditions = [];
+      
+      if (objectiveId) {
+        okrConditions.push(eq(profitCenters.objectiveId, parseInt(objectiveId as string)));
+      }
+      
+      if (keyResultId) {
+        okrConditions.push(eq(profitCenters.keyResultId, parseInt(keyResultId as string)));
+      }
+      
+      if (keyResultTaskId) {
+        okrConditions.push(eq(profitCenters.keyResultTaskId, parseInt(keyResultTaskId as string)));
+      }
+
+      // Find profit centers linked to the specified OKR
+      const linkedProfitCenters = await db
+        .select({ id: profitCenters.id })
+        .from(profitCenters)
+        .where(
+          and(
+            eq(profitCenters.organizationId, organizationId),
+            or(...okrConditions)!
+          )
+        );
+
+      const profitCenterIds = linkedProfitCenters.map(pc => pc.id);
+
+      if (profitCenterIds.length > 0) {
+        // Filter transactions that include any of these profit centers in their tags
+        conditions.push(
+          sql`${financialTransactions.profitCenterTags} && ARRAY[${sql.join(profitCenterIds.map(id => sql`${id}`), sql`, `)}]::integer[]`
+        );
+      } else {
+        // No profit centers match the OKR filter, return empty result
+        return res.json([]);
+      }
     }
 
     const transactions = await db
