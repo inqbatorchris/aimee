@@ -617,7 +617,7 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
         .update(xeroSyncStatus)
         .set({
           lastSyncAt: syncStartTime,
-          syncStatus: 'in_progress',
+          status: 'in_progress',
         })
         .where(eq(xeroSyncStatus.id, lastSyncData[0].id));
     } else {
@@ -627,7 +627,7 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
           organizationId,
           syncType: 'transactions',
           lastSyncAt: syncStartTime,
-          syncStatus: 'in_progress',
+          status: 'in_progress',
           recordsSynced: 0,
           recordsFailed: 0,
         });
@@ -760,7 +760,7 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
           recordsSynced: syncedCount,
           recordsFailed: failedCount,
           errors: errors.length > 0 ? errors : undefined,
-          syncStatus: 'completed',
+          status: 'completed',
           updatedAt: new Date(),
         })
         .where(eq(xeroSyncStatus.id, finalSyncData[0].id));
@@ -798,7 +798,7 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
         await db
           .update(xeroSyncStatus)
           .set({
-            syncStatus: 'failed',
+            status: 'failed',
             errors: [{ message: error.message }],
             updatedAt: new Date(),
           })
