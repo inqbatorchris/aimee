@@ -4112,7 +4112,7 @@ export const financialMetricsCache = pgTable("financial_metrics_cache", {
   unique("unique_metric_cache").on(table.organizationId, table.metricType, table.period, table.profitCenterId),
 ]);
 
-// Xero sync status tracking
+// Xero sync status tracking (current status only - gets UPDATE'd)
 export const xeroSyncStatus = pgTable("xero_sync_status", {
   id: serial("id").primaryKey(),
   organizationId: integer("organization_id").references(() => organizations.id).notNull(),
@@ -4144,6 +4144,38 @@ export const xeroSyncStatus = pgTable("xero_sync_status", {
   unique("unique_sync_type_per_org").on(table.organizationId, table.syncType),
 ]);
 
+// Xero sync logs - Historical record of all syncs (new row INSERT'd each sync)
+export const xeroSyncLogs = pgTable("xero_sync_logs", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  
+  // Sync details
+  syncType: varchar("sync_type", { length: 50 }).notNull(), // 'transactions', 'contacts', 'invoices', 'accounts'
+  startedAt: timestamp("started_at").notNull(),
+  completedAt: timestamp("completed_at"),
+  durationMs: integer("duration_ms"), // Duration in milliseconds
+  
+  // Sync results
+  recordsSynced: integer("records_synced").default(0),
+  recordsFailed: integer("records_failed").default(0),
+  totalRecordsToSync: integer("total_records_to_sync").default(0),
+  errors: jsonb("errors").default([]),
+  
+  // Status
+  status: varchar("status", { length: 50 }).notNull(), // 'completed', 'failed', 'partial'
+  
+  // Triggered by
+  triggeredBy: integer("triggered_by").references(() => users.id), // User who triggered manual sync
+  triggerType: varchar("trigger_type", { length: 50 }).default("manual"), // 'manual', 'scheduled', 'webhook'
+  
+  // Audit
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_xero_sync_logs_org").on(table.organizationId),
+  index("idx_xero_sync_logs_type").on(table.syncType),
+  index("idx_xero_sync_logs_started").on(table.startedAt.desc()),
+]);
+
 // Insert schemas for financial tables
 export const insertFinancialTransactionSchema = createInsertSchema(financialTransactions).omit({
   id: true,
@@ -4168,6 +4200,11 @@ export const insertXeroSyncStatusSchema = createInsertSchema(xeroSyncStatus).omi
   updatedAt: true,
 });
 
+export const insertXeroSyncLogSchema = createInsertSchema(xeroSyncLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types for financial tables
 export type FinancialTransaction = typeof financialTransactions.$inferSelect;
 export type InsertFinancialTransaction = z.infer<typeof insertFinancialTransactionSchema>;
@@ -4180,3 +4217,6 @@ export type InsertFinancialMetricsCache = z.infer<typeof insertFinancialMetricsC
 
 export type XeroSyncStatus = typeof xeroSyncStatus.$inferSelect;
 export type InsertXeroSyncStatus = z.infer<typeof insertXeroSyncStatusSchema>;
+
+export type XeroSyncLog = typeof xeroSyncLogs.$inferSelect;
+export type InsertXeroSyncLog = z.infer<typeof insertXeroSyncLogSchema>;
