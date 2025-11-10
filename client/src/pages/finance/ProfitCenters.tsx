@@ -147,13 +147,16 @@ export default function ProfitCenters() {
   };
 
   const handleOpenEdit = (center: any) => {
+    // Map backend linkedOkrType to frontend okrType
+    const okrType = center.linkedOkrType === 'task' ? 'key_result_task' : center.linkedOkrType || '';
+    
     setEditingCenter(center);
     setFormData({
       name: center.name,
       type: center.type,
       description: center.description || '',
       xeroAccountId: center.xeroAccountId || '',
-      okrType: center.linkedOkrType || '',
+      okrType: okrType,
       objectiveId: center.objectiveId?.toString() || '',
       keyResultId: center.keyResultId?.toString() || '',
       keyResultTaskId: center.keyResultTaskId?.toString() || '',
@@ -214,11 +217,14 @@ export default function ProfitCenters() {
 
     const selectedAccount = xeroAccounts?.find(a => a.id.toString() === formData.xeroAccountId);
 
+    // Map frontend okrType to backend linkedOkrType
+    const linkedOkrType = formData.okrType === 'key_result_task' ? 'task' : formData.okrType;
+
     const submitData: any = {
       name: formData.name,
       type: formData.type,
       description: formData.description,
-      linkedOkrType: formData.okrType,
+      linkedOkrType: linkedOkrType,
     };
 
     if (formData.xeroAccountId) {
