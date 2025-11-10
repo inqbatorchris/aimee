@@ -11,11 +11,13 @@ import {
   insertProfitCenterSchema,
   type FinancialTransaction,
   type ProfitCenter,
+  type XeroChartOfAccount,
   financialTransactions,
   profitCenters,
   financialMetricsCache,
   xeroSyncStatus,
   xeroSyncLogs,
+  xeroChartOfAccounts,
 } from '@shared/schema';
 import crypto from 'crypto';
 import axios from 'axios';
@@ -974,6 +976,208 @@ router.get('/xero/sync-history', authenticateToken, async (req: Request, res: Re
     res.json(history);
   } catch (error: any) {
     console.error('Error fetching sync history:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ========================================
+// CHART OF ACCOUNTS ENDPOINTS
+// ========================================
+
+// Sync Chart of Accounts from Xero
+router.post('/xero/sync/chart-of-accounts', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const organizationId = req.user?.organizationId || 3;
+
+    const xeroService = new XeroService(organizationId);
+    await xeroService.initialize();
+    
+    const results = await xeroService.syncChartOfAccounts();
+    
+    res.json({
+      success: true,
+      message: `Synced ${results.synced} accounts (${results.created} created, ${results.updated} updated)`,
+      ...results,
+    });
+  } catch (error: any) {
+    console.error('Error syncing Chart of Accounts:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// List Chart of Accounts with filters
+router.get('/xero/chart-of-accounts', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const organizationId = req.user?.organizationId || 3;
+    const { 
+      type, 
+      status, 
+      search,
+      unmapped, // Filter for accounts not linked to profit centers
+    } = req.query;
+
+    let query = db
+      .select()
+      .from(xeroChartOfAccounts)
+      .where(eq(xeroChartOfAccounts.organizationId, organizationId));
+
+    // Apply filters
+    const conditions: any[] = [eq(xeroChartOfAccounts.organizationId, organizationId)];
+
+    if (type) {
+      conditions.push(eq(xeroChartOfAccounts.accountType, type as string));
+    }
+
+    if (status) {
+      conditions.push(eq(xeroChartOfAccounts.status, status as string));
+    }
+
+    if (search) {
+      conditions.push(
+        or(
+          ilike(xeroChartOfAccounts.accountCode, `%${search}%`),
+          ilike(xeroChartOfAccounts.accountName, `%${search}%`)
+        )
+      );
+    }
+
+    // If unmapped filter is set, find accounts not in profit_centers.xeroAccountId
+    if (unmapped === 'true') {
+      // Get all xeroAccountIds that ARE mapped to profit centers (NOT NULL)
+      const mappedAccountIds = await db
+        .selectDistinct({ xeroAccountId: profitCenters.xeroAccountId })
+        .from(profitCenters)
+        .where(
+          and(
+            eq(profitCenters.organizationId, organizationId),
+            sql`${profitCenters.xeroAccountId} IS NOT NULL`
+          )
+        );
+
+      const mappedIds = mappedAccountIds
+        .map(row => row.xeroAccountId)
+        .filter(Boolean);
+
+      if (mappedIds.length > 0) {
+        // Exclude mapped account IDs
+        const accounts = await db
+          .select()
+          .from(xeroChartOfAccounts)
+          .where(
+            and(
+              ...conditions,
+              sql`${xeroChartOfAccounts.xeroAccountId} NOT IN (${sql.join(mappedIds.map(id => sql`${id}`), sql`, `)})`
+            )
+          )
+          .orderBy(xeroChartOfAccounts.accountCode);
+
+        return res.json(accounts);
+      }
+    }
+
+    const accounts = await db
+      .select()
+      .from(xeroChartOfAccounts)
+      .where(and(...conditions))
+      .orderBy(xeroChartOfAccounts.accountCode);
+
+    res.json(accounts);
+  } catch (error: any) {
+    console.error('Error listing Chart of Accounts:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get unmapped accounts (not linked to profit centers) grouped by type
+router.get('/xero/chart-of-accounts/unmapped', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const organizationId = req.user?.organizationId || 3;
+
+    // Get all account IDs that are mapped to profit centers
+    const mappedAccounts = await db
+      .selectDistinct({ xeroAccountId: profitCenters.xeroAccountId })
+      .from(profitCenters)
+      .where(
+        and(
+          eq(profitCenters.organizationId, organizationId),
+          sql`${profitCenters.xeroAccountId} IS NOT NULL`
+        )
+      );
+
+    const mappedIds = mappedAccounts.map(row => row.xeroAccountId).filter(Boolean);
+
+    // Get all accounts not in the mapped list
+    let unmappedAccounts;
+    
+    if (mappedIds.length > 0) {
+      unmappedAccounts = await db
+        .select()
+        .from(xeroChartOfAccounts)
+        .where(
+          and(
+            eq(xeroChartOfAccounts.organizationId, organizationId),
+            sql`${xeroChartOfAccounts.xeroAccountId} NOT IN (${sql.join(mappedIds.map(id => sql`${id}`), sql`, `)})`
+          )
+        )
+        .orderBy(
+          xeroChartOfAccounts.accountType,
+          xeroChartOfAccounts.accountCode
+        );
+    } else {
+      unmappedAccounts = await db
+        .select()
+        .from(xeroChartOfAccounts)
+        .where(eq(xeroChartOfAccounts.organizationId, organizationId))
+        .orderBy(
+          xeroChartOfAccounts.accountType,
+          xeroChartOfAccounts.accountCode
+        );
+    }
+
+    // Group by account type
+    const byType: Record<string, XeroChartOfAccount[]> = {};
+    for (const account of unmappedAccounts) {
+      const type = account.accountType || 'OTHER';
+      if (!byType[type]) {
+        byType[type] = [];
+      }
+      byType[type].push(account);
+    }
+
+    res.json({ 
+      total: unmappedAccounts.length,
+      byType,
+    });
+  } catch (error: any) {
+    console.error('Error fetching unmapped accounts:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get single Chart of Account by ID
+router.get('/xero/chart-of-accounts/:id', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const organizationId = req.user?.organizationId || 3;
+    const accountId = parseInt(req.params.id);
+
+    const [account] = await db
+      .select()
+      .from(xeroChartOfAccounts)
+      .where(
+        and(
+          eq(xeroChartOfAccounts.id, accountId),
+          eq(xeroChartOfAccounts.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+
+    if (!account) {
+      return res.status(404).json({ error: 'Account not found' });
+    }
+
+    res.json(account);
+  } catch (error: any) {
+    console.error('Error fetching account:', error);
     res.status(500).json({ error: error.message });
   }
 });

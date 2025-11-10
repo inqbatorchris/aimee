@@ -3980,6 +3980,7 @@ export const transactionTypeEnum = pgEnum('transaction_type', ['bank_transaction
 export const categorizationStatusEnum = pgEnum('categorization_status', ['uncategorized', 'ai_suggested', 'manually_categorized', 'approved']);
 export const reconciliationStatusEnum = pgEnum('reconciliation_status', ['matched', 'unmatched', 'needs_review', 'reconciled']);
 export const profitCenterTypeEnum = pgEnum('profit_center_type', ['geographic', 'service', 'customer_segment', 'custom']);
+export const okrLinkTypeEnum = pgEnum('okr_link_type', ['objective', 'key_result', 'key_result_task']);
 
 // Financial Transactions - Central warehouse for all financial data from Xero
 export const financialTransactions = pgTable("financial_transactions", {
@@ -4022,6 +4023,11 @@ export const financialTransactions = pgTable("financial_transactions", {
   attachmentUrl: varchar("attachment_url", { length: 500 }),
   metadata: jsonb("metadata"), // Additional Xero data
   
+  // Chart of Accounts fields (extracted from metadata for filtering)
+  xeroAccountCode: varchar("xero_account_code", { length: 50 }),
+  xeroAccountName: varchar("xero_account_name", { length: 255 }),
+  xeroAccountType: varchar("xero_account_type", { length: 50 }), // REVENUE, EXPENSE, ASSET, LIABILITY, EQUITY
+  
   // Audit
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -4031,7 +4037,55 @@ export const financialTransactions = pgTable("financial_transactions", {
   index("idx_financial_transactions_date").on(table.transactionDate.desc()),
   index("idx_financial_transactions_status").on(table.categorizationStatus),
   index("idx_financial_transactions_splynx_customer").on(table.splynxCustomerId),
+  index("idx_financial_transactions_account").on(table.xeroAccountCode),
   unique("unique_xero_transaction_per_org").on(table.organizationId, table.xeroTransactionId, table.xeroTransactionType),
+]);
+
+// Xero Chart of Accounts - Imported from Xero for mapping to profit centers
+export const xeroChartOfAccounts = pgTable("xero_chart_of_accounts", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  
+  // Xero account identifiers
+  xeroAccountId: varchar("xero_account_id", { length: 255 }).notNull(),
+  accountCode: varchar("account_code", { length: 50 }).notNull(),
+  accountName: varchar("account_name", { length: 255 }).notNull(),
+  
+  // Account classification
+  accountType: varchar("account_type", { length: 50 }).notNull(), // REVENUE, EXPENSE, ASSET, LIABILITY, EQUITY
+  accountClass: varchar("account_class", { length: 50 }), // REVENUE, EXPENSE, etc.
+  taxType: varchar("tax_type", { length: 100 }),
+  
+  // Account properties
+  status: varchar("status", { length: 20 }).default("ACTIVE"),
+  description: text("description"),
+  systemAccount: varchar("system_account", { length: 100 }), // Xero returns string like "DEBTORS", "CREDITORS"
+  enablePaymentsToAccount: boolean("enable_payments_to_account").default(false),
+  showInExpenseClaims: boolean("show_in_expense_claims").default(false),
+  
+  // Banking
+  bankAccountNumber: varchar("bank_account_number", { length: 50 }),
+  currencyCode: varchar("currency_code", { length: 3 }).default("GBP"),
+  
+  // Reporting
+  reportingCode: varchar("reporting_code", { length: 50 }),
+  reportingCodeName: varchar("reporting_code_name", { length: 255 }),
+  
+  // Full Xero data
+  metadata: jsonb("metadata"),
+  
+  // Sync tracking
+  lastSyncedAt: timestamp("last_synced_at"),
+  
+  // Audit
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_xero_coa_org").on(table.organizationId),
+  index("idx_xero_coa_type").on(table.accountType),
+  index("idx_xero_coa_code").on(table.accountCode),
+  index("idx_xero_coa_status").on(table.status),
+  unique("unique_xero_account_per_org").on(table.organizationId, table.xeroAccountId),
 ]);
 
 // Profit Centers - Business segments for financial analysis
@@ -4060,6 +4114,20 @@ export const profitCenters = pgTable("profit_centers", {
   // Budget allocation
   monthlyBudget: decimal("monthly_budget", { precision: 12, scale: 2 }),
   
+  // Chart of Accounts linkage
+  xeroAccountId: varchar("xero_account_id", { length: 255 }),
+  xeroAccountCode: varchar("xero_account_code", { length: 50 }), // Denormalized for performance
+  xeroAccountName: varchar("xero_account_name", { length: 255 }), // Denormalized for display
+  
+  // OKR linkage - EXACTLY ONE required (unless parent container)
+  linkedOkrType: okrLinkTypeEnum("linked_okr_type"), // 'objective', 'key_result', 'key_result_task'
+  objectiveId: integer("objective_id").references(() => objectives.id),
+  keyResultId: integer("key_result_id").references(() => keyResults.id),
+  keyResultTaskId: integer("key_result_task_id").references(() => keyResultTasks.id),
+  
+  // Validation flags
+  requiresXeroAccount: boolean("requires_xero_account").default(true),
+  
   // Hierarchy support
   parentProfitCenterId: integer("parent_profit_center_id").references(() => profitCenters.id),
   displayOrder: integer("display_order").default(0),
@@ -4075,6 +4143,10 @@ export const profitCenters = pgTable("profit_centers", {
   index("idx_profit_centers_org").on(table.organizationId),
   index("idx_profit_centers_type").on(table.type),
   index("idx_profit_centers_active").on(table.isActive),
+  index("idx_profit_centers_xero_account").on(table.xeroAccountId),
+  index("idx_profit_centers_objective").on(table.objectiveId),
+  index("idx_profit_centers_key_result").on(table.keyResultId),
+  index("idx_profit_centers_task").on(table.keyResultTaskId),
   unique("unique_profit_center_code").on(table.organizationId, table.code),
 ]);
 
@@ -4183,6 +4255,12 @@ export const insertFinancialTransactionSchema = createInsertSchema(financialTran
   updatedAt: true,
 });
 
+export const insertXeroChartOfAccountsSchema = createInsertSchema(xeroChartOfAccounts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertProfitCenterSchema = createInsertSchema(profitCenters).omit({
   id: true,
   createdAt: true,
@@ -4208,6 +4286,9 @@ export const insertXeroSyncLogSchema = createInsertSchema(xeroSyncLogs).omit({
 // Types for financial tables
 export type FinancialTransaction = typeof financialTransactions.$inferSelect;
 export type InsertFinancialTransaction = z.infer<typeof insertFinancialTransactionSchema>;
+
+export type XeroChartOfAccount = typeof xeroChartOfAccounts.$inferSelect;
+export type InsertXeroChartOfAccount = z.infer<typeof insertXeroChartOfAccountsSchema>;
 
 export type ProfitCenter = typeof profitCenters.$inferSelect;
 export type InsertProfitCenter = z.infer<typeof insertProfitCenterSchema>;

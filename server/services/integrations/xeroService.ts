@@ -1,5 +1,8 @@
 import axios, { AxiosInstance } from 'axios';
 import { storage } from '../../storage';
+import { db } from '../../db';
+import { xeroChartOfAccounts } from '../../../shared/schema';
+import { eq, and } from 'drizzle-orm';
 import crypto from 'crypto';
 
 // Encryption helpers
@@ -251,6 +254,101 @@ export class XeroService {
     this.ensureInitialized();
     const response = await this.client!.get(`/Accounts/${accountId}`);
     return response.data;
+  }
+
+  // Sync Chart of Accounts to database
+  async syncChartOfAccounts() {
+    this.ensureInitialized();
+    
+    let allAccounts: any[] = [];
+    let page = 1;
+    let hasMore = true;
+
+    // Fetch all accounts with pagination (Xero returns max 100 per page)
+    while (hasMore) {
+      try {
+        const response = await this.callWithRetry(() => 
+          this.client!.get('/Accounts', { 
+            params: { page } 
+          })
+        );
+        
+        const accounts = response.data?.Accounts || [];
+        allAccounts = [...allAccounts, ...accounts];
+        
+        // Check if there are more pages
+        hasMore = accounts.length === 100;
+        page++;
+      } catch (error: any) {
+        console.error(`Error fetching accounts page ${page}:`, error);
+        throw error;
+      }
+    }
+
+    // Upsert accounts to database
+    const results = {
+      synced: allAccounts.length,
+      created: 0,
+      updated: 0,
+      errors: [] as any[],
+    };
+
+    for (const xeroAccount of allAccounts) {
+      try {
+        const accountData = {
+          organizationId: this.organizationId,
+          xeroAccountId: xeroAccount.AccountID,
+          accountCode: xeroAccount.Code || '',
+          accountName: xeroAccount.Name || '',
+          accountType: xeroAccount.Type || '',
+          accountClass: xeroAccount.Class || null,
+          taxType: xeroAccount.TaxType || null,
+          status: xeroAccount.Status || 'ACTIVE',
+          description: xeroAccount.Description || null,
+          systemAccount: xeroAccount.SystemAccount || null,
+          enablePaymentsToAccount: xeroAccount.EnablePaymentsToAccount || false,
+          showInExpenseClaims: xeroAccount.ShowInExpenseClaims || false,
+          bankAccountNumber: xeroAccount.BankAccountNumber || null,
+          currencyCode: xeroAccount.CurrencyCode || 'GBP',
+          reportingCode: xeroAccount.ReportingCode || null,
+          reportingCodeName: xeroAccount.ReportingCodeName || null,
+          metadata: xeroAccount,
+          lastSyncedAt: new Date(),
+        };
+
+        // Check if account already exists
+        const [existing] = await db
+          .select()
+          .from(xeroChartOfAccounts)
+          .where(
+            and(
+              eq(xeroChartOfAccounts.organizationId, this.organizationId),
+              eq(xeroChartOfAccounts.xeroAccountId, xeroAccount.AccountID)
+            )
+          )
+          .limit(1);
+
+        if (existing) {
+          await db
+            .update(xeroChartOfAccounts)
+            .set({ ...accountData, updatedAt: new Date() })
+            .where(eq(xeroChartOfAccounts.id, existing.id));
+          results.updated++;
+        } else {
+          await db.insert(xeroChartOfAccounts).values(accountData);
+          results.created++;
+        }
+      } catch (error: any) {
+        console.error(`Error syncing account ${xeroAccount.Code}:`, error);
+        results.errors.push({
+          accountCode: xeroAccount.Code,
+          accountName: xeroAccount.Name,
+          error: error.message,
+        });
+      }
+    }
+
+    return results;
   }
 
   // Organisation info
