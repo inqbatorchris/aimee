@@ -18,6 +18,9 @@ import {
   xeroSyncStatus,
   xeroSyncLogs,
   xeroChartOfAccounts,
+  objectives,
+  keyResults,
+  keyResultTasks,
 } from '@shared/schema';
 import crypto from 'crypto';
 import axios from 'axios';
@@ -26,6 +29,150 @@ const router = Router();
 
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY || 'dev-key-do-not-use-in-production';
 const IV_LENGTH = 16;
+
+// ========================================
+// PROFIT CENTER OKR LINKAGE VALIDATION
+// ========================================
+
+/**
+ * Validates profit center OKR linkage:
+ * - Requires exactly ONE OKR reference (objective, key result, or task)
+ * - Ensures linkedOkrType matches the provided ID
+ * - Verifies the referenced OKR entity exists in the organization
+ */
+const validateProfitCenterOkrLink = insertProfitCenterSchema.superRefine((data, ctx) => {
+  const { linkedOkrType, objectiveId, keyResultId, keyResultTaskId } = data;
+
+  // Count how many OKR IDs are provided
+  const providedIds = [objectiveId, keyResultId, keyResultTaskId].filter(id => id !== null && id !== undefined);
+
+  // Require exactly one OKR reference
+  if (providedIds.length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Profit center must link to exactly one OKR (objective, key result, or task). No OKR reference provided.',
+      path: ['linkedOkrType'],
+    });
+    return;
+  }
+
+  if (providedIds.length > 1) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Profit center must link to exactly one OKR. Multiple OKR references provided (only one allowed).',
+      path: ['linkedOkrType'],
+    });
+    return;
+  }
+
+  // Ensure linkedOkrType matches the provided ID
+  if (linkedOkrType === 'objective' && !objectiveId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'linkedOkrType is "objective" but objectiveId is not provided.',
+      path: ['objectiveId'],
+    });
+  } else if (linkedOkrType === 'objective' && (keyResultId || keyResultTaskId)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'linkedOkrType is "objective" but keyResultId or keyResultTaskId is also provided. Only objectiveId should be set.',
+      path: ['linkedOkrType'],
+    });
+  }
+
+  if (linkedOkrType === 'key_result' && !keyResultId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'linkedOkrType is "key_result" but keyResultId is not provided.',
+      path: ['keyResultId'],
+    });
+  } else if (linkedOkrType === 'key_result' && (objectiveId || keyResultTaskId)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'linkedOkrType is "key_result" but objectiveId or keyResultTaskId is also provided. Only keyResultId should be set.',
+      path: ['linkedOkrType'],
+    });
+  }
+
+  if (linkedOkrType === 'task' && !keyResultTaskId) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'linkedOkrType is "task" but keyResultTaskId is not provided.',
+      path: ['keyResultTaskId'],
+    });
+  } else if (linkedOkrType === 'task' && (objectiveId || keyResultId)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'linkedOkrType is "task" but objectiveId or keyResultId is also provided. Only keyResultTaskId should be set.',
+      path: ['linkedOkrType'],
+    });
+  }
+});
+
+/**
+ * Verifies the referenced OKR entity exists in the database within the organization
+ */
+async function verifyOkrEntityExists(
+  organizationId: number, 
+  linkedOkrType: string, 
+  objectiveId?: number | null, 
+  keyResultId?: number | null, 
+  keyResultTaskId?: number | null
+): Promise<{ valid: boolean; error?: string }> {
+  try {
+    if (linkedOkrType === 'objective' && objectiveId) {
+      const [objective] = await db
+        .select()
+        .from(objectives)
+        .where(
+          and(
+            eq(objectives.id, objectiveId),
+            eq(objectives.organizationId, organizationId)
+          )
+        )
+        .limit(1);
+
+      if (!objective) {
+        return { valid: false, error: `Objective with ID ${objectiveId} not found in organization` };
+      }
+    } else if (linkedOkrType === 'key_result' && keyResultId) {
+      const [keyResult] = await db
+        .select()
+        .from(keyResults)
+        .where(
+          and(
+            eq(keyResults.id, keyResultId),
+            eq(keyResults.organizationId, organizationId)
+          )
+        )
+        .limit(1);
+
+      if (!keyResult) {
+        return { valid: false, error: `Key Result with ID ${keyResultId} not found in organization` };
+      }
+    } else if (linkedOkrType === 'task' && keyResultTaskId) {
+      const [task] = await db
+        .select()
+        .from(keyResultTasks)
+        .where(
+          and(
+            eq(keyResultTasks.id, keyResultTaskId),
+            eq(keyResultTasks.organizationId, organizationId)
+          )
+        )
+        .limit(1);
+
+      if (!task) {
+        return { valid: false, error: `Task with ID ${keyResultTaskId} not found in organization` };
+      }
+    }
+
+    return { valid: true };
+  } catch (error: any) {
+    console.error('Error verifying OKR entity:', error);
+    return { valid: false, error: 'Failed to verify OKR linkage' };
+  }
+}
 
 function encrypt(text: string): string {
   const key = crypto.createHash('sha256').update(String(ENCRYPTION_KEY)).digest();
@@ -513,11 +660,25 @@ router.post('/profit-centers', authenticateToken, async (req: Request, res: Resp
     const organizationId = req.user?.organizationId || 3;
     const userId = req.user?.id;
     
-    const data = insertProfitCenterSchema.parse({
+    // Validate profit center data including OKR linkage
+    const data = validateProfitCenterOkrLink.parse({
       ...req.body,
       organizationId,
       createdBy: userId,
     });
+
+    // Verify the referenced OKR entity exists
+    const verification = await verifyOkrEntityExists(
+      organizationId,
+      data.linkedOkrType as string,
+      data.objectiveId,
+      data.keyResultId,
+      data.keyResultTaskId
+    );
+
+    if (!verification.valid) {
+      return res.status(404).json({ error: verification.error });
+    }
 
     const result = await db
       .insert(profitCenters)
@@ -529,6 +690,15 @@ router.post('/profit-centers', authenticateToken, async (req: Request, res: Resp
     res.json(profitCenter);
   } catch (error: any) {
     console.error('Error creating profit center:', error);
+    
+    // Return Zod validation errors with status 400
+    if (error.name === 'ZodError') {
+      return res.status(400).json({ 
+        error: 'Validation failed', 
+        details: error.errors 
+      });
+    }
+    
     res.status(500).json({ error: error.message });
   }
 });
@@ -537,6 +707,46 @@ router.put('/profit-centers/:id', authenticateToken, async (req: Request, res: R
   try {
     const organizationId = req.user?.organizationId || 3;
     const { id } = req.params;
+
+    // Load existing profit center
+    const [existing] = await db
+      .select()
+      .from(profitCenters)
+      .where(
+        and(
+          eq(profitCenters.id, parseInt(id)),
+          eq(profitCenters.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+
+    if (!existing) {
+      return res.status(404).json({ error: 'Profit center not found' });
+    }
+
+    // Merge existing data with incoming changes
+    const mergedData = {
+      ...existing,
+      ...req.body,
+      organizationId, // Ensure organizationId is preserved
+      createdBy: existing.createdBy, // Preserve original creator
+    };
+
+    // Validate merged data including OKR linkage
+    const data = validateProfitCenterOkrLink.parse(mergedData);
+
+    // Verify the referenced OKR entity exists
+    const verification = await verifyOkrEntityExists(
+      organizationId,
+      data.linkedOkrType as string,
+      data.objectiveId,
+      data.keyResultId,
+      data.keyResultTaskId
+    );
+
+    if (!verification.valid) {
+      return res.status(404).json({ error: verification.error });
+    }
 
     const [updated] = await db
       .update(profitCenters)
@@ -555,6 +765,15 @@ router.put('/profit-centers/:id', authenticateToken, async (req: Request, res: R
     res.json(updated);
   } catch (error: any) {
     console.error('Error updating profit center:', error);
+    
+    // Return Zod validation errors with status 400
+    if (error.name === 'ZodError') {
+      return res.status(400).json({ 
+        error: 'Validation failed', 
+        details: error.errors 
+      });
+    }
+    
     res.status(500).json({ error: error.message });
   }
 });
