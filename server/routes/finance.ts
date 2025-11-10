@@ -33,6 +33,27 @@ function encrypt(text: string): string {
   return iv.toString('hex') + ':' + encrypted;
 }
 
+function parseXeroDate(dateValue: any): Date {
+  if (!dateValue) {
+    return new Date();
+  }
+
+  if (typeof dateValue === 'string') {
+    const dotNetMatch = dateValue.match(/\/Date\((\d+)([+-]\d{4})?\)\//);
+    if (dotNetMatch) {
+      const timestamp = parseInt(dotNetMatch[1], 10);
+      return new Date(timestamp);
+    }
+  }
+
+  const parsed = new Date(dateValue);
+  if (!isNaN(parsed.getTime())) {
+    return parsed;
+  }
+
+  return new Date();
+}
+
 // ========================================
 // XERO OAUTH & CONNECTION MANAGEMENT
 // ========================================
@@ -674,7 +695,7 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
               organizationId,
               xeroTransactionId: invoice.InvoiceID,
               xeroTransactionType: 'invoice' as any,
-              transactionDate: new Date(invoice.Date),
+              transactionDate: parseXeroDate(invoice.Date),
               amount: String(invoice.Total || 0),
               description: invoice.Reference || invoice.InvoiceNumber,
               contactName: invoice.Contact?.Name,
@@ -723,7 +744,7 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
               organizationId,
               xeroTransactionId: bankTx.BankTransactionID,
               xeroTransactionType: 'bank_transaction' as any,
-              transactionDate: new Date(bankTx.Date),
+              transactionDate: parseXeroDate(bankTx.Date),
               amount: String(bankTx.Total || 0),
               description: bankTx.Reference,
               contactName: bankTx.Contact?.Name,
