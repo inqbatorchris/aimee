@@ -56,7 +56,7 @@ export class XeroService {
     
     this.accessToken = credentials.accessToken;
     this.refreshToken = credentials.refreshToken;
-    this.tenantId = credentials.tenantId || integration.connectionConfig?.tenantId;
+    this.tenantId = credentials.tenantId || (integration.connectionConfig as any)?.tenantId;
 
     // Create Axios client for Xero API
     this.client = axios.create({
@@ -80,8 +80,8 @@ export class XeroService {
       throw new Error('Xero integration not found');
     }
 
-    const clientId = integration.connectionConfig?.clientId;
-    const clientSecret = integration.connectionConfig?.clientSecret;
+    const clientId = (integration.connectionConfig as any)?.clientId;
+    const clientSecret = (integration.connectionConfig as any)?.clientSecret;
 
     if (!clientId || !clientSecret) {
       throw new Error('Xero OAuth credentials not configured. Please set up the Xero integration again.');
