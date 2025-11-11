@@ -64,7 +64,7 @@ export default function ProfitCenters() {
   });
 
   const { data: xeroAccounts } = useQuery<any[]>({
-    queryKey: ['/api/finance/chart-of-accounts'],
+    queryKey: ['/api/finance/xero/chart-of-accounts'],
     enabled: dialogOpen,
   });
 
@@ -229,8 +229,8 @@ export default function ProfitCenters() {
 
     if (formData.xeroAccountId) {
       submitData.xeroAccountId = selectedAccount?.xeroAccountId;
-      submitData.xeroAccountCode = selectedAccount?.code;
-      submitData.xeroAccountName = selectedAccount?.name;
+      submitData.xeroAccountCode = selectedAccount?.accountCode;
+      submitData.xeroAccountName = selectedAccount?.accountName;
     }
 
     if (formData.okrType === 'objective') {
@@ -554,7 +554,7 @@ export default function ProfitCenters() {
                   <SelectContent>
                     {xeroAccounts?.map(account => (
                       <SelectItem key={account.id} value={account.id.toString()}>
-                        {account.code} - {account.name}
+                        {account.accountCode} - {account.accountName}
                       </SelectItem>
                     ))}
                   </SelectContent>
