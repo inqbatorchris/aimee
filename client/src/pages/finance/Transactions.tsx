@@ -60,7 +60,7 @@ export default function Transactions() {
       if (filters.startDate) params.append('startDate', filters.startDate);
       if (filters.endDate) params.append('endDate', filters.endDate);
       if (filters.status && filters.status !== 'all') params.append('status', filters.status);
-      if (filters.profitCenter && filters.profitCenter !== 'all') params.append('profitCenter', filters.profitCenter);
+      if (filters.profitCenter && filters.profitCenter !== 'all') params.append('profitCenterId', filters.profitCenter);
       if (filters.search) params.append('search', filters.search);
       
       const url = `/api/finance/transactions${params.toString() ? `?${params.toString()}` : ''}`;
@@ -358,7 +358,7 @@ export default function Transactions() {
                   <TableCell>
                     {transaction.profitCenterTags?.[0]
                       ? profitCenters?.find(pc => pc.id === transaction.profitCenterTags?.[0])?.name
-                      : '-'}
+                      : profitCenters?.find(pc => pc.xeroAccountCode === transaction.xeroAccountCode)?.name || '-'}
                   </TableCell>
                   <TableCell>{transaction.primaryCategoryName || '-'}</TableCell>
                   <TableCell className="text-right">
