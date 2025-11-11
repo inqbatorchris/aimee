@@ -349,6 +349,8 @@ async function upsertTransactionsBatch(
             description: sql`EXCLUDED.description`,
             contactName: sql`EXCLUDED.contact_name`,
             xeroContactId: sql`EXCLUDED.xero_contact_id`,
+            xeroAccountCode: sql`EXCLUDED.xero_account_code`,
+            xeroAccountName: sql`EXCLUDED.xero_account_name`,
             currency: sql`EXCLUDED.currency`,
             metadata: sql`EXCLUDED.metadata`,
             updatedAt: new Date(),
@@ -676,9 +678,33 @@ router.get('/transactions', authenticateToken, async (req: Request, res: Respons
     // Filter by direct profit center ID
     if (profitCenterId) {
       const pcId = parseInt(profitCenterId as string);
-      conditions.push(
-        sql`${financialTransactions.profitCenterTags} @> ${JSON.stringify([pcId])}::jsonb`
-      );
+      
+      // Look up the profit center to get its linked Xero account code
+      const profitCenter = await db
+        .select({ xeroAccountCode: profitCenters.xeroAccountCode })
+        .from(profitCenters)
+        .where(
+          and(
+            eq(profitCenters.id, pcId),
+            eq(profitCenters.organizationId, organizationId)
+          )
+        )
+        .limit(1);
+      
+      if (profitCenter.length > 0 && profitCenter[0].xeroAccountCode) {
+        // Match transactions by EITHER account code (automatic) OR manual tags
+        conditions.push(
+          or(
+            eq(financialTransactions.xeroAccountCode, profitCenter[0].xeroAccountCode),
+            sql`${financialTransactions.profitCenterTags} @> ${JSON.stringify([pcId])}::jsonb`
+          )!
+        );
+      } else {
+        // No account code linked, fall back to manual tags only
+        conditions.push(
+          sql`${financialTransactions.profitCenterTags} @> ${JSON.stringify([pcId])}::jsonb`
+        );
+      }
     }
 
     // Filter by OKR linkage (find profit centers linked to the OKR, then filter transactions)
@@ -1409,46 +1435,63 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
     const errors: any[] = [];
 
     // Transform invoices to database format
-    const invoiceRecords = xeroData.invoices.map((invoice: any) => ({
-      organizationId,
-      xeroTransactionId: invoice.InvoiceID,
-      xeroTransactionType: 'invoice' as const,
-      transactionDate: parseXeroDate(invoice.Date),
-      amount: String(invoice.Total || 0),
-      description: invoice.Reference || invoice.InvoiceNumber || '',
-      contactName: invoice.Contact?.Name,
-      xeroContactId: invoice.Contact?.ContactID,
-      currency: invoice.CurrencyCode || 'USD',
-      metadata: invoice,
-    }));
+    const invoiceRecords = xeroData.invoices.map((invoice: any) => {
+      // Extract account code from first line item
+      const firstLineItem = invoice.LineItems?.[0];
+      return {
+        organizationId,
+        xeroTransactionId: invoice.InvoiceID,
+        xeroTransactionType: 'invoice' as const,
+        transactionDate: parseXeroDate(invoice.Date),
+        amount: String(invoice.Total || 0),
+        description: invoice.Reference || invoice.InvoiceNumber || '',
+        contactName: invoice.Contact?.Name,
+        xeroContactId: invoice.Contact?.ContactID,
+        xeroAccountCode: firstLineItem?.AccountCode || null,
+        xeroAccountName: firstLineItem?.Description || null,
+        currency: invoice.CurrencyCode || 'USD',
+        metadata: invoice,
+      };
+    });
 
     // Transform bank transactions to database format
-    const bankTxRecords = xeroData.bankTransactions.map((bankTx: any) => ({
-      organizationId,
-      xeroTransactionId: bankTx.BankTransactionID,
-      xeroTransactionType: 'bank_transaction' as const,
-      transactionDate: parseXeroDate(bankTx.Date),
-      amount: String(bankTx.Total || 0),
-      description: bankTx.Reference || '',
-      contactName: bankTx.Contact?.Name,
-      xeroContactId: bankTx.Contact?.ContactID,
-      currency: bankTx.CurrencyCode || 'USD',
-      metadata: bankTx,
-    }));
+    const bankTxRecords = xeroData.bankTransactions.map((bankTx: any) => {
+      // Extract account code from first line item
+      const firstLineItem = bankTx.LineItems?.[0];
+      return {
+        organizationId,
+        xeroTransactionId: bankTx.BankTransactionID,
+        xeroTransactionType: 'bank_transaction' as const,
+        transactionDate: parseXeroDate(bankTx.Date),
+        amount: String(bankTx.Total || 0),
+        description: bankTx.Reference || '',
+        contactName: bankTx.Contact?.Name,
+        xeroContactId: bankTx.Contact?.ContactID,
+        xeroAccountCode: firstLineItem?.AccountCode || null,
+        xeroAccountName: firstLineItem?.Description || null,
+        currency: bankTx.CurrencyCode || 'USD',
+        metadata: bankTx,
+      };
+    });
 
     // Transform payments to database format
-    const paymentRecords = xeroData.payments.map((payment: any) => ({
-      organizationId,
-      xeroTransactionId: payment.PaymentID,
-      xeroTransactionType: 'payment' as const,
-      transactionDate: parseXeroDate(payment.Date),
-      amount: String(payment.Amount || 0),
-      description: payment.Reference || `Payment for ${payment.Invoice?.InvoiceNumber || 'invoice'}`,
-      contactName: payment.Invoice?.Contact?.Name,
-      xeroContactId: payment.Invoice?.Contact?.ContactID,
-      currency: payment.CurrencyCode || 'USD',
-      metadata: payment,
-    }));
+    const paymentRecords = xeroData.payments.map((payment: any) => {
+      // Extract account code from payment account
+      return {
+        organizationId,
+        xeroTransactionId: payment.PaymentID,
+        xeroTransactionType: 'payment' as const,
+        transactionDate: parseXeroDate(payment.Date),
+        amount: String(payment.Amount || 0),
+        description: payment.Reference || `Payment for ${payment.Invoice?.InvoiceNumber || 'invoice'}`,
+        contactName: payment.Invoice?.Contact?.Name,
+        xeroContactId: payment.Invoice?.Contact?.ContactID,
+        xeroAccountCode: payment.Account?.Code || null,
+        xeroAccountName: payment.Account?.Name || null,
+        currency: payment.CurrencyCode || 'USD',
+        metadata: payment,
+      };
+    });
 
     // Process invoices in batches
     console.log('[SYNC] Processing invoices...');
