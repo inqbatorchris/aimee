@@ -73,7 +73,7 @@ const createWorkflowSchema = z.object({
   }).optional(),
   workflowDefinition: z.array(z.object({
     id: z.string(),
-    type: z.enum(['integration_action', 'strategy_update', 'log_event', 'notification']),
+    type: z.enum(['integration_action', 'strategy_update', 'log_event', 'notification', 'data_source_query']),
     name: z.string(),
     config: z.any().optional(),
   })).default([]),
