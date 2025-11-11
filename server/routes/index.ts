@@ -57,6 +57,8 @@ import fieldAppRoutes from './field-app.js';
 console.log('✅ Field app routes loaded:', typeof fieldAppRoutes);
 import financeRoutes from './finance.js';
 console.log('✅ Finance routes loaded:', typeof financeRoutes);
+import dataExplorerRoutes from './data-explorer.js';
+console.log('✅ Data explorer routes loaded:', typeof dataExplorerRoutes);
 
 const router = Router();
 console.log('🔥 Express Router created');
@@ -114,6 +116,8 @@ console.log('🔗 Mounting field-app routes');
 router.use('/field-app', fieldAppRoutes);
 console.log('🔗 Mounting finance routes');
 router.use('/finance', financeRoutes);
+console.log('🔗 Mounting data-explorer routes');
+router.use('/data-explorer', dataExplorerRoutes);
 
 // Direct feature routes
 router.use('/', coreFeatureRoutes);
