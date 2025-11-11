@@ -46,7 +46,7 @@ export default function ChartOfAccounts() {
   const [mappingFilter, setMappingFilter] = useState<string>('all');
 
   const { data: accounts, isLoading } = useQuery<XeroAccount[]>({
-    queryKey: ['/api/finance/chart-of-accounts', { 
+    queryKey: ['/api/finance/xero/chart-of-accounts', { 
       search: searchTerm || undefined,
       type: typeFilter !== 'all' ? typeFilter : undefined,
       accountClass: classFilter !== 'all' ? classFilter : undefined,
@@ -56,15 +56,15 @@ export default function ChartOfAccounts() {
 
   const syncMutation = useMutation({
     mutationFn: async () => {
-      return apiRequest('/api/finance/chart-of-accounts/sync', {
+      return apiRequest('/api/finance/xero/sync/chart-of-accounts', {
         method: 'POST',
       });
     },
     onSuccess: (data: any) => {
-      queryClient.invalidateQueries({ queryKey: ['/api/finance/chart-of-accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/finance/xero/chart-of-accounts'] });
       toast({
         title: 'Sync complete',
-        description: `Synced ${data.syncedCount} accounts from Xero`,
+        description: `Synced ${data.synced || data.syncedCount || 0} accounts from Xero`,
       });
     },
     onError: (error: any) => {
