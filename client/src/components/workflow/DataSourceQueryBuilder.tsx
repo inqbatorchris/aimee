@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Plus, X, Database } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { Plus, X, Database, Play } from 'lucide-react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { apiRequest } from '@/lib/queryClient';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
