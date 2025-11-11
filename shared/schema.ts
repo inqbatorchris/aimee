@@ -2615,6 +2615,37 @@ export const vehicleCheckItemSchema = z.object({
   photoUrl: z.string().optional()
 });
 
+// Data Source Query Schemas - for querying app data tables
+export const dataSourceQueryFilterSchema = z.object({
+  field: z.string().min(1),
+  operator: z.enum(['equals', 'not_equals', 'contains', 'not_contains', 'starts_with', 'ends_with', 'is_null', 'not_null', 'in', 'not_in', 'greater_than', 'less_than', 'greater_than_or_equal', 'less_than_or_equal']),
+  value: z.any().optional(),
+});
+
+export const dataSourceQueryConfigSchema = z.object({
+  filters: z.array(dataSourceQueryFilterSchema).default([]),
+  aggregation: z.literal('count').default('count'), // MVP: count only, sum/avg/min/max planned for future
+  aggregationField: z.string().optional(),
+  groupBy: z.array(z.string()).optional(),
+  limit: z.number().max(10000).default(1000),
+});
+
+export const dataSourceQueryStepSchema = z.object({
+  sourceTable: z.string().min(1),
+  queryConfig: dataSourceQueryConfigSchema,
+  resultVariable: z.string().min(1),
+  updateKeyResult: z.object({
+    keyResultId: z.number(),
+    updateType: z.enum(['set_value', 'increment']),
+    useResultAs: z.literal('value'),
+  }).optional(),
+});
+
+// Type exports for data source queries
+export type DataSourceQueryFilter = z.infer<typeof dataSourceQueryFilterSchema>;
+export type DataSourceQueryConfig = z.infer<typeof dataSourceQueryConfigSchema>;
+export type DataSourceQueryStep = z.infer<typeof dataSourceQueryStepSchema>;
+
 // Task Type Configurations - Maps Splynx types to app workflows
 export const taskTypeConfigurations = pgTable("task_type_configurations", {
   id: serial("id").primaryKey(),

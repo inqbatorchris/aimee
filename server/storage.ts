@@ -408,8 +408,10 @@ export interface ICleanStorage {
   
   // Database explorer operations
   getDataTables(organizationId: number): Promise<DataTable[]>;
+  getDataTableByName(organizationId: number, tableName: string): Promise<DataTable | undefined>;
   refreshDataTables(organizationId: number): Promise<DataTable[]>;
   getDataFields(tableId: number): Promise<DataField[]>;
+  getDataFieldsByTableName(organizationId: number, tableName: string): Promise<DataField[]>;
   getDataRelationships(organizationId: number): Promise<DataRelationship[]>;
   createDataRelationship(relationship: InsertDataRelationship): Promise<DataRelationship>;
   
@@ -2603,6 +2605,17 @@ export class CleanDatabaseStorage implements ICleanStorage {
       .orderBy(asc(dataTables.tableName));
   }
 
+  async getDataTableByName(organizationId: number, tableName: string): Promise<DataTable | undefined> {
+    const [table] = await db.select()
+      .from(dataTables)
+      .where(and(
+        eq(dataTables.organizationId, organizationId),
+        eq(dataTables.tableName, tableName)
+      ))
+      .limit(1);
+    return table;
+  }
+
   async refreshDataTables(organizationId: number): Promise<DataTable[]> {
     // Get list of actual database tables
     const tableQuery = `
@@ -2651,6 +2664,14 @@ export class CleanDatabaseStorage implements ICleanStorage {
       .from(dataFields)
       .where(eq(dataFields.tableId, tableId))
       .orderBy(asc(dataFields.fieldName));
+  }
+
+  async getDataFieldsByTableName(organizationId: number, tableName: string): Promise<DataField[]> {
+    const table = await this.getDataTableByName(organizationId, tableName);
+    if (!table) {
+      return [];
+    }
+    return await this.getDataFields(table.id);
   }
 
   async getDataRelationships(organizationId: number): Promise<DataRelationship[]> {
