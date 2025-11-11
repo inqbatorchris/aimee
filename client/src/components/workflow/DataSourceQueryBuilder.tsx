@@ -225,15 +225,38 @@ export default function DataSourceQueryBuilder({
                                 {field.fieldName}
                               </SelectItem>
                             ))}
-                            <SelectItem value="airtableFields.Network">
-                              airtableFields.Network
-                            </SelectItem>
-                            <SelectItem value="airtableFields.City">
-                              airtableFields.City
-                            </SelectItem>
-                            <SelectItem value="airtableFields.Status">
-                              airtableFields.Status
-                            </SelectItem>
+                            {value.sourceTable === 'address_records' && (
+                              <>
+                                <SelectItem value="airtableFields.Address">
+                                  airtableFields.Address
+                                </SelectItem>
+                                <SelectItem value="airtableFields.StreetName">
+                                  airtableFields.StreetName
+                                </SelectItem>
+                                <SelectItem value="airtableFields.City">
+                                  airtableFields.City
+                                </SelectItem>
+                                <SelectItem value="airtableFields.Postcode">
+                                  airtableFields.Postcode
+                                </SelectItem>
+                                <SelectItem value="airtableFields.Status">
+                                  airtableFields.Status
+                                </SelectItem>
+                                <SelectItem value="airtableFields.Network">
+                                  airtableFields.Network
+                                </SelectItem>
+                              </>
+                            )}
+                            {(value.sourceTable === 'rag_status_records' || value.sourceTable === 'tariff_records') && (
+                              <>
+                                <SelectItem value="airtableFields.Status">
+                                  airtableFields.Status
+                                </SelectItem>
+                                <SelectItem value="airtableFields.Name">
+                                  airtableFields.Name
+                                </SelectItem>
+                              </>
+                            )}
                           </SelectContent>
                         </Select>
                       </div>
