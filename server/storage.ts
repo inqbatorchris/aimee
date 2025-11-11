@@ -2710,7 +2710,78 @@ export class CleanDatabaseStorage implements ICleanStorage {
     if (!table) {
       return [];
     }
-    return await this.getDataFields(table.id);
+    
+    let fields = await this.getDataFields(table.id);
+    
+    // Auto-seed fields if empty (first-time access)
+    if (fields.length === 0) {
+      console.log(`[Storage] No fields found for table ${tableName}, auto-seeding...`);
+      fields = await this.ensureDataFieldsSeeded(table.id, tableName);
+    }
+    
+    return fields;
+  }
+
+  async ensureDataFieldsSeeded(tableId: number, tableName: string): Promise<DataField[]> {
+    // Define field registry for each table - these are the filterable fields
+    const fieldRegistry: Record<string, Array<{ fieldName: string; fieldType: string; description?: string }>> = {
+      address_records: [
+        { fieldName: 'id', fieldType: 'number', description: 'Primary key' },
+        { fieldName: 'localStatus', fieldType: 'text', description: 'Local status' },
+        { fieldName: 'streetName', fieldType: 'text', description: 'Street name' },
+        { fieldName: 'city', fieldType: 'text', description: 'City' },
+        { fieldName: 'postcode', fieldType: 'text', description: 'Postcode' },
+        { fieldName: 'airtableFields', fieldType: 'jsonb', description: 'Airtable data (use dotted notation: airtableFields.Status)' },
+      ],
+      work_items: [
+        { fieldName: 'id', fieldType: 'number', description: 'Primary key' },
+        { fieldName: 'title', fieldType: 'text', description: 'Work item title' },
+        { fieldName: 'status', fieldType: 'text', description: 'Status (not_started, in_progress, completed, blocked)' },
+        { fieldName: 'priority', fieldType: 'text', description: 'Priority (low, medium, high, critical)' },
+        { fieldName: 'assignedToId', fieldType: 'number', description: 'Assigned user ID' },
+        { fieldName: 'keyResultId', fieldType: 'number', description: 'Related key result ID' },
+        { fieldName: 'dueDate', fieldType: 'date', description: 'Due date' },
+        { fieldName: 'createdAt', fieldType: 'timestamp', description: 'Creation timestamp' },
+      ],
+      field_tasks: [
+        { fieldName: 'id', fieldType: 'number', description: 'Primary key' },
+        { fieldName: 'taskType', fieldType: 'text', description: 'Task type' },
+        { fieldName: 'status', fieldType: 'text', description: 'Task status' },
+        { fieldName: 'priority', fieldType: 'text', description: 'Priority level' },
+        { fieldName: 'assignedToId', fieldType: 'number', description: 'Assigned engineer ID' },
+        { fieldName: 'scheduledDate', fieldType: 'date', description: 'Scheduled date' },
+      ],
+      rag_status_records: [
+        { fieldName: 'id', fieldType: 'number', description: 'Primary key' },
+        { fieldName: 'status', fieldType: 'text', description: 'RAG status (red, amber, green)' },
+        { fieldName: 'entityType', fieldType: 'text', description: 'Entity type' },
+        { fieldName: 'entityId', fieldType: 'number', description: 'Entity ID' },
+        { fieldName: 'createdAt', fieldType: 'timestamp', description: 'Creation timestamp' },
+      ],
+      tariff_records: [
+        { fieldName: 'id', fieldType: 'number', description: 'Primary key' },
+        { fieldName: 'tariffName', fieldType: 'text', description: 'Tariff name' },
+        { fieldName: 'price', fieldType: 'number', description: 'Price' },
+        { fieldName: 'isActive', fieldType: 'boolean', description: 'Active status' },
+      ],
+    };
+
+    const fieldsToSeed = fieldRegistry[tableName] || [];
+
+    console.log(`[Storage] Seeding ${fieldsToSeed.length} fields for table ${tableName}...`);
+
+    for (const fieldConfig of fieldsToSeed) {
+      await db.insert(dataFields).values({
+        tableId,
+        fieldName: fieldConfig.fieldName,
+        fieldType: fieldConfig.fieldType,
+        nullable: true,
+        isPk: fieldConfig.fieldName === 'id',
+      });
+    }
+
+    console.log(`[Storage] Field seeding complete for table ${tableName}`);
+    return await this.getDataFields(tableId);
   }
 
   async getDataRelationships(organizationId: number): Promise<DataRelationship[]> {
