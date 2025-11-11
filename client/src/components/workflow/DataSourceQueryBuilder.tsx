@@ -65,7 +65,7 @@ export default function DataSourceQueryBuilder({
   });
 
   const { data: dataFields } = useQuery<{ fields: DataField[] }>({
-    queryKey: ['/api/data-explorer/fields', value.sourceTable],
+    queryKey: [`/api/data-explorer/fields/${value.sourceTable}`],
     enabled: !!value.sourceTable,
   });
 
