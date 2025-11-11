@@ -408,6 +408,7 @@ export interface ICleanStorage {
   
   // Database explorer operations
   getDataTables(organizationId: number): Promise<DataTable[]>;
+  ensureDataTablesSeeded(organizationId: number): Promise<DataTable[]>;
   getDataTableByName(organizationId: number, tableName: string): Promise<DataTable | undefined>;
   refreshDataTables(organizationId: number): Promise<DataTable[]>;
   getDataFields(tableId: number): Promise<DataField[]>;
@@ -2603,6 +2604,44 @@ export class CleanDatabaseStorage implements ICleanStorage {
       .from(dataTables)
       .where(eq(dataTables.organizationId, organizationId))
       .orderBy(asc(dataTables.tableName));
+  }
+
+  async ensureDataTablesSeeded(organizationId: number): Promise<DataTable[]> {
+    // Define the table registry - these are the tables available for data source queries
+    const tableRegistry = [
+      { tableName: 'address_records', label: 'Address Records', description: 'Customer addresses and network locations' },
+      { tableName: 'work_items', label: 'Work Items', description: 'Tasks and work items from strategy execution' },
+      { tableName: 'field_tasks', label: 'Field Tasks', description: 'Field engineering tasks and assignments' },
+      { tableName: 'rag_status_records', label: 'RAG Status Records', description: 'Red/Amber/Green status tracking' },
+      { tableName: 'tariff_records', label: 'Tariff Records', description: 'Service tariff and pricing data' },
+    ];
+
+    console.log(`[Storage] Seeding data tables for organization ${organizationId}...`);
+
+    for (const tableConfig of tableRegistry) {
+      // Check if table already exists
+      const existing = await this.getDataTableByName(organizationId, tableConfig.tableName);
+      
+      if (!existing) {
+        console.log(`[Storage]   Creating table registration: ${tableConfig.tableName}`);
+        
+        await db.insert(dataTables).values({
+          organizationId,
+          tableName: tableConfig.tableName,
+          label: tableConfig.label,
+          description: tableConfig.description,
+          docUrl: null,
+          rowCount: null,
+          sizeBytes: null,
+          lastAnalyzed: null,
+        });
+      } else {
+        console.log(`[Storage]   Table already registered: ${tableConfig.tableName}`);
+      }
+    }
+
+    console.log(`[Storage] Data table seeding complete for organization ${organizationId}`);
+    return await this.getDataTables(organizationId);
   }
 
   async getDataTableByName(organizationId: number, tableName: string): Promise<DataTable | undefined> {
