@@ -675,8 +675,9 @@ router.get('/transactions', authenticateToken, async (req: Request, res: Respons
 
     // Filter by direct profit center ID
     if (profitCenterId) {
+      const pcId = parseInt(profitCenterId as string);
       conditions.push(
-        sql`${profitCenterId} = ANY(${financialTransactions.profitCenterTags})`
+        sql`${pcId} = ANY(${financialTransactions.profitCenterTags})`
       );
     }
 
