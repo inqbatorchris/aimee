@@ -32,6 +32,19 @@ import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { Filter, Tag, CheckSquare, Download, ArrowUpDown } from 'lucide-react';
+import { 
+  startOfDay, 
+  endOfDay, 
+  startOfWeek, 
+  startOfMonth, 
+  endOfMonth, 
+  startOfQuarter, 
+  endOfQuarter, 
+  startOfYear, 
+  subMonths, 
+  subQuarters, 
+  format 
+} from 'date-fns';
 import type { FinancialTransaction, ProfitCenter } from '@shared/schema';
 
 export default function Transactions() {
@@ -52,6 +65,8 @@ export default function Transactions() {
     profitCenter: 'all',
     search: '',
   });
+
+  const [datePreset, setDatePreset] = useState('custom');
 
   const { data: transactions = [], isLoading, error } = useQuery<FinancialTransaction[]>({
     queryKey: ['/api/finance/transactions', filters],
@@ -182,6 +197,57 @@ export default function Transactions() {
     }
   };
 
+  const applyDatePreset = (preset: string) => {
+    const today = new Date();
+    let startDate = '';
+    let endDate = '';
+
+    switch (preset) {
+      case 'today':
+        startDate = format(startOfDay(today), 'yyyy-MM-dd');
+        endDate = format(endOfDay(today), 'yyyy-MM-dd');
+        break;
+      case 'this_week':
+        startDate = format(startOfWeek(today, { weekStartsOn: 1 }), 'yyyy-MM-dd');
+        endDate = format(today, 'yyyy-MM-dd');
+        break;
+      case 'this_month':
+        startDate = format(startOfMonth(today), 'yyyy-MM-dd');
+        endDate = format(today, 'yyyy-MM-dd');
+        break;
+      case 'last_month':
+        const lastMonth = subMonths(today, 1);
+        startDate = format(startOfMonth(lastMonth), 'yyyy-MM-dd');
+        endDate = format(endOfMonth(lastMonth), 'yyyy-MM-dd');
+        break;
+      case 'this_quarter':
+        startDate = format(startOfQuarter(today), 'yyyy-MM-dd');
+        endDate = format(today, 'yyyy-MM-dd');
+        break;
+      case 'last_quarter':
+        const lastQuarter = subQuarters(today, 1);
+        startDate = format(startOfQuarter(lastQuarter), 'yyyy-MM-dd');
+        endDate = format(endOfQuarter(lastQuarter), 'yyyy-MM-dd');
+        break;
+      case 'this_year':
+        startDate = format(startOfYear(today), 'yyyy-MM-dd');
+        endDate = format(today, 'yyyy-MM-dd');
+        break;
+      case 'all_time':
+        startDate = '';
+        endDate = '';
+        break;
+      case 'custom':
+        setDatePreset('custom');
+        return;
+      default:
+        return;
+    }
+
+    setFilters({ ...filters, startDate, endDate });
+    setDatePreset(preset);
+  };
+
   const getStatusBadge = (status: string) => {
     const variants: Record<string, 'default' | 'secondary' | 'outline'> = {
       categorized: 'default',
@@ -228,14 +294,39 @@ export default function Transactions() {
           <Filter className="w-4 h-4" />
           <h3 className="font-semibold">Filters</h3>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
+          <div>
+            <Label htmlFor="datePreset">Date Range</Label>
+            <Select
+              value={datePreset}
+              onValueChange={applyDatePreset}
+            >
+              <SelectTrigger id="datePreset" data-testid="select-date-preset">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="today">Today</SelectItem>
+                <SelectItem value="this_week">This Week</SelectItem>
+                <SelectItem value="this_month">This Month</SelectItem>
+                <SelectItem value="last_month">Last Month</SelectItem>
+                <SelectItem value="this_quarter">This Quarter</SelectItem>
+                <SelectItem value="last_quarter">Last Quarter</SelectItem>
+                <SelectItem value="this_year">This Year</SelectItem>
+                <SelectItem value="all_time">All Time</SelectItem>
+                <SelectItem value="custom">Custom</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           <div>
             <Label htmlFor="startDate">Start Date</Label>
             <Input
               id="startDate"
               type="date"
               value={filters.startDate}
-              onChange={e => setFilters({ ...filters, startDate: e.target.value })}
+              onChange={e => {
+                setFilters({ ...filters, startDate: e.target.value });
+                setDatePreset('custom');
+              }}
               data-testid="input-start-date"
             />
           </div>
@@ -245,7 +336,10 @@ export default function Transactions() {
               id="endDate"
               type="date"
               value={filters.endDate}
-              onChange={e => setFilters({ ...filters, endDate: e.target.value })}
+              onChange={e => {
+                setFilters({ ...filters, endDate: e.target.value });
+                setDatePreset('custom');
+              }}
               data-testid="input-end-date"
             />
           </div>
@@ -306,7 +400,7 @@ export default function Transactions() {
                   checked={selectedIds.length === transactions.length && transactions.length > 0}
                   onCheckedChange={toggleSelectAll}
                   data-testid="checkbox-select-all"
-                  disabled={error || transactions.length === 0}
+                  disabled={!!error || transactions.length === 0}
                 />
               </TableHead>
               <TableHead>Date</TableHead>

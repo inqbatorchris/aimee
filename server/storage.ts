@@ -2614,6 +2614,7 @@ export class CleanDatabaseStorage implements ICleanStorage {
       { tableName: 'field_tasks', label: 'Field Tasks', description: 'Field engineering tasks and assignments' },
       { tableName: 'rag_status_records', label: 'RAG Status Records', description: 'Red/Amber/Green status tracking' },
       { tableName: 'tariff_records', label: 'Tariff Records', description: 'Service tariff and pricing data' },
+      { tableName: 'financial_transactions', label: 'Financial Transactions', description: 'Xero financial transactions with profit center categorization' },
     ];
 
     console.log(`[Storage] Seeding data tables for organization ${organizationId}...`);
@@ -2818,6 +2819,29 @@ export class CleanDatabaseStorage implements ICleanStorage {
         { fieldName: 'localNotes', fieldType: 'text', description: 'Local notes' },
         { fieldName: 'lastSyncedAt', fieldType: 'timestamp', description: 'Last sync time' },
         { fieldName: 'createdAt', fieldType: 'timestamp', description: 'Creation time' },
+        { fieldName: 'updatedAt', fieldType: 'timestamp', description: 'Last update time' },
+      ],
+      financial_transactions: [
+        { fieldName: 'id', fieldType: 'number', description: 'Primary key' },
+        { fieldName: 'organizationId', fieldType: 'number', description: 'Organization ID' },
+        { fieldName: 'xeroTransactionId', fieldType: 'text', description: 'Xero transaction ID' },
+        { fieldName: 'transactionDate', fieldType: 'timestamp', description: 'Transaction date' },
+        { fieldName: 'amount', fieldType: 'number', description: 'Transaction amount (GBP)' },
+        { fieldName: 'description', fieldType: 'text', description: 'Transaction description' },
+        { fieldName: 'contactName', fieldType: 'text', description: 'Contact/customer name' },
+        { fieldName: 'xeroAccountCode', fieldType: 'text', description: 'Xero account code' },
+        { fieldName: 'xeroAccountName', fieldType: 'text', description: 'Xero account name' },
+        { fieldName: 'xeroAccountType', fieldType: 'text', description: 'Xero account type' },
+        { fieldName: 'xeroTransactionType', fieldType: 'text', description: 'Transaction type (e.g., SPEND, RECEIVE)' },
+        { fieldName: 'categorizationStatus', fieldType: 'text', description: 'Categorization status (uncategorized, ai_categorized, manually_categorized)' },
+        { fieldName: 'profitCenterId', fieldType: 'number', description: 'Assigned profit center ID' },
+        { fieldName: 'aiCategorizationConfidence', fieldType: 'number', description: 'AI confidence score (0-100)' },
+        { fieldName: 'reconciliationStatus', fieldType: 'text', description: 'Reconciliation status (unmatched, matched, reconciled)' },
+        { fieldName: 'splynxCustomerId', fieldType: 'text', description: 'Linked Splynx customer ID' },
+        { fieldName: 'splynxInvoiceId', fieldType: 'text', description: 'Linked Splynx invoice ID' },
+        { fieldName: 'currency', fieldType: 'text', description: 'Currency code (GBP)' },
+        { fieldName: 'notes', fieldType: 'text', description: 'Additional notes' },
+        { fieldName: 'createdAt', fieldType: 'timestamp', description: 'Record creation time' },
         { fieldName: 'updatedAt', fieldType: 'timestamp', description: 'Last update time' },
       ],
     };

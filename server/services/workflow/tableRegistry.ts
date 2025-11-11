@@ -1,4 +1,4 @@
-import { addressRecords, workItems, fieldTasks, ragStatusRecords, tariffRecords } from '../../../shared/schema.js';
+import { addressRecords, workItems, fieldTasks, ragStatusRecords, tariffRecords, financialTransactions } from '../../../shared/schema.js';
 
 /**
  * Registry of database tables available for data source queries.
@@ -10,4 +10,5 @@ export const TABLE_REGISTRY: Record<string, any> = {
   'field_tasks': fieldTasks,
   'rag_status_records': ragStatusRecords,
   'tariff_records': tariffRecords,
+  'financial_transactions': financialTransactions,
 };
