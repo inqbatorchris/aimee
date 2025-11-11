@@ -261,10 +261,20 @@ export default function ProfitCenters() {
     const colors: Record<string, string> = {
       geographic: 'bg-blue-500',
       service: 'bg-green-500',
-      customer: 'bg-purple-500',
-      project: 'bg-orange-500',
+      customer_segment: 'bg-purple-500',
+      custom: 'bg-orange-500',
     };
     return colors[type] || 'bg-gray-500';
+  };
+
+  const getTypeLabel = (type: string) => {
+    const labels: Record<string, string> = {
+      geographic: 'Geographic Zone',
+      service: 'Service Type',
+      customer_segment: 'Customer Segment',
+      custom: 'Custom',
+    };
+    return labels[type] || type;
   };
 
   return (
@@ -344,7 +354,7 @@ export default function ProfitCenters() {
                   <TableCell>
                     <div className="flex items-center gap-2">
                       <div className={`w-3 h-3 rounded-full ${getTypeColor(center.type)}`} />
-                      {center.type}
+                      {getTypeLabel(center.type)}
                     </div>
                   </TableCell>
                   <TableCell>
@@ -427,8 +437,8 @@ export default function ProfitCenters() {
                   <SelectContent>
                     <SelectItem value="geographic">Geographic Zone</SelectItem>
                     <SelectItem value="service">Service Type</SelectItem>
-                    <SelectItem value="customer">Customer Segment</SelectItem>
-                    <SelectItem value="project">Project/Initiative</SelectItem>
+                    <SelectItem value="customer_segment">Customer Segment</SelectItem>
+                    <SelectItem value="custom">Custom</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
