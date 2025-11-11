@@ -2770,28 +2770,29 @@ export class CleanDatabaseStorage implements ICleanStorage {
 
     console.log(`[Storage] Seeding ${fieldsToSeed.length} fields for table ${tableName}...`);
 
-    for (const fieldConfig of fieldsToSeed) {
-      // Check if field already exists to prevent duplicates
-      const existing = await db.select()
-        .from(dataFields)
-        .where(and(
-          eq(dataFields.tableId, tableId),
-          eq(dataFields.fieldName, fieldConfig.fieldName)
-        ))
-        .limit(1);
-      
-      if (existing.length === 0) {
-        await db.insert(dataFields).values({
-          tableId,
-          fieldName: fieldConfig.fieldName,
-          fieldType: fieldConfig.fieldType,
-          nullable: true,
-          isPk: fieldConfig.fieldName === 'id',
-        });
-        console.log(`[Storage]   ✓ Inserted field: ${fieldConfig.fieldName}`);
-      } else {
-        console.log(`[Storage]   ⊘ Field already exists: ${fieldConfig.fieldName}`);
-      }
+    // Get existing field names in single query for efficiency
+    const existingFields = await db.select()
+      .from(dataFields)
+      .where(eq(dataFields.tableId, tableId));
+    
+    const existingFieldNames = new Set(existingFields.map(f => f.fieldName));
+    
+    // Prepare bulk insert for missing fields only
+    const fieldsToInsert = fieldsToSeed
+      .filter(fieldConfig => !existingFieldNames.has(fieldConfig.fieldName))
+      .map(fieldConfig => ({
+        tableId,
+        fieldName: fieldConfig.fieldName,
+        fieldType: fieldConfig.fieldType,
+        nullable: true,
+        isPk: fieldConfig.fieldName === 'id',
+      }));
+    
+    if (fieldsToInsert.length > 0) {
+      await db.insert(dataFields).values(fieldsToInsert).onConflictDoNothing();
+      console.log(`[Storage]   ✓ Inserted ${fieldsToInsert.length} new fields`);
+    } else {
+      console.log(`[Storage]   ⊘ All fields already exist, skipping inserts`);
     }
 
     console.log(`[Storage] Field seeding complete for table ${tableName}`);
