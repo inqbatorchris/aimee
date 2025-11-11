@@ -87,7 +87,7 @@ export default function ProfitCenters() {
     mutationFn: async (data: any) => {
       return apiRequest('/api/finance/profit-centers', {
         method: 'POST',
-        body: JSON.stringify(data),
+        body: data,
       });
     },
     onSuccess: () => {
@@ -111,7 +111,7 @@ export default function ProfitCenters() {
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
       return apiRequest(`/api/finance/profit-centers/${id}`, {
         method: 'PUT',
-        body: JSON.stringify(data),
+        body: data,
       });
     },
     onSuccess: () => {
