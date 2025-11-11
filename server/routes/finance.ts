@@ -677,7 +677,7 @@ router.get('/transactions', authenticateToken, async (req: Request, res: Respons
     if (profitCenterId) {
       const pcId = parseInt(profitCenterId as string);
       conditions.push(
-        sql`${pcId} = ANY(${financialTransactions.profitCenterTags})`
+        sql`${financialTransactions.profitCenterTags} @> ${JSON.stringify([pcId])}::jsonb`
       );
     }
 
