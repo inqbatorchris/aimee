@@ -2771,13 +2771,27 @@ export class CleanDatabaseStorage implements ICleanStorage {
     console.log(`[Storage] Seeding ${fieldsToSeed.length} fields for table ${tableName}...`);
 
     for (const fieldConfig of fieldsToSeed) {
-      await db.insert(dataFields).values({
-        tableId,
-        fieldName: fieldConfig.fieldName,
-        fieldType: fieldConfig.fieldType,
-        nullable: true,
-        isPk: fieldConfig.fieldName === 'id',
-      });
+      // Check if field already exists to prevent duplicates
+      const existing = await db.select()
+        .from(dataFields)
+        .where(and(
+          eq(dataFields.tableId, tableId),
+          eq(dataFields.fieldName, fieldConfig.fieldName)
+        ))
+        .limit(1);
+      
+      if (existing.length === 0) {
+        await db.insert(dataFields).values({
+          tableId,
+          fieldName: fieldConfig.fieldName,
+          fieldType: fieldConfig.fieldType,
+          nullable: true,
+          isPk: fieldConfig.fieldName === 'id',
+        });
+        console.log(`[Storage]   ✓ Inserted field: ${fieldConfig.fieldName}`);
+      } else {
+        console.log(`[Storage]   ⊘ Field already exists: ${fieldConfig.fieldName}`);
+      }
     }
 
     console.log(`[Storage] Field seeding complete for table ${tableName}`);
