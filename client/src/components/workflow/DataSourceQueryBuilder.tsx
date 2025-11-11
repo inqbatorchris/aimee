@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Plus, X, Database, Play } from 'lucide-react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
+import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -62,6 +63,7 @@ export default function DataSourceQueryBuilder({
   keyResults = [],
 }: DataSourceQueryBuilderProps) {
   const [testResult, setTestResult] = useState<{ count: number; duration: number } | null>(null);
+  const { toast } = useToast();
   
   const { data: dataTables } = useQuery<{ tables: DataTable[] }>({
     queryKey: ['/api/data-explorer/tables'],
@@ -91,7 +93,11 @@ export default function DataSourceQueryBuilder({
     },
     onError: (error: Error) => {
       setTestResult(null);
-      alert(`Test query failed: ${error.message}`);
+      toast({
+        title: "Test query failed",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
