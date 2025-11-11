@@ -87,7 +87,7 @@ export default function Transactions() {
     mutationFn: async ({ id, data }: { id: number; data: any }) => {
       return apiRequest(`/api/finance/transactions/${id}/categorize`, {
         method: 'PUT',
-        body: JSON.stringify(data),
+        body: data,
       });
     },
     onSuccess: () => {
@@ -105,7 +105,7 @@ export default function Transactions() {
     mutationFn: async (data: any) => {
       return apiRequest('/api/finance/transactions/bulk-categorize', {
         method: 'POST',
-        body: JSON.stringify(data),
+        body: data,
       });
     },
     onSuccess: (data: any) => {
