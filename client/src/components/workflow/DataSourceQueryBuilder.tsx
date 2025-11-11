@@ -60,6 +60,8 @@ export default function DataSourceQueryBuilder({
   onChange,
   keyResults = [],
 }: DataSourceQueryBuilderProps) {
+  const [testResult, setTestResult] = useState<{ count: number; duration: number } | null>(null);
+  
   const { data: dataTables } = useQuery<{ tables: DataTable[] }>({
     queryKey: ['/api/data-explorer/tables'],
   });
@@ -71,6 +73,26 @@ export default function DataSourceQueryBuilder({
 
   const tables = dataTables?.tables || [];
   const fields = dataFields?.fields || [];
+  
+  const testQueryMutation = useMutation({
+    mutationFn: async () => {
+      const res = await apiRequest('/api/data-explorer/test-query', {
+        method: 'POST',
+        body: {
+          sourceTable: value.sourceTable,
+          queryConfig: value.queryConfig,
+        },
+      });
+      return await res.json();
+    },
+    onSuccess: (data) => {
+      setTestResult({ count: data.count, duration: data.duration });
+    },
+    onError: (error: Error) => {
+      setTestResult(null);
+      alert(`Test query failed: ${error.message}`);
+    },
+  });
 
   const addFilter = () => {
     const newFilter: DataSourceFilter = {
@@ -304,6 +326,42 @@ export default function DataSourceQueryBuilder({
                   </Button>
                 </div>
               ))
+            )}
+            
+            {value.sourceTable && (value.queryConfig?.filters?.length ?? 0) > 0 && (
+              <div className="pt-4 border-t mt-4">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => testQueryMutation.mutate()}
+                  disabled={testQueryMutation.isPending}
+                  data-testid="button-test-query"
+                >
+                  <Play className="h-4 w-4 mr-1" />
+                  {testQueryMutation.isPending ? 'Testing...' : 'Test Query'}
+                </Button>
+                
+                {testResult && (
+                  <div className="mt-3 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-md">
+                    <div className="flex items-center gap-2">
+                      <div className="text-sm font-medium text-green-900 dark:text-green-100">
+                        ✓ Query returned <strong>{testResult.count}</strong> records
+                      </div>
+                      <div className="text-xs text-green-700 dark:text-green-300">
+                        ({testResult.duration}ms)
+                      </div>
+                    </div>
+                  </div>
+                )}
+                
+                {testQueryMutation.isError && (
+                  <div className="mt-3 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md">
+                    <div className="text-sm font-medium text-red-900 dark:text-red-100">
+                      ✗ Query failed
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
           </CardContent>
         </Card>

@@ -7,13 +7,7 @@ import crypto from 'crypto';
 
 // Table registry for data source queries
 // Maps table names to their Drizzle schema objects
-const TABLE_REGISTRY: Record<string, any> = {
-  'address_records': addressRecords,
-  'work_items': workItems,
-  'field_tasks': fieldTasks,
-  'rag_status_records': ragStatusRecords,
-  'tariff_records': tariffRecords,
-};
+import { TABLE_REGISTRY } from './tableRegistry.js';
 
 // Use the same encryption key from environment (set in Replit Secrets)
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
