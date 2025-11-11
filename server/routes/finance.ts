@@ -1671,6 +1671,7 @@ router.get('/xero/chart-of-accounts', authenticateToken, async (req: Request, re
     const organizationId = req.user?.organizationId || 3;
     const { 
       type, 
+      accountClass,
       status, 
       search,
       unmapped, // Filter for accounts not linked to profit centers
@@ -1686,6 +1687,10 @@ router.get('/xero/chart-of-accounts', authenticateToken, async (req: Request, re
 
     if (type) {
       conditions.push(eq(xeroChartOfAccounts.accountType, type as string));
+    }
+
+    if (accountClass) {
+      conditions.push(eq(xeroChartOfAccounts.accountClass, accountClass as string));
     }
 
     if (status) {

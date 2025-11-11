@@ -26,15 +26,15 @@ import { Download, RefreshCw, Search, Filter } from 'lucide-react';
 interface XeroAccount {
   id: number;
   xeroAccountId: string;
-  code: string;
-  name: string;
-  type: string | null;
+  accountCode: string;
+  accountName: string;
+  accountType: string | null;
   accountClass: string | null;
   status: string | null;
   description: string | null;
   taxType: string | null;
   profitCentersMapped: number;
-  lastSyncedAt: string;
+  updatedAt: string;
 }
 
 export default function ChartOfAccounts() {
@@ -82,7 +82,7 @@ export default function ChartOfAccounts() {
     return true;
   }) || [];
 
-  const accountTypes = Array.from(new Set(accounts?.map(a => a.type).filter(Boolean)));
+  const accountTypes = Array.from(new Set(accounts?.map(a => a.accountType).filter(Boolean)));
   const accountClasses = Array.from(new Set(accounts?.map(a => a.accountClass).filter(Boolean)));
 
   return (
@@ -213,18 +213,18 @@ export default function ChartOfAccounts() {
               </TableHeader>
               <TableBody>
                 {filteredAccounts.map((account) => (
-                  <TableRow key={account.id} data-testid={`row-account-${account.code}`}>
-                    <TableCell className="font-mono font-medium">{account.code}</TableCell>
+                  <TableRow key={account.id} data-testid={`row-account-${account.accountCode}`}>
+                    <TableCell className="font-mono font-medium">{account.accountCode}</TableCell>
                     <TableCell>
                       <div>
-                        <div className="font-medium">{account.name}</div>
+                        <div className="font-medium">{account.accountName}</div>
                         {account.description && (
                           <div className="text-sm text-muted-foreground">{account.description}</div>
                         )}
                       </div>
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline">{account.type || 'N/A'}</Badge>
+                      <Badge variant="outline">{account.accountType || 'N/A'}</Badge>
                     </TableCell>
                     <TableCell>
                       <Badge variant="secondary">{account.accountClass || 'N/A'}</Badge>
@@ -232,14 +232,14 @@ export default function ChartOfAccounts() {
                     <TableCell>
                       <Badge 
                         variant={account.status === 'ACTIVE' ? 'default' : 'secondary'}
-                        data-testid={`badge-status-${account.code}`}
+                        data-testid={`badge-status-${account.accountCode}`}
                       >
                         {account.status || 'Unknown'}
                       </Badge>
                     </TableCell>
                     <TableCell>
                       {account.profitCentersMapped > 0 ? (
-                        <Badge variant="default" data-testid={`badge-mapped-${account.code}`}>
+                        <Badge variant="default" data-testid={`badge-mapped-${account.accountCode}`}>
                           {account.profitCentersMapped} mapped
                         </Badge>
                       ) : (
@@ -247,7 +247,7 @@ export default function ChartOfAccounts() {
                       )}
                     </TableCell>
                     <TableCell className="text-right text-sm text-muted-foreground">
-                      {new Date(account.lastSyncedAt).toLocaleDateString()}
+                      {new Date(account.updatedAt).toLocaleDateString()}
                     </TableCell>
                   </TableRow>
                 ))}
