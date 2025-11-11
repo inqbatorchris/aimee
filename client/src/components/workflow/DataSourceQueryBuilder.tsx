@@ -79,31 +79,38 @@ export default function DataSourceQueryBuilder({
       operator: 'equals',
       value: '',
     };
+    
+    const currentConfig = value.queryConfig ?? { filters: [], aggregation: 'count', limit: 1000 };
+    
     onChange({
       ...value,
       queryConfig: {
-        ...value.queryConfig,
-        filters: [...value.queryConfig.filters, newFilter],
+        ...currentConfig,
+        filters: [...currentConfig.filters, newFilter],
       },
     });
   };
 
   const removeFilter = (id: string) => {
+    const currentConfig = value.queryConfig ?? { filters: [], aggregation: 'count', limit: 1000 };
+    
     onChange({
       ...value,
       queryConfig: {
-        ...value.queryConfig,
-        filters: value.queryConfig.filters.filter(f => f.id !== id),
+        ...currentConfig,
+        filters: currentConfig.filters.filter(f => f.id !== id),
       },
     });
   };
 
   const updateFilter = (id: string, updates: Partial<DataSourceFilter>) => {
+    const currentConfig = value.queryConfig ?? { filters: [], aggregation: 'count', limit: 1000 };
+    
     onChange({
       ...value,
       queryConfig: {
-        ...value.queryConfig,
-        filters: value.queryConfig.filters.map(f =>
+        ...currentConfig,
+        filters: currentConfig.filters.map(f =>
           f.id === id ? { ...f, ...updates } : f
         ),
       },
