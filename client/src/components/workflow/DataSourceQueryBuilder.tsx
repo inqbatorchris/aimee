@@ -194,12 +194,12 @@ export default function DataSourceQueryBuilder({
             </div>
           </CardHeader>
           <CardContent className="space-y-3">
-            {value.queryConfig.filters.length === 0 ? (
+            {(value.queryConfig?.filters?.length ?? 0) === 0 ? (
               <p className="text-sm text-gray-500 text-center py-4">
                 No filters added. Click "Add Filter" to add conditions.
               </p>
             ) : (
-              value.queryConfig.filters.map((filter, index) => (
+              (value.queryConfig?.filters ?? []).map((filter, index) => (
                 <div key={filter.id} className="flex items-end gap-2">
                   <div className="flex-1 space-y-2">
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
