@@ -354,6 +354,18 @@ export default function AgentBuilder() {
     
     createWorkflowMutation.mutate(data);
   };
+  
+  const handleFormError = (errors: any) => {
+    const errorMessages = Object.entries(errors)
+      .map(([field, error]: [string, any]) => `${field}: ${error.message}`)
+      .join(', ');
+    
+    toast({
+      title: "Form validation failed",
+      description: errorMessages || "Please check the form for errors",
+      variant: "destructive",
+    });
+  };
 
   const handleToggleWorkflow = (workflow: AgentWorkflow) => {
     updateWorkflowMutation.mutate({
@@ -414,7 +426,7 @@ export default function AgentBuilder() {
                 </DialogHeader>
                 
                 <Form {...form}>
-                  <form onSubmit={form.handleSubmit(handleCreateWorkflow)} className="space-y-4">
+                  <form onSubmit={form.handleSubmit(handleCreateWorkflow, handleFormError)} className="space-y-4">
                     <FormField
                       control={form.control}
                       name="name"
