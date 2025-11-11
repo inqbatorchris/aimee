@@ -552,7 +552,6 @@ export default function ProfitCenters() {
                     <SelectValue placeholder="Select Xero account (optional)..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">None</SelectItem>
                     {xeroAccounts?.map(account => (
                       <SelectItem key={account.id} value={account.id.toString()}>
                         {account.code} - {account.name}
