@@ -1436,59 +1436,59 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
 
     // Transform invoices to database format
     const invoiceRecords = xeroData.invoices.map((invoice: any) => {
-      // Extract account code from first line item
-      const firstLineItem = invoice.LineItems?.[0];
+      // Extract account code from first line item (use lowercase per Xero API)
+      const firstLineItem = invoice.lineItems?.[0] || invoice.LineItems?.[0];
       return {
         organizationId,
-        xeroTransactionId: invoice.InvoiceID,
+        xeroTransactionId: invoice.InvoiceID || invoice.invoiceID,
         xeroTransactionType: 'invoice' as const,
-        transactionDate: parseXeroDate(invoice.Date),
-        amount: String(invoice.Total || 0),
-        description: invoice.Reference || invoice.InvoiceNumber || '',
-        contactName: invoice.Contact?.Name,
-        xeroContactId: invoice.Contact?.ContactID,
-        xeroAccountCode: firstLineItem?.AccountCode || null,
-        xeroAccountName: firstLineItem?.Description || null,
-        currency: invoice.CurrencyCode || 'USD',
+        transactionDate: parseXeroDate(invoice.Date || invoice.date),
+        amount: String(invoice.Total || invoice.total || 0),
+        description: invoice.Reference || invoice.reference || invoice.InvoiceNumber || invoice.invoiceNumber || '',
+        contactName: invoice.Contact?.Name || invoice.contact?.name,
+        xeroContactId: invoice.Contact?.ContactID || invoice.contact?.contactID,
+        xeroAccountCode: firstLineItem?.accountCode || firstLineItem?.AccountCode || null,
+        xeroAccountName: firstLineItem?.description || firstLineItem?.Description || null,
+        currency: invoice.CurrencyCode || invoice.currencyCode || 'USD',
         metadata: invoice,
       };
     });
 
     // Transform bank transactions to database format
     const bankTxRecords = xeroData.bankTransactions.map((bankTx: any) => {
-      // Extract account code from first line item
-      const firstLineItem = bankTx.LineItems?.[0];
+      // Extract account code from first line item (use lowercase per Xero API)
+      const firstLineItem = bankTx.lineItems?.[0] || bankTx.LineItems?.[0];
       return {
         organizationId,
-        xeroTransactionId: bankTx.BankTransactionID,
+        xeroTransactionId: bankTx.BankTransactionID || bankTx.bankTransactionID,
         xeroTransactionType: 'bank_transaction' as const,
-        transactionDate: parseXeroDate(bankTx.Date),
-        amount: String(bankTx.Total || 0),
-        description: bankTx.Reference || '',
-        contactName: bankTx.Contact?.Name,
-        xeroContactId: bankTx.Contact?.ContactID,
-        xeroAccountCode: firstLineItem?.AccountCode || null,
-        xeroAccountName: firstLineItem?.Description || null,
-        currency: bankTx.CurrencyCode || 'USD',
+        transactionDate: parseXeroDate(bankTx.Date || bankTx.date),
+        amount: String(bankTx.Total || bankTx.total || 0),
+        description: bankTx.Reference || bankTx.reference || '',
+        contactName: bankTx.Contact?.Name || bankTx.contact?.name,
+        xeroContactId: bankTx.Contact?.ContactID || bankTx.contact?.contactID,
+        xeroAccountCode: firstLineItem?.accountCode || firstLineItem?.AccountCode || null,
+        xeroAccountName: firstLineItem?.description || firstLineItem?.Description || null,
+        currency: bankTx.CurrencyCode || bankTx.currencyCode || 'USD',
         metadata: bankTx,
       };
     });
 
     // Transform payments to database format
     const paymentRecords = xeroData.payments.map((payment: any) => {
-      // Extract account code from payment account
+      // Extract account code from payment account (use lowercase per Xero API)
       return {
         organizationId,
-        xeroTransactionId: payment.PaymentID,
+        xeroTransactionId: payment.PaymentID || payment.paymentID,
         xeroTransactionType: 'payment' as const,
-        transactionDate: parseXeroDate(payment.Date),
-        amount: String(payment.Amount || 0),
-        description: payment.Reference || `Payment for ${payment.Invoice?.InvoiceNumber || 'invoice'}`,
-        contactName: payment.Invoice?.Contact?.Name,
-        xeroContactId: payment.Invoice?.Contact?.ContactID,
-        xeroAccountCode: payment.Account?.Code || null,
-        xeroAccountName: payment.Account?.Name || null,
-        currency: payment.CurrencyCode || 'USD',
+        transactionDate: parseXeroDate(payment.Date || payment.date),
+        amount: String(payment.Amount || payment.amount || 0),
+        description: payment.Reference || payment.reference || `Payment for ${payment.Invoice?.InvoiceNumber || payment.invoice?.invoiceNumber || 'invoice'}`,
+        contactName: payment.Invoice?.Contact?.Name || payment.invoice?.contact?.name,
+        xeroContactId: payment.Invoice?.Contact?.ContactID || payment.invoice?.contact?.contactID,
+        xeroAccountCode: payment.Account?.code || payment.account?.code || payment.Account?.Code || null,
+        xeroAccountName: payment.Account?.name || payment.account?.name || payment.Account?.Name || null,
+        currency: payment.CurrencyCode || payment.currencyCode || 'USD',
         metadata: payment,
       };
     });
