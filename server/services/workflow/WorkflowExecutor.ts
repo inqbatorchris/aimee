@@ -1,8 +1,19 @@
 import { db } from '../../db';
-import { eq } from 'drizzle-orm';
-import { agentWorkflows, agentWorkflowRuns, integrations, keyResults, objectives, activityLogs, users } from '@shared/schema';
+import { eq, and, or, sql, count, ilike, isNull, isNotNull, gt, lt, gte, lte, inArray, notInArray, ne } from 'drizzle-orm';
+import { agentWorkflows, agentWorkflowRuns, integrations, keyResults, objectives, activityLogs, users, addressRecords, workItems, fieldTasks, ragStatusRecords, tariffRecords } from '@shared/schema';
 import { ActionHandlers } from './ActionHandlers';
+import { CleanDatabaseStorage } from '../../storage';
 import crypto from 'crypto';
+
+// Table registry for data source queries
+// Maps table names to their Drizzle schema objects
+const TABLE_REGISTRY: Record<string, any> = {
+  'address_records': addressRecords,
+  'work_items': workItems,
+  'field_tasks': fieldTasks,
+  'rag_status_records': ragStatusRecords,
+  'tariff_records': tariffRecords,
+};
 
 // Use the same encryption key from environment (set in Replit Secrets)
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
@@ -285,6 +296,9 @@ export class WorkflowExecutor {
         
         case 'strategy_update':
           return await this.executeStrategyUpdate(step, context);
+        
+        case 'data_source_query':
+          return await this.executeDataSourceQuery(step, context);
         
         case 'wait':
           return await this.executeWait(step, context);
@@ -679,6 +693,212 @@ export class WorkflowExecutor {
         success: false,
         error: error.message,
       };
+    }
+  }
+
+  private async executeDataSourceQuery(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      const { sourceTable, queryConfig, resultVariable, updateKeyResult } = step.config || {};
+      
+      if (!sourceTable || !queryConfig) {
+        throw new Error('Data source query requires sourceTable and queryConfig');
+      }
+      
+      console.log(`[WorkflowExecutor] 📊 Executing data source query`);
+      console.log(`[WorkflowExecutor]   Table: ${sourceTable}`);
+      console.log(`[WorkflowExecutor]   Query Config:`, JSON.stringify(queryConfig, null, 2));
+      
+      // Validate table access (organization isolation)
+      const storage = new CleanDatabaseStorage();
+      const orgId = parseInt(context.organizationId);
+      const dataTable = await storage.getDataTableByName(orgId, sourceTable);
+      
+      if (!dataTable) {
+        throw new Error(`Table '${sourceTable}' not found or not accessible for this organization`);
+      }
+      
+      console.log(`[WorkflowExecutor]   ✓ Table validated: ${dataTable.tableName} (ID: ${dataTable.id})`);
+      
+      // Get table schema from registry
+      const tableSchema = TABLE_REGISTRY[sourceTable];
+      if (!tableSchema) {
+        throw new Error(`Table '${sourceTable}' is not registered for data source queries. Registered tables: ${Object.keys(TABLE_REGISTRY).join(', ')}`);
+      }
+      
+      console.log(`[WorkflowExecutor]   ✓ Table schema found in registry`);
+      
+      // Execute generic query using the table schema
+      const result = await this.executeGenericQuery(tableSchema, orgId, queryConfig);
+      
+      console.log(`[WorkflowExecutor]   📈 Query result: ${result}`);
+      
+      // Store result in context
+      if (resultVariable) {
+        context[resultVariable] = result;
+        console.log(`[WorkflowExecutor]   💾 Result stored in context as: ${resultVariable}`);
+      }
+      
+      // Optionally update key result directly
+      if (updateKeyResult) {
+        const { keyResultId, updateType = 'set_value' } = updateKeyResult;
+        
+        console.log(`[WorkflowExecutor]   🎯 Updating Key Result ${keyResultId} with value: ${result}`);
+        
+        // Call executeStrategyUpdate to handle the KR update
+        await this.executeStrategyUpdate({
+          config: {
+            type: 'key_result',
+            targetId: keyResultId,
+            updateType: updateType,
+            value: result,
+          }
+        }, context);
+      }
+      
+      return {
+        success: true,
+        output: { 
+          result,
+          table: sourceTable,
+          aggregation: queryConfig.aggregation || 'count',
+          filterCount: queryConfig.filters?.length || 0,
+        },
+      };
+    } catch (error: any) {
+      console.error(`[WorkflowExecutor] ❌ Data source query failed: ${error.message}`);
+      return {
+        success: false,
+        error: error.message,
+        stack: error.stack,
+      };
+    }
+  }
+
+  private async executeGenericQuery(tableSchema: any, organizationId: number, queryConfig: any): Promise<number> {
+    const { filters = [], aggregation = 'count', aggregationField, limit = 1000 } = queryConfig;
+    
+    console.log(`[WorkflowExecutor]   🔍 Building generic query with ${filters.length} filters`);
+    
+    // Build WHERE conditions
+    const conditions: any[] = [];
+    
+    // Add organization isolation if the table has an organizationId column
+    if (tableSchema.organizationId) {
+      conditions.push(eq(tableSchema.organizationId, organizationId));
+      console.log(`[WorkflowExecutor]   🔒 Added organization isolation filter`);
+    }
+    
+    for (const filter of filters) {
+      const { field, operator, value } = filter;
+      
+      console.log(`[WorkflowExecutor]     Filter: ${field} ${operator} ${JSON.stringify(value)}`);
+      
+      // Handle JSONB fields (e.g., airtableFields.FieldName)
+      if (field.includes('.')) {
+        const parts = field.split('.');
+        const jsonColumn = parts[0];
+        const jsonField = parts.slice(1).join('.');
+        
+        // Get the JSONB column from the table schema
+        const column = (tableSchema as any)[jsonColumn];
+        if (!column) {
+          throw new Error(`JSONB column '${jsonColumn}' not found in table`);
+        }
+        
+        const jsonPath = sql`${column}->>${jsonField}`;
+        conditions.push(this.buildJsonbCondition(jsonPath, operator, value));
+      } else {
+        // Handle regular columns
+        const column = (tableSchema as any)[field];
+        if (!column) {
+          throw new Error(`Field '${field}' not found in table. Available fields should be validated by the frontend.`);
+        }
+        
+        conditions.push(this.buildCondition(column, operator, value));
+      }
+    }
+    
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    
+    // Execute aggregation
+    let queryResult: any;
+    
+    if (aggregation === 'count') {
+      queryResult = await db
+        .select({ value: count() })
+        .from(tableSchema)
+        .where(whereClause)
+        .limit(limit);
+      
+      return queryResult[0]?.value || 0;
+    } else if (aggregation === 'sum' || aggregation === 'avg' || aggregation === 'min' || aggregation === 'max') {
+      if (!aggregationField) {
+        throw new Error(`Aggregation '${aggregation}' requires aggregationField`);
+      }
+      
+      // For other aggregations, we'd need to handle field types
+      // For MVP, we'll focus on count
+      throw new Error(`Aggregation type '${aggregation}' not yet implemented. Currently supported: count`);
+    }
+    
+    return 0;
+  }
+
+  private buildCondition(column: any, operator: string, value: any): any {
+    switch (operator) {
+      case 'equals':
+        return eq(column, value);
+      case 'not_equals':
+        return ne(column, value);
+      case 'contains':
+        return ilike(column, `%${value}%`);
+      case 'not_contains':
+        return sql`NOT ${ilike(column, `%${value}%`)}`;
+      case 'starts_with':
+        return ilike(column, `${value}%`);
+      case 'ends_with':
+        return ilike(column, `%${value}`);
+      case 'is_null':
+        return isNull(column);
+      case 'not_null':
+        return isNotNull(column);
+      case 'in':
+        return inArray(column, Array.isArray(value) ? value : [value]);
+      case 'not_in':
+        return notInArray(column, Array.isArray(value) ? value : [value]);
+      case 'greater_than':
+        return gt(column, value);
+      case 'less_than':
+        return lt(column, value);
+      case 'greater_than_or_equal':
+        return gte(column, value);
+      case 'less_than_or_equal':
+        return lte(column, value);
+      default:
+        throw new Error(`Unsupported operator: ${operator}`);
+    }
+  }
+
+  private buildJsonbCondition(jsonPath: any, operator: string, value: any): any {
+    switch (operator) {
+      case 'equals':
+        return sql`${jsonPath} = ${value}`;
+      case 'not_equals':
+        return sql`${jsonPath} != ${value}`;
+      case 'contains':
+        return sql`${jsonPath} ILIKE ${'%' + value + '%'}`;
+      case 'not_contains':
+        return sql`${jsonPath} NOT ILIKE ${'%' + value + '%'}`;
+      case 'starts_with':
+        return sql`${jsonPath} ILIKE ${value + '%'}`;
+      case 'ends_with':
+        return sql`${jsonPath} ILIKE ${'%' + value}`;
+      case 'is_null':
+        return sql`${jsonPath} IS NULL`;
+      case 'not_null':
+        return sql`${jsonPath} IS NOT NULL`;
+      default:
+        throw new Error(`Operator '${operator}' not supported for JSONB fields`);
     }
   }
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle } from 'lucide-react';
+import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -8,10 +8,11 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import type { Integration, KeyResult, Objective } from '@shared/schema';
+import DataSourceQueryBuilder from './DataSourceQueryBuilder';
 
 interface WorkflowStep {
   id: string;
-  type: 'integration_action' | 'strategy_update' | 'log_event' | 'notification';
+  type: 'integration_action' | 'strategy_update' | 'log_event' | 'notification' | 'data_source_query';
   name: string;
   config?: any;
 }
@@ -36,6 +37,12 @@ const STEP_TYPES = {
     icon: Target,
     color: 'bg-green-500',
     description: 'Update a Key Result or Objective'
+  },
+  data_source_query: {
+    label: 'Data Source Query',
+    icon: Database,
+    color: 'bg-cyan-500',
+    description: 'Query app data tables and update KPIs'
   },
   log_event: {
     label: 'Log Event',
@@ -321,6 +328,23 @@ export default function WorkflowStepBuilder({
               </p>
             </div>
           </div>
+        );
+
+      case 'data_source_query':
+        return (
+          <DataSourceQueryBuilder
+            value={step.config || {
+              sourceTable: '',
+              queryConfig: {
+                filters: [],
+                aggregation: 'count',
+                limit: 1000,
+              },
+              resultVariable: '',
+            }}
+            onChange={(config) => updateStep(step.id, { config })}
+            keyResults={keyResults}
+          />
         );
 
       case 'log_event':
