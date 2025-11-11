@@ -215,7 +215,7 @@ export default function ProfitCenters() {
       return;
     }
 
-    const selectedAccount = xeroAccounts?.find(a => a.id.toString() === formData.xeroAccountId);
+    const selectedAccount = xeroAccounts?.find(a => a.xeroAccountId === formData.xeroAccountId);
 
     // Map frontend okrType to backend linkedOkrType
     const linkedOkrType = formData.okrType === 'key_result_task' ? 'task' : formData.okrType;
@@ -553,7 +553,7 @@ export default function ProfitCenters() {
                   </SelectTrigger>
                   <SelectContent>
                     {xeroAccounts?.map(account => (
-                      <SelectItem key={account.id} value={account.id.toString()}>
+                      <SelectItem key={account.id} value={account.xeroAccountId}>
                         {account.accountCode} - {account.accountName}
                       </SelectItem>
                     ))}
