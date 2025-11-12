@@ -650,8 +650,92 @@ export class WorkflowExecutor {
           }
         }
       } else if (type === 'objective') {
-        // Update Objective status or other fields
-        // TODO: Implement objective updates if needed
+        // Get the objective details before updating (for activity log)
+        const [obj] = await db
+          .select()
+          .from(objectives)
+          .where(eq(objectives.id, targetId))
+          .limit(1);
+        
+        if (!obj) {
+          throw new Error(`Objective ${targetId} not found`);
+        }
+        
+        const oldValue = obj.currentValue;
+        let newValue = processedValue;
+        
+        // Update Objective
+        if (updateType === 'set_value') {
+          await db
+            .update(objectives)
+            .set({ 
+              currentValue: String(processedValue),
+              lastCalculatedAt: new Date(),
+              updatedAt: new Date()
+            })
+            .where(eq(objectives.id, targetId));
+        } else if (updateType === 'increment') {
+          const currentVal = parseFloat(obj.currentValue || '0');
+          const incrementBy = parseFloat(processedValue || '0');
+          newValue = currentVal + incrementBy;
+          await db
+            .update(objectives)
+            .set({ 
+              currentValue: String(newValue),
+              lastCalculatedAt: new Date(),
+              updatedAt: new Date()
+            })
+            .where(eq(objectives.id, targetId));
+        } else if (updateType === 'percentage') {
+          if (obj.targetValue) {
+            const targetVal = parseFloat(obj.targetValue || '100');
+            const percentage = parseFloat(processedValue || '0');
+            newValue = (targetVal * percentage) / 100;
+            await db
+              .update(objectives)
+              .set({ 
+                currentValue: String(newValue),
+                lastCalculatedAt: new Date(),
+                updatedAt: new Date()
+              })
+              .where(eq(objectives.id, targetId));
+          }
+        }
+        
+        // Create activity log for agent-generated objective update
+        const userId = context.assignedUserId || null;
+        const orgId = parseInt(context.organizationId);
+        
+        if (!isNaN(orgId)) {
+          try {
+            const agentName = context.assignedUserName || 'Unknown Agent';
+            const workflowName = context.workflowName || 'Workflow';
+            const description = `${agentName} performed ${workflowName}`;
+            
+            await db.insert(activityLogs).values({
+              organizationId: orgId,
+              userId: userId,
+              actionType: 'agent_action',
+              entityType: 'objective',
+              entityId: targetId,
+              description: description,
+              metadata: {
+                title: obj.title,
+                newValue: String(newValue),
+                oldValue: String(oldValue),
+                updateType: updateType,
+                triggerSource: context.triggerSource || 'workflow',
+                workflowId: context.workflowId,
+                workflowName: context.workflowName,
+                runId: context.runId
+              }
+            });
+            console.log(`[WorkflowExecutor] ✓ Activity log created for objective: "${description}"`);
+          } catch (error) {
+            console.error('[WorkflowExecutor] Failed to log objective activity:', error);
+            // Don't throw - activity log failure shouldn't break the workflow
+          }
+        }
       }
       
       return {
