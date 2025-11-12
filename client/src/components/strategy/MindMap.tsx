@@ -130,6 +130,9 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                   {data.status}
                 </Badge>
               )}
+              <span className="text-[9px] text-gray-600 font-medium">
+                {Math.floor(data.currentValue || 0)}/{Math.floor(data.targetValue || 0)}
+              </span>
               {data.team?.name && (
                 <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-auto bg-purple-50 text-purple-700">
                   {data.team.name}
