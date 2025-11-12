@@ -113,10 +113,15 @@ export default function AgentBuilder() {
     queryKey: ['/api/agents/workflows'],
   });
 
-  // Fetch workflow runs
+  // Fetch workflow runs with auto-refresh for running workflows
   const { data: runs, isLoading: runsLoading } = useQuery<WorkflowRun[]>({
     queryKey: ['/api/agents/runs'],
     enabled: selectedTab === 'runs',
+    refetchInterval: (data) => {
+      // Poll every 2 seconds if any workflow is running
+      const hasRunningWorkflows = Array.isArray(data) && data.some(run => run.status === 'running');
+      return hasRunningWorkflows ? 2000 : false;
+    },
   });
 
   // Fetch available integrations
