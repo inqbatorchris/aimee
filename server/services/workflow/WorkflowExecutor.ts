@@ -1,5 +1,5 @@
 import { db } from '../../db';
-import { eq, and, or, sql, count, ilike, isNull, isNotNull, gt, lt, gte, lte, inArray, notInArray, ne } from 'drizzle-orm';
+import { eq, and, or, sql, count, sum, avg, min, max, ilike, isNull, isNotNull, gt, lt, gte, lte, inArray, notInArray, ne } from 'drizzle-orm';
 import { agentWorkflows, agentWorkflowRuns, integrations, keyResults, objectives, activityLogs, users, addressRecords, workItems, fieldTasks, ragStatusRecords, tariffRecords } from '@shared/schema';
 import { ActionHandlers } from './ActionHandlers';
 import { CleanDatabaseStorage } from '../../storage';
@@ -768,7 +768,7 @@ export class WorkflowExecutor {
     }
   }
 
-  private async executeGenericQuery(tableSchema: any, organizationId: number, queryConfig: any): Promise<number> {
+  private async executeGenericQuery(tableSchema: any, organizationId: number, queryConfig: any): Promise<string | number | null> {
     const { filters = [], aggregation = 'count', aggregationField, limit = 1000 } = queryConfig;
     
     console.log(`[WorkflowExecutor]   🔍 Building generic query with ${filters.length} filters`);
@@ -830,9 +830,71 @@ export class WorkflowExecutor {
         throw new Error(`Aggregation '${aggregation}' requires aggregationField`);
       }
       
-      // For other aggregations, we'd need to handle field types
-      // For MVP, we'll focus on count
-      throw new Error(`Aggregation type '${aggregation}' not yet implemented. Currently supported: count`);
+      // Get the field to aggregate
+      const column = (tableSchema as any)[aggregationField];
+      if (!column) {
+        throw new Error(`Field '${aggregationField}' not found in table for aggregation`);
+      }
+      
+      console.log(`[WorkflowExecutor]   📊 Performing ${aggregation} on field: ${aggregationField}`);
+      
+      // Select the appropriate aggregation function
+      let aggregationFn;
+      switch (aggregation) {
+        case 'sum':
+          aggregationFn = sum(column);
+          break;
+        case 'avg':
+          aggregationFn = avg(column);
+          break;
+        case 'min':
+          aggregationFn = min(column);
+          break;
+        case 'max':
+          aggregationFn = max(column);
+          break;
+        default:
+          throw new Error(`Unsupported aggregation: ${aggregation}`);
+      }
+      
+      try {
+        queryResult = await db
+          .select({ value: aggregationFn })
+          .from(tableSchema)
+          .where(whereClause);
+      } catch (dbError: any) {
+        // Catch PostgreSQL errors for invalid aggregations (e.g., sum on text fields)
+        if (dbError.message?.includes('invalid input syntax') || 
+            dbError.message?.includes('function') || 
+            dbError.code === '42883') {
+          throw new Error(`Cannot perform ${aggregation} on field '${aggregationField}'. Ensure the field contains ${aggregation === 'sum' || aggregation === 'avg' ? 'numeric' : 'appropriate'} data. Database error: ${dbError.message}`);
+        }
+        throw dbError;
+      }
+      
+      const result = queryResult[0]?.value;
+      
+      // Handle result based on aggregation type
+      if (aggregation === 'sum' || aggregation === 'avg') {
+        // For numeric aggregations, preserve precision by returning the raw value
+        // PostgreSQL returns DECIMAL/NUMERIC as strings to avoid floating-point errors
+        if (result === null || result === undefined) {
+          return '0';
+        }
+        
+        // Validate it's numeric without converting to Number (which loses precision)
+        const strValue = String(result);
+        if (!/^-?\d+(\.\d+)?$/.test(strValue)) {
+          throw new Error(`Field '${aggregationField}' produced non-numeric result '${strValue}' for ${aggregation} aggregation. Ensure the field contains numeric data.`);
+        }
+        
+        // Return the raw string to preserve precision for currency calculations
+        // Consuming steps can use parseFloat() for display or keep as string for exact math
+        return strValue;
+      } else {
+        // For MIN/MAX, return the raw value (could be date, string, number, etc.)
+        return result !== null && result !== undefined ? result : null;
+      }
     }
     
     return 0;
