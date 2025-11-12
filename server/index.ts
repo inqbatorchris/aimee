@@ -59,9 +59,53 @@ app.set('trust proxy', true);
 
 // Clean CORS configuration for application API
 const corsOptions = {
-  origin: process.env.NODE_ENV === 'production' 
-    ? ['https://your-domain.com'] // Update with actual domain
-    : ['http://localhost:5173', 'http://localhost:3000', 'http://127.0.0.1:5173'],
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    // Allow requests with no origin (like mobile apps, curl, Postman)
+    if (!origin) {
+      return callback(null, true);
+    }
+    
+    // In production, allow Replit domains and custom domains
+    if (process.env.NODE_ENV === 'production') {
+      // Allow all Replit domains and custom domains
+      const allowedPatterns = [
+        /\.replit\.app$/,
+        /\.repl\.co$/,
+        /\.replit\.dev$/,
+        /country-connect\.co\.uk$/,
+      ];
+      
+      const isAllowed = allowedPatterns.some(pattern => pattern.test(origin));
+      if (isAllowed) {
+        return callback(null, true);
+      }
+      
+      // Also allow if custom domains are configured
+      if (process.env.ALLOWED_ORIGINS) {
+        const allowedOrigins = process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim());
+        if (allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+      }
+      
+      // Reject other origins in production
+      return callback(new Error('Not allowed by CORS'));
+    }
+    
+    // In development, allow localhost and common dev ports
+    const devOrigins = [
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'http://127.0.0.1:5173',
+      'http://localhost:5000',
+    ];
+    
+    if (devOrigins.includes(origin) || origin.includes('.replit.dev')) {
+      return callback(null, true);
+    }
+    
+    return callback(null, true); // Allow in dev mode by default
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
   credentials: true,

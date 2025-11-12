@@ -765,19 +765,19 @@ function MindMapInner({ objectives, onNodeClick }: MindMapProps) {
       // Try to load saved positions for this layout mode
       const savedPositions = loadNodePositions();
       
-      let nodesToSet = layoutedNodes;
       if (savedPositions) {
         // Merge saved positions with layout positions
-        nodesToSet = layoutedNodes.map(node => {
+        const nodesToSet = layoutedNodes.map(node => {
           const savedPos = savedPositions[node.id];
           if (savedPos) {
-            return { ...node, position: savedPos } as any;
+            return { ...node, position: savedPos };
           }
-          return node as any;
-        }) as Node[];
+          return node;
+        });
+        setNodes(nodesToSet);
+      } else {
+        setNodes(layoutedNodes);
       }
-      
-      setNodes(nodesToSet as Node[]);
     }
     
     // Always update edges to reflect current node positions
