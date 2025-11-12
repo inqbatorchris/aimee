@@ -101,10 +101,10 @@ export default function AgentBuilder() {
   const [editingWorkflow, setEditingWorkflow] = useState<AgentWorkflow | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterTriggerType, setFilterTriggerType] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
   const [expandedRunId, setExpandedRunId] = useState<number | null>(null);
   const [createAgentUserDialogOpen, setCreateAgentUserDialogOpen] = useState(false);
   const [newAgentUserName, setNewAgentUserName] = useState('');
+  const [deleteWorkflowId, setDeleteWorkflowId] = useState<number | null>(null);
   const { toast} = useToast();
   const [, setLocation] = useLocation();
 
@@ -893,18 +893,6 @@ export default function AgentBuilder() {
 
           {/* Filtering Controls */}
           <div className="mb-6 flex flex-col sm:flex-row gap-4">
-            <div className="flex-1">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search workflows..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-10"
-                  data-testid="input-search-workflows"
-                />
-              </div>
-            </div>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
               <SelectTrigger className="w-full sm:w-[180px]" data-testid="select-filter-status">
                 <SelectValue placeholder="Status" />
@@ -959,17 +947,13 @@ export default function AgentBuilder() {
                       <TableHead className="hidden sm:table-cell">Trigger</TableHead>
                       <TableHead className="hidden md:table-cell">Status</TableHead>
                       <TableHead className="hidden lg:table-cell">Last Run</TableHead>
-                      <TableHead className="text-right sm:hidden">Actions</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {workflows
                       ?.filter((workflow) => {
                         // Apply filters
-                        const matchesSearch = !searchQuery || 
-                          workflow.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          workflow.description?.toLowerCase().includes(searchQuery.toLowerCase());
-                        
                         const matchesStatus = filterStatus === 'all' || 
                           (filterStatus === 'enabled' && workflow.isEnabled) ||
                           (filterStatus === 'disabled' && !workflow.isEnabled);
@@ -977,7 +961,7 @@ export default function AgentBuilder() {
                         const matchesTrigger = filterTriggerType === 'all' || 
                           workflow.triggerType === filterTriggerType;
                         
-                        return matchesSearch && matchesStatus && matchesTrigger;
+                        return matchesStatus && matchesTrigger;
                       })
                       .map((workflow) => {
                         const triggerConfig = TRIGGER_TYPES[workflow.triggerType as keyof typeof TRIGGER_TYPES];
@@ -1055,18 +1039,32 @@ export default function AgentBuilder() {
                                 <span className="text-sm text-muted-foreground">Never</span>
                               )}
                             </TableCell>
-                            <TableCell className="text-right sm:hidden" onClick={(e) => e.stopPropagation()}>
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                onClick={() => {
-                                  setLocation(`/agents/workflows/${workflow.id}/edit`);
-                                }}
-                                data-testid={`button-view-${workflow.id}`}
-                                className="h-8 w-8 p-0"
-                              >
-                                <ChevronRight className="h-4 w-4" />
-                              </Button>
+                            <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center justify-end gap-2">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => {
+                                    setLocation(`/agents/workflows/${workflow.id}/edit`);
+                                  }}
+                                  data-testid={`button-view-${workflow.id}`}
+                                  className="h-8 w-8 p-0"
+                                >
+                                  <ChevronRight className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDeleteWorkflowId(workflow.id);
+                                  }}
+                                  data-testid={`button-delete-${workflow.id}`}
+                                  className="h-8 w-8 p-0 text-destructive hover:text-destructive"
+                                >
+                                  <Trash2 className="h-4 w-4" />
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         );
@@ -1219,6 +1217,39 @@ export default function AgentBuilder() {
           )}
         </TabsContent>
       </Tabs>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteWorkflowId !== null} onOpenChange={(open) => !open && setDeleteWorkflowId(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Workflow</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this workflow? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex justify-end gap-3 mt-4">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteWorkflowId(null)}
+              data-testid="button-cancel-delete"
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                if (deleteWorkflowId !== null) {
+                  deleteWorkflowMutation.mutate(deleteWorkflowId);
+                  setDeleteWorkflowId(null);
+                }
+              }}
+              data-testid="button-confirm-delete"
+            >
+              Delete
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );
