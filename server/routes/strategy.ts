@@ -50,11 +50,11 @@ const createObjectiveSchema = z.object({
   category: z.string().optional(),
   priority: z.string().optional(),
   status: z.enum(['Draft', 'Active', 'On Track', 'At Risk', 'Off Track', 'Completed', 'Archived']).default('Draft'),
-  targetValue: z.number().optional(),
+  targetValue: z.number().optional().nullable(),
   currentValue: z.number().default(0),
   kpiType: z.enum(['Derived from Key Results', 'Manual Input']).default('Derived from Key Results'),
-  ownerId: z.number().optional(),
-  teamId: z.number().optional(),
+  ownerId: z.number().optional().nullable(),
+  teamId: z.number().optional().nullable(),
 });
 
 // Key Results validation schema (migration 002)
