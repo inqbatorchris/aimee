@@ -900,20 +900,61 @@ export class WorkflowExecutor {
     return 0;
   }
 
+  private parseFilterValue(value: any, column: any): any {
+    // If value is null or undefined, return as-is
+    if (value === null || value === undefined) {
+      return value;
+    }
+    
+    // If already a native type (not a string), return as-is
+    if (typeof value !== 'string') {
+      return value;
+    }
+    
+    // Detect and parse date strings (ISO format: YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS)
+    const isoDatePattern = /^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?/;
+    if (isoDatePattern.test(value)) {
+      const parsed = new Date(value);
+      if (!isNaN(parsed.getTime())) {
+        console.log(`[WorkflowExecutor]     ✓ Parsed date: "${value}" → ${parsed.toISOString()}`);
+        return parsed;
+      }
+    }
+    
+    // Detect and parse numeric strings for comparison operators
+    if (/^-?\d+(\.\d+)?$/.test(value)) {
+      const num = parseFloat(value);
+      if (!isNaN(num)) {
+        console.log(`[WorkflowExecutor]     ✓ Parsed number: "${value}" → ${num}`);
+        return num;
+      }
+    }
+    
+    // Parse boolean strings
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    
+    // Return string as-is for text comparisons
+    return value;
+  }
+
   private buildCondition(column: any, operator: string, value: any): any {
+    // Parse value to native JS type for Drizzle
+    const parsedValue = this.parseFilterValue(value, column);
+    
     switch (operator) {
       case 'equals':
-        return eq(column, value);
+        return eq(column, parsedValue);
       case 'not_equals':
-        return ne(column, value);
+        return ne(column, parsedValue);
       case 'contains':
-        return ilike(column, `%${value}%`);
+        return ilike(column, `%${parsedValue}%`);
       case 'not_contains':
-        return sql`NOT ${ilike(column, `%${value}%`)}`;
+        return sql`NOT ${ilike(column, `%${parsedValue}%`)}`;
       case 'starts_with':
-        return ilike(column, `${value}%`);
+        return ilike(column, `${parsedValue}%`);
       case 'ends_with':
-        return ilike(column, `%${value}`);
+        return ilike(column, `%${parsedValue}`);
       case 'is_null':
         return isNull(column);
       case 'not_null':
@@ -923,13 +964,13 @@ export class WorkflowExecutor {
       case 'not_in':
         return notInArray(column, Array.isArray(value) ? value : [value]);
       case 'greater_than':
-        return gt(column, value);
+        return gt(column, parsedValue);
       case 'less_than':
-        return lt(column, value);
+        return lt(column, parsedValue);
       case 'greater_than_or_equal':
-        return gte(column, value);
+        return gte(column, parsedValue);
       case 'less_than_or_equal':
-        return lte(column, value);
+        return lte(column, parsedValue);
       default:
         throw new Error(`Unsupported operator: ${operator}`);
     }
