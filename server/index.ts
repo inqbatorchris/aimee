@@ -384,6 +384,17 @@ console.log('  Preview hostnames:', hostnameConfig.previewHostnames);
 // Apply hostname routing middleware
 app.use(createHostnameRouter(hostnameConfig));
 
+// In production, serve static files EARLY before any catch-all routes
+if (process.env.NODE_ENV === "production") {
+  const distPath = path.join(path.dirname(new URL(import.meta.url).pathname), "public");
+  log(`📦 Setting up static file serving from: ${distPath}`);
+  app.use(express.static(distPath, {
+    maxAge: '1y',
+    etag: true,
+    lastModified: true,
+  }));
+}
+
 // Mount public website routes for public website hostnames
 // These serve published pages at root-level URLs like /residential, /business
 import publicWebsiteRoutes from './routes/public-website.js';
@@ -425,7 +436,17 @@ async function startServer() {
       });
     }
   } else {
-    serveStatic(app);
+    // In production, just add the SPA fallback (static files already served above)
+    const distPath = path.join(path.dirname(new URL(import.meta.url).pathname), "public");
+    app.get('*', (req, res, next) => {
+      // Skip if it looks like a static file request or API
+      if (req.path.includes('.') || req.path.startsWith('/api')) {
+        return next();
+      }
+      
+      const indexPath = path.join(distPath, "index.html");
+      res.sendFile(indexPath);
+    });
   }
 
   // Now start the server
