@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database } from 'lucide-react';
+import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database, Calculator } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -12,7 +12,7 @@ import DataSourceQueryBuilder from './DataSourceQueryBuilder';
 
 interface WorkflowStep {
   id: string;
-  type: 'integration_action' | 'strategy_update' | 'log_event' | 'notification' | 'data_source_query';
+  type: 'integration_action' | 'strategy_update' | 'log_event' | 'notification' | 'data_source_query' | 'data_transformation';
   name: string;
   config?: any;
 }
@@ -43,6 +43,12 @@ const STEP_TYPES = {
     icon: Database,
     color: 'bg-cyan-500',
     description: 'Query app data tables and update KPIs'
+  },
+  data_transformation: {
+    label: 'Data Transformation',
+    icon: Calculator,
+    color: 'bg-orange-500',
+    description: 'Transform data using formulas and calculations'
   },
   log_event: {
     label: 'Log Event',
@@ -345,6 +351,39 @@ export default function WorkflowStepBuilder({
             onChange={(config) => updateStep(step.id, { config })}
             keyResults={keyResults}
           />
+        );
+
+      case 'data_transformation':
+        return (
+          <div className="space-y-4">
+            <div>
+              <Label>Formula</Label>
+              <Input
+                placeholder="e.g., {revenue} / {customers}"
+                value={step.config.formula || ''}
+                onChange={(e) => updateStep(step.id, {
+                  config: { ...step.config, formula: e.target.value }
+                })}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Use arithmetic operators (+, -, *, /) and variables from previous steps
+              </p>
+            </div>
+            
+            <div>
+              <Label>Store Result As</Label>
+              <Input
+                placeholder="e.g., arpu"
+                value={step.config.resultVariable || ''}
+                onChange={(e) => updateStep(step.id, {
+                  config: { ...step.config, resultVariable: e.target.value }
+                })}
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Use this variable in the next steps as {`{${step.config.resultVariable || 'resultName'}}`}
+              </p>
+            </div>
+          </div>
         );
 
       case 'log_event':
