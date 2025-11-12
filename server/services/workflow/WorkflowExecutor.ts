@@ -406,7 +406,7 @@ export class WorkflowExecutor {
         }
         
         // Replace variables with their numeric values
-        processedFormula = formula.replace(/\{(\w+)\}/g, (_, varName) => {
+        processedFormula = formula.replace(/\{(\w+)\}/g, (_: string, varName: string) => {
           const value = variables[varName];
           // Convert string to number for calculation
           const numValue = typeof value === 'string' ? parseFloat(value) : value;
