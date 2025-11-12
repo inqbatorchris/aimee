@@ -54,7 +54,10 @@ const OPERATORS = [
 
 const AGGREGATIONS = [
   { value: 'count', label: 'Count records' },
-  // Note: sum/avg/min/max planned for future enhancement
+  { value: 'sum', label: 'Sum' },
+  { value: 'avg', label: 'Average' },
+  { value: 'min', label: 'Minimum' },
+  { value: 'max', label: 'Maximum' },
 ];
 
 export default function DataSourceQueryBuilder({
@@ -183,17 +186,71 @@ export default function DataSourceQueryBuilder({
             <>
               <div>
                 <Label>Aggregation</Label>
-                <div className="flex items-center gap-2">
-                  <Input
-                    value="Count records"
-                    disabled
-                    className="bg-gray-100"
-                    data-testid="input-aggregation"
-                  />
-                </div>
-                <p className="text-xs text-gray-500 mt-1">
-                  MVP supports counting records. Sum/avg/min/max coming in future release.
-                </p>
+                <Select
+                  value={value.queryConfig?.aggregation || 'count'}
+                  onValueChange={(aggregation: string) => onChange({
+                    ...value,
+                    queryConfig: {
+                      ...value.queryConfig,
+                      filters: value.queryConfig?.filters || [],
+                      aggregation: aggregation as 'count' | 'sum' | 'avg' | 'min' | 'max',
+                      limit: value.queryConfig?.limit || 1000,
+                    }
+                  })}
+                >
+                  <SelectTrigger data-testid="select-aggregation">
+                    <SelectValue placeholder="Select aggregation" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {AGGREGATIONS.map(agg => (
+                      <SelectItem key={agg.value} value={agg.value}>
+                        {agg.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {value.queryConfig?.aggregation && ['sum', 'avg', 'min', 'max'].includes(value.queryConfig.aggregation) && (
+                  <div className="mt-2">
+                    <Label>Field to aggregate</Label>
+                    <Select
+                      value={value.queryConfig?.aggregationField || ''}
+                      onValueChange={(aggregationField) => onChange({
+                        ...value,
+                        queryConfig: {
+                          ...value.queryConfig,
+                          filters: value.queryConfig?.filters || [],
+                          aggregation: value.queryConfig?.aggregation || 'count',
+                          aggregationField,
+                          limit: value.queryConfig?.limit || 1000,
+                        }
+                      })}
+                    >
+                      <SelectTrigger data-testid="select-aggregation-field">
+                        <SelectValue placeholder="Select field" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {fields
+                          .filter(field => {
+                            if (value.queryConfig?.aggregation === 'sum' || value.queryConfig?.aggregation === 'avg') {
+                              return field.fieldType === 'number';
+                            }
+                            return true;
+                          })
+                          .map(field => (
+                            <SelectItem key={field.id} value={field.fieldName}>
+                              {field.fieldName}
+                            </SelectItem>
+                          ))
+                        }
+                      </SelectContent>
+                    </Select>
+                    {(value.queryConfig?.aggregation === 'sum' || value.queryConfig?.aggregation === 'avg') && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Only numeric fields are shown for SUM and AVG aggregations
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>
