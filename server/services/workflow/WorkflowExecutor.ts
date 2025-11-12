@@ -381,9 +381,56 @@ export class WorkflowExecutor {
 
   private async executeDataTransformation(step: any, context: any): Promise<StepExecutionResult> {
     try {
-      const { transformation } = step.config || {};
+      const { transformation, formula, resultVariable } = step.config || {};
       
-      // Simple JSON path transformations
+      // Formula-based calculation (e.g., "{revenue} / {customers}")
+      if (formula) {
+        console.log(`[WorkflowExecutor] 🧮 Evaluating formula: ${formula}`);
+        
+        // Replace variables in formula with their values from context
+        let processedFormula = formula;
+        const variablePattern = /\{(\w+)\}/g;
+        let match;
+        const variables: Record<string, any> = {};
+        
+        while ((match = variablePattern.exec(formula)) !== null) {
+          const varName = match[1];
+          const varValue = context[varName];
+          
+          if (varValue === undefined || varValue === null) {
+            throw new Error(`Variable '${varName}' not found in context for formula evaluation`);
+          }
+          
+          variables[varName] = varValue;
+          console.log(`[WorkflowExecutor]   Variable ${varName} = ${varValue}`);
+        }
+        
+        // Replace variables with their numeric values
+        processedFormula = formula.replace(/\{(\w+)\}/g, (_, varName) => {
+          const value = variables[varName];
+          // Convert string to number for calculation
+          const numValue = typeof value === 'string' ? parseFloat(value) : value;
+          return String(numValue);
+        });
+        
+        console.log(`[WorkflowExecutor]   Processed formula: ${processedFormula}`);
+        
+        // Evaluate the formula (simple arithmetic only - safe eval)
+        const result = this.evaluateArithmeticFormula(processedFormula);
+        console.log(`[WorkflowExecutor]   ✅ Result: ${result}`);
+        
+        // Store result in context if resultVariable is specified
+        if (resultVariable) {
+          context[resultVariable] = result;
+        }
+        
+        return {
+          success: true,
+          output: result,
+        };
+      }
+      
+      // Original transformation logic for backward compatibility
       let result = context;
       
       if (transformation?.type === 'json_path') {
@@ -401,6 +448,37 @@ export class WorkflowExecutor {
         success: false,
         error: error.message,
       };
+    }
+  }
+  
+  private evaluateArithmeticFormula(formula: string): number {
+    // Remove all whitespace
+    const cleanFormula = formula.replace(/\s/g, '');
+    
+    // Validate formula contains only numbers and arithmetic operators
+    if (!/^[\d.+\-*/()]+$/.test(cleanFormula)) {
+      throw new Error(`Invalid formula: ${formula}. Only arithmetic operators (+, -, *, /, parentheses) and numbers are allowed.`);
+    }
+    
+    // Use Function constructor for safe evaluation (no access to scope)
+    try {
+      const result = new Function(`return ${cleanFormula}`)();
+      
+      // Check for division by zero or invalid results
+      if (typeof result !== 'number') {
+        throw new Error(`Formula evaluation resulted in non-number: ${result}`);
+      }
+      
+      if (!isFinite(result)) {
+        // Handle division by zero or infinity
+        console.warn(`[WorkflowExecutor] Formula resulted in non-finite value (likely division by zero): ${formula}`);
+        return 0; // Return 0 for division by zero instead of throwing
+      }
+      
+      // Round to 2 decimal places for currency/ARPU calculations
+      return Math.round(result * 100) / 100;
+    } catch (error: any) {
+      throw new Error(`Failed to evaluate formula '${formula}': ${error.message}`);
     }
   }
 
@@ -869,7 +947,10 @@ export class WorkflowExecutor {
     for (const filter of filters) {
       const { field, operator, value } = filter;
       
-      console.log(`[WorkflowExecutor]     Filter: ${field} ${operator} ${JSON.stringify(value)}`);
+      // Process dynamic date placeholders
+      const processedValue = this.processDynamicValue(value);
+      
+      console.log(`[WorkflowExecutor]     Filter: ${field} ${operator} ${JSON.stringify(value)}${value !== processedValue ? ` → ${JSON.stringify(processedValue)}` : ''}`);
       
       // Handle JSONB fields (e.g., airtableFields.FieldName)
       if (field.includes('.')) {
@@ -884,7 +965,7 @@ export class WorkflowExecutor {
         }
         
         const jsonPath = sql`${column}->>${jsonField}`;
-        conditions.push(this.buildJsonbCondition(jsonPath, operator, value));
+        conditions.push(this.buildJsonbCondition(jsonPath, operator, processedValue));
       } else {
         // Handle regular columns
         const column = (tableSchema as any)[field];
@@ -892,7 +973,7 @@ export class WorkflowExecutor {
           throw new Error(`Field '${field}' not found in table. Available fields should be validated by the frontend.`);
         }
         
-        conditions.push(this.buildCondition(column, operator, value));
+        conditions.push(this.buildCondition(column, operator, processedValue));
       }
     }
     
@@ -982,6 +1063,49 @@ export class WorkflowExecutor {
     }
     
     return 0;
+  }
+
+  private processDynamicValue(value: any): any {
+    // Process dynamic date placeholders
+    if (typeof value === 'string' && value.startsWith('{') && value.endsWith('}')) {
+      const placeholder = value.slice(1, -1); // Remove { }
+      
+      const now = new Date();
+      
+      switch (placeholder) {
+        case 'currentMonthStart': {
+          // First day of current month at midnight
+          const date = new Date(now.getFullYear(), now.getMonth(), 1);
+          const isoDate = date.toISOString().split('T')[0];
+          console.log(`[WorkflowExecutor]   🔄 Dynamic value: {currentMonthStart} → ${isoDate}`);
+          return isoDate;
+        }
+        case 'currentMonthEnd': {
+          // Last day of current month at 23:59:59
+          const date = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+          const isoDate = date.toISOString().split('T')[0];
+          console.log(`[WorkflowExecutor]   🔄 Dynamic value: {currentMonthEnd} → ${isoDate}`);
+          return isoDate;
+        }
+        case 'today': {
+          const isoDate = now.toISOString().split('T')[0];
+          console.log(`[WorkflowExecutor]   🔄 Dynamic value: {today} → ${isoDate}`);
+          return isoDate;
+        }
+        case 'yesterday': {
+          const date = new Date(now);
+          date.setDate(date.getDate() - 1);
+          const isoDate = date.toISOString().split('T')[0];
+          console.log(`[WorkflowExecutor]   🔄 Dynamic value: {yesterday} → ${isoDate}`);
+          return isoDate;
+        }
+        default:
+          // Unknown placeholder, return as-is
+          return value;
+      }
+    }
+    
+    return value;
   }
 
   private parseFilterValue(value: any, column: any): any {
