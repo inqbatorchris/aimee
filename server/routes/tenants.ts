@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { storage } from '../storage';
-import { requireAuth, requireSuperAdmin } from '../middleware/auth';
+import { authenticateToken, requireRole } from '../auth';
 
 const router = Router();
 
@@ -20,7 +20,7 @@ const updateTenantSchema = z.object({
 });
 
 // Get all tenants (super admin only)
-router.get('/', requireAuth, requireSuperAdmin, async (req, res) => {
+router.get('/', authenticateToken, requireRole('super_admin'), async (req, res) => {
   try {
     const organizations = await storage.getOrganizations();
     const tenants = await Promise.all(
@@ -41,7 +41,7 @@ router.get('/', requireAuth, requireSuperAdmin, async (req, res) => {
 });
 
 // Get tenant by organization ID
-router.get('/org/:orgId', requireAuth, async (req, res) => {
+router.get('/org/:orgId', authenticateToken, async (req, res) => {
   try {
     const orgId = parseInt(req.params.orgId);
     
@@ -63,7 +63,7 @@ router.get('/org/:orgId', requireAuth, async (req, res) => {
 });
 
 // Create tenant (super admin only)
-router.post('/', requireAuth, requireSuperAdmin, async (req, res) => {
+router.post('/', authenticateToken, requireRole('super_admin'), async (req, res) => {
   try {
     const data = createTenantSchema.parse(req.body);
     
@@ -102,7 +102,7 @@ router.post('/', requireAuth, requireSuperAdmin, async (req, res) => {
 });
 
 // Update tenant
-router.put('/:id', requireAuth, requireSuperAdmin, async (req, res) => {
+router.put('/:id', authenticateToken, requireRole('super_admin'), async (req, res) => {
   try {
     const tenantId = req.params.id;
     const data = updateTenantSchema.parse(req.body);
@@ -151,7 +151,7 @@ router.get('/check-subdomain', async (req, res) => {
 });
 
 // Provision database for tenant
-router.post('/:id/provision-db', requireAuth, requireSuperAdmin, async (req, res) => {
+router.post('/:id/provision-db', authenticateToken, requireRole('super_admin'), async (req, res) => {
   try {
     const tenantId = req.params.id;
     
