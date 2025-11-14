@@ -449,6 +449,24 @@ async function startServer() {
     });
   }
 
+  // Global error handler - MUST be registered AFTER all routes (including SPA fallback)
+  app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
+    console.error('🚨 Global error handler caught error:', {
+      message: error.message,
+      stack: error.stack,
+      path: req.path,
+      method: req.method,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Return detailed error in development, generic in production
+    res.status(500).json({ 
+      error: 'Internal server error',
+      message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong',
+      ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+    });
+  });
+
   // Now start the server
   server.listen(PORT, "0.0.0.0", async () => {
     log(`Server running on http://0.0.0.0:${PORT}`);
@@ -489,18 +507,5 @@ startServer().catch(error => {
   console.error('Failed to start server:', error);
   process.exit(1);
 });
-
-// Global error handler
-app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
-  console.error('Global error handler:', error);
-  res.status(500).json({ 
-    error: 'Internal server error',
-    message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
-  });
-});
-
-// 404 handler moved above server.listen()
-
-
 
 export default app;
