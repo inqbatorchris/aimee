@@ -22,11 +22,11 @@ if (!process.env.DATABASE_URL) {
 // Create pool with improved configuration for connection stability
 export const pool = new Pool({ 
   connectionString: process.env.DATABASE_URL,
-  max: 5, // Reduced from 10 for better connection management
-  maxUses: 5000, // Reduced from 7500 to prevent connection staleness
-  idleTimeoutMillis: 20000, // Reduced from 30000 to close idle connections faster
-  connectionTimeoutMillis: 10000, // Increased from 5000 for better reliability
-  allowExitOnIdle: true
+  max: 20, // Increased to handle concurrent users and prevent connection exhaustion
+  maxUses: 7500, // Number of times to use a connection before recycling
+  idleTimeoutMillis: 30000, // Keep connections alive for 30s to reduce reconnection overhead
+  connectionTimeoutMillis: 15000, // Allow 15s for connection acquisition to handle high load
+  allowExitOnIdle: false // Prevent premature pool shutdown
 });
 
 // Add error handling for the pool

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { storage } from '../storage';
-import { requireAuth, requireAdmin, requireSuperAdmin } from '../middleware/auth';
+import { authenticateToken, requireRole } from '../auth';
 
 const router = Router();
 
@@ -51,7 +51,7 @@ router.get('/plans/:id', async (req, res) => {
 });
 
 // Get organization subscription
-router.get('/org/:orgId', requireAuth, async (req, res) => {
+router.get('/org/:orgId', authenticateToken, async (req, res) => {
   try {
     const orgId = parseInt(req.params.orgId);
     
@@ -79,7 +79,7 @@ router.get('/org/:orgId', requireAuth, async (req, res) => {
 });
 
 // Create subscription (super admin only)
-router.post('/', requireAuth, requireSuperAdmin, async (req, res) => {
+router.post('/', authenticateToken, requireRole('super_admin'), async (req, res) => {
   try {
     const data = createSubscriptionSchema.parse(req.body);
     
@@ -112,7 +112,7 @@ router.post('/', requireAuth, requireSuperAdmin, async (req, res) => {
 });
 
 // Update subscription
-router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
+router.put('/:id', authenticateToken, requireRole(['admin', 'super_admin']), async (req, res) => {
   try {
     const subscriptionId = parseInt(req.params.id);
     const data = updateSubscriptionSchema.parse(req.body);
@@ -148,7 +148,7 @@ router.put('/:id', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // Upgrade subscription plan
-router.post('/:id/upgrade', requireAuth, requireAdmin, async (req, res) => {
+router.post('/:id/upgrade', authenticateToken, requireRole(['admin', 'super_admin']), async (req, res) => {
   try {
     const subscriptionId = parseInt(req.params.id);
     const { planId } = req.body;
@@ -212,7 +212,7 @@ router.post('/:id/upgrade', requireAuth, requireAdmin, async (req, res) => {
 });
 
 // Cancel subscription
-router.post('/:id/cancel', requireAuth, requireAdmin, async (req, res) => {
+router.post('/:id/cancel', authenticateToken, requireRole(['admin', 'super_admin']), async (req, res) => {
   try {
     const subscriptionId = parseInt(req.params.id);
     
