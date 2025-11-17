@@ -145,7 +145,7 @@ export default function WorkflowStepBuilder({
     if (normalizedIntegrationId && splynxProjects.length === 0 && !loadingProjects && !projectsError) {
       setLoadingProjects(true);
       
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('authToken'); // Fixed: Use correct token key
       console.log('Fetching Splynx projects with integrationId:', normalizedIntegrationId);
       console.log('Token available:', !!token);
       
