@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { Plus, X, Zap, Braces } from 'lucide-react';
-import { useQuery } from '@tanstack/react-query';
+import { Plus, X, Zap, Braces, FlaskConical, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
+import { useQuery, useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -8,6 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { apiRequest } from '@/lib/queryClient';
 import type { KeyResult } from '@shared/schema';
 
 export interface SplynxFilter {
@@ -72,6 +74,10 @@ export default function SplynxQueryBuilder({
   keyResults = [],
 }: SplynxQueryBuilderProps) {
   const [showVariablePopover, setShowVariablePopover] = useState<{ filterId: string } | null>(null);
+  const [testResults, setTestResults] = useState<{
+    count: number;
+    sampleRecords: any[];
+  } | null>(null);
   
   const { data: entitySchema } = useQuery<{
     entity: string;
@@ -90,6 +96,37 @@ export default function SplynxQueryBuilder({
   });
 
   const fields = entitySchema?.fields || [];
+  
+  // Test query mutation
+  const testQueryMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('/api/workflows/test-splynx-query', {
+        method: 'POST',
+        body: JSON.stringify({
+          entity: value.entity,
+          mode: 'list', // Always use list mode for testing to get sample records
+          filters: value.filters,
+          dateRange: value.dateRange,
+          limit: 5, // Only fetch 5 records for testing
+        }),
+      });
+      
+      const data = await response.json();
+      return data as {
+        count: number;
+        records?: Array<{
+          id: number;
+          attributes: Record<string, any>;
+        }>;
+      };
+    },
+    onSuccess: (data) => {
+      setTestResults({
+        count: data.count,
+        sampleRecords: data.records?.slice(0, 5) || [],
+      });
+    },
+  });
   
   const getOperatorsForField = (fieldName: string): Array<{ value: string; label: string }> => {
     const field = fields.find(f => f.name === fieldName);
@@ -383,6 +420,105 @@ export default function SplynxQueryBuilder({
                   </div>
                 )}
               </div>
+
+              {/* Test Query Button */}
+              <div className="pt-2 flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setTestResults(null);
+                    testQueryMutation.mutate();
+                  }}
+                  disabled={!value.entity || testQueryMutation.isPending}
+                  data-testid="button-test-query"
+                >
+                  {testQueryMutation.isPending ? (
+                    <>
+                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      Testing...
+                    </>
+                  ) : (
+                    <>
+                      <FlaskConical className="h-3 w-3 mr-1" />
+                      Test Query
+                    </>
+                  )}
+                </Button>
+                {testResults && (
+                  <Badge variant="secondary" className="text-xs">
+                    <CheckCircle2 className="h-3 w-3 mr-1" />
+                    {testResults.count} record{testResults.count !== 1 ? 's' : ''} found
+                  </Badge>
+                )}
+              </div>
+
+              {/* Test Query Error */}
+              {testQueryMutation.isError && (
+                <Alert variant="destructive">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    {(testQueryMutation.error as Error).message || 'Failed to test query'}
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {/* Test Results Display */}
+              {testResults && (
+                <Card className="bg-green-50 dark:bg-green-950/20 border-green-200 dark:border-green-800">
+                  <CardHeader className="pb-2">
+                    <CardTitle className="text-sm font-medium flex items-center gap-2">
+                      <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+                      Query Results
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-3">
+                    <div className="flex items-center gap-4 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">Total Records:</span>
+                        <span className="ml-2 font-semibold text-green-700 dark:text-green-300">
+                          {testResults.count}
+                        </span>
+                      </div>
+                    </div>
+
+                    {testResults.sampleRecords.length > 0 && (
+                      <div className="space-y-2">
+                        <Label className="text-xs text-muted-foreground">
+                          Sample Records (first {testResults.sampleRecords.length}):
+                        </Label>
+                        <div className="space-y-2 max-h-64 overflow-y-auto">
+                          {testResults.sampleRecords.map((record, index) => (
+                            <Card key={record.id} className="p-2 bg-white dark:bg-gray-900">
+                              <div className="text-xs space-y-1">
+                                <div className="font-semibold text-green-700 dark:text-green-300">
+                                  Record #{index + 1} (ID: {record.id})
+                                </div>
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-muted-foreground">
+                                  {Object.entries(record.attributes || {})
+                                    .filter(([_, value]) => value != null)
+                                    .slice(0, 6)
+                                    .map(([key, value]) => (
+                                      <div key={key} className="truncate">
+                                        <span className="font-medium">{key}:</span>{' '}
+                                        {Array.isArray(value)
+                                          ? `[${value.length} items]`
+                                          : typeof value === 'object'
+                                          ? JSON.stringify(value)
+                                          : String(value)}
+                                      </div>
+                                    ))}
+                                </div>
+                              </div>
+                            </Card>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
 
               <div className="space-y-2">
                 <Label>Date Range (Optional)</Label>

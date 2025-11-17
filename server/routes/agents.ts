@@ -261,6 +261,48 @@ router.delete('/workflows/:id', async (req, res) => {
   }
 });
 
+// Test Splynx query (for Agent Builder UI)
+router.post('/workflows/test-splynx-query', async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated or missing organization' });
+    }
+
+    const { entity, mode, filters, dateRange, limit } = req.body;
+    
+    if (!entity) {
+      return res.status(400).json({ error: 'Entity is required' });
+    }
+
+    // Use WorkflowExecutor to query Splynx
+    const executor = new WorkflowExecutor();
+    const context = {
+      organizationId: String(user.organizationId),
+      userId: user.id,
+    };
+
+    const result = await executor.executeSplynxQuery(
+      {
+        entity,
+        mode: mode || 'list',
+        filters: filters || [],
+        dateRange,
+        limit: limit || 5,
+        resultVariable: 'testResult',
+      },
+      context
+    );
+
+    res.json(result);
+  } catch (error) {
+    console.error('Error testing Splynx query:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Failed to test query' 
+    });
+  }
+});
+
 // Execute workflow manually
 router.post('/workflows/:id/execute', async (req, res) => {
   try {
