@@ -581,14 +581,40 @@ export class SplynxService {
       case 'customers':
         return {
           ...common,
+          // Basic identification
+          login: record.login,
           name: record.name || `${record.firstname || ''} ${record.lastname || ''}`.trim(),
+          
+          // Contact information
           email: record.email,
+          billing_email: record.billing_email,
           phone: record.phone,
+          
+          // Status & Category
           status: record.status,
+          category: record.category,
+          
+          // Relationships
+          partner_id: record.partner_id,
+          location_id: record.location_id,
+          
+          // Dates
           date_add: record.date_add,
-          street: record.street,
+          date_of_birth: record.date_of_birth,
+          
+          // Address fields
+          street_1: record.street_1 || record.street,
+          street_2: record.street_2,
           city: record.city,
           zip_code: record.zip_code,
+          
+          // Additional fields
+          identification: record.identification,
+          geo_data: record.geo_data,
+          added_by: record.added_by,
+          
+          // Labels (Customer Tags) - this can be an array or comma-separated string
+          labels: record.labels,
         };
         
       case 'leads':

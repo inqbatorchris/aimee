@@ -1393,15 +1393,41 @@ router.get('/splynx/schema/:entity?', async (req, res) => {
         entity: 'customers',
         label: 'Customers',
         fields: [
+          // Basic Identification
           { name: 'id', label: 'Customer ID', type: 'number', operators: ['equals', 'not_equals', 'greater_than', 'less_than'] },
+          { name: 'login', label: 'Login', type: 'string', operators: ['equals', 'not_equals', 'contains'] },
           { name: 'name', label: 'Name', type: 'string', operators: ['equals', 'not_equals', 'contains'] },
+          
+          // Contact Information
           { name: 'email', label: 'Email', type: 'string', operators: ['equals', 'not_equals', 'contains'] },
+          { name: 'billing_email', label: 'Billing Email', type: 'string', operators: ['equals', 'not_equals', 'contains'] },
           { name: 'phone', label: 'Phone', type: 'string', operators: ['equals', 'contains'] },
-          { name: 'status', label: 'Status', type: 'string', operators: ['equals', 'not_equals'], options: ['active', 'inactive', 'new', 'blocked'] },
+          
+          // Status & Category
+          { name: 'status', label: 'Status', type: 'string', operators: ['equals', 'not_equals'], options: ['new', 'active', 'inactive', 'blocked', 'disabled'] },
+          { name: 'category', label: 'Category', type: 'string', operators: ['equals', 'not_equals'], options: ['individual', 'business'] },
+          
+          // Relationships
+          { name: 'partner_id', label: 'Partner ID', type: 'number', operators: ['equals', 'not_equals', 'is_null', 'not_null'] },
+          { name: 'location_id', label: 'Location ID', type: 'number', operators: ['equals', 'not_equals'] },
+          
+          // Dates
           { name: 'date_add', label: 'Date Added', type: 'date', operators: ['equals', 'greater_than', 'less_than', 'greater_than_or_equal', 'less_than_or_equal'] },
-          { name: 'street', label: 'Street', type: 'string', operators: ['contains'] },
+          { name: 'date_of_birth', label: 'Date of Birth', type: 'date', operators: ['equals', 'greater_than', 'less_than'] },
+          
+          // Address Fields
+          { name: 'street_1', label: 'Street 1', type: 'string', operators: ['contains'] },
+          { name: 'street_2', label: 'Street 2', type: 'string', operators: ['contains'] },
           { name: 'city', label: 'City', type: 'string', operators: ['equals', 'contains'] },
-          { name: 'zip_code', label: 'Zip Code', type: 'string', operators: ['equals', 'contains'] }
+          { name: 'zip_code', label: 'ZIP Code', type: 'string', operators: ['equals', 'contains'] },
+          
+          // Additional Fields
+          { name: 'identification', label: 'Identification Number', type: 'string', operators: ['equals', 'contains'] },
+          { name: 'geo_data', label: 'Geo Coordinates', type: 'string', operators: ['contains'] },
+          { name: 'added_by', label: 'Added By', type: 'string', operators: ['equals', 'contains'] },
+          
+          // Labels (Customer Tags)
+          { name: 'labels', label: 'Customer Labels', type: 'string', operators: ['contains'] }
         ],
         dateField: 'date_add'
       },
