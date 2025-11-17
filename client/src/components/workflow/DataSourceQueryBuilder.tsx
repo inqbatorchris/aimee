@@ -95,6 +95,45 @@ export default function DataSourceQueryBuilder({
   const tables = dataTables?.tables || [];
   const fields = dataFields?.fields || [];
   
+  // Helper function to detect if a field is an ID field
+  const isIdField = (fieldName: string): boolean => {
+    return fieldName === 'id' || fieldName.endsWith('Id');
+  };
+  
+  // Helper function to get the related table name for an ID field
+  const getRelatedTable = (fieldName: string): string | null => {
+    if (fieldName === 'id') return value.sourceTable;
+    
+    // Table mapping based on TABLE_RELATIONSHIPS and verified foreign keys
+    // Only includes mappings where we know the related table exists and is registered
+    const tableMapping: Record<string, string> = {
+      // OKR hierarchy (from TABLE_RELATIONSHIPS)
+      'objectiveId': 'objectives',
+      'keyResultId': 'key_results',
+      'keyResultTaskId': 'key_result_tasks',
+      'taskId': 'key_result_tasks',
+      
+      // Work items
+      'workItemId': 'work_items',
+      
+      // Finance (from TABLE_RELATIONSHIPS)
+      'profitCenterId': 'profit_centers',
+      'transactionId': 'financial_transactions',
+      
+      // Field operations
+      'fieldTaskId': 'field_tasks',
+      'addressId': 'address_records',
+      'addressRecordId': 'address_records',
+      
+      // Data records
+      'tariffId': 'tariff_records',
+      'ragStatusId': 'rag_status_records',
+    };
+    
+    // Return null if no mapping found - don't guess or fallback to incorrect tables
+    return tableMapping[fieldName] || null;
+  };
+  
   const testQueryMutation = useMutation({
     mutationFn: async () => {
       const res = await apiRequest('/api/data-explorer/test-query', {
@@ -166,6 +205,121 @@ export default function DataSourceQueryBuilder({
 
   const needsValue = (operator: string) => {
     return !['is_null', 'not_null'].includes(operator);
+  };
+  
+  // Component to render filter value input
+  const FilterValueInput = ({ filter, index }: { filter: DataSourceFilter; index: number }) => {
+    const fieldIsId = isIdField(filter.field);
+    const relatedTable = fieldIsId ? getRelatedTable(filter.field) : null;
+    const valueIsVariable = filter.value.startsWith('{') && filter.value.endsWith('}');
+    
+    // Fetch related records if this is an ID field and we have a valid related table
+    // Use a stable query key and only enable when we have a valid table
+    const shouldFetchRecords = !!relatedTable && !valueIsVariable;
+    const { data: relatedRecords, isLoading: isLoadingRecords } = useQuery<{ records: Array<{ id: number; displayValue: string }> }>({
+      queryKey: relatedTable ? [`/api/data-explorer/records/${relatedTable}`] : ['__disabled_query__'],
+      enabled: shouldFetchRecords,
+    });
+    
+    const records = relatedRecords?.records || [];
+    
+    return (
+      <div className="space-y-1 relative">
+        {index === 0 && <Label className="text-xs">Value</Label>}
+        <div className="flex gap-1">
+          {fieldIsId && relatedTable && !valueIsVariable ? (
+            <Select
+              value={filter.value}
+              onValueChange={(value) => updateFilter(filter.id, { value })}
+              disabled={isLoadingRecords}
+            >
+              <SelectTrigger data-testid={`select-filter-value-${index}`} className="flex-1">
+                <SelectValue placeholder={isLoadingRecords ? "Loading records..." : "Select record"} />
+              </SelectTrigger>
+              <SelectContent>
+                {records.length === 0 && !isLoadingRecords ? (
+                  <div className="px-2 py-1.5 text-sm text-muted-foreground">No records found</div>
+                ) : (
+                  records.map(record => (
+                    <SelectItem key={record.id} value={record.id.toString()}>
+                      {record.displayValue}
+                    </SelectItem>
+                  ))
+                )}
+              </SelectContent>
+            </Select>
+          ) : (
+            <Input
+              value={filter.value}
+              onChange={(e) => updateFilter(filter.id, { value: e.target.value })}
+              placeholder="Enter value or {variable}"
+              data-testid={`input-filter-value-${index}`}
+              className="flex-1"
+            />
+          )}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button 
+                variant="outline" 
+                size="sm"
+                data-testid={`button-insert-variable-${index}`}
+                className="px-2"
+                type="button"
+              >
+                <Braces className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-64 p-2" align="end">
+              <div className="space-y-2">
+                <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 px-2 pt-1">
+                  Date Variables
+                </div>
+                {DATE_VARIABLES.map(v => (
+                  <Button
+                    key={v.value}
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start text-xs"
+                    onClick={() => updateFilter(filter.id, { value: v.value })}
+                  >
+                    <code className="mr-2 text-purple-600 dark:text-purple-400">{v.value}</code>
+                    {v.label}
+                  </Button>
+                ))}
+                <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 px-2 pt-2 border-t">
+                  Context Variables
+                </div>
+                {CONTEXT_VARIABLES.map(v => (
+                  <Button
+                    key={v.value}
+                    variant="ghost"
+                    size="sm"
+                    className="w-full justify-start text-xs"
+                    onClick={() => updateFilter(filter.id, { value: v.value })}
+                  >
+                    <code className="mr-2 text-blue-600 dark:text-blue-400">{v.value}</code>
+                    {v.label}
+                  </Button>
+                ))}
+                <div className="text-xs text-gray-500 px-2 pt-2 border-t">
+                  Variables from previous steps will appear here automatically
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
+        {filter.value.startsWith('{') && filter.value.endsWith('}') && (
+          <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+            Using variable: <code className="font-mono">{filter.value}</code>
+          </p>
+        )}
+        {fieldIsId && relatedTable && !valueIsVariable && records.length === 0 && (
+          <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+            No records found in {relatedTable}
+          </p>
+        )}
+      </div>
+    );
   };
 
   return (
@@ -382,73 +536,7 @@ export default function DataSourceQueryBuilder({
                       </div>
 
                       {needsValue(filter.operator) && (
-                        <div className="space-y-1 relative">
-                          {index === 0 && <Label className="text-xs">Value</Label>}
-                          <div className="flex gap-1">
-                            <Input
-                              value={filter.value}
-                              onChange={(e) => updateFilter(filter.id, { value: e.target.value })}
-                              placeholder="Enter value or {variable}"
-                              data-testid={`input-filter-value-${index}`}
-                              className="flex-1"
-                            />
-                            <Popover>
-                              <PopoverTrigger asChild>
-                                <Button 
-                                  variant="outline" 
-                                  size="sm"
-                                  data-testid={`button-insert-variable-${index}`}
-                                  className="px-2"
-                                  type="button"
-                                >
-                                  <Braces className="h-4 w-4" />
-                                </Button>
-                              </PopoverTrigger>
-                              <PopoverContent className="w-64 p-2" align="end">
-                                <div className="space-y-2">
-                                  <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 px-2 pt-1">
-                                    Date Variables
-                                  </div>
-                                  {DATE_VARIABLES.map(v => (
-                                    <Button
-                                      key={v.value}
-                                      variant="ghost"
-                                      size="sm"
-                                      className="w-full justify-start text-xs"
-                                      onClick={() => updateFilter(filter.id, { value: v.value })}
-                                    >
-                                      <code className="mr-2 text-purple-600 dark:text-purple-400">{v.value}</code>
-                                      {v.label}
-                                    </Button>
-                                  ))}
-                                  <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 px-2 pt-2 border-t">
-                                    Context Variables
-                                  </div>
-                                  {CONTEXT_VARIABLES.map(v => (
-                                    <Button
-                                      key={v.value}
-                                      variant="ghost"
-                                      size="sm"
-                                      className="w-full justify-start text-xs"
-                                      onClick={() => updateFilter(filter.id, { value: v.value })}
-                                    >
-                                      <code className="mr-2 text-blue-600 dark:text-blue-400">{v.value}</code>
-                                      {v.label}
-                                    </Button>
-                                  ))}
-                                  <div className="text-xs text-gray-500 px-2 pt-2 border-t">
-                                    Variables from previous steps will appear here automatically
-                                  </div>
-                                </div>
-                              </PopoverContent>
-                            </Popover>
-                          </div>
-                          {filter.value.startsWith('{') && filter.value.endsWith('}') && (
-                            <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                              Using variable: <code className="font-mono">{filter.value}</code>
-                            </p>
-                          )}
-                        </div>
+                        <FilterValueInput filter={filter} index={index} />
                       )}
                     </div>
                   </div>
