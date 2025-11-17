@@ -1522,20 +1522,30 @@ router.get('/splynx/projects', async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    // Get Splynx integration for this organization
+    const integrationId = req.query.integrationId;
+    if (!integrationId || typeof integrationId !== 'string') {
+      return res.status(400).json({ error: 'integrationId query parameter is required' });
+    }
+
+    // Get specific Splynx integration by ID
     const [splynxIntegration] = await db
       .select()
       .from(integrations)
       .where(
         and(
+          eq(integrations.id, parseInt(integrationId)),
           eq(integrations.organizationId, req.user.organizationId),
           eq(integrations.platformType, 'splynx')
         )
       )
       .limit(1);
 
-    if (!splynxIntegration || !splynxIntegration.credentialsEncrypted) {
-      return res.status(404).json({ error: 'Splynx integration not configured' });
+    if (!splynxIntegration) {
+      return res.status(404).json({ error: 'Splynx integration not found' });
+    }
+
+    if (!splynxIntegration.credentialsEncrypted) {
+      return res.status(400).json({ error: 'Splynx credentials not configured' });
     }
 
     // Decrypt credentials

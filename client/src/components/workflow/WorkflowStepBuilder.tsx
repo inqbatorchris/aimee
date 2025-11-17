@@ -93,6 +93,8 @@ export default function WorkflowStepBuilder({
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
   const [splynxProjects, setSplynxProjects] = useState<Array<{ id: number; name: string }>>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
+  const [projectsError, setProjectsError] = useState<string | null>(null);
+  const [cachedIntegrationId, setCachedIntegrationId] = useState<number | null>(null);
 
   // Auto-fix any strategy_update steps missing the required 'type' field
   useEffect(() => {
@@ -116,30 +118,59 @@ export default function WorkflowStepBuilder({
 
   // Fetch Splynx projects when needed
   useEffect(() => {
-    const needsProjects = steps.some(
+    const taskCreationStep = steps.find(
       step => step.type === 'integration_action' && 
-      step.config?.action === 'create_splynx_task' &&
-      step.config?.integrationId &&
-      integrations.find(i => i.id === step.config.integrationId)?.platformType === 'splynx'
+      step.config?.action === 'create_splynx_task'
     );
 
-    if (needsProjects && splynxProjects.length === 0 && !loadingProjects) {
+    // Normalize undefined to null for comparison
+    const normalizedIntegrationId = taskCreationStep?.config?.integrationId ?? null;
+
+    // Reset projects when integration changes (comparing normalized values)
+    if (normalizedIntegrationId !== cachedIntegrationId) {
+      // Only update state if there's an actual change to avoid redundant renders
+      if (splynxProjects.length > 0 || projectsError !== null || cachedIntegrationId !== normalizedIntegrationId) {
+        setSplynxProjects([]);
+        setProjectsError(null);
+        setCachedIntegrationId(normalizedIntegrationId);
+      }
+      
+      // If no integration, just clear and return
+      if (!normalizedIntegrationId) {
+        return;
+      }
+    }
+
+    // Fetch projects for the current integration
+    if (normalizedIntegrationId && splynxProjects.length === 0 && !loadingProjects && !projectsError) {
       setLoadingProjects(true);
-      fetch('/api/integrations/splynx/projects', {
+      
+      fetch(`/api/integrations/splynx/projects?integrationId=${normalizedIntegrationId}`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }
       })
-        .then(res => res.json())
+        .then(async res => {
+          if (!res.ok) {
+            const error = await res.json();
+            throw new Error(error.error || 'Failed to fetch projects');
+          }
+          return res.json();
+        })
         .then(data => {
-          if (data.projects) {
+          if (data.projects && Array.isArray(data.projects)) {
             setSplynxProjects(data.projects);
+          } else {
+            setProjectsError('Invalid response from server');
           }
         })
-        .catch(err => console.error('Failed to fetch Splynx projects:', err))
+        .catch(err => {
+          console.error('Failed to fetch Splynx projects:', err);
+          setProjectsError(err.message || 'Failed to load projects. Check Splynx integration configuration.');
+        })
         .finally(() => setLoadingProjects(false));
     }
-  }, [steps, integrations, splynxProjects.length, loadingProjects]);
+  }, [steps, cachedIntegrationId, splynxProjects.length, loadingProjects, projectsError]);
 
   const addStep = () => {
     const newStep: WorkflowStep = {
@@ -267,27 +298,66 @@ export default function WorkflowStepBuilder({
 
             {step.config.action === 'create_splynx_task' && (
               <div className="space-y-3">
+                <div className="p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded text-sm">
+                  <p className="font-medium text-blue-900 dark:text-blue-100 mb-1">💡 Variable Helper</p>
+                  <p className="text-blue-800 dark:text-blue-200 text-xs">
+                    When inside a for_each loop, use <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{`{{currentItem.fieldName}}`}</code> to access item properties.
+                    <br />Example: <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{`{{currentItem.id}}`}</code>, <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{`{{currentItem.name}}`}</code>
+                  </p>
+                </div>
+
                 <div>
-                  <Label>Customer ID Variable</Label>
+                  <Label>Task Name</Label>
                   <Input
-                    placeholder="e.g., currentItem.id"
-                    value={step.config.parameters?.customerId || ''}
+                    placeholder="e.g., Follow up: {{currentItem.name}}"
+                    value={step.config.parameters?.taskName || ''}
                     onChange={(e) => updateStep(step.id, {
                       config: {
                         ...step.config,
-                        parameters: { ...step.config.parameters, customerId: e.target.value }
+                        parameters: { ...step.config.parameters, taskName: e.target.value }
                       }
                     })}
                   />
-                  <p className="text-xs text-muted-foreground mt-1">
-                    Use <code>{`{{currentItem.id}}`}</code> within for_each loops
-                  </p>
+                </div>
+
+                <div>
+                  <Label>Description (Optional)</Label>
+                  <Textarea
+                    placeholder="e.g., Customer ID: {{currentItem.id}}"
+                    value={step.config.parameters?.description || ''}
+                    onChange={(e) => updateStep(step.id, {
+                      config: {
+                        ...step.config,
+                        parameters: { ...step.config.parameters, description: e.target.value }
+                      }
+                    })}
+                    rows={2}
+                  />
                 </div>
                 
                 <div>
                   <Label>Project/Task Type</Label>
-                  {loadingProjects ? (
-                    <div className="text-sm text-muted-foreground">Loading projects...</div>
+                  {projectsError ? (
+                    <div className="space-y-2">
+                      <div className="text-sm text-red-600 dark:text-red-400 p-2 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded">
+                        {projectsError}
+                      </div>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setProjectsError(null);
+                          setSplynxProjects([]);
+                        }}
+                      >
+                        Retry Loading Projects
+                      </Button>
+                    </div>
+                  ) : loadingProjects ? (
+                    <div className="text-sm text-muted-foreground p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded">
+                      Loading projects from Splynx...
+                    </div>
                   ) : splynxProjects.length > 0 ? (
                     <Select
                       value={step.config.parameters?.projectId?.toString() || ''}
@@ -310,10 +380,44 @@ export default function WorkflowStepBuilder({
                       </SelectContent>
                     </Select>
                   ) : (
-                    <div className="text-sm text-muted-foreground">
-                      No Splynx projects available. Configure projects in Splynx first.
+                    <div className="text-sm text-amber-600 dark:text-amber-400 p-2 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded">
+                      No projects configured. Add task types in Splynx first.
                     </div>
                   )}
+                </div>
+
+                <div>
+                  <Label>Customer ID</Label>
+                  <Input
+                    placeholder="{{currentItem.id}}"
+                    value={step.config.parameters?.customerId || ''}
+                    onChange={(e) => updateStep(step.id, {
+                      config: {
+                        ...step.config,
+                        parameters: { ...step.config.parameters, customerId: e.target.value }
+                      }
+                    })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Link this task to a Splynx customer
+                  </p>
+                </div>
+
+                <div>
+                  <Label>Due Date (Optional)</Label>
+                  <Input
+                    placeholder="e.g., +7 days or YYYY-MM-DD"
+                    value={step.config.parameters?.dueDate || ''}
+                    onChange={(e) => updateStep(step.id, {
+                      config: {
+                        ...step.config,
+                        parameters: { ...step.config.parameters, dueDate: e.target.value }
+                      }
+                    })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Use +N days for relative dates
+                  </p>
                 </div>
               </div>
             )}
