@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -12,7 +12,9 @@ import {
 } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Form,
   FormControl,
@@ -22,10 +24,10 @@ import {
   FormMessage,
   FormDescription,
 } from "@/components/ui/form";
-import { Loader2 } from "lucide-react";
+import { Loader2, FileText, Code, Eye, Copy } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import { getTemplateDisplayName } from "./EmailTemplateManager";
+import { EmailBodyEditor } from "./EmailBodyEditor";
 
 const templateSchema = z.object({
   title: z.string().min(1, "Title is required").max(255),
@@ -51,8 +53,18 @@ interface TemplateEditorProps {
   templateId: number | null;
 }
 
+const AVAILABLE_VARIABLES = [
+  { key: '{{customer.name}}', label: 'Customer Name', description: 'Full name of the customer' },
+  { key: '{{customer.email}}', label: 'Customer Email', description: 'Email address' },
+  { key: '{{customer.login}}', label: 'Customer Login', description: 'Login username' },
+  { key: '{{company.name}}', label: 'Company Name', description: 'Your company name' },
+  { key: '{{company.email}}', label: 'Company Email', description: 'Your company email' },
+];
+
 export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorProps) {
   const { toast } = useToast();
+  const [activeTab, setActiveTab] = useState('details');
+  const [htmlContent, setHtmlContent] = useState('');
 
   // Fetch individual template data when editing
   const { data: template, isLoading: isLoadingTemplate } = useQuery<EmailTemplate>({
@@ -73,12 +85,14 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
 
   useEffect(() => {
     if (template) {
+      const bodyContent = template.body || "";
       form.reset({
         title: template.title || "",
         subject: template.subject || "",
         description: template.description || "",
-        body: template.body || "",
+        body: bodyContent,
       });
+      setHtmlContent(bodyContent);
     } else {
       form.reset({
         title: "",
@@ -86,6 +100,7 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
         description: "",
         body: "",
       });
+      setHtmlContent('');
     }
   }, [template, form]);
 
@@ -130,11 +145,22 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
   const handleClose = () => {
     onClose();
     form.reset();
+    setHtmlContent('');
+    setActiveTab('details');
+  };
+
+  const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast({
+      title: 'Copied to clipboard',
+      description: `Variable "${text}" copied successfully.`,
+      duration: 2000,
+    });
   };
 
   return (
     <Sheet open={isOpen} onOpenChange={(open) => !open && handleClose()}>
-      <SheetContent className="sm:w-[640px] overflow-y-auto">
+      <SheetContent className="sm:w-[800px] sm:max-w-[90vw] overflow-y-auto">
         <SheetHeader>
           <SheetTitle>{templateId ? 'Edit' : 'Create'} Email Template</SheetTitle>
           <SheetDescription>
@@ -150,70 +176,166 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
           </div>
         ) : (
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4 mt-6">
-              <FormField
-                control={form.control}
-                name="title"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Template Name</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="e.g., Monthly Newsletter"
-                        {...field}
-                        data-testid="input-template-name"
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+            <form onSubmit={form.handleSubmit(handleSubmit)} className="mt-6">
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="details" data-testid="tab-details">
+                    <FileText className="h-4 w-4 mr-2" />
+                    Details
+                  </TabsTrigger>
+                  <TabsTrigger value="content" data-testid="tab-content">
+                    <Code className="h-4 w-4 mr-2" />
+                    Content
+                  </TabsTrigger>
+                  <TabsTrigger value="preview" data-testid="tab-preview">
+                    <Eye className="h-4 w-4 mr-2" />
+                    Preview
+                  </TabsTrigger>
+                </TabsList>
 
-              <FormField
-                control={form.control}
-                name="subject"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email Subject</FormLabel>
-                    <FormControl>
-                      <Input
-                        placeholder="e.g., Network Monitoring Alert | Repeater Site"
-                        {...field}
-                        data-testid="input-template-subject"
-                      />
-                    </FormControl>
-                    <FormDescription className="text-xs">
-                      Use variables like {'{'}{'{'} customer.name {'}'}{'}'}, {'{'}{'{'} company.name {'}'}{'}'}, etc.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                <TabsContent value="details" className="space-y-4 mt-4">
+                  <FormField
+                    control={form.control}
+                    name="title"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Template Name *</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., Monthly Newsletter"
+                            {...field}
+                            data-testid="input-template-name"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-              <FormField
-                control={form.control}
-                name="body"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email Body</FormLabel>
-                    <FormControl>
-                      <Textarea
-                        placeholder="Dear {{customer.name}},&#10;&#10;Your message here...&#10;&#10;Best regards,&#10;{{company.name}}"
-                        rows={12}
-                        className="font-mono text-sm"
-                        {...field}
-                        data-testid="input-template-body"
-                      />
-                    </FormControl>
-                    <FormDescription className="text-xs">
-                      HTML is supported. Available variables: {'{'}{'{'} customer.name {'}'}{'}'}, {'{'}{'{'} customer.email {'}'}{'}'}, {'{'}{'{'} customer.login {'}'}{'}'}, {'{'}{'{'} company.name {'}'}{'}'}, {'{'}{'{'} company.email {'}'}{'}'}, and custom variables from workflows.
-                    </FormDescription>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                  <FormField
+                    control={form.control}
+                    name="subject"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Email Subject</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., {{company.name}} Newsletter - {{month}}"
+                            {...field}
+                            data-testid="input-template-subject"
+                          />
+                        </FormControl>
+                        <FormDescription className="text-xs">
+                          Use variables like {'{{customer.name}}'}, {'{{company.name}}'}, etc.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-              <div className="flex gap-2 pt-4">
+                  <FormField
+                    control={form.control}
+                    name="description"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Description (Optional)</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="Internal description for this template"
+                            {...field}
+                            data-testid="input-template-description"
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </TabsContent>
+
+                <TabsContent value="content" className="mt-4">
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="col-span-2 space-y-4">
+                      <FormField
+                        control={form.control}
+                        name="body"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Email Body (HTML)</FormLabel>
+                            <FormControl>
+                              <EmailBodyEditor
+                                content={field.value || ''}
+                                onChange={(html) => {
+                                  field.onChange(html);
+                                  setHtmlContent(html);
+                                }}
+                                placeholder="Write your email content here..."
+                              />
+                            </FormControl>
+                            <FormDescription className="text-xs">
+                              Use the toolbar to format your email. HTML tags are supported.
+                            </FormDescription>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+
+                    <div className="col-span-1">
+                      <Card>
+                        <CardHeader className="pb-3">
+                          <CardTitle className="text-sm">Available Variables</CardTitle>
+                          <CardDescription className="text-xs">
+                            Click to copy
+                          </CardDescription>
+                        </CardHeader>
+                        <CardContent className="space-y-2">
+                          {AVAILABLE_VARIABLES.map((variable) => (
+                            <div
+                              key={variable.key}
+                              className="p-2 rounded-md border bg-muted/50 hover:bg-muted cursor-pointer transition-colors"
+                              onClick={() => copyToClipboard(variable.key)}
+                              data-testid={`variable-${variable.key.replace(/[{}]/g, '')}`}
+                            >
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex-1 min-w-0">
+                                  <div className="text-xs font-mono font-semibold truncate">
+                                    {variable.key}
+                                  </div>
+                                  <div className="text-[10px] text-muted-foreground mt-0.5">
+                                    {variable.description}
+                                  </div>
+                                </div>
+                                <Copy className="h-3 w-3 text-muted-foreground flex-shrink-0 mt-0.5" />
+                              </div>
+                            </div>
+                          ))}
+                        </CardContent>
+                      </Card>
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="preview" className="mt-4">
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm">Email Preview</CardTitle>
+                      <CardDescription className="text-xs">
+                        This is how your email will look (variables shown as placeholders)
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="border rounded-md p-6 bg-white min-h-[400px]">
+                        <div 
+                          className="prose prose-sm max-w-none"
+                          dangerouslySetInnerHTML={{ __html: htmlContent || '<p class="text-muted-foreground italic">No content yet</p>' }}
+                        />
+                      </div>
+                    </CardContent>
+                  </Card>
+                </TabsContent>
+              </Tabs>
+
+              <div className="flex gap-2 pt-6 border-t mt-6">
                 <Button
                   type="submit"
                   disabled={saveMutation.isPending}

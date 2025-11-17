@@ -240,13 +240,13 @@ export function EmailTemplateManager() {
                   <div className="space-y-2">
                     <Label htmlFor="search-filter" className="text-xs">Search</Label>
                     <div className="relative">
-                      <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                       <Input
                         id="search-filter"
                         placeholder="Search title, subject, description..."
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-8"
+                        className="pl-9"
                       />
                     </div>
                   </div>
