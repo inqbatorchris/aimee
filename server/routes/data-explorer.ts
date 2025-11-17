@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { CleanDatabaseStorage } from '../storage';
 import { authenticateToken } from '../auth.js';
-import { TABLE_REGISTRY } from '../services/workflow/tableRegistry.js';
+import { TABLE_REGISTRY, TABLE_RELATIONSHIPS } from '../services/workflow/tableRegistry.js';
 import { db } from '../db.js';
 import { eq, and, ne, gt, lt, gte, lte, like, notLike, sql, count, isNull, isNotNull } from 'drizzle-orm';
 
@@ -52,6 +52,29 @@ router.get('/fields/:tableName', authenticateToken, async (req, res) => {
     console.error('Error fetching data fields:', error);
     res.status(500).json({ 
       error: 'Failed to fetch data fields',
+      message: error.message 
+    });
+  }
+});
+
+router.get('/relationships', authenticateToken, async (req, res) => {
+  try {
+    const { tableName } = req.query;
+    
+    if (tableName) {
+      // Return relationships for a specific table
+      const relationships = TABLE_RELATIONSHIPS.filter(
+        rel => rel.parentTable === tableName || rel.childTable === tableName
+      );
+      res.json({ relationships });
+    } else {
+      // Return all relationships
+      res.json({ relationships: TABLE_RELATIONSHIPS });
+    }
+  } catch (error: any) {
+    console.error('Error fetching relationships:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch relationships',
       message: error.message 
     });
   }
