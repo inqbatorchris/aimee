@@ -2,7 +2,7 @@ import { db } from '../../db';
 import { eq, and, or, sql, count, sum, avg, min, max, ilike, isNull, isNotNull, gt, lt, gte, lte, inArray, notInArray, ne } from 'drizzle-orm';
 import { agentWorkflows, agentWorkflowRuns, integrations, keyResults, objectives, activityLogs, users, addressRecords, workItems, fieldTasks, ragStatusRecords, tariffRecords } from '@shared/schema';
 import { ActionHandlers } from './ActionHandlers';
-import { CleanDatabaseStorage } from '../../storage';
+import { storage } from '../../storage';
 import { SplynxService } from '../integrations/splynxService';
 import crypto from 'crypto';
 
@@ -300,6 +300,12 @@ export class WorkflowExecutor {
         
         case 'wait':
           return await this.executeWait(step, context);
+        
+        case 'for_each':
+          return await this.executeForEach(step, context);
+        
+        case 'create_work_item':
+          return await this.executeCreateWorkItem(step, context);
         
         default:
           throw new Error(`Unknown step type: ${step.type}`);
@@ -884,7 +890,6 @@ export class WorkflowExecutor {
       console.log(`[WorkflowExecutor]   Query Config:`, JSON.stringify(queryConfig, null, 2));
       
       // Validate table access (organization isolation)
-      const storage = new CleanDatabaseStorage();
       const orgId = parseInt(context.organizationId);
       const dataTable = await storage.getDataTableByName(orgId, sourceTable);
       
@@ -1412,6 +1417,144 @@ export class WorkflowExecutor {
         return fieldValue !== undefined && fieldValue !== null;
       default:
         return false;
+    }
+  }
+
+  private async executeForEach(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      const { sourceVariable, childSteps = [] } = step.config || {};
+      
+      if (!sourceVariable) {
+        throw new Error('sourceVariable is required for for_each step');
+      }
+      
+      console.log(`[WorkflowExecutor]   🔁 For Each: iterating over {${sourceVariable}}`);
+      
+      // Get the array from context
+      const items = context[sourceVariable];
+      
+      if (!Array.isArray(items)) {
+        throw new Error(`Variable {${sourceVariable}} is not an array. Found: ${typeof items}`);
+      }
+      
+      console.log(`[WorkflowExecutor]   📊 Found ${items.length} items to process`);
+      
+      const results = [];
+      let successCount = 0;
+      let errorCount = 0;
+      
+      // Execute child steps for each item
+      for (let i = 0; i < items.length; i++) {
+        const currentItem = items[i];
+        console.log(`[WorkflowExecutor]   🔄 Processing item ${i + 1}/${items.length}`);
+        
+        // Create scoped context with currentItem
+        const scopedContext = {
+          ...context,
+          currentItem,
+          currentIndex: i,
+        };
+        
+        // Execute all child steps for this item
+        for (const childStep of childSteps) {
+          try {
+            const result = await this.executeStep(childStep, scopedContext);
+            if (!result.success) {
+              console.warn(`[WorkflowExecutor]   ⚠️ Child step failed for item ${i + 1}: ${result.error}`);
+              errorCount++;
+            } else {
+              successCount++;
+            }
+            results.push({ itemIndex: i, step: childStep.name, result });
+          } catch (error: any) {
+            console.error(`[WorkflowExecutor]   ❌ Error executing child step for item ${i + 1}:`, error.message);
+            errorCount++;
+            results.push({ itemIndex: i, step: childStep.name, error: error.message });
+          }
+        }
+      }
+      
+      console.log(`[WorkflowExecutor]   ✅ For Each complete: ${successCount} successful, ${errorCount} errors`);
+      
+      return {
+        success: true,
+        output: {
+          itemsProcessed: items.length,
+          successCount,
+          errorCount,
+          results,
+        },
+      };
+    } catch (error: any) {
+      console.error(`[WorkflowExecutor]   ❌ For Each failed: ${error.message}`);
+      return {
+        success: false,
+        error: error.message,
+        stack: error.stack,
+      };
+    }
+  }
+
+  private async executeCreateWorkItem(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      const { title, description, assigneeId, dueDate, status = 'Planning', externalReference } = step.config || {};
+      
+      if (!title) {
+        throw new Error('title is required for create_work_item step');
+      }
+      
+      console.log(`[WorkflowExecutor]   📝 Creating work item: ${title}`);
+      
+      // Process template strings in title and description
+      const processedTitle = this.processTemplate(title, context);
+      const processedDescription = description ? this.processTemplate(description, context) : undefined;
+      const processedExternalRef = externalReference ? this.processTemplate(externalReference, context) : undefined;
+      
+      // Calculate due date if it's a relative date like "+7 days"
+      let processedDueDate = dueDate;
+      if (dueDate && dueDate.startsWith('+')) {
+        const days = parseInt(dueDate.replace('+', '').replace('days', '').trim());
+        const date = new Date();
+        date.setDate(date.getDate() + days);
+        processedDueDate = date.toISOString().split('T')[0];
+      } else if (dueDate) {
+        processedDueDate = this.processTemplate(dueDate, context);
+      }
+      
+      // Get organization ID from context
+      const organizationId = context.organizationId;
+      if (!organizationId) {
+        throw new Error('organizationId not found in context');
+      }
+      
+      // Create the work item
+      const workItem = await storage.createWorkItem({
+        organizationId,
+        title: processedTitle,
+        description: processedDescription || '',
+        status: status as any,
+        assignedTo: assigneeId || null,
+        dueDate: processedDueDate || null,
+        workflowMetadata: processedExternalRef ? { externalReference: processedExternalRef } : null,
+        createdBy: context.userId || null,
+      });
+      
+      console.log(`[WorkflowExecutor]   ✅ Work item created: ID ${workItem.id}`);
+      
+      return {
+        success: true,
+        output: {
+          workItemId: workItem.id,
+          title: processedTitle,
+        },
+      };
+    } catch (error: any) {
+      console.error(`[WorkflowExecutor]   ❌ Create work item failed: ${error.message}`);
+      return {
+        success: false,
+        error: error.message,
+        stack: error.stack,
+      };
     }
   }
 

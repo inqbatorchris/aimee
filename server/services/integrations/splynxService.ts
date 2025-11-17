@@ -405,6 +405,69 @@ export class SplynxService {
     }
   }
 
+  async getSplynxProjects(): Promise<any[]> {
+    try {
+      const url = this.buildUrl('admin/scheduling/projects');
+      
+      console.log('[SPLYNX getSplynxProjects] Fetching projects from:', url);
+      
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('[SPLYNX getSplynxProjects] Response:', response.status);
+      
+      if (Array.isArray(response.data)) {
+        return response.data;
+      } else if (response.data?.items) {
+        return response.data.items;
+      }
+      
+      return [];
+    } catch (error: any) {
+      console.error('[SPLYNX getSplynxProjects] Error:', error.message);
+      throw new Error(`Failed to fetch projects from Splynx: ${error.message}`);
+    }
+  }
+
+  async createSplynxTask(taskData: {
+    name: string;
+    project_id: number;
+    customer_id?: number;
+    description?: string;
+    assignee_id?: number;
+    priority?: 'low' | 'medium' | 'high';
+    status?: string;
+    start_date?: string;
+    end_date?: string;
+  }): Promise<any> {
+    try {
+      const url = this.buildUrl('admin/scheduling/tasks');
+      
+      console.log('[SPLYNX createSplynxTask] Creating task at:', url);
+      console.log('[SPLYNX createSplynxTask] Task data:', JSON.stringify(taskData, null, 2));
+      
+      const response = await axios.post(url, taskData, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('[SPLYNX createSplynxTask] Response:', response.status);
+      console.log('[SPLYNX createSplynxTask] Created task:', response.data);
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('[SPLYNX createSplynxTask] Error:', error.message);
+      console.error('[SPLYNX createSplynxTask] Response:', error.response?.data);
+      throw new Error(`Failed to create task in Splynx: ${error.message}`);
+    }
+  }
+
   /**
    * Unified query method for all Splynx entities
    * Supports both count and list modes with advanced filtering
@@ -768,6 +831,12 @@ export class SplynxService {
 
       case 'get_task_types':
         return await this.getTaskTypes();
+
+      case 'get_splynx_projects':
+        return await this.getSplynxProjects();
+
+      case 'create_splynx_task':
+        return await this.createSplynxTask(parameters);
         
       default:
         throw new Error(`Unknown Splynx action: ${action}`);

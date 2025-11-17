@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database, Calculator, Cloud } from 'lucide-react';
+import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database, Calculator, Cloud, Repeat, ClipboardList } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -13,7 +13,7 @@ import SplynxQueryBuilder from './SplynxQueryBuilder';
 
 interface WorkflowStep {
   id: string;
-  type: 'integration_action' | 'strategy_update' | 'log_event' | 'notification' | 'data_source_query' | 'data_transformation' | 'splynx_query';
+  type: 'integration_action' | 'strategy_update' | 'log_event' | 'notification' | 'data_source_query' | 'data_transformation' | 'splynx_query' | 'for_each' | 'create_work_item';
   name: string;
   config?: any;
 }
@@ -50,6 +50,18 @@ const STEP_TYPES = {
     icon: Cloud,
     color: 'bg-indigo-500',
     description: 'Query Splynx customers, leads, tickets, or tasks'
+  },
+  for_each: {
+    label: 'For Each Loop',
+    icon: Repeat,
+    color: 'bg-violet-500',
+    description: 'Iterate over a list and execute child steps'
+  },
+  create_work_item: {
+    label: 'Create Work Item',
+    icon: ClipboardList,
+    color: 'bg-emerald-500',
+    description: 'Create a task/work item in the platform'
   },
   data_transformation: {
     label: 'Data Transformation',
