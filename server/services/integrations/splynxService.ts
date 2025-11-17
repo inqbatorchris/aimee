@@ -13,6 +13,34 @@ interface LeadFilter {
   statusFilter?: string;
 }
 
+// Types for unified query system
+export type SplynxEntity = 'customers' | 'leads' | 'support_tickets' | 'scheduling_tasks';
+export type QueryMode = 'count' | 'list';
+
+export interface SplynxFilter {
+  field: string;
+  operator: 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than' | 'greater_than_or_equal' | 'less_than_or_equal' | 'is_null' | 'not_null';
+  value: string;
+}
+
+export interface SplynxQueryConfig {
+  entity: SplynxEntity;
+  mode: QueryMode;
+  filters?: SplynxFilter[];
+  dateRange?: string;
+  limit?: number;
+  sinceDate?: Date;
+}
+
+export interface SplynxQueryResult {
+  count: number;
+  records?: Array<{
+    id: number | string;
+    attributes: Record<string, any>;
+    raw: any;
+  }>;
+}
+
 export class SplynxService {
   private credentials: SplynxCredentials;
 
@@ -376,11 +404,250 @@ export class SplynxService {
     }
   }
 
+  /**
+   * Unified query method for all Splynx entities
+   * Supports both count and list modes with advanced filtering
+   */
+  async queryEntities(config: SplynxQueryConfig): Promise<SplynxQueryResult> {
+    const { entity, mode, filters = [], dateRange, limit = 10000, sinceDate } = config;
+    
+    console.log(`[SPLYNX queryEntities] 🔍 Query started`);
+    console.log(`[SPLYNX queryEntities]   Entity: ${entity}`);
+    console.log(`[SPLYNX queryEntities]   Mode: ${mode}`);
+    console.log(`[SPLYNX queryEntities]   Filters: ${filters.length}`);
+    
+    // Get entity endpoint mapping
+    const endpoint = this.getEntityEndpoint(entity);
+    const url = this.buildUrl(endpoint);
+    
+    // Build query parameters from filters
+    const params: any = {
+      main_attributes: {},
+      limit: limit
+    };
+    
+    // Apply filters
+    for (const filter of filters) {
+      this.applyFilterToParams(params, filter, entity);
+    }
+    
+    // Apply date range if specified
+    if (dateRange) {
+      const dateFilter = this.getDateRangeFilter(dateRange);
+      const dateField = this.getDateFieldForEntity(entity);
+      if (dateFilter.dateFrom && dateField) {
+        params.main_attributes[dateField] = ['>=', dateFilter.dateFrom.split('T')[0]];
+      }
+    }
+    
+    // Apply incremental since date
+    if (sinceDate) {
+      const dateField = this.getDateFieldForEntity(entity);
+      const dateStr = sinceDate.toISOString().split('T')[0];
+      if (dateField) {
+        params.main_attributes[dateField] = ['>=', dateStr];
+      }
+      console.log(`[SPLYNX queryEntities]   🔄 Incremental mode since: ${dateStr}`);
+    }
+    
+    console.log(`[SPLYNX queryEntities]   📡 Request URL: ${url}`);
+    console.log(`[SPLYNX queryEntities]   📝 Params:`, JSON.stringify(params, null, 2));
+    
+    try {
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+        params,
+      });
+      
+      console.log(`[SPLYNX queryEntities]   ✅ Response: ${response.status}`);
+      
+      // Normalize response data
+      let data = Array.isArray(response.data) ? response.data : response.data?.items || [];
+      
+      const count = data.length;
+      console.log(`[SPLYNX queryEntities]   📊 Records found: ${count}`);
+      
+      // Return based on mode
+      if (mode === 'count') {
+        return { count };
+      } else {
+        // Normalize records with IDs and attributes
+        const records = data.map((item: any) => ({
+          id: item.id,
+          attributes: this.extractEntityAttributes(item, entity),
+          raw: item
+        }));
+        
+        return { count, records };
+      }
+    } catch (error: any) {
+      console.error(`[SPLYNX queryEntities]   ❌ ERROR: ${error.message}`);
+      console.error(`[SPLYNX queryEntities]   Response:`, error.response?.data);
+      throw new Error(`Failed to query ${entity} from Splynx: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Get Splynx API endpoint for entity type
+   */
+  private getEntityEndpoint(entity: SplynxEntity): string {
+    const endpoints: Record<SplynxEntity, string> = {
+      'customers': 'admin/customers/customer',
+      'leads': 'admin/crm/leads',
+      'support_tickets': 'admin/support/tickets',
+      'scheduling_tasks': 'admin/scheduling/tasks'
+    };
+    
+    return endpoints[entity];
+  }
+  
+  /**
+   * Get the date field name for incremental fetching by entity
+   */
+  private getDateFieldForEntity(entity: SplynxEntity): string {
+    const dateFields: Record<SplynxEntity, string> = {
+      'customers': 'date_add',
+      'leads': 'date_add',
+      'support_tickets': 'date_created',
+      'scheduling_tasks': 'date'
+    };
+    
+    return dateFields[entity];
+  }
+  
+  /**
+   * Apply a single filter to Splynx API params
+   */
+  private applyFilterToParams(params: any, filter: SplynxFilter, entity: SplynxEntity): void {
+    const { field, operator, value } = filter;
+    
+    // Handle operators and convert to Splynx format
+    switch (operator) {
+      case 'equals':
+        params.main_attributes[field] = value;
+        break;
+        
+      case 'not_equals':
+        params.main_attributes[field] = ['!=', value];
+        break;
+        
+      case 'contains':
+        params.main_attributes[field] = ['like', `%${value}%`];
+        break;
+        
+      case 'greater_than':
+        params.main_attributes[field] = ['>', value];
+        break;
+        
+      case 'less_than':
+        params.main_attributes[field] = ['<', value];
+        break;
+        
+      case 'greater_than_or_equal':
+        params.main_attributes[field] = ['>=', value];
+        break;
+        
+      case 'less_than_or_equal':
+        params.main_attributes[field] = ['<=', value];
+        break;
+        
+      case 'is_null':
+        params.main_attributes[field] = ['is', 'null'];
+        break;
+        
+      case 'not_null':
+        params.main_attributes[field] = ['is not', 'null'];
+        break;
+        
+      default:
+        console.warn(`[SPLYNX] Unknown operator: ${operator}`);
+    }
+  }
+  
+  /**
+   * Extract key attributes from raw Splynx record based on entity type
+   */
+  private extractEntityAttributes(record: any, entity: SplynxEntity): Record<string, any> {
+    // Common attributes all entities have
+    const common = {
+      id: record.id,
+    };
+    
+    // Entity-specific attributes
+    switch (entity) {
+      case 'customers':
+        return {
+          ...common,
+          name: record.name || `${record.firstname || ''} ${record.lastname || ''}`.trim(),
+          email: record.email,
+          phone: record.phone,
+          status: record.status,
+          date_add: record.date_add,
+          street: record.street,
+          city: record.city,
+          zip_code: record.zip_code,
+        };
+        
+      case 'leads':
+        return {
+          ...common,
+          name: record.name || `${record.firstname || ''} ${record.lastname || ''}`.trim(),
+          email: record.email,
+          phone: record.phone,
+          status: record.status,
+          date_add: record.date_add,
+          source: record.source,
+        };
+        
+      case 'support_tickets':
+        return {
+          ...common,
+          subject: record.subject,
+          description: record.description,
+          status: record.status,
+          priority: record.priority,
+          date_created: record.date_created,
+          customer_id: record.customer_id,
+        };
+        
+      case 'scheduling_tasks':
+        return {
+          ...common,
+          subject: record.subject,
+          description: record.description,
+          status: record.status,
+          assigned_id: record.assigned_id,
+          date: record.date,
+          time_from: record.time_from,
+          time_to: record.time_to,
+          customer_id: record.customer_id,
+        };
+        
+      default:
+        return common;
+    }
+  }
+
   async executeAction(action: string, parameters: any = {}): Promise<any> {
     const { sinceDate, ...filters } = parameters;
     const parsedSinceDate = sinceDate ? new Date(sinceDate) : undefined;
     
     switch (action) {
+      // New unified query action
+      case 'splynx_query':
+        return await this.queryEntities({
+          entity: parameters.entity,
+          mode: parameters.mode || 'count',
+          filters: parameters.filters || [],
+          dateRange: parameters.dateRange,
+          limit: parameters.limit,
+          sinceDate: parsedSinceDate
+        });
+      
+      // Legacy actions for backward compatibility
       case 'count_leads':
         return await this.getLeadCount(filters, parsedSinceDate);
       

@@ -1382,4 +1382,90 @@ router.post('/openai/test', async (req, res) => {
   }
 });
 
+// Get Splynx entity schema metadata
+router.get('/splynx/schema/:entity?', async (req, res) => {
+  try {
+    const { entity } = req.params;
+    
+    // Define field schemas for each Splynx entity
+    const schemas = {
+      customers: {
+        entity: 'customers',
+        label: 'Customers',
+        fields: [
+          { name: 'id', label: 'Customer ID', type: 'number', operators: ['equals', 'not_equals', 'greater_than', 'less_than'] },
+          { name: 'name', label: 'Name', type: 'string', operators: ['equals', 'not_equals', 'contains'] },
+          { name: 'email', label: 'Email', type: 'string', operators: ['equals', 'not_equals', 'contains'] },
+          { name: 'phone', label: 'Phone', type: 'string', operators: ['equals', 'contains'] },
+          { name: 'status', label: 'Status', type: 'string', operators: ['equals', 'not_equals'], options: ['active', 'inactive', 'new', 'blocked'] },
+          { name: 'date_add', label: 'Date Added', type: 'date', operators: ['equals', 'greater_than', 'less_than', 'greater_than_or_equal', 'less_than_or_equal'] },
+          { name: 'street', label: 'Street', type: 'string', operators: ['contains'] },
+          { name: 'city', label: 'City', type: 'string', operators: ['equals', 'contains'] },
+          { name: 'zip_code', label: 'Zip Code', type: 'string', operators: ['equals', 'contains'] }
+        ],
+        dateField: 'date_add'
+      },
+      leads: {
+        entity: 'leads',
+        label: 'Leads',
+        fields: [
+          { name: 'id', label: 'Lead ID', type: 'number', operators: ['equals', 'not_equals', 'greater_than', 'less_than'] },
+          { name: 'name', label: 'Name', type: 'string', operators: ['equals', 'not_equals', 'contains'] },
+          { name: 'email', label: 'Email', type: 'string', operators: ['equals', 'not_equals', 'contains'] },
+          { name: 'phone', label: 'Phone', type: 'string', operators: ['equals', 'contains'] },
+          { name: 'status', label: 'Status', type: 'string', operators: ['equals', 'not_equals'], options: ['new', 'in_progress', 'qualified', 'converted', 'lost'] },
+          { name: 'source', label: 'Source', type: 'string', operators: ['equals', 'contains'] },
+          { name: 'date_add', label: 'Date Added', type: 'date', operators: ['equals', 'greater_than', 'less_than', 'greater_than_or_equal', 'less_than_or_equal'] }
+        ],
+        dateField: 'date_add'
+      },
+      support_tickets: {
+        entity: 'support_tickets',
+        label: 'Support Tickets',
+        fields: [
+          { name: 'id', label: 'Ticket ID', type: 'number', operators: ['equals', 'not_equals', 'greater_than', 'less_than'] },
+          { name: 'subject', label: 'Subject', type: 'string', operators: ['equals', 'contains'] },
+          { name: 'description', label: 'Description', type: 'string', operators: ['contains'] },
+          { name: 'status', label: 'Status', type: 'string', operators: ['equals', 'not_equals'], options: ['open', 'pending', 'solved', 'closed'] },
+          { name: 'priority', label: 'Priority', type: 'string', operators: ['equals'], options: ['low', 'normal', 'high', 'critical'] },
+          { name: 'customer_id', label: 'Customer ID', type: 'number', operators: ['equals', 'not_equals'] },
+          { name: 'date_created', label: 'Date Created', type: 'date', operators: ['equals', 'greater_than', 'less_than', 'greater_than_or_equal', 'less_than_or_equal'] }
+        ],
+        dateField: 'date_created'
+      },
+      scheduling_tasks: {
+        entity: 'scheduling_tasks',
+        label: 'Scheduling Tasks',
+        fields: [
+          { name: 'id', label: 'Task ID', type: 'number', operators: ['equals', 'not_equals', 'greater_than', 'less_than'] },
+          { name: 'subject', label: 'Subject', type: 'string', operators: ['equals', 'contains'] },
+          { name: 'description', label: 'Description', type: 'string', operators: ['contains'] },
+          { name: 'status', label: 'Status', type: 'string', operators: ['equals', 'not_equals'], options: ['new', 'in_progress', 'done', 'postponed', 'canceled'] },
+          { name: 'assigned_id', label: 'Assigned To (Admin ID)', type: 'number', operators: ['equals', 'not_equals'] },
+          { name: 'customer_id', label: 'Customer ID', type: 'number', operators: ['equals', 'not_equals'] },
+          { name: 'date', label: 'Task Date', type: 'date', operators: ['equals', 'greater_than', 'less_than', 'greater_than_or_equal', 'less_than_or_equal'] },
+          { name: 'time_from', label: 'Start Time', type: 'time', operators: ['equals', 'greater_than', 'less_than'] },
+          { name: 'time_to', label: 'End Time', type: 'time', operators: ['equals', 'greater_than', 'less_than'] }
+        ],
+        dateField: 'date'
+      }
+    };
+    
+    // If specific entity requested, return only that schema
+    if (entity) {
+      const schema = schemas[entity as keyof typeof schemas];
+      if (!schema) {
+        return res.status(404).json({ error: `Unknown entity: ${entity}` });
+      }
+      return res.json(schema);
+    }
+    
+    // Return all schemas
+    res.json(schemas);
+  } catch (error: any) {
+    console.error('Error fetching Splynx schema:', error);
+    res.status(500).json({ error: 'Failed to fetch schema' });
+  }
+});
+
 export default router;
