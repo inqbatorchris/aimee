@@ -517,8 +517,9 @@ export class SplynxService {
       const { field, operator, value } = filter;
       
       if (field === 'customer_labels' && operator === 'contains') {
-        // Filter customers where any label's text matches the search value (case-insensitive)
-        const searchTerm = value.toLowerCase();
+        // Filter customers where any label's text matches the search value
+        // Uses exact match (case-insensitive) since UI provides dropdown of exact labels
+        const searchTerm = value.toLowerCase().trim();
         filtered = filtered.filter((record: any) => {
           // Access customer_labels from the normalized attributes
           const labels = record.attributes?.customer_labels || [];
@@ -528,16 +529,17 @@ export class SplynxService {
             return false;
           }
           
-          // Search within the array for matching label text
+          // Search within the array for exact matching label text (case-insensitive)
           return labels.some((labelObj: any) => 
-            labelObj.label?.toLowerCase().includes(searchTerm)
+            labelObj.label?.toLowerCase().trim() === searchTerm
           );
         });
       }
       
       if (field === 'customer_labels' && operator === 'does_not_contain') {
-        // Filter customers where NO label's text matches the search value (case-insensitive)
-        const searchTerm = value.toLowerCase();
+        // Filter customers where NO label's text matches the search value
+        // Uses exact match (case-insensitive) since UI provides dropdown of exact labels
+        const searchTerm = value.toLowerCase().trim();
         filtered = filtered.filter((record: any) => {
           // Access customer_labels from the normalized attributes
           const labels = record.attributes?.customer_labels || [];
@@ -547,9 +549,9 @@ export class SplynxService {
             return true; // Include records with no labels when excluding
           }
           
-          // Exclude if ANY label matches the search term
+          // Exclude if ANY label matches exactly (case-insensitive)
           return !labels.some((labelObj: any) => 
-            labelObj.label?.toLowerCase().includes(searchTerm)
+            labelObj.label?.toLowerCase().trim() === searchTerm
           );
         });
       }
