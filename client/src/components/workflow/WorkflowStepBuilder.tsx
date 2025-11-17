@@ -145,19 +145,28 @@ export default function WorkflowStepBuilder({
     if (normalizedIntegrationId && splynxProjects.length === 0 && !loadingProjects && !projectsError) {
       setLoadingProjects(true);
       
+      const token = localStorage.getItem('token');
+      console.log('Fetching Splynx projects with integrationId:', normalizedIntegrationId);
+      console.log('Token available:', !!token);
+      
       fetch(`/api/integrations/splynx/projects?integrationId=${normalizedIntegrationId}`, {
         headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`
         }
       })
         .then(async res => {
+          console.log('Splynx projects response status:', res.status);
           if (!res.ok) {
+            if (res.status === 401) {
+              throw new Error('Authentication expired. Please log out and log back in.');
+            }
             const error = await res.json();
             throw new Error(error.error || 'Failed to fetch projects');
           }
           return res.json();
         })
         .then(data => {
+          console.log('Splynx projects received:', data);
           if (data.projects && Array.isArray(data.projects)) {
             setSplynxProjects(data.projects);
           } else {
