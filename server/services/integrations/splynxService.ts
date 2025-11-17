@@ -418,6 +418,15 @@ export class SplynxService {
       });
 
       console.log('[SPLYNX getEmailTemplate] Response:', response.status);
+      console.log('[SPLYNX getEmailTemplate] Data fields:', {
+        id: response.data?.id,
+        title: response.data?.title,
+        subject: response.data?.subject,
+        hasBody: !!response.data?.body,
+        bodyLength: response.data?.body?.length || 0,
+        bodyPreview: response.data?.body?.substring(0, 150) || '(empty)',
+        allKeys: Object.keys(response.data || {})
+      });
       
       return response.data;
     } catch (error: any) {
