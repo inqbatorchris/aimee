@@ -24,7 +24,7 @@ export interface SplynxQueryConfig {
   mode: 'count' | 'list';
   filters: SplynxFilter[];
   dateRange?: string;
-  dateRangeField?: 'date_add' | 'last_updated';
+  dateRangeField?: 'date_add' | 'last_update';
   limit?: number;
   resultVariable: string;
   updateKeyResult?: {
@@ -555,14 +555,14 @@ export default function SplynxQueryBuilder({
                       <Label className="text-xs text-muted-foreground">Date Field</Label>
                       <Select
                         value={value.dateRangeField || 'date_add'}
-                        onValueChange={(field) => onChange({ ...value, dateRangeField: field as 'date_add' | 'last_updated' })}
+                        onValueChange={(field) => onChange({ ...value, dateRangeField: field as 'date_add' | 'last_update' })}
                       >
                         <SelectTrigger data-testid="select-date-range-field">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="date_add">Date Added</SelectItem>
-                          <SelectItem value="last_updated">Last Updated</SelectItem>
+                          <SelectItem value="last_update">Last Updated</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -570,7 +570,7 @@ export default function SplynxQueryBuilder({
                 </div>
                 <p className="text-xs text-muted-foreground">
                   {value.dateRange && value.dateRange !== 'none' 
-                    ? `Filters by ${value.dateRangeField === 'last_updated' ? 'last_updated' : 'date_add'} field (some fields may not be supported by Splynx)`
+                    ? `Filters by ${value.dateRangeField === 'last_update' ? 'last_update' : 'date_add'} field (some fields may not be supported by Splynx)`
                     : 'No date filtering applied'
                   }
                 </p>
