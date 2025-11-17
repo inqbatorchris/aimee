@@ -471,6 +471,7 @@ export class SplynxService {
       const url = this.buildUrl(`admin/config/templates/${id}`);
       
       console.log('[SPLYNX updateEmailTemplate] Updating email template:', id);
+      console.log('[SPLYNX updateEmailTemplate] Payload fields:', Object.keys(template));
       
       const response = await axios.put(url, template, {
         headers: {
@@ -480,8 +481,12 @@ export class SplynxService {
       });
 
       console.log('[SPLYNX updateEmailTemplate] Response:', response.status);
+      console.log('[SPLYNX updateEmailTemplate] Response data:', response.data);
+      console.log('[SPLYNX updateEmailTemplate] Has data:', !!response.data);
       
-      return response.data;
+      // Splynx often returns 202 Accepted with null/empty body on updates
+      // Return null to signal caller to fetch fresh data
+      return response.data || null;
     } catch (error: any) {
       console.error('[SPLYNX updateEmailTemplate] Error:', error.message);
       console.error('[SPLYNX updateEmailTemplate] Response:', error.response?.data);
