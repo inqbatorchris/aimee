@@ -290,7 +290,7 @@ router.post('/workflows/test-splynx-query', async (req, res) => {
       return res.status(401).json({ error: 'User not authenticated or missing organization' });
     }
 
-    const { entity, mode, filters, dateRange, limit } = req.body;
+    const { entity, mode, filters, dateRange, dateRangeField, limit } = req.body;
     
     if (!entity) {
       return res.status(400).json({ error: 'Entity is required' });
@@ -330,6 +330,7 @@ router.post('/workflows/test-splynx-query', async (req, res) => {
       mode: 'list', // Always use list mode to get records
       filters: filters || [],
       dateRange,
+      dateRangeField,
       limit: 10000, // High limit to get all matching records
     });
 
