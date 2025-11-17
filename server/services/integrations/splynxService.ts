@@ -422,9 +422,9 @@ export class SplynxService {
         id: response.data?.id,
         title: response.data?.title,
         subject: response.data?.subject,
-        hasBody: !!response.data?.body,
-        bodyLength: response.data?.body?.length || 0,
-        bodyPreview: response.data?.body?.substring(0, 150) || '(empty)',
+        hasCode: !!response.data?.code,
+        codeLength: response.data?.code?.length || 0,
+        codePreview: response.data?.code?.substring(0, 150) || '(empty)',
         allKeys: Object.keys(response.data || {})
       });
       

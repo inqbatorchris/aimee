@@ -33,7 +33,7 @@ const templateSchema = z.object({
   title: z.string().min(1, "Title is required").max(255),
   subject: z.string().max(500).optional(),
   description: z.string().optional(),
-  body: z.string().optional(),
+  code: z.string().optional(),
 });
 
 type TemplateFormData = z.infer<typeof templateSchema>;
@@ -43,7 +43,7 @@ interface EmailTemplate {
   title?: string;
   subject?: string;
   description?: string;
-  body?: string;
+  code?: string;
   type: string;
 }
 
@@ -79,28 +79,28 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
       title: "",
       subject: "",
       description: "",
-      body: "",
+      code: "",
     },
   });
 
   useEffect(() => {
     if (templateId && template) {
       // Editing existing template
-      const bodyContent = template.body || "";
+      const codeContent = template.code || "";
       console.log('[TemplateEditor] Loading template:', {
         id: templateId,
         title: template.title,
-        hasBody: !!template.body,
-        bodyLength: template.body?.length || 0,
-        bodyPreview: template.body?.substring(0, 100)
+        hasCode: !!template.code,
+        codeLength: template.code?.length || 0,
+        codePreview: template.code?.substring(0, 100)
       });
       form.reset({
         title: template.title || "",
         subject: template.subject || "",
         description: template.description || "",
-        body: bodyContent,
+        code: codeContent,
       });
-      setHtmlContent(bodyContent);
+      setHtmlContent(codeContent);
     } else if (!templateId) {
       // Creating new template
       console.log('[TemplateEditor] Creating new template');
@@ -108,7 +108,7 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
         title: "",
         subject: "",
         description: "",
-        body: "",
+        code: "",
       });
       setHtmlContent('');
     }
@@ -267,7 +267,7 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
                     <div className="col-span-2 space-y-4">
                       <FormField
                         control={form.control}
-                        name="body"
+                        name="code"
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Email Body (HTML)</FormLabel>
