@@ -28,6 +28,7 @@ export interface SplynxQueryConfig {
   mode: QueryMode;
   filters?: SplynxFilter[];
   dateRange?: string;
+  dateRangeField?: 'date_add' | 'last_updated';
   limit?: number;
   sinceDate?: Date;
 }
@@ -409,7 +410,7 @@ export class SplynxService {
    * Supports both count and list modes with advanced filtering
    */
   async queryEntities(config: SplynxQueryConfig): Promise<SplynxQueryResult> {
-    const { entity, mode, filters = [], dateRange, limit = 10000, sinceDate } = config;
+    const { entity, mode, filters = [], dateRange, dateRangeField, limit = 10000, sinceDate } = config;
     
     console.log(`[SPLYNX queryEntities] 🔍 Query started`);
     console.log(`[SPLYNX queryEntities]   Entity: ${entity}`);
@@ -438,20 +439,23 @@ export class SplynxService {
     // Apply date range if specified
     if (dateRange) {
       const dateFilter = this.getDateRangeFilter(dateRange);
-      const dateField = this.getDateFieldForEntity(entity);
+      // Use specified dateRangeField or fall back to default
+      const dateField = dateRangeField || this.getDateFieldForEntity(entity);
       if (dateFilter.dateFrom && dateField) {
         params.main_attributes[dateField] = ['>=', dateFilter.dateFrom.split('T')[0]];
       }
+      console.log(`[SPLYNX queryEntities]   📅 Date range: ${dateRange} on field: ${dateField}`);
     }
     
     // Apply incremental since date
     if (sinceDate) {
-      const dateField = this.getDateFieldForEntity(entity);
+      // Use specified dateRangeField or fall back to default
+      const dateField = dateRangeField || this.getDateFieldForEntity(entity);
       const dateStr = sinceDate.toISOString().split('T')[0];
       if (dateField) {
         params.main_attributes[dateField] = ['>=', dateStr];
       }
-      console.log(`[SPLYNX queryEntities]   🔄 Incremental mode since: ${dateStr}`);
+      console.log(`[SPLYNX queryEntities]   🔄 Incremental mode since: ${dateStr} on field: ${dateField}`);
     }
     
     if (clientFilters.length > 0) {

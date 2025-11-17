@@ -24,6 +24,7 @@ export interface SplynxQueryConfig {
   mode: 'count' | 'list';
   filters: SplynxFilter[];
   dateRange?: string;
+  dateRangeField?: 'date_add' | 'last_updated';
   limit?: number;
   resultVariable: string;
   updateKeyResult?: {
@@ -107,6 +108,7 @@ export default function SplynxQueryBuilder({
           mode: 'list', // Always use list mode for testing to get sample records
           filters: value.filters,
           dateRange: value.dateRange,
+          dateRangeField: value.dateRangeField,
           limit: 5, // Only fetch 5 records for testing
         },
       });
@@ -523,24 +525,54 @@ export default function SplynxQueryBuilder({
 
               <div className="space-y-2">
                 <Label>Date Range (Optional)</Label>
-                <Select
-                  value={value.dateRange || 'none'}
-                  onValueChange={(dateRange) => onChange({ ...value, dateRange: dateRange === 'none' ? undefined : dateRange })}
-                >
-                  <SelectTrigger data-testid="select-date-range">
-                    <SelectValue placeholder="No date filter" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No date filter</SelectItem>
-                    {DATE_RANGE_OPTIONS.map(option => (
-                      <SelectItem key={option.value} value={option.value}>
-                        {option.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">Range</Label>
+                    <Select
+                      value={value.dateRange || 'none'}
+                      onValueChange={(dateRange) => onChange({ 
+                        ...value, 
+                        dateRange: dateRange === 'none' ? undefined : dateRange,
+                        dateRangeField: dateRange === 'none' ? undefined : value.dateRangeField // Clear field when removing date filter
+                      })}
+                    >
+                      <SelectTrigger data-testid="select-date-range">
+                        <SelectValue placeholder="No date filter" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No date filter</SelectItem>
+                        {DATE_RANGE_OPTIONS.map(option => (
+                          <SelectItem key={option.value} value={option.value}>
+                            {option.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  {value.dateRange && value.dateRange !== 'none' && (
+                    <div className="space-y-1">
+                      <Label className="text-xs text-muted-foreground">Date Field</Label>
+                      <Select
+                        value={value.dateRangeField || 'date_add'}
+                        onValueChange={(field) => onChange({ ...value, dateRangeField: field as 'date_add' | 'last_updated' })}
+                      >
+                        <SelectTrigger data-testid="select-date-range-field">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="date_add">Date Added</SelectItem>
+                          <SelectItem value="last_updated">Last Updated</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+                </div>
                 <p className="text-xs text-muted-foreground">
-                  Filters by {entitySchema?.dateField || 'date'} field
+                  {value.dateRange && value.dateRange !== 'none' 
+                    ? `Filters by ${value.dateRangeField === 'last_updated' ? 'last_updated' : 'date_add'} field (some fields may not be supported by Splynx)`
+                    : 'No date filtering applied'
+                  }
                 </p>
               </div>
 
