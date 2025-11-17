@@ -40,7 +40,9 @@ export function EmailBodyEditor({
       StarterKit.configure({
         heading: {
           levels: [1, 2, 3]
-        }
+        },
+        // Disable built-in extensions we're replacing
+        strike: false
       }),
       Underline,
       TextStyle,
