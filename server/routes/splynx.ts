@@ -1383,7 +1383,19 @@ router.put('/templates/:id', async (req, res) => {
       authHeader: credentials.authHeader,
     });
 
-    const template = await splynxService.updateEmailTemplate(parseInt(id), validationResult.data);
+    let template = await splynxService.updateEmailTemplate(parseInt(id), validationResult.data);
+
+    // If Splynx returns null/empty (202 Accepted), fetch fresh data
+    if (!template || !template.title) {
+      console.log('[SPLYNX] Update returned null/incomplete, fetching fresh template data...');
+      template = await splynxService.getEmailTemplate(parseInt(id));
+      
+      if (!template) {
+        return res.status(502).json({ 
+          error: 'Template update accepted but unable to retrieve updated data' 
+        });
+      }
+    }
 
     // Log activity
     await storage.logActivity({
@@ -1392,11 +1404,11 @@ router.put('/templates/:id', async (req, res) => {
       actionType: 'status_change',
       entityType: 'email_template',
       entityId: parseInt(id),
-      description: `Updated email template: ${template.name || id}`,
+      description: `Updated email template: ${template?.title || id}`,
       metadata: {
         service: 'splynx',
         action: 'update_email_template',
-        templateName: template.name
+        templateName: template?.title
       }
     });
 
