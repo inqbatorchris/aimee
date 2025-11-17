@@ -102,13 +102,13 @@ export default function SplynxQueryBuilder({
     mutationFn: async () => {
       const response = await apiRequest('/api/workflows/test-splynx-query', {
         method: 'POST',
-        body: JSON.stringify({
+        body: {
           entity: value.entity,
           mode: 'list', // Always use list mode for testing to get sample records
           filters: value.filters,
           dateRange: value.dateRange,
           limit: 5, // Only fetch 5 records for testing
-        }),
+        },
       });
       
       const data = await response.json();
