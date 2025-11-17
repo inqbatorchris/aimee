@@ -623,10 +623,25 @@ export class WorkflowExecutor {
 
   private async executeStrategyUpdate(step: any, context: any): Promise<StepExecutionResult> {
     try {
-      const { type, targetId, updateType = 'set_value', value } = step.config || {};
+      const { type, targetId, targetIdVariable, updateType = 'set_value', value } = step.config || {};
       
-      if (!type || !targetId) {
-        throw new Error('Strategy update requires type and targetId');
+      if (!type) {
+        throw new Error('Strategy update requires type');
+      }
+      
+      // Process targetId - it might be a variable reference or a hard-coded value
+      let processedTargetId = targetId;
+      if (targetIdVariable && context[targetIdVariable]) {
+        processedTargetId = context[targetIdVariable];
+        console.log(`[WorkflowExecutor]   🔄 Target ID from variable: ${targetIdVariable} → ${processedTargetId}`);
+      } else if (typeof targetId === 'string' && targetId.match(/^\{(\w+)\}$/)) {
+        const varName = targetId.replace(/[{}]/g, '');
+        processedTargetId = context[varName];
+        console.log(`[WorkflowExecutor]   🔄 Target ID from variable: {${varName}} → ${processedTargetId}`);
+      }
+      
+      if (!processedTargetId) {
+        throw new Error(`Strategy update requires targetId or targetIdVariable. Available context: ${Object.keys(context).join(', ')}`);
       }
       
       // Process value - it might be a variable reference
@@ -636,21 +651,21 @@ export class WorkflowExecutor {
         // Check both context[varName] and context[value] for flexibility
         processedValue = context[varName] || context[value] || value;
         
-        console.log(`[WorkflowExecutor]   🔄 Variable substitution: ${value} → ${JSON.stringify(processedValue)}`);
+        console.log(`[WorkflowExecutor]   🔄 Value variable substitution: ${value} → ${JSON.stringify(processedValue)}`);
       }
       
-      console.log(`[WorkflowExecutor] Updating ${type} ${targetId} with value:`, processedValue, `(updateType: ${updateType})`);
+      console.log(`[WorkflowExecutor] Updating ${type} ${processedTargetId} with value:`, processedValue, `(updateType: ${updateType})`);
       
       if (type === 'key_result') {
         // Get the key result details before updating (for activity log)
         const [kr] = await db
           .select()
           .from(keyResults)
-          .where(eq(keyResults.id, targetId))
+          .where(eq(keyResults.id, parseInt(processedTargetId)))
           .limit(1);
         
         if (!kr) {
-          throw new Error(`Key Result ${targetId} not found`);
+          throw new Error(`Key Result ${processedTargetId} not found`);
         }
         
         const oldValue = kr.currentValue;
@@ -664,7 +679,7 @@ export class WorkflowExecutor {
               currentValue: String(processedValue),
               updatedAt: new Date()
             })
-            .where(eq(keyResults.id, targetId));
+            .where(eq(keyResults.id, parseInt(processedTargetId)));
         } else if (updateType === 'increment') {
           const currentVal = parseFloat(kr.currentValue || '0');
           const incrementBy = parseFloat(processedValue || '0');
@@ -675,7 +690,7 @@ export class WorkflowExecutor {
               currentValue: String(newValue),
               updatedAt: new Date()
             })
-            .where(eq(keyResults.id, targetId));
+            .where(eq(keyResults.id, parseInt(processedTargetId)));
         } else if (updateType === 'percentage') {
           if (kr.targetValue) {
             const targetVal = parseFloat(kr.targetValue || '100');
@@ -687,7 +702,7 @@ export class WorkflowExecutor {
                 currentValue: String(newValue),
                 updatedAt: new Date()
               })
-              .where(eq(keyResults.id, targetId));
+              .where(eq(keyResults.id, parseInt(processedTargetId)));
           }
         }
         
@@ -883,8 +898,8 @@ export class WorkflowExecutor {
       
       console.log(`[WorkflowExecutor]   ✓ Table schema found in registry`);
       
-      // Execute generic query using the table schema
-      const result = await this.executeGenericQuery(tableSchema, orgId, queryConfig);
+      // Execute generic query using the table schema (pass context for variable interpolation)
+      const result = await this.executeGenericQuery(tableSchema, orgId, queryConfig, context);
       
       console.log(`[WorkflowExecutor]   📈 Query result: ${result}`);
       
@@ -930,7 +945,7 @@ export class WorkflowExecutor {
     }
   }
 
-  private async executeGenericQuery(tableSchema: any, organizationId: number, queryConfig: any): Promise<string | number | null> {
+  private async executeGenericQuery(tableSchema: any, organizationId: number, queryConfig: any, context: any = {}): Promise<string | number | null> {
     const { filters = [], aggregation = 'count', aggregationField, limit = 1000 } = queryConfig;
     
     console.log(`[WorkflowExecutor]   🔍 Building generic query with ${filters.length} filters`);
@@ -947,8 +962,8 @@ export class WorkflowExecutor {
     for (const filter of filters) {
       const { field, operator, value } = filter;
       
-      // Process dynamic date placeholders
-      const processedValue = this.processDynamicValue(value);
+      // Process dynamic date placeholders AND context variables
+      const processedValue = this.processDynamicValue(value, context);
       
       console.log(`[WorkflowExecutor]     Filter: ${field} ${operator} ${JSON.stringify(value)}${value !== processedValue ? ` → ${JSON.stringify(processedValue)}` : ''}`);
       
@@ -1065,13 +1080,14 @@ export class WorkflowExecutor {
     return 0;
   }
 
-  private processDynamicValue(value: any): any {
-    // Process dynamic date placeholders
+  private processDynamicValue(value: any, context: any = {}): any {
+    // Process dynamic date placeholders AND context variables
     if (typeof value === 'string' && value.startsWith('{') && value.endsWith('}')) {
       const placeholder = value.slice(1, -1); // Remove { }
       
       const now = new Date();
       
+      // First check if it's a date placeholder
       switch (placeholder) {
         case 'currentMonthStart': {
           // First day of current month at midnight
@@ -1100,7 +1116,28 @@ export class WorkflowExecutor {
           return isoDate;
         }
         default:
-          // Unknown placeholder, return as-is
+          // Check if it's a context variable
+          if (context.hasOwnProperty(placeholder)) {
+            console.log(`[WorkflowExecutor]   🔄 Context variable: {${placeholder}} → ${JSON.stringify(context[placeholder])}`);
+            return context[placeholder];
+          }
+          // Check for nested properties (e.g., {webhookData.objectiveId})
+          if (placeholder.includes('.')) {
+            const parts = placeholder.split('.');
+            let nestedValue = context;
+            for (const part of parts) {
+              if (nestedValue && typeof nestedValue === 'object' && part in nestedValue) {
+                nestedValue = nestedValue[part];
+              } else {
+                console.log(`[WorkflowExecutor]   ⚠️  Context variable not found: {${placeholder}}`);
+                return value; // Return original if not found
+              }
+            }
+            console.log(`[WorkflowExecutor]   🔄 Context variable: {${placeholder}} → ${JSON.stringify(nestedValue)}`);
+            return nestedValue;
+          }
+          // Unknown placeholder and not in context, return as-is
+          console.log(`[WorkflowExecutor]   ⚠️  Unknown placeholder: {${placeholder}}`);
           return value;
       }
     }
