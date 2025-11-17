@@ -142,6 +142,12 @@ const STEP_TYPES = {
     color: 'bg-cyan-500',
     description: 'Query app data tables and update KPIs'
   },
+  splynx_query: {
+    label: 'Splynx Query (Legacy)',
+    icon: Database,
+    color: 'bg-cyan-500',
+    description: 'Legacy Splynx data query'
+  },
   data_transformation: {
     label: 'Data Transformation',
     icon: Calculator,
