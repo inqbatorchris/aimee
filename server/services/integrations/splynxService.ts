@@ -395,13 +395,18 @@ export class SplynxService {
       });
 
       console.log('[SPLYNX getEmailTemplates] Response:', response.status);
+      console.log('[SPLYNX getEmailTemplates] Response data type:', typeof response.data);
+      console.log('[SPLYNX getEmailTemplates] Response data:', JSON.stringify(response.data, null, 2));
       
       if (Array.isArray(response.data)) {
+        console.log('[SPLYNX getEmailTemplates] Returning array with', response.data.length, 'templates');
         return response.data;
       } else if (response.data?.items) {
+        console.log('[SPLYNX getEmailTemplates] Returning items array with', response.data.items.length, 'templates');
         return response.data.items;
       }
       
+      console.log('[SPLYNX getEmailTemplates] No templates found, returning empty array');
       return [];
     } catch (error: any) {
       console.error('[SPLYNX getEmailTemplates] Error:', error.message);
