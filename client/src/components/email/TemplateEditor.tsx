@@ -24,7 +24,15 @@ import {
   FormMessage,
   FormDescription,
 } from "@/components/ui/form";
-import { Loader2, FileText, Code, Eye, Copy } from "lucide-react";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
+import { Loader2, FileText, Code, Eye, Copy, CodeXml } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { EmailBodyEditor } from "./EmailBodyEditor";
@@ -65,6 +73,7 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('details');
   const [htmlContent, setHtmlContent] = useState('');
+  const [showCodeDialog, setShowCodeDialog] = useState(false);
 
   // Fetch individual template data when editing
   const { data: template, isLoading: isLoadingTemplate } = useQuery<EmailTemplate>({
@@ -164,6 +173,15 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
     toast({
       title: 'Copied to clipboard',
       description: `Variable "${text}" copied successfully.`,
+      duration: 2000,
+    });
+  };
+
+  const copyCodeToClipboard = () => {
+    navigator.clipboard.writeText(htmlContent);
+    toast({
+      title: 'Code copied',
+      description: 'HTML code copied to clipboard.',
       duration: 2000,
     });
   };
@@ -270,7 +288,19 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
                         name="code"
                         render={({ field }) => (
                           <FormItem>
-                            <FormLabel>Email Body (HTML)</FormLabel>
+                            <div className="flex items-center justify-between mb-2">
+                              <FormLabel>Email Body (HTML)</FormLabel>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                onClick={() => setShowCodeDialog(true)}
+                                data-testid="button-view-code"
+                              >
+                                <CodeXml className="h-4 w-4 mr-2" />
+                                View Code
+                              </Button>
+                            </div>
                             <FormControl>
                               <EmailBodyEditor
                                 content={field.value || ''}
@@ -369,6 +399,40 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
           </Form>
         )}
       </SheetContent>
+
+      <Dialog open={showCodeDialog} onOpenChange={setShowCodeDialog}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Raw HTML Code</DialogTitle>
+            <DialogDescription>
+              View and copy the raw HTML code for this email template.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex-1 overflow-auto border rounded-md bg-muted/50">
+            <pre className="p-4 text-xs font-mono whitespace-pre-wrap break-words">
+              <code>{htmlContent || '<!-- No content yet -->'}</code>
+            </pre>
+          </div>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={copyCodeToClipboard}
+              data-testid="button-copy-code"
+            >
+              <Copy className="h-4 w-4 mr-2" />
+              Copy Code
+            </Button>
+            <Button
+              type="button"
+              onClick={() => setShowCodeDialog(false)}
+              data-testid="button-close-code-dialog"
+            >
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Sheet>
   );
 }
