@@ -234,6 +234,7 @@ export default function WorkflowStepBuilder({
 
       case 'strategy_update':
         const targetType = step.config?.type || 'key_result';
+        const useDynamicTarget = step.config?.useDynamicTarget || false;
         
         return (
           <div className="space-y-4">
@@ -255,7 +256,27 @@ export default function WorkflowStepBuilder({
               </Select>
             </div>
 
-            {targetType === 'key_result' && (
+            <div className="flex items-center space-x-2">
+              <input
+                type="checkbox"
+                id={`dynamic-target-${step.id}`}
+                checked={useDynamicTarget}
+                onChange={(e) => updateStep(step.id, {
+                  config: { 
+                    ...step.config, 
+                    useDynamicTarget: e.target.checked,
+                    targetId: e.target.checked ? undefined : step.config.targetId,
+                    targetIdVariable: e.target.checked ? step.config.targetIdVariable : undefined,
+                  }
+                })}
+                className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
+              <label htmlFor={`dynamic-target-${step.id}`} className="text-sm font-medium">
+                Use dynamic target from variable
+              </label>
+            </div>
+
+            {!useDynamicTarget && targetType === 'key_result' && (
               <div>
                 <Label>Key Result</Label>
                 <Select
@@ -278,7 +299,7 @@ export default function WorkflowStepBuilder({
               </div>
             )}
 
-            {targetType === 'objective' && (
+            {!useDynamicTarget && targetType === 'objective' && (
               <div>
                 <Label>Objective</Label>
                 <Select
@@ -298,6 +319,22 @@ export default function WorkflowStepBuilder({
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+            )}
+
+            {useDynamicTarget && (
+              <div>
+                <Label>Target ID Variable</Label>
+                <Input
+                  placeholder="Enter variable name (e.g., keyResultId)"
+                  value={step.config.targetIdVariable || ''}
+                  onChange={(e) => updateStep(step.id, {
+                    config: { ...step.config, targetIdVariable: e.target.value }
+                  })}
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Variable will be resolved from trigger data (e.g., webhook payload) or previous steps
+                </p>
               </div>
             )}
 
