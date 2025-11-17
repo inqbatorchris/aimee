@@ -1,16 +1,14 @@
 import { Router } from 'express';
 import { storage } from '../storage';
 import { authenticateToken } from '../auth';
-import { insertIntegrationSchema, insertDatabaseConnectionSchema, type InsertIntegration, integrations } from '../../shared/schema';
+import { insertIntegrationSchema, insertDatabaseConnectionSchema, type InsertIntegration } from '../../shared/schema';
 import { z } from 'zod';
 import crypto from 'crypto';
 import axios from 'axios';
 import { triggerDiscovery } from '../services/integrations/TriggerDiscoveryService';
 import { IntegrationCatalogImporter } from '../services/integrations/IntegrationCatalogImporter';
 import { DatabaseService } from '../services/integrations/databaseService';
-import { SplynxService } from '../services/integrations/splynxService';
-import { db } from '../db';
-import { eq, and } from 'drizzle-orm';
+import { SplynxLabelService } from '../services/integrations/SplynxLabelService';
 
 const router = Router();
 
@@ -1487,61 +1485,15 @@ router.get('/splynx/schema/:entity?', async (req, res) => {
         return res.status(404).json({ error: `Unknown entity: ${entity}` });
       }
       
-      // For customers entity, fetch actual label options from Splynx
+      // For customers entity, fetch actual label options from Splynx using cached service
       if (entity === 'customers' && req.user?.organizationId) {
         try {
-          // Get Splynx integration credentials
-          const [splynxIntegration] = await db
-            .select()
-            .from(integrations)
-            .where(
-              and(
-                eq(integrations.organizationId, req.user.organizationId),
-                eq(integrations.platformType, 'splynx')
-              )
-            )
-            .limit(1);
-
-          if (splynxIntegration && splynxIntegration.credentialsEncrypted) {
-            // Decrypt credentials
-            const credentials = JSON.parse(decrypt(splynxIntegration.credentialsEncrypted));
-            const { baseUrl, authHeader } = credentials;
-            
-            if (baseUrl && authHeader) {
-              const splynxService = new SplynxService({ baseUrl, authHeader });
-              
-              // Fetch sample customers to extract labels (limit to avoid performance issues)
-              const result = await splynxService.queryEntities({
-                entity: 'customers',
-                mode: 'list',
-                filters: [],
-                limit: 500 // Fetch enough to get diverse label set
-              });
-              
-              // Extract unique label names
-              const uniqueLabels = new Set<string>();
-              if (result.records) {
-                for (const record of result.records) {
-                  const labels = record.attributes?.customer_labels || [];
-                  if (Array.isArray(labels)) {
-                    for (const labelObj of labels) {
-                      if (labelObj.label) {
-                        uniqueLabels.add(labelObj.label);
-                      }
-                    }
-                  }
-                }
-              }
-              
-              // Sort labels alphabetically and add to schema
-              const labelOptions = Array.from(uniqueLabels).sort();
-              
-              // Find and update the customer_labels field with options
-              const customerLabelsField = schema.fields.find(f => f.name === 'customer_labels');
-              if (customerLabelsField && labelOptions.length > 0) {
-                customerLabelsField.options = labelOptions;
-              }
-            }
+          const labelOptions = await SplynxLabelService.getLabels(req.user.organizationId);
+          
+          // Find and update the customer_labels field with options
+          const customerLabelsField = schema.fields.find(f => f.name === 'customer_labels');
+          if (customerLabelsField && labelOptions.length > 0) {
+            customerLabelsField.options = labelOptions;
           }
         } catch (labelError: any) {
           // Log error but don't fail the whole request - return schema without label options
