@@ -475,26 +475,28 @@ export class SplynxService {
       // Normalize response data
       let data = Array.isArray(response.data) ? response.data : response.data?.items || [];
       
-      // Apply client-side filters for customer_labels
+      console.log(`[SPLYNX queryEntities]   📊 Initial records: ${data.length}`);
+      
+      // Normalize records with IDs and attributes FIRST
+      let records = data.map((item: any) => ({
+        id: item.id,
+        attributes: this.extractEntityAttributes(item, entity),
+        raw: item
+      }));
+      
+      // Apply client-side filters for customer_labels AFTER normalization
       if (clientFilters.length > 0 && entity === 'customers') {
-        data = this.applyClientSideFilters(data, clientFilters);
-        console.log(`[SPLYNX queryEntities]   🔍 After client filtering: ${data.length} records`);
+        records = this.applyClientSideFiltersToNormalizedRecords(records, clientFilters);
+        console.log(`[SPLYNX queryEntities]   🔍 After client filtering: ${records.length} records`);
       }
       
-      const count = data.length;
-      console.log(`[SPLYNX queryEntities]   📊 Records found: ${count}`);
+      const count = records.length;
+      console.log(`[SPLYNX queryEntities]   📊 Final records: ${count}`);
       
       // Return based on mode
       if (mode === 'count') {
         return { count };
       } else {
-        // Normalize records with IDs and attributes
-        const records = data.map((item: any) => ({
-          id: item.id,
-          attributes: this.extractEntityAttributes(item, entity),
-          raw: item
-        }));
-        
         return { count, records };
       }
     } catch (error: any) {
@@ -505,11 +507,11 @@ export class SplynxService {
   }
   
   /**
-   * Apply client-side filters for fields that can't be filtered via Splynx API
+   * Apply client-side filters to normalized records for fields that can't be filtered via Splynx API
    * (e.g., customer_labels which requires searching within array of objects)
    */
-  private applyClientSideFilters(data: any[], filters: SplynxFilter[]): any[] {
-    let filtered = data;
+  private applyClientSideFiltersToNormalizedRecords(records: any[], filters: SplynxFilter[]): any[] {
+    let filtered = records;
     
     for (const filter of filters) {
       const { field, operator, value } = filter;
@@ -517,8 +519,16 @@ export class SplynxService {
       if (field === 'customer_labels' && operator === 'contains') {
         // Filter customers where any label's text matches the search value (case-insensitive)
         const searchTerm = value.toLowerCase();
-        filtered = filtered.filter((customer: any) => {
-          const labels = customer.customer_labels || [];
+        filtered = filtered.filter((record: any) => {
+          // Access customer_labels from the normalized attributes
+          const labels = record.attributes?.customer_labels || [];
+          
+          // Guard against empty or invalid labels array
+          if (!Array.isArray(labels) || labels.length === 0) {
+            return false;
+          }
+          
+          // Search within the array for matching label text
           return labels.some((labelObj: any) => 
             labelObj.label?.toLowerCase().includes(searchTerm)
           );
