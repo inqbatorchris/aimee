@@ -1426,8 +1426,8 @@ router.get('/splynx/schema/:entity?', async (req, res) => {
           { name: 'geo_data', label: 'Geo Coordinates', type: 'string', operators: ['contains'] },
           { name: 'added_by', label: 'Added By', type: 'string', operators: ['equals', 'contains'] },
           
-          // Labels (Customer Tags)
-          { name: 'labels', label: 'Customer Labels', type: 'string', operators: ['contains'] }
+          // Customer Labels (array of label objects with id, label, color)
+          { name: 'customer_labels', label: 'Customer Labels', type: 'string', operators: ['contains'] }
         ],
         dateField: 'date_add'
       },
