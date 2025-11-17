@@ -387,14 +387,14 @@ export default function SplynxQueryBuilder({
               <div className="space-y-2">
                 <Label>Date Range (Optional)</Label>
                 <Select
-                  value={value.dateRange || ''}
-                  onValueChange={(dateRange) => onChange({ ...value, dateRange: dateRange || undefined })}
+                  value={value.dateRange || 'none'}
+                  onValueChange={(dateRange) => onChange({ ...value, dateRange: dateRange === 'none' ? undefined : dateRange })}
                 >
                   <SelectTrigger data-testid="select-date-range">
                     <SelectValue placeholder="No date filter" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">No date filter</SelectItem>
+                    <SelectItem value="none">No date filter</SelectItem>
                     {DATE_RANGE_OPTIONS.map(option => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}
