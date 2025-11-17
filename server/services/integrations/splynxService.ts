@@ -386,11 +386,6 @@ export class SplynxService {
         headers: {
           'Authorization': this.credentials.authHeader,
           'Content-Type': 'application/json',
-        },
-        params: {
-          main_attributes: {
-            type: 'email'
-          }
         }
       });
 
