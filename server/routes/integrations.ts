@@ -1427,7 +1427,7 @@ router.get('/splynx/schema/:entity?', async (req, res) => {
           { name: 'added_by', label: 'Added By', type: 'string', operators: ['equals', 'contains'] },
           
           // Customer Labels (array of label objects with id, label, color)
-          { name: 'customer_labels', label: 'Customer Labels', type: 'string', operators: ['contains'] }
+          { name: 'customer_labels', label: 'Customer Labels', type: 'string', operators: ['contains', 'does_not_contain'] }
         ],
         dateField: 'date_add'
       },

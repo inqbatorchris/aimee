@@ -141,6 +141,7 @@ export default function SplynxQueryBuilder({
       equals: 'Equals',
       not_equals: 'Not equals',
       contains: 'Contains',
+      does_not_contain: 'Does not contain',
       greater_than: 'Greater than',
       less_than: 'Less than',
       greater_than_or_equal: 'Greater than or equal',
