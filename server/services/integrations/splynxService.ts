@@ -391,15 +391,13 @@ export class SplynxService {
 
       console.log('[SPLYNX getEmailTemplates] Response:', response.status, `- Found ${Array.isArray(response.data) ? response.data.length : (response.data?.items?.length || 0)} templates`);
       
-      let templates: any[] = [];
       if (Array.isArray(response.data)) {
-        templates = response.data;
+        return response.data;
       } else if (response.data?.items) {
-        templates = response.data.items;
+        return response.data.items;
       }
       
-      // Filter out the 'type' field to prevent conflicts with workflow step types
-      return templates.map(({ type, ...template }) => template);
+      return [];
     } catch (error: any) {
       console.error('[SPLYNX getEmailTemplates] Error:', error.message);
       throw new Error(`Failed to fetch email templates from Splynx: ${error.message}`);
@@ -430,9 +428,7 @@ export class SplynxService {
         allKeys: Object.keys(response.data || {})
       });
       
-      // Filter out the 'type' field to prevent conflicts with workflow step types
-      const { type, ...template } = response.data || {};
-      return template;
+      return response.data;
     } catch (error: any) {
       console.error('[SPLYNX getEmailTemplate] Error:', error.message);
       throw new Error(`Failed to fetch email template from Splynx: ${error.message}`);

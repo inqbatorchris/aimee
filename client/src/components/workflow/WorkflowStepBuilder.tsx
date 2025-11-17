@@ -32,6 +32,7 @@ interface EmailTemplate {
   subject?: string;
   description?: string;
   code?: string;
+  type: string;
 }
 
 interface EmailCampaignConfigProps {
@@ -141,12 +142,6 @@ const STEP_TYPES = {
     icon: Database,
     color: 'bg-cyan-500',
     description: 'Query app data tables and update KPIs'
-  },
-  splynx_query: {
-    label: 'Splynx Query (Legacy)',
-    icon: Database,
-    color: 'bg-cyan-500',
-    description: 'Legacy Splynx data query'
   },
   data_transformation: {
     label: 'Data Transformation',
