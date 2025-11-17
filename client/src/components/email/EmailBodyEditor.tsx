@@ -80,6 +80,11 @@ export function EmailBodyEditor({
 
   useEffect(() => {
     if (editor && content !== editor.getHTML()) {
+      console.log('[EmailBodyEditor] Updating content:', {
+        contentLength: content?.length || 0,
+        contentPreview: content?.substring(0, 100),
+        editorHTML: editor.getHTML()?.substring(0, 100)
+      });
       editor.commands.setContent(content);
     }
   }, [content, editor]);
