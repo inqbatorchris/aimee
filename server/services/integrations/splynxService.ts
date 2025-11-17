@@ -420,14 +420,18 @@ export class SplynxService {
     const endpoint = this.getEntityEndpoint(entity);
     const url = this.buildUrl(endpoint);
     
-    // Build query parameters from filters
+    // Separate client-side filters (customer_labels) from API filters
+    const apiFilters = filters.filter(f => f.field !== 'customer_labels');
+    const clientFilters = filters.filter(f => f.field === 'customer_labels');
+    
+    // Build query parameters from API filters only
     const params: any = {
       main_attributes: {},
       limit: limit
     };
     
-    // Apply filters
-    for (const filter of filters) {
+    // Apply API filters
+    for (const filter of apiFilters) {
       this.applyFilterToParams(params, filter, entity);
     }
     
@@ -450,6 +454,10 @@ export class SplynxService {
       console.log(`[SPLYNX queryEntities]   🔄 Incremental mode since: ${dateStr}`);
     }
     
+    if (clientFilters.length > 0) {
+      console.log(`[SPLYNX queryEntities]   🎯 Client-side filters: ${clientFilters.length}`);
+    }
+    
     console.log(`[SPLYNX queryEntities]   📡 Request URL: ${url}`);
     console.log(`[SPLYNX queryEntities]   📝 Params:`, JSON.stringify(params, null, 2));
     
@@ -466,6 +474,12 @@ export class SplynxService {
       
       // Normalize response data
       let data = Array.isArray(response.data) ? response.data : response.data?.items || [];
+      
+      // Apply client-side filters for customer_labels
+      if (clientFilters.length > 0 && entity === 'customers') {
+        data = this.applyClientSideFilters(data, clientFilters);
+        console.log(`[SPLYNX queryEntities]   🔍 After client filtering: ${data.length} records`);
+      }
       
       const count = data.length;
       console.log(`[SPLYNX queryEntities]   📊 Records found: ${count}`);
@@ -488,6 +502,31 @@ export class SplynxService {
       console.error(`[SPLYNX queryEntities]   Response:`, error.response?.data);
       throw new Error(`Failed to query ${entity} from Splynx: ${error.message}`);
     }
+  }
+  
+  /**
+   * Apply client-side filters for fields that can't be filtered via Splynx API
+   * (e.g., customer_labels which requires searching within array of objects)
+   */
+  private applyClientSideFilters(data: any[], filters: SplynxFilter[]): any[] {
+    let filtered = data;
+    
+    for (const filter of filters) {
+      const { field, operator, value } = filter;
+      
+      if (field === 'customer_labels' && operator === 'contains') {
+        // Filter customers where any label's text matches the search value (case-insensitive)
+        const searchTerm = value.toLowerCase();
+        filtered = filtered.filter((customer: any) => {
+          const labels = customer.customer_labels || [];
+          return labels.some((labelObj: any) => 
+            labelObj.label?.toLowerCase().includes(searchTerm)
+          );
+        });
+      }
+    }
+    
+    return filtered;
   }
   
   /**
