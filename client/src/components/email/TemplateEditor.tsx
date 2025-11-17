@@ -87,6 +87,13 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
     if (templateId && template) {
       // Editing existing template
       const bodyContent = template.body || "";
+      console.log('[TemplateEditor] Loading template:', {
+        id: templateId,
+        title: template.title,
+        hasBody: !!template.body,
+        bodyLength: template.body?.length || 0,
+        bodyPreview: template.body?.substring(0, 100)
+      });
       form.reset({
         title: template.title || "",
         subject: template.subject || "",
@@ -96,6 +103,7 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
       setHtmlContent(bodyContent);
     } else if (!templateId) {
       // Creating new template
+      console.log('[TemplateEditor] Creating new template');
       form.reset({
         title: "",
         subject: "",
