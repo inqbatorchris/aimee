@@ -19,7 +19,7 @@ export type QueryMode = 'count' | 'list';
 
 export interface SplynxFilter {
   field: string;
-  operator: 'equals' | 'not_equals' | 'contains' | 'greater_than' | 'less_than' | 'greater_than_or_equal' | 'less_than_or_equal' | 'is_null' | 'not_null';
+  operator: 'equals' | 'not_equals' | 'contains' | 'does_not_contain' | 'greater_than' | 'less_than' | 'greater_than_or_equal' | 'less_than_or_equal' | 'is_null' | 'not_null';
   value: string;
 }
 
@@ -530,6 +530,25 @@ export class SplynxService {
           
           // Search within the array for matching label text
           return labels.some((labelObj: any) => 
+            labelObj.label?.toLowerCase().includes(searchTerm)
+          );
+        });
+      }
+      
+      if (field === 'customer_labels' && operator === 'does_not_contain') {
+        // Filter customers where NO label's text matches the search value (case-insensitive)
+        const searchTerm = value.toLowerCase();
+        filtered = filtered.filter((record: any) => {
+          // Access customer_labels from the normalized attributes
+          const labels = record.attributes?.customer_labels || [];
+          
+          // Guard against empty or invalid labels array
+          if (!Array.isArray(labels) || labels.length === 0) {
+            return true; // Include records with no labels when excluding
+          }
+          
+          // Exclude if ANY label matches the search term
+          return !labels.some((labelObj: any) => 
             labelObj.label?.toLowerCase().includes(searchTerm)
           );
         });
