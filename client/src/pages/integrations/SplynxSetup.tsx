@@ -35,6 +35,12 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet";
 import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import {
   Plug,
   CheckCircle,
   XCircle,
@@ -51,9 +57,11 @@ import {
   Map,
   MapPin,
   RefreshCw,
+  Mail,
 } from "lucide-react";
 import { Link } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
+import { EmailTemplateManager } from "@/components/email/EmailTemplateManager";
 
 // Validation schema for Splynx setup form - simplified to make authHeader optional
 const splynxSetupSchema = z.object({
@@ -445,7 +453,23 @@ export default function SplynxSetup() {
         </p>
       </div>
 
-      <div className="grid gap-6">
+      <Tabs defaultValue="connection" className="w-full">
+        <TabsList className="grid w-full grid-cols-3 mb-6">
+          <TabsTrigger value="connection" data-testid="tab-connection">
+            <LinkIcon className="h-4 w-4 mr-2" />
+            Connection
+          </TabsTrigger>
+          <TabsTrigger value="templates" data-testid="tab-templates">
+            <Mail className="h-4 w-4 mr-2" />
+            Email Templates
+          </TabsTrigger>
+          <TabsTrigger value="activities" data-testid="tab-activities">
+            <Activity className="h-4 w-4 mr-2" />
+            Activities
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="connection" className="space-y-6">
         {/* Token Decryption Error Alert */}
         {hasTokenDecryptionError && (
           <Alert className="border-destructive bg-destructive/5">
@@ -702,7 +726,65 @@ export default function SplynxSetup() {
             </CardContent>
           </Card>
 
-        {/* Activity Logs */}
+        {/* Next Steps */}
+        {installation?.connectionStatus === 'active' && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-green-700">🎉 Integration Ready!</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                <p className="text-sm text-gray-600">
+                  Your Splynx integration is successfully configured and ready to use.
+                </p>
+                <div className="flex gap-2">
+                  <Button 
+                    variant="default"
+                    onClick={() => window.location.href = '/integrations/splynx/agents'}
+                    data-testid="button-configure-agents"
+                  >
+                    Configure Agents
+                  </Button>
+                  <Button variant="outline" data-testid="button-view-documentation">
+                    View Documentation
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Customer Mapping Tool */}
+        {installation?.connectionStatus === 'active' && (
+          <CustomerMappingSection installationId={installation.id} />
+        )}
+
+        {/* Help Section */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Need Help?</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-2 text-sm text-gray-600">
+              <p><strong>Base URL:</strong> Your Splynx installation URL (e.g., https://manage.your-isp.com/api/2.0)</p>
+              <p><strong>Authorization Header:</strong> Your complete Splynx API authorization header with 'Basic' prefix</p>
+            </div>
+            <Alert>
+              <AlertTriangle className="h-4 w-4" />
+              <AlertDescription className="text-xs">
+                Make sure your API key has the necessary permissions to access leads and customer data.
+              </AlertDescription>
+            </Alert>
+          </CardContent>
+        </Card>
+        </TabsContent>
+
+        <TabsContent value="templates" className="space-y-6">
+          <EmailTemplateManager />
+        </TabsContent>
+
+        <TabsContent value="activities" className="space-y-6">
+          {/* Activity Logs */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
@@ -773,59 +855,8 @@ export default function SplynxSetup() {
             )}
           </CardContent>
         </Card>
-
-        {/* Next Steps */}
-        {installation?.connectionStatus === 'active' && (
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-green-700">🎉 Integration Ready!</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-3">
-                <p className="text-sm text-gray-600">
-                  Your Splynx integration is successfully configured and ready to use.
-                </p>
-                <div className="flex gap-2">
-                  <Button 
-                    variant="default"
-                    onClick={() => window.location.href = '/integrations/splynx/agents'}
-                    data-testid="button-configure-agents"
-                  >
-                    Configure Agents
-                  </Button>
-                  <Button variant="outline" data-testid="button-view-documentation">
-                    View Documentation
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Customer Mapping Tool */}
-        {installation?.connectionStatus === 'active' && (
-          <CustomerMappingSection installationId={installation.id} />
-        )}
-
-        {/* Help Section */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Need Help?</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="space-y-2 text-sm text-gray-600">
-              <p><strong>Base URL:</strong> Your Splynx installation URL (e.g., https://manage.your-isp.com/api/2.0)</p>
-              <p><strong>Authorization Header:</strong> Your complete Splynx API authorization header with 'Basic' prefix</p>
-            </div>
-            <Alert>
-              <AlertTriangle className="h-4 w-4" />
-              <AlertDescription className="text-xs">
-                Make sure your API key has the necessary permissions to access leads and customer data.
-              </AlertDescription>
-            </Alert>
-          </CardContent>
-        </Card>
-      </div>
+        </TabsContent>
+      </Tabs>
 
       {/* Activity Detail Sheet */}
       <Sheet open={isActivitySheetOpen} onOpenChange={(open) => !open && setIsActivitySheetOpen(false)}>

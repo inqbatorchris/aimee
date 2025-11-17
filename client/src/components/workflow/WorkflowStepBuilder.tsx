@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database, Calculator } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database, Calculator, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -23,6 +24,102 @@ interface WorkflowStepBuilderProps {
   integrations?: Integration[];
   keyResults?: KeyResult[];
   objectives?: Objective[];
+}
+
+interface EmailTemplate {
+  id: number;
+  name: string;
+  subject: string;
+  body: string;
+}
+
+interface EmailCampaignConfigProps {
+  step: WorkflowStep;
+  updateStep: (stepId: string, updates: Partial<WorkflowStep>) => void;
+}
+
+function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
+  const { data: templates = [], isLoading } = useQuery<EmailTemplate[]>({
+    queryKey: ['/api/splynx/templates'],
+    retry: 1,
+  });
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <Label>Email Template</Label>
+        <Select
+          value={step.config.parameters?.templateId?.toString()}
+          onValueChange={(value) => updateStep(step.id, {
+            config: {
+              ...step.config,
+              parameters: { ...step.config.parameters, templateId: parseInt(value) }
+            }
+          })}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder={isLoading ? "Loading templates..." : "Select email template"} />
+          </SelectTrigger>
+          <SelectContent>
+            {isLoading ? (
+              <div className="flex items-center justify-center py-2">
+                <Loader2 className="h-4 w-4 animate-spin" />
+              </div>
+            ) : templates.length === 0 ? (
+              <div className="text-sm text-muted-foreground px-2 py-2">
+                No templates found. Create one in Splynx Setup.
+              </div>
+            ) : (
+              templates.map(template => (
+                <SelectItem key={template.id} value={template.id.toString()}>
+                  {template.name}
+                </SelectItem>
+              ))
+            )}
+          </SelectContent>
+        </Select>
+        <p className="text-xs text-gray-500 mt-1">
+          Select the email template to send. Templates are managed in Splynx Setup.
+        </p>
+      </div>
+
+      <div>
+        <Label>Customer IDs (optional)</Label>
+        <Textarea
+          placeholder="Leave empty to use results from previous data query step, or enter comma-separated customer IDs"
+          rows={2}
+          value={step.config.parameters?.customerIds || ''}
+          onChange={(e) => updateStep(step.id, {
+            config: {
+              ...step.config,
+              parameters: { ...step.config.parameters, customerIds: e.target.value }
+            }
+          })}
+        />
+        <p className="text-xs text-gray-500 mt-1">
+          If left empty, will use customer IDs from a previous data query step result.
+        </p>
+      </div>
+
+      <div>
+        <Label>Custom Variables (optional, JSON)</Label>
+        <Textarea
+          placeholder='{"month": "January", "offer": "50% off"}'
+          rows={3}
+          value={step.config.parameters?.customVariables || ''}
+          onChange={(e) => updateStep(step.id, {
+            config: {
+              ...step.config,
+              parameters: { ...step.config.parameters, customVariables: e.target.value }
+            }
+          })}
+        />
+        <p className="text-xs text-gray-500 mt-1">
+          Additional variables to use in the email template. Must be valid JSON.
+        </p>
+      </div>
+    </div>
+  );
 }
 
 const STEP_TYPES = {
@@ -169,9 +266,14 @@ export default function WorkflowStepBuilder({
                     <SelectItem value="count_customers">Count Customers</SelectItem>
                     <SelectItem value="get_revenue">Get Revenue</SelectItem>
                     <SelectItem value="get_tickets">Get Support Tickets</SelectItem>
+                    <SelectItem value="send_email_campaign">Send Email Campaign</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+            )}
+
+            {step.config.action === 'send_email_campaign' && (
+              <EmailCampaignConfig step={step} updateStep={updateStep} />
             )}
 
             {(step.config.action === 'count_leads' || step.config.action === 'count_customers') && (
