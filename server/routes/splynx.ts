@@ -4,6 +4,7 @@ import { authenticateToken } from '../auth';
 import { z } from 'zod';
 import crypto from 'crypto';
 import { GeocodingService } from '../services/geocoding.js';
+import { SplynxService } from '../services/integrations/splynxService.js';
 
 const router = Router();
 
@@ -14,6 +15,15 @@ const insertSplynxInstallationSchema = z.object({
   tokenEncrypted: z.string().optional(),
   agents: z.array(z.any()).optional(),
 });
+
+// Email template validation schemas
+const emailTemplateSchema = z.object({
+  name: z.string().min(1).max(255),
+  subject: z.string().min(1).max(500),
+  body: z.string().min(1),
+});
+
+const updateEmailTemplateSchema = emailTemplateSchema.partial();
 
 // Encryption helpers - REQUIRE stable key for production
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
@@ -1175,6 +1185,278 @@ router.get('/test/customer-structure', async (req, res) => {
   } catch (error: any) {
     console.error('[TEST] Error inspecting customer structure:', error);
     res.status(500).json({ error: error.message || 'Failed to inspect customer structure' });
+  }
+});
+
+// ========================================
+// EMAIL TEMPLATE MANAGEMENT ENDPOINTS
+// ========================================
+
+// Get all email templates
+router.get('/templates', async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated or missing organization' });
+    }
+
+    const installation = await storage.getIntegration(user.organizationId, 'splynx');
+    if (!installation || !installation.isEnabled) {
+      return res.status(400).json({ error: 'Splynx integration not enabled' });
+    }
+
+    if (!installation.credentialsEncrypted) {
+      return res.status(400).json({ error: 'No credentials configured' });
+    }
+
+    const decrypted = decrypt(installation.credentialsEncrypted);
+    const credentials = JSON.parse(decrypted);
+
+    if (!credentials.baseUrl || !credentials.authHeader) {
+      return res.status(400).json({ error: 'Invalid credentials configuration' });
+    }
+
+    const splynxService = new SplynxService({
+      baseUrl: credentials.baseUrl,
+      authHeader: credentials.authHeader,
+    });
+
+    const templates = await splynxService.getEmailTemplates();
+
+    res.json(templates);
+  } catch (error: any) {
+    console.error('Error fetching email templates:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch email templates' });
+  }
+});
+
+// Get single email template
+router.get('/templates/:id', async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated or missing organization' });
+    }
+
+    const { id } = req.params;
+
+    const installation = await storage.getIntegration(user.organizationId, 'splynx');
+    if (!installation || !installation.isEnabled) {
+      return res.status(400).json({ error: 'Splynx integration not enabled' });
+    }
+
+    if (!installation.credentialsEncrypted) {
+      return res.status(400).json({ error: 'No credentials configured' });
+    }
+
+    const decrypted = decrypt(installation.credentialsEncrypted);
+    const credentials = JSON.parse(decrypted);
+
+    if (!credentials.baseUrl || !credentials.authHeader) {
+      return res.status(400).json({ error: 'Invalid credentials configuration' });
+    }
+
+    const splynxService = new SplynxService({
+      baseUrl: credentials.baseUrl,
+      authHeader: credentials.authHeader,
+    });
+
+    const template = await splynxService.getEmailTemplate(parseInt(id));
+
+    res.json(template);
+  } catch (error: any) {
+    console.error('Error fetching email template:', error);
+    res.status(500).json({ error: error.message || 'Failed to fetch email template' });
+  }
+});
+
+// Create email template
+router.post('/templates', async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated or missing organization' });
+    }
+
+    // Validate request body
+    const validationResult = emailTemplateSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      return res.status(400).json({ 
+        error: 'Invalid template data', 
+        details: validationResult.error.errors 
+      });
+    }
+
+    const installation = await storage.getIntegration(user.organizationId, 'splynx');
+    if (!installation || !installation.isEnabled) {
+      return res.status(400).json({ error: 'Splynx integration not enabled' });
+    }
+
+    if (!installation.credentialsEncrypted) {
+      return res.status(400).json({ error: 'No credentials configured' });
+    }
+
+    let credentials;
+    try {
+      const decrypted = decrypt(installation.credentialsEncrypted);
+      credentials = JSON.parse(decrypted);
+    } catch (error: any) {
+      return res.status(500).json({ error: 'Failed to decrypt credentials' });
+    }
+
+    if (!credentials.baseUrl || !credentials.authHeader) {
+      return res.status(400).json({ error: 'Invalid credentials configuration' });
+    }
+
+    const splynxService = new SplynxService({
+      baseUrl: credentials.baseUrl,
+      authHeader: credentials.authHeader,
+    });
+
+    const template = await splynxService.createEmailTemplate(validationResult.data);
+
+    // Log activity
+    await storage.logActivity({
+      organizationId: user.organizationId,
+      userId: user.id,
+      actionType: 'creation',
+      entityType: 'email_template',
+      entityId: template.id,
+      description: `Created email template: ${template.name}`,
+      metadata: {
+        service: 'splynx',
+        action: 'create_email_template',
+        templateName: template.name
+      }
+    });
+
+    res.json(template);
+  } catch (error: any) {
+    console.error('Error creating email template:', error);
+    res.status(500).json({ error: error.message || 'Failed to create email template' });
+  }
+});
+
+// Update email template
+router.put('/templates/:id', async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated or missing organization' });
+    }
+
+    const { id } = req.params;
+
+    // Validate request body
+    const validationResult = updateEmailTemplateSchema.safeParse(req.body);
+    if (!validationResult.success) {
+      return res.status(400).json({ 
+        error: 'Invalid template data', 
+        details: validationResult.error.errors 
+      });
+    }
+
+    const installation = await storage.getIntegration(user.organizationId, 'splynx');
+    if (!installation || !installation.isEnabled) {
+      return res.status(400).json({ error: 'Splynx integration not enabled' });
+    }
+
+    if (!installation.credentialsEncrypted) {
+      return res.status(400).json({ error: 'No credentials configured' });
+    }
+
+    let credentials;
+    try {
+      const decrypted = decrypt(installation.credentialsEncrypted);
+      credentials = JSON.parse(decrypted);
+    } catch (error: any) {
+      return res.status(500).json({ error: 'Failed to decrypt credentials' });
+    }
+
+    if (!credentials.baseUrl || !credentials.authHeader) {
+      return res.status(400).json({ error: 'Invalid credentials configuration' });
+    }
+
+    const splynxService = new SplynxService({
+      baseUrl: credentials.baseUrl,
+      authHeader: credentials.authHeader,
+    });
+
+    const template = await splynxService.updateEmailTemplate(parseInt(id), validationResult.data);
+
+    // Log activity
+    await storage.logActivity({
+      organizationId: user.organizationId,
+      userId: user.id,
+      actionType: 'status_change',
+      entityType: 'email_template',
+      entityId: parseInt(id),
+      description: `Updated email template: ${template.name || id}`,
+      metadata: {
+        service: 'splynx',
+        action: 'update_email_template',
+        templateName: template.name
+      }
+    });
+
+    res.json(template);
+  } catch (error: any) {
+    console.error('Error updating email template:', error);
+    res.status(500).json({ error: error.message || 'Failed to update email template' });
+  }
+});
+
+// Delete email template
+router.delete('/templates/:id', async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated or missing organization' });
+    }
+
+    const { id } = req.params;
+
+    const installation = await storage.getIntegration(user.organizationId, 'splynx');
+    if (!installation || !installation.isEnabled) {
+      return res.status(400).json({ error: 'Splynx integration not enabled' });
+    }
+
+    if (!installation.credentialsEncrypted) {
+      return res.status(400).json({ error: 'No credentials configured' });
+    }
+
+    const decrypted = decrypt(installation.credentialsEncrypted);
+    const credentials = JSON.parse(decrypted);
+
+    if (!credentials.baseUrl || !credentials.authHeader) {
+      return res.status(400).json({ error: 'Invalid credentials configuration' });
+    }
+
+    const splynxService = new SplynxService({
+      baseUrl: credentials.baseUrl,
+      authHeader: credentials.authHeader,
+    });
+
+    await splynxService.deleteEmailTemplate(parseInt(id));
+
+    // Log activity
+    await storage.logActivity({
+      organizationId: user.organizationId,
+      userId: user.id,
+      actionType: 'deletion',
+      entityType: 'email_template',
+      entityId: parseInt(id),
+      description: `Deleted email template: ${id}`,
+      metadata: {
+        service: 'splynx',
+        action: 'delete_email_template'
+      }
+    });
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Error deleting email template:', error);
+    res.status(500).json({ error: error.message || 'Failed to delete email template' });
   }
 });
 

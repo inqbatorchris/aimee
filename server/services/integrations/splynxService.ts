@@ -376,6 +376,183 @@ export class SplynxService {
     }
   }
 
+  async getEmailTemplates(): Promise<any[]> {
+    try {
+      const url = this.buildUrl('admin/config/templates');
+      
+      console.log('[SPLYNX getEmailTemplates] Fetching email templates from:', url);
+      
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+        params: {
+          main_attributes: {
+            type: 'email'
+          }
+        }
+      });
+
+      console.log('[SPLYNX getEmailTemplates] Response:', response.status);
+      
+      if (Array.isArray(response.data)) {
+        return response.data;
+      } else if (response.data?.items) {
+        return response.data.items;
+      }
+      
+      return [];
+    } catch (error: any) {
+      console.error('[SPLYNX getEmailTemplates] Error:', error.message);
+      throw new Error(`Failed to fetch email templates from Splynx: ${error.message}`);
+    }
+  }
+
+  async getEmailTemplate(id: number): Promise<any> {
+    try {
+      const url = this.buildUrl(`admin/config/templates/${id}`);
+      
+      console.log('[SPLYNX getEmailTemplate] Fetching email template:', id);
+      
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('[SPLYNX getEmailTemplate] Response:', response.status);
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('[SPLYNX getEmailTemplate] Error:', error.message);
+      throw new Error(`Failed to fetch email template from Splynx: ${error.message}`);
+    }
+  }
+
+  async createEmailTemplate(template: any): Promise<any> {
+    try {
+      const url = this.buildUrl('admin/config/templates');
+      
+      console.log('[SPLYNX createEmailTemplate] Creating email template:', template.name);
+      
+      const templateData = {
+        type: 'email',
+        name: template.name,
+        subject: template.subject || '',
+        body: template.body || '',
+        ...template
+      };
+      
+      const response = await axios.post(url, templateData, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('[SPLYNX createEmailTemplate] Response:', response.status);
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('[SPLYNX createEmailTemplate] Error:', error.message);
+      console.error('[SPLYNX createEmailTemplate] Response:', error.response?.data);
+      throw new Error(`Failed to create email template in Splynx: ${error.message}`);
+    }
+  }
+
+  async updateEmailTemplate(id: number, template: any): Promise<any> {
+    try {
+      const url = this.buildUrl(`admin/config/templates/${id}`);
+      
+      console.log('[SPLYNX updateEmailTemplate] Updating email template:', id);
+      
+      const response = await axios.put(url, template, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('[SPLYNX updateEmailTemplate] Response:', response.status);
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('[SPLYNX updateEmailTemplate] Error:', error.message);
+      console.error('[SPLYNX updateEmailTemplate] Response:', error.response?.data);
+      throw new Error(`Failed to update email template in Splynx: ${error.message}`);
+    }
+  }
+
+  async deleteEmailTemplate(id: number): Promise<void> {
+    try {
+      const url = this.buildUrl(`admin/config/templates/${id}`);
+      
+      console.log('[SPLYNX deleteEmailTemplate] Deleting email template:', id);
+      
+      const response = await axios.delete(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('[SPLYNX deleteEmailTemplate] Response:', response.status);
+    } catch (error: any) {
+      console.error('[SPLYNX deleteEmailTemplate] Error:', error.message);
+      console.error('[SPLYNX deleteEmailTemplate] Response:', error.response?.data);
+      throw new Error(`Failed to delete email template from Splynx: ${error.message}`);
+    }
+  }
+
+  async sendMassEmail(params: {
+    templateId: number;
+    customerIds?: number[];
+    customVariables?: Record<string, any>;
+  }): Promise<any> {
+    try {
+      const url = this.buildUrl('admin/messages/mass-sending');
+      
+      console.log('[SPLYNX sendMassEmail] Sending mass email with template:', params.templateId);
+      console.log('[SPLYNX sendMassEmail] Customer IDs:', params.customerIds?.length || 'all');
+      
+      const requestData: any = {
+        template_id: params.templateId,
+        type: 'email',
+      };
+
+      if (params.customerIds && params.customerIds.length > 0) {
+        requestData.customer_ids = params.customerIds;
+      }
+
+      if (params.customVariables) {
+        requestData.variables = params.customVariables;
+      }
+      
+      const response = await axios.post(url, requestData, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('[SPLYNX sendMassEmail] Response:', response.status);
+      console.log('[SPLYNX sendMassEmail] Sent:', response.data);
+      
+      return {
+        success: true,
+        sentCount: response.data?.sent_count || params.customerIds?.length || 0,
+        failedCount: response.data?.failed_count || 0,
+        details: response.data
+      };
+    } catch (error: any) {
+      console.error('[SPLYNX sendMassEmail] Error:', error.message);
+      console.error('[SPLYNX sendMassEmail] Response:', error.response?.data);
+      throw new Error(`Failed to send mass email via Splynx: ${error.message}`);
+    }
+  }
+
   async executeAction(action: string, parameters: any = {}): Promise<any> {
     const { sinceDate, ...filters } = parameters;
     const parsedSinceDate = sinceDate ? new Date(sinceDate) : undefined;
@@ -401,6 +578,32 @@ export class SplynxService {
 
       case 'get_task_types':
         return await this.getTaskTypes();
+
+      case 'send_email_campaign':
+        // Parse customerIds from string if needed
+        let customerIds = parameters.customerIds;
+        if (typeof customerIds === 'string' && customerIds.trim()) {
+          customerIds = customerIds.split(',').map((id: string) => parseInt(id.trim())).filter(Boolean);
+        } else if (!Array.isArray(customerIds)) {
+          customerIds = undefined;
+        }
+
+        // Parse customVariables from JSON string if needed
+        let customVariables = parameters.customVariables;
+        if (typeof customVariables === 'string' && customVariables.trim()) {
+          try {
+            customVariables = JSON.parse(customVariables);
+          } catch (error) {
+            console.warn('[SPLYNX executeAction] Failed to parse customVariables JSON, using empty object');
+            customVariables = {};
+          }
+        }
+
+        return await this.sendMassEmail({
+          templateId: parseInt(parameters.templateId),
+          customerIds,
+          customVariables
+        });
         
       default:
         throw new Error(`Unknown Splynx action: ${action}`);
