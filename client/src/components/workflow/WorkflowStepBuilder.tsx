@@ -32,7 +32,6 @@ interface EmailTemplate {
   subject?: string;
   description?: string;
   code?: string;
-  type: string;
 }
 
 interface EmailCampaignConfigProps {
