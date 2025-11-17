@@ -37,7 +37,8 @@ function decryptCredentials(encrypted: string): string {
 
   const [ivHex, encryptedText] = encrypted.split(':');
   const iv = Buffer.from(ivHex, 'hex');
-  const key = Buffer.from(encryptionKey, 'hex');
+  // Hash the encryption key to get the correct 32-byte key for AES-256
+  const key = crypto.createHash('sha256').update(String(encryptionKey)).digest();
 
   const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
   let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
