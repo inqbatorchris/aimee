@@ -323,15 +323,22 @@ router.post('/workflows/test-splynx-query', async (req, res) => {
     // Query Splynx using SplynxService
     const splynxService = new SplynxService({ baseUrl, authHeader });
 
-    const result = await splynxService.queryEntities({
+    // For testing, we want to show the TRUE total count, not limited
+    // So we query with a high limit to get all matching records
+    const fullResult = await splynxService.queryEntities({
       entity,
-      mode: mode || 'list',
+      mode: 'list', // Always use list mode to get records
       filters: filters || [],
       dateRange,
-      limit: limit || 5,
+      limit: 10000, // High limit to get all matching records
     });
 
-    res.json(result);
+    // Return the full count but only first 5 records as samples
+    const sampleLimit = limit || 5;
+    res.json({
+      count: fullResult.count, // True total count
+      records: fullResult.records?.slice(0, sampleLimit) || [], // Only first 5 as samples
+    });
   } catch (error) {
     console.error('Error testing Splynx query:', error);
     res.status(500).json({ 
