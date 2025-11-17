@@ -68,7 +68,7 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
 
   // Fetch individual template data when editing
   const { data: template, isLoading: isLoadingTemplate } = useQuery<EmailTemplate>({
-    queryKey: ['/api/splynx/templates', templateId],
+    queryKey: templateId ? [`/api/splynx/templates/${templateId}`] : ['templates-null'],
     enabled: isOpen && !!templateId,
     retry: 1,
   });
@@ -84,7 +84,8 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
   });
 
   useEffect(() => {
-    if (template) {
+    if (templateId && template) {
+      // Editing existing template
       const bodyContent = template.body || "";
       form.reset({
         title: template.title || "",
@@ -93,7 +94,8 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
         body: bodyContent,
       });
       setHtmlContent(bodyContent);
-    } else {
+    } else if (!templateId) {
+      // Creating new template
       form.reset({
         title: "",
         subject: "",
@@ -102,7 +104,7 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
       });
       setHtmlContent('');
     }
-  }, [template, form]);
+  }, [template, templateId, form]);
 
   const saveMutation = useMutation({
     mutationFn: async (data: TemplateFormData) => {
@@ -124,7 +126,7 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
       });
       queryClient.invalidateQueries({ queryKey: ['/api/splynx/templates'] });
       if (templateId) {
-        queryClient.invalidateQueries({ queryKey: ['/api/splynx/templates', templateId] });
+        queryClient.invalidateQueries({ queryKey: [`/api/splynx/templates/${templateId}`] });
       }
       onClose();
       form.reset();
