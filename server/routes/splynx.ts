@@ -18,9 +18,10 @@ const insertSplynxInstallationSchema = z.object({
 
 // Email template validation schemas
 const emailTemplateSchema = z.object({
-  name: z.string().min(1).max(255),
-  subject: z.string().min(1).max(500),
-  body: z.string().min(1),
+  title: z.string().min(1).max(255),
+  subject: z.string().max(500).optional(),
+  description: z.string().optional(),
+  body: z.string().optional(),
 });
 
 const updateEmailTemplateSchema = emailTemplateSchema.partial();
