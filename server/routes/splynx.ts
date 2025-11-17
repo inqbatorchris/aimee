@@ -1224,7 +1224,6 @@ router.get('/templates', async (req, res) => {
 
     const templates = await splynxService.getEmailTemplates();
 
-    // Templates are already filtered by the service method
     res.json(templates);
   } catch (error: any) {
     console.error('Error fetching email templates:', error);
@@ -1265,7 +1264,6 @@ router.get('/templates/:id', async (req, res) => {
 
     const template = await splynxService.getEmailTemplate(parseInt(id));
 
-    // Template is already filtered by the service method
     res.json(template);
   } catch (error: any) {
     console.error('Error fetching email template:', error);
