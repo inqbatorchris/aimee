@@ -74,6 +74,7 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
   const [activeTab, setActiveTab] = useState('details');
   const [htmlContent, setHtmlContent] = useState('');
   const [showCodeDialog, setShowCodeDialog] = useState(false);
+  const [codeDraft, setCodeDraft] = useState('');
 
   // Fetch individual template data when editing
   const { data: template, isLoading: isLoadingTemplate } = useQuery<EmailTemplate>({
@@ -178,12 +179,33 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
   };
 
   const copyCodeToClipboard = () => {
-    navigator.clipboard.writeText(htmlContent);
+    navigator.clipboard.writeText(codeDraft || htmlContent);
     toast({
       title: 'Code copied',
       description: 'HTML code copied to clipboard.',
       duration: 2000,
     });
+  };
+
+  const handleOpenCodeDialog = () => {
+    setCodeDraft(form.getValues('code') || '');
+    setShowCodeDialog(true);
+  };
+
+  const handleSaveCode = () => {
+    form.setValue('code', codeDraft, { shouldDirty: true });
+    setHtmlContent(codeDraft);
+    setShowCodeDialog(false);
+    toast({
+      title: 'Code updated',
+      description: 'HTML code has been updated in the editor.',
+      duration: 2000,
+    });
+  };
+
+  const handleCloseCodeDialog = () => {
+    setShowCodeDialog(false);
+    setCodeDraft('');
   };
 
   return (
@@ -294,11 +316,11 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
                                 type="button"
                                 variant="outline"
                                 size="sm"
-                                onClick={() => setShowCodeDialog(true)}
+                                onClick={handleOpenCodeDialog}
                                 data-testid="button-view-code"
                               >
                                 <CodeXml className="h-4 w-4 mr-2" />
-                                View Code
+                                Edit Code
                               </Button>
                             </div>
                             <FormControl>
@@ -366,7 +388,7 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
                     <CardContent>
                       <div className="border rounded-md p-6 bg-white min-h-[400px]">
                         <div 
-                          className="prose prose-sm max-w-none"
+                          className="max-w-none text-[14px] leading-[1.45] font-sans [&_p]:mb-3 [&_ul]:mb-3 [&_ol]:mb-3 [&_h1]:mb-4 [&_h2]:mb-3 [&_h3]:mb-3"
                           dangerouslySetInnerHTML={{ __html: htmlContent || '<p class="text-muted-foreground italic">No content yet</p>' }}
                         />
                       </div>
@@ -400,20 +422,25 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
         )}
       </SheetContent>
 
-      <Dialog open={showCodeDialog} onOpenChange={setShowCodeDialog}>
+      <Dialog open={showCodeDialog} onOpenChange={handleCloseCodeDialog}>
         <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
           <DialogHeader>
-            <DialogTitle>Raw HTML Code</DialogTitle>
+            <DialogTitle>Edit HTML Code</DialogTitle>
             <DialogDescription>
-              View and copy the raw HTML code for this email template.
+              Edit the raw HTML code for this email template.
             </DialogDescription>
           </DialogHeader>
-          <div className="flex-1 overflow-auto border rounded-md bg-muted/50">
-            <pre className="p-4 text-xs font-mono whitespace-pre-wrap break-words">
-              <code>{htmlContent || '<!-- No content yet -->'}</code>
-            </pre>
+          <div className="flex-1 overflow-hidden border rounded-md bg-muted/50">
+            <textarea
+              value={codeDraft}
+              onChange={(e) => setCodeDraft(e.target.value)}
+              className="w-full h-full p-4 text-xs font-mono resize-none focus:outline-none bg-transparent"
+              placeholder="<!-- Enter your HTML code here -->"
+              spellCheck={false}
+              data-testid="textarea-edit-code"
+            />
           </div>
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             <Button
               type="button"
               variant="outline"
@@ -425,10 +452,18 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
             </Button>
             <Button
               type="button"
-              onClick={() => setShowCodeDialog(false)}
-              data-testid="button-close-code-dialog"
+              variant="outline"
+              onClick={handleCloseCodeDialog}
+              data-testid="button-cancel-code"
             >
-              Close
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              onClick={handleSaveCode}
+              data-testid="button-save-code"
+            >
+              Save Changes
             </Button>
           </DialogFooter>
         </DialogContent>
