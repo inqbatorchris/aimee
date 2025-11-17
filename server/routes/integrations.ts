@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { storage } from '../storage';
 import { authenticateToken } from '../auth';
-import { insertIntegrationSchema, insertDatabaseConnectionSchema, type InsertIntegration } from '../../shared/schema';
+import { insertIntegrationSchema, insertDatabaseConnectionSchema, type InsertIntegration, integrations } from '../../shared/schema';
 import { z } from 'zod';
 import crypto from 'crypto';
 import axios from 'axios';
@@ -9,6 +9,9 @@ import { triggerDiscovery } from '../services/integrations/TriggerDiscoveryServi
 import { IntegrationCatalogImporter } from '../services/integrations/IntegrationCatalogImporter';
 import { DatabaseService } from '../services/integrations/databaseService';
 import { SplynxLabelService } from '../services/integrations/SplynxLabelService';
+import { SplynxService } from '../services/integrations/splynxService';
+import { db } from '../db';
+import { eq, and } from 'drizzle-orm';
 
 const router = Router();
 
@@ -1509,6 +1512,48 @@ router.get('/splynx/schema/:entity?', async (req, res) => {
   } catch (error: any) {
     console.error('Error fetching Splynx schema:', error);
     res.status(500).json({ error: 'Failed to fetch schema' });
+  }
+});
+
+// Get Splynx projects for task creation
+router.get('/splynx/projects', async (req, res) => {
+  try {
+    if (!req.user?.organizationId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    // Get Splynx integration for this organization
+    const [splynxIntegration] = await db
+      .select()
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.organizationId, req.user.organizationId),
+          eq(integrations.platformType, 'splynx')
+        )
+      )
+      .limit(1);
+
+    if (!splynxIntegration || !splynxIntegration.credentialsEncrypted) {
+      return res.status(404).json({ error: 'Splynx integration not configured' });
+    }
+
+    // Decrypt credentials
+    const credentials = JSON.parse(decrypt(splynxIntegration.credentialsEncrypted));
+    const { baseUrl, authHeader } = credentials;
+
+    if (!baseUrl || !authHeader) {
+      return res.status(400).json({ error: 'Splynx credentials incomplete' });
+    }
+
+    // Create Splynx service and fetch projects
+    const splynxService = new SplynxService({ baseUrl, authHeader });
+    const projects = await splynxService.getSplynxProjects();
+
+    res.json({ projects });
+  } catch (error: any) {
+    console.error('Error fetching Splynx projects:', error);
+    res.status(500).json({ error: 'Failed to fetch Splynx projects', details: error.message });
   }
 });
 
