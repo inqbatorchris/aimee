@@ -28,9 +28,11 @@ interface WorkflowStepBuilderProps {
 
 interface EmailTemplate {
   id: number;
-  name: string;
-  subject: string;
-  body: string;
+  title: string;
+  subject?: string;
+  description?: string;
+  code?: string;
+  type: string;
 }
 
 interface EmailCampaignConfigProps {
@@ -72,7 +74,7 @@ function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
             ) : (
               templates.map(template => (
                 <SelectItem key={template.id} value={template.id.toString()}>
-                  {template.name}
+                  {template.title}
                 </SelectItem>
               ))
             )}
