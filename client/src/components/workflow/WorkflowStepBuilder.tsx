@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database, Calculator } from 'lucide-react';
+import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database, Calculator, Cloud } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -9,10 +9,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import type { Integration, KeyResult, Objective } from '@shared/schema';
 import DataSourceQueryBuilder from './DataSourceQueryBuilder';
+import SplynxQueryBuilder from './SplynxQueryBuilder';
 
 interface WorkflowStep {
   id: string;
-  type: 'integration_action' | 'strategy_update' | 'log_event' | 'notification' | 'data_source_query' | 'data_transformation';
+  type: 'integration_action' | 'strategy_update' | 'log_event' | 'notification' | 'data_source_query' | 'data_transformation' | 'splynx_query';
   name: string;
   config?: any;
 }
@@ -43,6 +44,12 @@ const STEP_TYPES = {
     icon: Database,
     color: 'bg-cyan-500',
     description: 'Query app data tables and update KPIs'
+  },
+  splynx_query: {
+    label: 'Splynx Query',
+    icon: Cloud,
+    color: 'bg-indigo-500',
+    description: 'Query Splynx customers, leads, tickets, or tasks'
   },
   data_transformation: {
     label: 'Data Transformation',
@@ -383,6 +390,20 @@ export default function WorkflowStepBuilder({
                 aggregation: 'count',
                 limit: 1000,
               },
+              resultVariable: '',
+            }}
+            onChange={(config) => updateStep(step.id, { config })}
+            keyResults={keyResults}
+          />
+        );
+
+      case 'splynx_query':
+        return (
+          <SplynxQueryBuilder
+            value={step.config || {
+              entity: 'customers',
+              mode: 'count',
+              filters: [],
               resultVariable: '',
             }}
             onChange={(config) => updateStep(step.id, { config })}
