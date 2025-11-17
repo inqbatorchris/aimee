@@ -439,13 +439,14 @@ export class SplynxService {
     try {
       const url = this.buildUrl('admin/config/templates');
       
-      console.log('[SPLYNX createEmailTemplate] Creating email template:', template.name);
+      console.log('[SPLYNX createEmailTemplate] Creating email template:', template.title);
       
       const templateData = {
         type: 'email',
-        name: template.name,
+        title: template.title,
         subject: template.subject || '',
-        body: template.body || '',
+        description: template.description || '',
+        code: template.code || '',
         ...template
       };
       
@@ -457,6 +458,7 @@ export class SplynxService {
       });
 
       console.log('[SPLYNX createEmailTemplate] Response:', response.status);
+      console.log('[SPLYNX createEmailTemplate] Response data:', response.data);
       
       return response.data;
     } catch (error: any) {

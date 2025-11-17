@@ -1323,11 +1323,11 @@ router.post('/templates', async (req, res) => {
       actionType: 'creation',
       entityType: 'email_template',
       entityId: template.id,
-      description: `Created email template: ${template.name}`,
+      description: `Created email template: ${template?.title || template?.id || 'Untitled'}`,
       metadata: {
         service: 'splynx',
         action: 'create_email_template',
-        templateName: template.name
+        templateName: template?.title
       }
     });
 
