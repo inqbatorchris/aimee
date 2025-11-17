@@ -1,8 +1,18 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -21,30 +31,77 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Edit3, Trash2, RefreshCw, Loader2, Mail } from "lucide-react";
+import { Plus, Edit3, Trash2, RefreshCw, Loader2, Mail, Search, Filter } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { TemplateEditor } from "./TemplateEditor";
 
 interface EmailTemplate {
   id: number;
-  name: string;
+  title: string;
   subject: string;
-  body: string;
+  description: string;
   type: string;
   updated_at?: string;
+}
+
+// Helper function to get display name with fallback chain
+export function getTemplateDisplayName(template: EmailTemplate): string {
+  if (template.title && template.title.trim()) return template.title;
+  if (template.subject && template.subject.trim()) return template.subject;
+  if (template.description && template.description.trim()) {
+    const snippet = template.description.slice(0, 40);
+    return snippet.length < template.description.length ? `${snippet}...` : snippet;
+  }
+  return `${template.type.toUpperCase()} #${template.id}`;
 }
 
 export function EmailTemplateManager() {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null);
   const [templateToDelete, setTemplateToDelete] = useState<EmailTemplate | null>(null);
+  const [selectedType, setSelectedType] = useState<string>('mail');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showOnlyMissingSubject, setShowOnlyMissingSubject] = useState(false);
   const { toast } = useToast();
 
   const { data: templates = [], isLoading, refetch, isFetching } = useQuery<EmailTemplate[]>({
     queryKey: ['/api/splynx/templates'],
     retry: 1,
   });
+
+  // Get unique template types
+  const templateTypes = useMemo(() => {
+    const types = new Set(templates.map(t => t.type));
+    return ['all', ...Array.from(types)].sort();
+  }, [templates]);
+
+  // Filter templates
+  const filteredTemplates = useMemo(() => {
+    return templates.filter(template => {
+      // Type filter
+      if (selectedType !== 'all' && template.type !== selectedType) {
+        return false;
+      }
+
+      // Search filter
+      if (searchQuery.trim()) {
+        const query = searchQuery.toLowerCase();
+        const matchesSearch = 
+          template.title?.toLowerCase().includes(query) ||
+          template.subject?.toLowerCase().includes(query) ||
+          template.description?.toLowerCase().includes(query);
+        if (!matchesSearch) return false;
+      }
+
+      // Missing subject filter
+      if (showOnlyMissingSubject && template.subject?.trim()) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [templates, selectedType, searchQuery, showOnlyMissingSubject]);
 
   const deleteMutation = useMutation({
     mutationFn: async (templateId: number) => {
@@ -153,51 +210,120 @@ export function EmailTemplateManager() {
               <p className="text-xs mt-1">Create your first template to start sending campaigns</p>
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Name</TableHead>
-                    <TableHead>Subject</TableHead>
-                    <TableHead>Last Modified</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {templates.map((template) => (
-                    <TableRow key={template.id} data-testid={`template-row-${template.id}`}>
-                      <TableCell className="font-medium">{template.name}</TableCell>
-                      <TableCell className="text-sm text-muted-foreground max-w-md truncate">
-                        {template.subject}
-                      </TableCell>
-                      <TableCell className="text-sm text-muted-foreground">
-                        {formatDate(template.updated_at)}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <div className="flex justify-end gap-2">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleEdit(template)}
-                            data-testid={`button-edit-${template.id}`}
-                          >
-                            <Edit3 className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleDelete(template)}
-                            data-testid={`button-delete-${template.id}`}
-                          >
-                            <Trash2 className="h-4 w-4 text-destructive" />
-                          </Button>
-                        </div>
-                      </TableCell>
+            <>
+              <div className="mb-4 p-4 border rounded-lg bg-muted/30 space-y-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <Filter className="h-4 w-4" />
+                  <span className="text-sm font-medium">Filters</span>
+                  <Badge variant="secondary" className="ml-auto">
+                    {filteredTemplates.length} of {templates.length}
+                  </Badge>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="type-filter" className="text-xs">Template Type</Label>
+                    <Select value={selectedType} onValueChange={setSelectedType}>
+                      <SelectTrigger id="type-filter">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {templateTypes.map(type => (
+                          <SelectItem key={type} value={type}>
+                            {type === 'all' ? 'All Types' : type}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="search-filter" className="text-xs">Search</Label>
+                    <div className="relative">
+                      <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        id="search-filter"
+                        placeholder="Search title, subject, description..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        className="pl-8"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label className="text-xs">Options</Label>
+                    <div className="flex items-center space-x-2 h-10">
+                      <Checkbox
+                        id="missing-subject"
+                        checked={showOnlyMissingSubject}
+                        onCheckedChange={(checked) => setShowOnlyMissingSubject(checked as boolean)}
+                      />
+                      <label
+                        htmlFor="missing-subject"
+                        className="text-sm leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                      >
+                        Only missing subject
+                      </label>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Subject</TableHead>
+                      <TableHead>Last Modified</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredTemplates.map((template) => (
+                      <TableRow key={template.id} data-testid={`template-row-${template.id}`}>
+                        <TableCell>
+                          <Badge variant="outline" className="text-xs">
+                            {template.type}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="font-medium">
+                          {getTemplateDisplayName(template)}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground max-w-md truncate">
+                          {template.subject || <span className="italic opacity-50">No subject</span>}
+                        </TableCell>
+                        <TableCell className="text-sm text-muted-foreground">
+                          {formatDate(template.updated_at)}
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleEdit(template)}
+                              data-testid={`button-edit-${template.id}`}
+                            >
+                              <Edit3 className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => handleDelete(template)}
+                              data-testid={`button-delete-${template.id}`}
+                            >
+                              <Trash2 className="h-4 w-4 text-destructive" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            </>
           )}
         </CardContent>
       </Card>
@@ -205,7 +331,7 @@ export function EmailTemplateManager() {
       <TemplateEditor
         isOpen={isEditorOpen}
         onClose={handleEditorClose}
-        template={editingTemplate}
+        templateId={editingTemplate?.id || null}
       />
 
       <AlertDialog open={!!templateToDelete} onOpenChange={(open) => !open && setTemplateToDelete(null)}>
@@ -213,7 +339,7 @@ export function EmailTemplateManager() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete Email Template</AlertDialogTitle>
             <AlertDialogDescription>
-              Are you sure you want to delete "{templateToDelete?.name}"? This action cannot be undone.
+              Are you sure you want to delete "{templateToDelete ? getTemplateDisplayName(templateToDelete) : ''}"? This action cannot be undone.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
