@@ -28,7 +28,7 @@ export interface SplynxQueryConfig {
   mode: QueryMode;
   filters?: SplynxFilter[];
   dateRange?: string;
-  dateRangeField?: 'date_add' | 'last_updated';
+  dateRangeField?: 'date_add' | 'last_update';
   limit?: number;
   sinceDate?: Date;
 }
