@@ -46,13 +46,38 @@ export default function XeroSetup() {
       return response.json();
     },
     onSuccess: (data: any) => {
+      // Build description based on transaction sync results
+      let description = `Synced ${data.synced} transactions successfully${data.failed > 0 ? `, ${data.failed} failed` : ''}`;
+      
+      // Add chart of accounts info if available
+      if (data.chartOfAccounts) {
+        description += `. Chart of Accounts: ${data.chartOfAccounts.synced} accounts synced`;
+      }
+      
+      // Show warning if COA sync failed or partial success
+      const variant = data.warnings && data.warnings.length > 0 ? 'default' : undefined;
+      
       toast({
-        title: 'Sync Complete',
-        description: `Synced ${data.synced} transactions successfully${data.failed > 0 ? `, ${data.failed} failed` : ''}`,
+        title: data.partialSuccess ? 'Sync Completed with Warnings' : 'Sync Complete',
+        description: description,
+        variant: variant,
       });
+      
+      // Show separate warning toast if COA sync failed
+      if (data.warnings && data.warnings.length > 0) {
+        setTimeout(() => {
+          toast({
+            title: 'Warning',
+            description: data.warnings[0].message,
+            variant: 'destructive',
+          });
+        }, 1000);
+      }
+      
       queryClient.invalidateQueries({ queryKey: ['/api/finance/xero/sync-history'] });
       queryClient.invalidateQueries({ queryKey: ['/api/finance/xero/status'] });
       queryClient.invalidateQueries({ queryKey: ['/api/finance/transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/finance/xero/chart-of-accounts'] });
     },
     onError: (err: any) => {
       toast({
