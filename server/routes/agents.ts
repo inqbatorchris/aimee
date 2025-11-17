@@ -2,11 +2,13 @@ import { Router } from 'express';
 import { storage } from '../storage';
 import { authenticateToken } from '../auth';
 import { WorkflowExecutor } from '../services/workflow/WorkflowExecutor';
-import { insertAgentWorkflowSchema, insertAgentWorkflowRunSchema, agentWorkflowSchedules } from '../../shared/schema';
+import { insertAgentWorkflowSchema, insertAgentWorkflowRunSchema, agentWorkflowSchedules, integrations } from '../../shared/schema';
 import { z } from 'zod';
 import { IntegrationCatalogImporter } from '../services/integrations/IntegrationCatalogImporter';
+import { SplynxService } from '../services/integrations/splynxService';
 import { db } from '../db';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
+import crypto from 'crypto';
 
 const router = Router();
 
@@ -24,6 +26,24 @@ function frequencyToCron(frequency: string): string {
     default:
       return '0 * * * *'; // Default to hourly
   }
+}
+
+// Helper function to decrypt credentials
+function decryptCredentials(encrypted: string): string {
+  const encryptionKey = process.env.ENCRYPTION_KEY;
+  if (!encryptionKey) {
+    throw new Error('ENCRYPTION_KEY environment variable is not set');
+  }
+
+  const [ivHex, encryptedText] = encrypted.split(':');
+  const iv = Buffer.from(ivHex, 'hex');
+  const key = Buffer.from(encryptionKey, 'hex');
+
+  const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+  let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+
+  return decrypted;
 }
 
 // Apply authentication middleware to all routes
@@ -275,24 +295,40 @@ router.post('/workflows/test-splynx-query', async (req, res) => {
       return res.status(400).json({ error: 'Entity is required' });
     }
 
-    // Use WorkflowExecutor to query Splynx
-    const executor = new WorkflowExecutor();
-    const context = {
-      organizationId: String(user.organizationId),
-      userId: user.id,
-    };
+    // Get Splynx integration credentials
+    const [splynxIntegration] = await db
+      .select()
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.organizationId, user.organizationId),
+          eq(integrations.platformType, 'splynx')
+        )
+      )
+      .limit(1);
 
-    const result = await executor.executeSplynxQuery(
-      {
-        entity,
-        mode: mode || 'list',
-        filters: filters || [],
-        dateRange,
-        limit: limit || 5,
-        resultVariable: 'testResult',
-      },
-      context
-    );
+    if (!splynxIntegration || !splynxIntegration.credentialsEncrypted) {
+      return res.status(400).json({ error: 'Splynx integration not configured' });
+    }
+
+    // Decrypt credentials
+    const credentials = JSON.parse(decryptCredentials(splynxIntegration.credentialsEncrypted));
+    const { baseUrl, authHeader } = credentials;
+
+    if (!baseUrl || !authHeader) {
+      return res.status(400).json({ error: 'Splynx credentials incomplete' });
+    }
+
+    // Query Splynx using SplynxService
+    const splynxService = new SplynxService({ baseUrl, authHeader });
+
+    const result = await splynxService.queryEntities({
+      entity,
+      mode: mode || 'list',
+      filters: filters || [],
+      dateRange,
+      limit: limit || 5,
+    });
 
     res.json(result);
   } catch (error) {
