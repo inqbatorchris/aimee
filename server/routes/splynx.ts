@@ -21,7 +21,7 @@ const emailTemplateSchema = z.object({
   title: z.string().min(1).max(255),
   subject: z.string().max(500).optional(),
   description: z.string().optional(),
-  body: z.string().optional(),
+  code: z.string().optional(),
 });
 
 const updateEmailTemplateSchema = emailTemplateSchema.partial();
