@@ -3,6 +3,7 @@ import { eq, and, or, sql, count, sum, avg, min, max, ilike, isNull, isNotNull, 
 import { agentWorkflows, agentWorkflowRuns, integrations, keyResults, objectives, activityLogs, users, addressRecords, workItems, fieldTasks, ragStatusRecords, tariffRecords } from '@shared/schema';
 import { ActionHandlers } from './ActionHandlers';
 import { CleanDatabaseStorage } from '../../storage';
+import { SplynxService } from '../integrations/splynxService';
 import crypto from 'crypto';
 
 // Table registry for data source queries
@@ -293,6 +294,9 @@ export class WorkflowExecutor {
         
         case 'data_source_query':
           return await this.executeDataSourceQuery(step, context);
+        
+        case 'splynx_query':
+          return await this.executeSplynxQuery(step, context);
         
         case 'wait':
           return await this.executeWait(step, context);
@@ -937,6 +941,112 @@ export class WorkflowExecutor {
       };
     } catch (error: any) {
       console.error(`[WorkflowExecutor] ❌ Data source query failed: ${error.message}`);
+      return {
+        success: false,
+        error: error.message,
+        stack: error.stack,
+      };
+    }
+  }
+
+  private async executeSplynxQuery(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      const { entity, mode = 'count', filters = [], dateRange, limit, resultVariable, updateKeyResult } = step.config || {};
+      
+      if (!entity) {
+        throw new Error('Splynx query requires entity type');
+      }
+      
+      console.log(`[WorkflowExecutor] 🔍 Executing Splynx query`);
+      console.log(`[WorkflowExecutor]   Entity: ${entity}`);
+      console.log(`[WorkflowExecutor]   Mode: ${mode}`);
+      console.log(`[WorkflowExecutor]   Filters: ${filters.length}`);
+      
+      // Get Splynx integration credentials
+      const orgId = parseInt(context.organizationId);
+      const [splynxIntegration] = await db
+        .select()
+        .from(integrations)
+        .where(
+          and(
+            eq(integrations.organizationId, orgId),
+            eq(integrations.platformType, 'splynx')
+          )
+        )
+        .limit(1);
+      
+      if (!splynxIntegration || !splynxIntegration.credentialsEncrypted) {
+        throw new Error('Splynx integration not configured for this organization');
+      }
+      
+      // Decrypt credentials
+      const credentials = JSON.parse(this.decryptCredentials(splynxIntegration.credentialsEncrypted));
+      const { baseUrl, authHeader } = credentials;
+      
+      if (!baseUrl || !authHeader) {
+        throw new Error('Splynx credentials incomplete');
+      }
+      
+      console.log(`[WorkflowExecutor]   ✓ Splynx credentials loaded`);
+      console.log(`[WorkflowExecutor]   Base URL: ${baseUrl}`);
+      
+      // Process filters to replace context variables
+      const processedFilters = filters.map((filter: any) => ({
+        ...filter,
+        value: this.processDynamicValue(filter.value, context),
+      }));
+      
+      // Create Splynx service and execute query
+      const splynxService = new SplynxService({ baseUrl, authHeader });
+      
+      const queryResult = await splynxService.queryEntities({
+        entity,
+        mode,
+        filters: processedFilters,
+        dateRange,
+        limit,
+        sinceDate: context.lastSuccessfulRunAt ? new Date(context.lastSuccessfulRunAt) : undefined,
+      });
+      
+      console.log(`[WorkflowExecutor]   📊 Query result:`, JSON.stringify(queryResult, null, 2));
+      
+      // Extract the appropriate value based on mode
+      const resultValue = mode === 'count' ? queryResult.count : queryResult.records;
+      
+      // Store result in context
+      if (resultVariable) {
+        context[resultVariable] = resultValue;
+        console.log(`[WorkflowExecutor]   💾 Result stored in context as: ${resultVariable}`);
+      }
+      
+      // Optionally update key result
+      if (updateKeyResult && mode === 'count') {
+        const { keyResultId, updateType = 'set_value' } = updateKeyResult;
+        
+        console.log(`[WorkflowExecutor]   🎯 Updating Key Result ${keyResultId} with value: ${queryResult.count}`);
+        
+        await this.executeStrategyUpdate({
+          config: {
+            type: 'key_result',
+            targetId: keyResultId,
+            updateType: updateType,
+            value: queryResult.count,
+          }
+        }, context);
+      }
+      
+      return {
+        success: true,
+        output: {
+          entity,
+          mode,
+          count: queryResult.count,
+          records: mode === 'list' ? queryResult.records?.length || 0 : undefined,
+          filterCount: filters.length,
+        },
+      };
+    } catch (error: any) {
+      console.error(`[WorkflowExecutor] ❌ Splynx query failed: ${error.message}`);
       return {
         success: false,
         error: error.message,
