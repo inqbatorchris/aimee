@@ -613,8 +613,8 @@ export class SplynxService {
           geo_data: record.geo_data,
           added_by: record.added_by,
           
-          // Labels (Customer Tags) - this can be an array or comma-separated string
-          labels: record.labels,
+          // Customer Labels - array of objects with {id, label, color}
+          customer_labels: record.customer_labels || [],
         };
         
       case 'leads':
