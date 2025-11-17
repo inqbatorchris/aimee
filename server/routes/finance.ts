@@ -1350,6 +1350,19 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
     await xeroService.initialize();
     console.log('[SYNC] XeroService initialized successfully');
 
+    // Sync Chart of Accounts first (so transactions can reference them)
+    console.log('[SYNC] Syncing Chart of Accounts...');
+    let chartOfAccountsResult: any = null;
+    let coaSyncError: string | null = null;
+    try {
+      chartOfAccountsResult = await xeroService.syncChartOfAccounts();
+      console.log(`[SYNC] Chart of Accounts sync completed: ${chartOfAccountsResult.synced} accounts (${chartOfAccountsResult.created} created, ${chartOfAccountsResult.updated} updated)`);
+    } catch (coaError: any) {
+      coaSyncError = coaError.message;
+      console.error('[SYNC] Chart of Accounts sync failed:', coaSyncError);
+      // Continue with transaction sync even if COA sync fails, but track the failure
+    }
+
     const lastSyncData = await db
       .select()
       .from(xeroSyncStatus)
@@ -1575,15 +1588,30 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
     const syncEndTime = new Date();
     const durationMs = syncEndTime.getTime() - syncStartTime.getTime();
 
+    // Collect all errors including COA sync errors
+    const allErrors = [...errors];
+    if (coaSyncError) {
+      allErrors.push({
+        type: 'chart_of_accounts_sync',
+        message: coaSyncError,
+        accountsSynced: chartOfAccountsResult?.synced || 0,
+      });
+    }
+
+    // Determine final status: partial if COA failed OR some transactions failed (but some succeeded)
+    const finalStatus = coaSyncError || (failedCount > 0 && syncedCount > 0) 
+      ? 'partial' 
+      : failedCount === 0 ? 'completed' : 'failed';
+
     if (finalSyncData[0]) {
       await db
         .update(xeroSyncStatus)
         .set({
-          lastSuccessfulSyncAt: failedCount === 0 ? new Date() : finalSyncData[0].lastSuccessfulSyncAt,
+          lastSuccessfulSyncAt: failedCount === 0 && !coaSyncError ? new Date() : finalSyncData[0].lastSuccessfulSyncAt,
           recordsSynced: syncedCount,
           recordsFailed: failedCount,
-          errors: errors.length > 0 ? errors : undefined,
-          status: 'completed',
+          errors: allErrors.length > 0 ? allErrors : undefined,
+          status: finalStatus,
           updatedAt: new Date(),
         })
         .where(eq(xeroSyncStatus.id, finalSyncData[0].id));
@@ -1598,21 +1626,39 @@ router.post('/sync/run', authenticateToken, async (req: Request, res: Response) 
         recordsSynced: syncedCount,
         recordsFailed: failedCount,
         totalRecordsToSync: totalRecords,
-        errors: errors.length > 0 ? errors : undefined,
-        status: failedCount === 0 ? 'completed' : (syncedCount > 0 ? 'partial' : 'failed'),
+        errors: allErrors.length > 0 ? allErrors : undefined,
+        status: finalStatus,
       })
       .where(eq(xeroSyncLogs.id, syncLogId));
 
     console.log(`Xero sync completed: ${syncedCount} synced, ${failedCount} failed in ${durationMs}ms`);
 
-    res.json({
+    // Build response with COA sync information
+    const responseData: any = {
       success: true,
       recordsSynced: syncedCount,
       synced: syncedCount,
       failed: failedCount,
       errors: errors.slice(0, 10),
       durationMs,
-    });
+      chartOfAccounts: chartOfAccountsResult ? {
+        synced: chartOfAccountsResult.synced,
+        created: chartOfAccountsResult.created,
+        updated: chartOfAccountsResult.updated,
+        errors: chartOfAccountsResult.errors?.slice(0, 5) || [],
+      } : null,
+    };
+
+    // If COA sync failed, include warning in response
+    if (coaSyncError) {
+      responseData.warnings = [{
+        type: 'chart_of_accounts_sync_failed',
+        message: `Chart of Accounts sync failed: ${coaSyncError}`,
+      }];
+      responseData.partialSuccess = true;
+    }
+
+    res.json(responseData);
   } catch (error: any) {
     console.error('Error running Xero sync:', error);
     
