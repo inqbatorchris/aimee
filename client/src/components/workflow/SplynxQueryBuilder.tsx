@@ -100,7 +100,7 @@ export default function SplynxQueryBuilder({
   // Test query mutation
   const testQueryMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest('/api/workflows/test-splynx-query', {
+      const response = await apiRequest('/api/agents/workflows/test-splynx-query', {
         method: 'POST',
         body: {
           entity: value.entity,
