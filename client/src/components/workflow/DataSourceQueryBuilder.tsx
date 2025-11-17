@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Plus, X, Database, Play } from 'lucide-react';
+import { Plus, X, Database, Play, Braces } from 'lucide-react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Input } from '@/components/ui/input';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import type { DataTable, DataField, KeyResult } from '@shared/schema';
 
 export interface DataSourceFilter {
@@ -58,6 +59,20 @@ const AGGREGATIONS = [
   { value: 'avg', label: 'Average' },
   { value: 'min', label: 'Minimum' },
   { value: 'max', label: 'Maximum' },
+];
+
+const DATE_VARIABLES = [
+  { value: '{today}', label: 'Today' },
+  { value: '{yesterday}', label: 'Yesterday' },
+  { value: '{currentMonthStart}', label: 'Current Month Start' },
+  { value: '{currentMonthEnd}', label: 'Current Month End' },
+];
+
+const CONTEXT_VARIABLES = [
+  { value: '{objectiveId}', label: 'Objective ID (from trigger)' },
+  { value: '{keyResultId}', label: 'Key Result ID (from trigger)' },
+  { value: '{workItemId}', label: 'Work Item ID (from trigger)' },
+  { value: '{userId}', label: 'User ID (from trigger)' },
 ];
 
 export default function DataSourceQueryBuilder({
@@ -367,14 +382,72 @@ export default function DataSourceQueryBuilder({
                       </div>
 
                       {needsValue(filter.operator) && (
-                        <div className="space-y-1">
+                        <div className="space-y-1 relative">
                           {index === 0 && <Label className="text-xs">Value</Label>}
-                          <Input
-                            value={filter.value}
-                            onChange={(e) => updateFilter(filter.id, { value: e.target.value })}
-                            placeholder="Enter value"
-                            data-testid={`input-filter-value-${index}`}
-                          />
+                          <div className="flex gap-1">
+                            <Input
+                              value={filter.value}
+                              onChange={(e) => updateFilter(filter.id, { value: e.target.value })}
+                              placeholder="Enter value or {variable}"
+                              data-testid={`input-filter-value-${index}`}
+                              className="flex-1"
+                            />
+                            <Popover>
+                              <PopoverTrigger asChild>
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  data-testid={`button-insert-variable-${index}`}
+                                  className="px-2"
+                                  type="button"
+                                >
+                                  <Braces className="h-4 w-4" />
+                                </Button>
+                              </PopoverTrigger>
+                              <PopoverContent className="w-64 p-2" align="end">
+                                <div className="space-y-2">
+                                  <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 px-2 pt-1">
+                                    Date Variables
+                                  </div>
+                                  {DATE_VARIABLES.map(v => (
+                                    <Button
+                                      key={v.value}
+                                      variant="ghost"
+                                      size="sm"
+                                      className="w-full justify-start text-xs"
+                                      onClick={() => updateFilter(filter.id, { value: v.value })}
+                                    >
+                                      <code className="mr-2 text-purple-600 dark:text-purple-400">{v.value}</code>
+                                      {v.label}
+                                    </Button>
+                                  ))}
+                                  <div className="text-xs font-semibold text-gray-700 dark:text-gray-300 px-2 pt-2 border-t">
+                                    Context Variables
+                                  </div>
+                                  {CONTEXT_VARIABLES.map(v => (
+                                    <Button
+                                      key={v.value}
+                                      variant="ghost"
+                                      size="sm"
+                                      className="w-full justify-start text-xs"
+                                      onClick={() => updateFilter(filter.id, { value: v.value })}
+                                    >
+                                      <code className="mr-2 text-blue-600 dark:text-blue-400">{v.value}</code>
+                                      {v.label}
+                                    </Button>
+                                  ))}
+                                  <div className="text-xs text-gray-500 px-2 pt-2 border-t">
+                                    Variables from previous steps will appear here automatically
+                                  </div>
+                                </div>
+                              </PopoverContent>
+                            </Popover>
+                          </div>
+                          {filter.value.startsWith('{') && filter.value.endsWith('}') && (
+                            <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                              Using variable: <code className="font-mono">{filter.value}</code>
+                            </p>
+                          )}
                         </div>
                       )}
                     </div>
