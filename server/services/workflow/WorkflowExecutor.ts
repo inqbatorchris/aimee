@@ -987,8 +987,7 @@ export class WorkflowExecutor {
         throw new Error('Splynx credentials incomplete');
       }
       
-      console.log(`[WorkflowExecutor]   ✓ Splynx credentials loaded`);
-      console.log(`[WorkflowExecutor]   Base URL: ${baseUrl}`);
+      console.log(`[WorkflowExecutor]   ✓ Splynx credentials loaded and validated`);
       
       // Process filters to replace context variables
       const processedFilters = filters.map((filter: any) => ({

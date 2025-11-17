@@ -119,7 +119,7 @@ export class SplynxService {
       console.log('[SPLYNX getLeadCount] 📡 REQUEST DETAILS:');
       console.log('[SPLYNX getLeadCount]   URL:', url);
       console.log('[SPLYNX getLeadCount]   Params:', JSON.stringify(params, null, 2));
-      console.log('[SPLYNX getLeadCount]   Auth Header:', this.credentials.authHeader.substring(0, 20) + '...');
+      console.log('[SPLYNX getLeadCount]   Has Auth: ✓');
       console.log('[SPLYNX getLeadCount]   Method: GET');
       
       const response = await axios.get(url, {
