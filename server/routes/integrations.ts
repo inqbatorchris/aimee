@@ -1494,4 +1494,54 @@ router.get('/splynx/schema/:entity?', async (req, res) => {
   }
 });
 
+// TEST ENDPOINT: Fetch a sample customer to show labels field format
+router.get('/splynx/test-customer', async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const integration = await storage.getIntegration(user.organizationId, 'splynx');
+    if (!integration) {
+      return res.status(404).json({ error: 'Splynx integration not found' });
+    }
+
+    // Decrypt credentials
+    let credentials = null;
+    if (integration.credentialsEncrypted) {
+      try {
+        const decrypted = decrypt(integration.credentialsEncrypted);
+        credentials = JSON.parse(decrypted);
+      } catch (error) {
+        return res.status(500).json({ error: 'Failed to decrypt credentials' });
+      }
+    }
+
+    if (!credentials) {
+      return res.status(404).json({ error: 'No credentials found for Splynx integration' });
+    }
+
+    const SplynxService = (await import('../services/integrations/splynxService.js')).SplynxService;
+    const service = new SplynxService(credentials);
+
+    // Fetch first 5 customers
+    const result = await service.queryEntities({
+      entity: 'customers',
+      mode: 'list',
+      filters: [],
+      limit: 5
+    });
+
+    res.json({
+      count: result.count,
+      customers: result.records,
+      message: 'Showing first 5 customers with all fields including labels'
+    });
+  } catch (error: any) {
+    console.error('Error fetching test customer:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
