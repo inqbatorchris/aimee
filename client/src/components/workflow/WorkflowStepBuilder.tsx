@@ -91,6 +91,8 @@ export default function WorkflowStepBuilder({
   objectives = []
 }: WorkflowStepBuilderProps) {
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
+  const [splynxProjects, setSplynxProjects] = useState<Array<{ id: number; name: string }>>([]);
+  const [loadingProjects, setLoadingProjects] = useState(false);
 
   // Auto-fix any strategy_update steps missing the required 'type' field
   useEffect(() => {
@@ -111,6 +113,33 @@ export default function WorkflowStepBuilder({
       onChange(fixed);
     }
   }, [steps, onChange]);
+
+  // Fetch Splynx projects when needed
+  useEffect(() => {
+    const needsProjects = steps.some(
+      step => step.type === 'integration_action' && 
+      step.config?.action === 'create_splynx_task' &&
+      step.config?.integrationId &&
+      integrations.find(i => i.id === step.config.integrationId)?.platformType === 'splynx'
+    );
+
+    if (needsProjects && splynxProjects.length === 0 && !loadingProjects) {
+      setLoadingProjects(true);
+      fetch('/api/integrations/splynx/projects', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+        .then(res => res.json())
+        .then(data => {
+          if (data.projects) {
+            setSplynxProjects(data.projects);
+          }
+        })
+        .catch(err => console.error('Failed to fetch Splynx projects:', err))
+        .finally(() => setLoadingProjects(false));
+    }
+  }, [steps, integrations, splynxProjects.length, loadingProjects]);
 
   const addStep = () => {
     const newStep: WorkflowStep = {
@@ -188,6 +217,7 @@ export default function WorkflowStepBuilder({
                     <SelectItem value="count_customers">Count Customers</SelectItem>
                     <SelectItem value="get_revenue">Get Revenue</SelectItem>
                     <SelectItem value="get_tickets">Get Support Tickets</SelectItem>
+                    <SelectItem value="create_splynx_task">Create Splynx Task</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -231,6 +261,59 @@ export default function WorkflowStepBuilder({
                       }
                     })}
                   />
+                </div>
+              </div>
+            )}
+
+            {step.config.action === 'create_splynx_task' && (
+              <div className="space-y-3">
+                <div>
+                  <Label>Customer ID Variable</Label>
+                  <Input
+                    placeholder="e.g., currentItem.id"
+                    value={step.config.parameters?.customerId || ''}
+                    onChange={(e) => updateStep(step.id, {
+                      config: {
+                        ...step.config,
+                        parameters: { ...step.config.parameters, customerId: e.target.value }
+                      }
+                    })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Use <code>{`{{currentItem.id}}`}</code> within for_each loops
+                  </p>
+                </div>
+                
+                <div>
+                  <Label>Project/Task Type</Label>
+                  {loadingProjects ? (
+                    <div className="text-sm text-muted-foreground">Loading projects...</div>
+                  ) : splynxProjects.length > 0 ? (
+                    <Select
+                      value={step.config.parameters?.projectId?.toString() || ''}
+                      onValueChange={(value) => updateStep(step.id, {
+                        config: {
+                          ...step.config,
+                          parameters: { ...step.config.parameters, projectId: parseInt(value) }
+                        }
+                      })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select project/task type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {splynxProjects.map(project => (
+                          <SelectItem key={project.id} value={project.id.toString()}>
+                            {project.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <div className="text-sm text-muted-foreground">
+                      No Splynx projects available. Configure projects in Splynx first.
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -451,6 +534,293 @@ export default function WorkflowStepBuilder({
               />
               <p className="text-xs text-gray-500 mt-1">
                 Use this variable in the next steps as {`{${step.config.resultVariable || 'resultName'}}`}
+              </p>
+            </div>
+          </div>
+        );
+
+      case 'for_each':
+        const childSteps = step.config.childSteps || [];
+        return (
+          <div className="space-y-4">
+            <div>
+              <Label>Source Variable</Label>
+              <Input
+                placeholder="e.g., customers"
+                value={step.config.sourceVariable || ''}
+                onChange={(e) => updateStep(step.id, {
+                  config: { ...step.config, sourceVariable: e.target.value }
+                })}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Variable from previous step containing the array to iterate over
+              </p>
+            </div>
+            <div className="p-4 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded">
+              <p className="text-sm text-amber-800 dark:text-amber-200">
+                ℹ️ Child steps will have access to <code className="bg-amber-100 dark:bg-amber-900 px-1 rounded">currentItem</code> variable
+              </p>
+              <p className="text-xs text-muted-foreground mt-2">
+                Example: Use <code>{`{{currentItem.name}}`}</code> to access properties
+              </p>
+            </div>
+
+            <div className="border-t pt-4">
+              <div className="flex justify-between items-center mb-3">
+                <Label>Loop Body Steps</Label>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    const newChildStep: WorkflowStep = {
+                      id: `child-step-${Date.now()}`,
+                      type: 'create_work_item',
+                      name: 'New Child Step',
+                      config: {}
+                    };
+                    updateStep(step.id, {
+                      config: {
+                        ...step.config,
+                        childSteps: [...childSteps, newChildStep]
+                      }
+                    });
+                  }}
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Add Child Step
+                </Button>
+              </div>
+
+              {childSteps.length === 0 ? (
+                <div className="text-sm text-muted-foreground text-center p-4 border border-dashed rounded">
+                  No child steps. Click "Add Child Step" to configure loop body.
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {childSteps.map((childStep: WorkflowStep, childIndex: number) => {
+                    const childStepType = STEP_TYPES[childStep.type];
+                    const updateChildStep = (updates: Partial<WorkflowStep>) => {
+                      const updated = [...childSteps];
+                      updated[childIndex] = { ...childStep, ...updates };
+                      updateStep(step.id, {
+                        config: { ...step.config, childSteps: updated }
+                      });
+                    };
+                    
+                    return (
+                      <div key={childStep.id} className="border rounded bg-gray-50 dark:bg-gray-900">
+                        <div className="p-3 border-b">
+                          <div className="flex items-center gap-2">
+                            <div className={`p-1.5 rounded ${childStepType.color} text-white`}>
+                              <childStepType.icon className="h-3 w-3" />
+                            </div>
+                            <Input
+                              placeholder="Step name"
+                              value={childStep.name}
+                              onChange={(e) => updateChildStep({ name: e.target.value })}
+                              className="flex-1"
+                            />
+                            <Select
+                              value={childStep.type}
+                              onValueChange={(value: any) => updateChildStep({ type: value, config: {} })}
+                            >
+                              <SelectTrigger className="w-48">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="create_work_item">Create Work Item</SelectItem>
+                                <SelectItem value="integration_action">Integration Action</SelectItem>
+                                <SelectItem value="log_event">Log Event</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => {
+                                const updated = childSteps.filter((_: any, i: number) => i !== childIndex);
+                                updateStep(step.id, {
+                                  config: { ...step.config, childSteps: updated }
+                                });
+                              }}
+                            >
+                              <Trash2 className="h-3 w-3 text-red-500" />
+                            </Button>
+                          </div>
+                        </div>
+                        
+                        <div className="p-3">
+                          {childStep.type === 'create_work_item' && (
+                            <div className="space-y-3">
+                              <div>
+                                <Label className="text-xs">Title</Label>
+                                <Input
+                                  placeholder="e.g., Follow up with {{currentItem.name}}"
+                                  value={childStep.config?.title || ''}
+                                  onChange={(e) => updateChildStep({
+                                    config: { ...childStep.config, title: e.target.value }
+                                  })}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs">Description</Label>
+                                <Textarea
+                                  placeholder="e.g., Customer ID: {{currentItem.id}}"
+                                  value={childStep.config?.description || ''}
+                                  onChange={(e) => updateChildStep({
+                                    config: { ...childStep.config, description: e.target.value }
+                                  })}
+                                  rows={2}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs">Status</Label>
+                                <Select
+                                  value={childStep.config?.status || 'Planning'}
+                                  onValueChange={(value) => updateChildStep({
+                                    config: { ...childStep.config, status: value }
+                                  })}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="Planning">Planning</SelectItem>
+                                    <SelectItem value="In Progress">In Progress</SelectItem>
+                                    <SelectItem value="Blocked">Blocked</SelectItem>
+                                    <SelectItem value="Completed">Completed</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {childStep.type === 'log_event' && (
+                            <div className="space-y-3">
+                              <div>
+                                <Label className="text-xs">Log Message</Label>
+                                <Textarea
+                                  placeholder="Use {{currentItem.field}} to access item properties"
+                                  value={childStep.config?.message || ''}
+                                  onChange={(e) => updateChildStep({
+                                    config: { ...childStep.config, message: e.target.value }
+                                  })}
+                                  rows={2}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs">Log Level</Label>
+                                <Select
+                                  value={childStep.config?.level || 'info'}
+                                  onValueChange={(value) => updateChildStep({
+                                    config: { ...childStep.config, level: value }
+                                  })}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="debug">Debug</SelectItem>
+                                    <SelectItem value="info">Info</SelectItem>
+                                    <SelectItem value="warning">Warning</SelectItem>
+                                    <SelectItem value="error">Error</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                          )}
+
+                          {childStep.type === 'integration_action' && (
+                            <div className="text-sm text-muted-foreground text-center py-2">
+                              Integration actions in child steps are not yet fully supported.
+                              Use create_work_item or log_event instead.
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        );
+
+      case 'create_work_item':
+        return (
+          <div className="space-y-4">
+            <div>
+              <Label>Title</Label>
+              <Input
+                placeholder="e.g., Follow up with {{currentItem.name}}"
+                value={step.config.title || ''}
+                onChange={(e) => updateStep(step.id, {
+                  config: { ...step.config, title: e.target.value }
+                })}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Use <code>{`{{variable}}`}</code> for dynamic values
+              </p>
+            </div>
+            
+            <div>
+              <Label>Description (Optional)</Label>
+              <Textarea
+                placeholder="e.g., Customer ID: {{currentItem.id}}"
+                value={step.config.description || ''}
+                onChange={(e) => updateStep(step.id, {
+                  config: { ...step.config, description: e.target.value }
+                })}
+                rows={3}
+              />
+            </div>
+
+            <div>
+              <Label>Status</Label>
+              <Select
+                value={step.config.status || 'Planning'}
+                onValueChange={(value) => updateStep(step.id, {
+                  config: { ...step.config, status: value }
+                })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Planning">Planning</SelectItem>
+                  <SelectItem value="In Progress">In Progress</SelectItem>
+                  <SelectItem value="Blocked">Blocked</SelectItem>
+                  <SelectItem value="Completed">Completed</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Due Date (Optional)</Label>
+              <Input
+                placeholder="e.g., +7 days or YYYY-MM-DD"
+                value={step.config.dueDate || ''}
+                onChange={(e) => updateStep(step.id, {
+                  config: { ...step.config, dueDate: e.target.value }
+                })}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Use +N days for relative dates, or specific date format
+              </p>
+            </div>
+
+            <div>
+              <Label>External Reference (Optional)</Label>
+              <Input
+                placeholder="e.g., splynx_customer_{{currentItem.id}}"
+                value={step.config.externalReference || ''}
+                onChange={(e) => updateStep(step.id, {
+                  config: { ...step.config, externalReference: e.target.value }
+                })}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Link to external system record
               </p>
             </div>
           </div>
