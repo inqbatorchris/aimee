@@ -74,21 +74,21 @@ export function EmailBodyEditor({
     },
     editorProps: {
       attributes: {
-        class: 'prose prose-sm max-w-none focus:outline-none min-h-[300px] p-4 border rounded-md',
+        class: 'max-w-none focus:outline-none min-h-[300px] p-4 border rounded-md text-[14px] leading-[1.45] font-sans',
         spellcheck: 'true'
       }
     }
   });
 
   useEffect(() => {
-    if (editor && content !== editor.getHTML()) {
-      console.log('[EmailBodyEditor] Updating content:', {
-        contentLength: content?.length || 0,
-        contentPreview: content?.substring(0, 100),
-        editorHTML: editor.getHTML()?.substring(0, 100)
-      });
-      editor.commands.setContent(content);
-    }
+    if (!editor || content === editor.getHTML()) return;
+    
+    console.log('[EmailBodyEditor] Updating content:', {
+      contentLength: content?.length || 0,
+      contentPreview: content?.substring(0, 100),
+      editorHTML: editor.getHTML()?.substring(0, 100)
+    });
+    editor.commands.setContent(content);
   }, [content, editor]);
 
   if (!editor) {
