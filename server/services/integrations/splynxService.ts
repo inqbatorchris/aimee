@@ -616,16 +616,48 @@ export class SplynxService {
         splynxPayload.checklist_template_id = taskData.checklistTemplateId;
       }
       
-      // Handle end date (for backward compatibility)
+      // Handle end date (due date)
       if (taskData.dueDate) {
-        // Handle relative dates like "+7 days" or absolute dates
-        if (taskData.dueDate.startsWith('+')) {
-          const days = parseInt(taskData.dueDate.replace('+', '').trim().split(' ')[0]);
+        const isRelative = taskData.dueDate.startsWith('+') || /^\d+$/.test(taskData.dueDate.trim());
+        
+        if (isRelative) {
+          // Handle relative dates like "+7 days", "+2 hours", or just "5"
           const date = new Date();
-          date.setDate(date.getDate() + days);
+          let hasValidParse = false;
+          
+          const dayMatch = taskData.dueDate.match(/(\d+)\s*day/i);
+          const hourMatch = taskData.dueDate.match(/(\d+)\s*hour/i);
+          const minuteMatch = taskData.dueDate.match(/(\d+)\s*minute/i);
+          
+          if (dayMatch) {
+            date.setDate(date.getDate() + parseInt(dayMatch[1]));
+            hasValidParse = true;
+          }
+          
+          if (hourMatch) {
+            date.setHours(date.getHours() + parseInt(hourMatch[1]));
+            hasValidParse = true;
+          }
+          
+          if (minuteMatch) {
+            date.setMinutes(date.getMinutes() + parseInt(minuteMatch[1]));
+            hasValidParse = true;
+          }
+          
+          if (!hasValidParse) {
+            // Fallback: try to parse as just a number (assume days)
+            const numMatch = taskData.dueDate.match(/\+?\s*(\d+)/);
+            if (numMatch) {
+              date.setDate(date.getDate() + parseInt(numMatch[1]));
+              hasValidParse = true;
+            }
+          }
+          
           splynxPayload.end_date = date.toISOString().split('T')[0];
         } else {
-          splynxPayload.end_date = taskData.dueDate;
+          // Absolute date: normalize format (YYYY-MM-DD)
+          const dateStr = taskData.dueDate.split('T')[0];
+          splynxPayload.end_date = dateStr;
         }
       }
       
