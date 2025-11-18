@@ -482,18 +482,16 @@ export class SplynxService {
       }
       
       // Transform frontend parameters to Splynx API format
+      // Use the simple field names that Splynx API expects
       const splynxPayload: any = {
-        title: title,
+        name: title,  // Splynx uses "name" not "title"
         project_id: projectId,
-        partner_id: 1, // Default partner ID - required by Splynx
         workflow_status_id: taskData.workflowStatusId,
-        is_archived: "0",
-        closed: "0",
       };
 
-      // Add customer ID (Splynx uses related_customer_id)
+      // Add customer ID (use standard customer_id field)
       if (taskData.customerId || taskData.customer_id) {
-        splynxPayload.related_customer_id = parseInt(String(taskData.customerId || taskData.customer_id));
+        splynxPayload.customer_id = parseInt(String(taskData.customerId || taskData.customer_id));
       }
       
       // Add description
@@ -501,42 +499,29 @@ export class SplynxService {
         splynxPayload.description = taskData.description;
       }
       
-      // Add address
-      if (taskData.address) {
-        splynxPayload.address = taskData.address;
-      }
-      
-      // Add assignee
+      // Add assignee (use assignee_id as a number)
       if (taskData.assignee || taskData.assignee_id) {
-        splynxPayload.assignee = taskData.assignee || taskData.assignee_id;
-        splynxPayload.assigned_to = "assigned_to_team";
-      } else {
-        // Set default assigned_to even without assignee
-        splynxPayload.assigned_to = "assigned_to_team";
+        const assigneeId = parseInt(String(taskData.assignee || taskData.assignee_id));
+        if (!isNaN(assigneeId)) {
+          splynxPayload.assignee_id = assigneeId;
+        }
       }
       
-      // Add priority (validate format)
+      // Add priority (use simple format: low, medium, high)
       if (taskData.priority) {
-        // Ensure priority has correct format
-        const validPriorities = ['priority_low', 'priority_medium', 'priority_high'];
-        const priority = taskData.priority.startsWith('priority_') 
-          ? taskData.priority 
-          : `priority_${taskData.priority}`;
+        // Remove "priority_" prefix if present
+        const priority = taskData.priority.replace('priority_', '');
+        const validPriorities = ['low', 'medium', 'high'];
         
         if (validPriorities.includes(priority)) {
           splynxPayload.priority = priority;
         } else {
-          console.warn(`[SPLYNX createSplynxTask] Invalid priority: ${taskData.priority}, defaulting to priority_medium`);
-          splynxPayload.priority = 'priority_medium';
+          console.warn(`[SPLYNX createSplynxTask] Invalid priority: ${taskData.priority}, defaulting to medium`);
+          splynxPayload.priority = 'medium';
         }
       }
       
-      // Add scheduling fields
-      if (taskData.isScheduled !== undefined) {
-        splynxPayload.is_scheduled = taskData.isScheduled ? "1" : "0";
-      }
-      
-      // Handle scheduled_from (start date/time)
+      // Handle start_date (use simple field name)
       if (taskData.scheduledFrom) {
         const date = new Date();
         let hasValidParse = false;
@@ -579,36 +564,12 @@ export class SplynxService {
             }
           }
           
-          splynxPayload.scheduled_from = date.toISOString().slice(0, 19).replace('T', ' ');
+          splynxPayload.start_date = date.toISOString().slice(0, 19).replace('T', ' ');
         } else {
           // Absolute date: normalize format for Splynx (YYYY-MM-DD HH:MM:SS)
           const dateStr = taskData.scheduledFrom.replace('T', ' ').substring(0, 19);
-          splynxPayload.scheduled_from = dateStr;
+          splynxPayload.start_date = dateStr;
         }
-      }
-      
-      // Handle duration (validate format)
-      if (taskData.duration) {
-        // Validate format: should be like "0h 30m" or "1h 0m"
-        const durationPattern = /^\d+h\s+\d+m$/;
-        if (durationPattern.test(taskData.duration)) {
-          splynxPayload.formatted_duration = taskData.duration;
-        } else {
-          console.warn(`[SPLYNX createSplynxTask] Invalid duration format: ${taskData.duration}, using default: "0h 5m"`);
-          splynxPayload.formatted_duration = "0h 5m"; // Default to 5 minutes
-        }
-      } else {
-        // Set default duration if not provided
-        splynxPayload.formatted_duration = "0h 5m";
-      }
-      
-      // Handle travel times
-      if (taskData.travelTimeTo !== undefined) {
-        splynxPayload.travel_time_to = taskData.travelTimeTo;
-      }
-      
-      if (taskData.travelTimeFrom !== undefined) {
-        splynxPayload.travel_time_from = taskData.travelTimeFrom;
       }
       
       // Handle checklist template
