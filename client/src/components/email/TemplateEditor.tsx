@@ -100,13 +100,19 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
   useEffect(() => {
     if (templateId && template) {
       // Editing existing template
+      console.log('[TemplateEditor] RAW template object:', template);
+      console.log('[TemplateEditor] template.htmlBody type:', typeof template.htmlBody);
+      console.log('[TemplateEditor] template.htmlBody value:', template.htmlBody);
+      
       const htmlBodyContent = template.htmlBody || "";
       console.log('[TemplateEditor] Loading template:', {
         id: templateId,
         title: template.title,
+        subject: template.subject,
         hasBody: !!template.htmlBody,
         bodyLength: template.htmlBody?.length || 0,
-        bodyPreview: template.htmlBody?.substring(0, 100)
+        htmlBodyPreview: template.htmlBody?.substring(0, 100),
+        status: template.status
       });
       form.reset({
         title: template.title || "",
