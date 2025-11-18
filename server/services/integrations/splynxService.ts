@@ -762,11 +762,16 @@ export class SplynxService {
       console.log(`[SPLYNX queryEntities]   📊 Initial records: ${data.length}`);
       
       // Normalize records with IDs and attributes FIRST
-      let records = data.map((item: any) => ({
-        id: item.id,
-        attributes: this.extractEntityAttributes(item, entity),
-        raw: item
-      }));
+      // Flatten the structure so attributes are at root level for easy variable access
+      let records = data.map((item: any) => {
+        const attributes = this.extractEntityAttributes(item, entity);
+        return {
+          id: item.id,
+          ...attributes, // Flatten attributes to root level for easy access like {{currentItem.name}}
+          attributes,    // Keep nested version for backward compatibility
+          raw: item      // Keep full raw data for advanced use cases
+        };
+      });
       
       // Apply client-side filters for customer_labels AFTER normalization
       if (clientFilters.length > 0 && entity === 'customers') {
