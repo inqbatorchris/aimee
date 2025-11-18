@@ -413,9 +413,116 @@ export default function WorkflowStepBuilder({
                 </div>
 
                 <div>
+                  <Label>Address (Optional)</Label>
+                  <Input
+                    placeholder="e.g., {{currentItem.address}}"
+                    value={step.config.parameters?.address || ''}
+                    onChange={(e) => updateStep(step.id, {
+                      config: {
+                        ...step.config,
+                        parameters: { ...step.config.parameters, address: e.target.value }
+                      }
+                    })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Task location/address
+                  </p>
+                </div>
+
+                <div>
+                  <Label>Assignee ID (Optional)</Label>
+                  <Input
+                    placeholder="e.g., 3"
+                    type="number"
+                    value={step.config.parameters?.assignee || ''}
+                    onChange={(e) => updateStep(step.id, {
+                      config: {
+                        ...step.config,
+                        parameters: { ...step.config.parameters, assignee: e.target.value ? parseInt(e.target.value) : undefined }
+                      }
+                    })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Splynx user ID to assign this task to
+                  </p>
+                </div>
+
+                <div>
+                  <Label>Priority</Label>
+                  <Select
+                    value={step.config.parameters?.priority || 'priority_medium'}
+                    onValueChange={(value) => updateStep(step.id, {
+                      config: {
+                        ...step.config,
+                        parameters: { ...step.config.parameters, priority: value }
+                      }
+                    })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="priority_low">Low</SelectItem>
+                      <SelectItem value="priority_medium">Medium</SelectItem>
+                      <SelectItem value="priority_high">High</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Scheduled Start Date</Label>
+                  <Input
+                    placeholder="e.g., +7 days or YYYY-MM-DD HH:mm"
+                    value={step.config.parameters?.scheduledFrom || ''}
+                    onChange={(e) => updateStep(step.id, {
+                      config: {
+                        ...step.config,
+                        parameters: { ...step.config.parameters, scheduledFrom: e.target.value }
+                      }
+                    })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Use +N days for relative dates (defaults to 9 AM)
+                  </p>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <input
+                    type="checkbox"
+                    id={`is-scheduled-${step.id}`}
+                    checked={step.config.parameters?.isScheduled ?? true}
+                    onChange={(e) => updateStep(step.id, {
+                      config: {
+                        ...step.config,
+                        parameters: { ...step.config.parameters, isScheduled: e.target.checked }
+                      }
+                    })}
+                    className="rounded"
+                  />
+                  <Label htmlFor={`is-scheduled-${step.id}`}>Mark as Scheduled</Label>
+                </div>
+
+                <div>
+                  <Label>Duration (Optional)</Label>
+                  <Input
+                    placeholder="e.g., 0h 30m"
+                    value={step.config.parameters?.duration || ''}
+                    onChange={(e) => updateStep(step.id, {
+                      config: {
+                        ...step.config,
+                        parameters: { ...step.config.parameters, duration: e.target.value }
+                      }
+                    })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Task duration in format: 0h 30m
+                  </p>
+                </div>
+
+                <div>
                   <Label>Due Date (Optional)</Label>
                   <Input
-                    placeholder="e.g., +7 days or YYYY-MM-DD"
+                    placeholder="e.g., +14 days or YYYY-MM-DD"
                     value={step.config.parameters?.dueDate || ''}
                     onChange={(e) => updateStep(step.id, {
                       config: {
@@ -425,14 +532,14 @@ export default function WorkflowStepBuilder({
                     })}
                   />
                   <p className="text-xs text-muted-foreground mt-1">
-                    Use +N days for relative dates
+                    End date for task completion
                   </p>
                 </div>
 
                 <div>
                   <Label>Workflow Status ID</Label>
                   <Input
-                    placeholder="e.g., 1"
+                    placeholder="e.g., 24"
                     type="number"
                     value={step.config.parameters?.workflowStatusId || ''}
                     onChange={(e) => updateStep(step.id, {
