@@ -1,3 +1,15 @@
+/**
+ * @deprecated MIGRATION IN PROGRESS
+ * This component currently uses the old Splynx-hosted template system (/api/splynx/templates).
+ * Those endpoints have been removed and this component is temporarily non-functional.
+ * 
+ * TODO (Task #7): Refactor to use new self-managed template system:
+ * - Change queryKey from '/api/splynx/templates' to '/api/email-templates'
+ * - Update all API calls to use /api/email-templates endpoints
+ * - Remove Splynx-specific logic
+ * - Update to work with new EmailTemplate schema (id, organizationId, title, subject, htmlBody, variablesManifest)
+ */
+
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

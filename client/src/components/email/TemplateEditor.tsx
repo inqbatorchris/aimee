@@ -1,3 +1,16 @@
+/**
+ * @deprecated MIGRATION IN PROGRESS
+ * This component currently uses the old Splynx-hosted template system (/api/splynx/templates).
+ * Those endpoints have been removed and this component is temporarily non-functional.
+ * 
+ * TODO (Task #8): Refactor to use new self-managed template system:
+ * - Change API calls from /api/splynx/templates to /api/email-templates
+ * - Remove [[ custom_variable ]] bracket syntax workarounds
+ * - Switch to clean {{variable}} syntax for all variables
+ * - Add variable helper UI for easy insertion
+ * - Update schema to match new EmailTemplate (htmlBody instead of code)
+ */
+
 import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";

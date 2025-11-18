@@ -376,147 +376,6 @@ export class SplynxService {
     }
   }
 
-  async getEmailTemplates(): Promise<any[]> {
-    try {
-      const url = this.buildUrl('admin/config/templates');
-      
-      console.log('[SPLYNX getEmailTemplates] Fetching email templates from:', url);
-      
-      const response = await axios.get(url, {
-        headers: {
-          'Authorization': this.credentials.authHeader,
-          'Content-Type': 'application/json',
-        }
-      });
-
-      console.log('[SPLYNX getEmailTemplates] Response:', response.status, `- Found ${Array.isArray(response.data) ? response.data.length : (response.data?.items?.length || 0)} templates`);
-      
-      if (Array.isArray(response.data)) {
-        return response.data;
-      } else if (response.data?.items) {
-        return response.data.items;
-      }
-      
-      return [];
-    } catch (error: any) {
-      console.error('[SPLYNX getEmailTemplates] Error:', error.message);
-      throw new Error(`Failed to fetch email templates from Splynx: ${error.message}`);
-    }
-  }
-
-  async getEmailTemplate(id: number): Promise<any> {
-    try {
-      const url = this.buildUrl(`admin/config/templates/${id}`);
-      
-      console.log('[SPLYNX getEmailTemplate] Fetching email template:', id);
-      
-      const response = await axios.get(url, {
-        headers: {
-          'Authorization': this.credentials.authHeader,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      console.log('[SPLYNX getEmailTemplate] Response:', response.status);
-      console.log('[SPLYNX getEmailTemplate] Data fields:', {
-        id: response.data?.id,
-        title: response.data?.title,
-        subject: response.data?.subject,
-        hasCode: !!response.data?.code,
-        codeLength: response.data?.code?.length || 0,
-        codePreview: response.data?.code?.substring(0, 150) || '(empty)',
-        allKeys: Object.keys(response.data || {})
-      });
-      
-      return response.data;
-    } catch (error: any) {
-      console.error('[SPLYNX getEmailTemplate] Error:', error.message);
-      throw new Error(`Failed to fetch email template from Splynx: ${error.message}`);
-    }
-  }
-
-  async createEmailTemplate(template: any): Promise<any> {
-    try {
-      const url = this.buildUrl('admin/config/templates');
-      
-      console.log('[SPLYNX createEmailTemplate] Creating email template:', template.title);
-      
-      const templateData = {
-        type: 'email',
-        title: template.title,
-        subject: template.subject || '',
-        description: template.description || '',
-        code: template.code || '',
-        ...template
-      };
-      
-      const response = await axios.post(url, templateData, {
-        headers: {
-          'Authorization': this.credentials.authHeader,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      console.log('[SPLYNX createEmailTemplate] Response:', response.status);
-      console.log('[SPLYNX createEmailTemplate] Response data:', response.data);
-      
-      return response.data;
-    } catch (error: any) {
-      console.error('[SPLYNX createEmailTemplate] Error:', error.message);
-      console.error('[SPLYNX createEmailTemplate] Response:', error.response?.data);
-      throw new Error(`Failed to create email template in Splynx: ${error.message}`);
-    }
-  }
-
-  async updateEmailTemplate(id: number, template: any): Promise<any> {
-    try {
-      const url = this.buildUrl(`admin/config/templates/${id}`);
-      
-      console.log('[SPLYNX updateEmailTemplate] Updating email template:', id);
-      console.log('[SPLYNX updateEmailTemplate] Payload fields:', Object.keys(template));
-      
-      const response = await axios.put(url, template, {
-        headers: {
-          'Authorization': this.credentials.authHeader,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      console.log('[SPLYNX updateEmailTemplate] Response:', response.status);
-      console.log('[SPLYNX updateEmailTemplate] Response data:', response.data);
-      console.log('[SPLYNX updateEmailTemplate] Has data:', !!response.data);
-      
-      // Splynx often returns 202 Accepted with null/empty body on updates
-      // Return null to signal caller to fetch fresh data
-      return response.data || null;
-    } catch (error: any) {
-      console.error('[SPLYNX updateEmailTemplate] Error:', error.message);
-      console.error('[SPLYNX updateEmailTemplate] Response:', error.response?.data);
-      throw new Error(`Failed to update email template in Splynx: ${error.message}`);
-    }
-  }
-
-  async deleteEmailTemplate(id: number): Promise<void> {
-    try {
-      const url = this.buildUrl(`admin/config/templates/${id}`);
-      
-      console.log('[SPLYNX deleteEmailTemplate] Deleting email template:', id);
-      
-      const response = await axios.delete(url, {
-        headers: {
-          'Authorization': this.credentials.authHeader,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      console.log('[SPLYNX deleteEmailTemplate] Response:', response.status);
-    } catch (error: any) {
-      console.error('[SPLYNX deleteEmailTemplate] Error:', error.message);
-      console.error('[SPLYNX deleteEmailTemplate] Response:', error.response?.data);
-      throw new Error(`Failed to delete email template from Splynx: ${error.message}`);
-    }
-  }
-
   /**
    * Helper: Fetch customer email address (with fallback to billing_email)
    */
@@ -548,32 +407,6 @@ export class SplynxService {
       console.error(`[SPLYNX getCustomerEmail] ❌ Error fetching customer ${customerId}:`, error.message);
       console.error(`[SPLYNX getCustomerEmail] ❌ Status: ${error.response?.status}, Data:`, error.response?.data);
       throw new Error(`Failed to fetch customer ${customerId}: ${error.message}`);
-    }
-  }
-
-  /**
-   * Helper: Render template with customer data
-   */
-  private async renderTemplate(templateId: number, customerId: number): Promise<string> {
-    try {
-      const url = this.buildUrl(`admin/config/templates/${templateId}-render-${customerId}`);
-      console.log(`[SPLYNX renderTemplate] Requesting: ${url}`);
-      
-      const response = await axios.get(url, {
-        headers: {
-          'Authorization': this.credentials.authHeader,
-          'Content-Type': 'application/json',
-        },
-      });
-
-      console.log(`[SPLYNX renderTemplate] ✅ Response status: ${response.status}`);
-      console.log(`[SPLYNX renderTemplate] ✅ Rendered HTML length: ${response.data?.result?.length || 0} characters`);
-      
-      return response.data?.result || '';
-    } catch (error: any) {
-      console.error(`[SPLYNX renderTemplate] ❌ Error rendering template ${templateId} for customer ${customerId}:`, error.message);
-      console.error(`[SPLYNX renderTemplate] ❌ Status: ${error.response?.status}, Data:`, error.response?.data);
-      throw new Error(`Failed to render template: ${error.message}`);
     }
   }
 
@@ -649,59 +482,10 @@ export class SplynxService {
   }
 
   /**
-   * Helper: Merge custom variables into HTML content
-   * Uses [[ custom_* ]] syntax (underscores, not dots) to avoid conflicts with:
-   * - Splynx's Twig engine {{ variable }} syntax
-   * - TipTap editor auto-linking (custom.name becomes a hyperlink)
-   */
-  private mergeCustomVariables(html: string, customVariables?: Record<string, any>): string {
-    if (!customVariables) {
-      return html;
-    }
-
-    let mergedHtml = html;
-    const replacedVariables: string[] = [];
-    
-    // Replace [[ custom_variable ]] patterns with custom variable values
-    for (const [key, value] of Object.entries(customVariables)) {
-      // Normalize key: convert dots to underscores and ensure custom_ prefix
-      let variableName = key;
-      if (key.startsWith('custom.')) {
-        variableName = key.replace('custom.', 'custom_');
-      } else if (key.startsWith('custom_')) {
-        variableName = key;
-      } else {
-        variableName = `custom_${key}`;
-      }
-      
-      // Create regex pattern to match [[ custom_variable ]] (with optional whitespace)
-      // Escape underscores for regex
-      const escapedName = variableName.replace(/_/g, '\\_');
-      const pattern = new RegExp(`\\[\\[\\s*${escapedName}\\s*\\]\\]`, 'g');
-      
-      // Count matches before replacement
-      const matches = (mergedHtml.match(pattern) || []).length;
-      
-      if (matches > 0) {
-        mergedHtml = mergedHtml.replace(pattern, String(value));
-        replacedVariables.push(`${variableName} (${matches} occurrence${matches > 1 ? 's' : ''})`);
-      }
-    }
-    
-    if (replacedVariables.length > 0) {
-      console.log(`[SPLYNX mergeCustomVariables] ✅ Replaced ${replacedVariables.length} custom variable(s):`, replacedVariables);
-    } else {
-      console.log(`[SPLYNX mergeCustomVariables] ℹ️ No custom variables replaced. Use [[ custom_variable ]] syntax in your template.`);
-    }
-    
-    return mergedHtml;
-  }
-
-  /**
-   * Send mass email campaign using Splynx's 3-step process:
-   * 1. Render template with customer data
-   * 2. Queue email
-   * 3. Force send
+   * @deprecated This method is being refactored to use self-managed email templates
+   * TODO: Refactor to use new emailTemplateService with {{variable}} replacement (Task #6)
+   * 
+   * TEMPORARY STUB: Throws not implemented error
    */
   async sendMassEmail(params: {
     templateId: number;
@@ -709,185 +493,48 @@ export class SplynxService {
     customVariables?: Record<string, any>;
     subject?: string;
   }): Promise<any> {
-    console.log('[SPLYNX sendMassEmail] Starting mass email campaign');
-    console.log('[SPLYNX sendMassEmail] Template ID:', params.templateId);
-    console.log('[SPLYNX sendMassEmail] Customer IDs:', params.customerIds?.length || 'none provided');
-    console.log('[SPLYNX sendMassEmail] Custom variables:', params.customVariables ? Object.keys(params.customVariables) : 'none');
-
-    if (!params.customerIds || params.customerIds.length === 0) {
-      console.warn('[SPLYNX sendMassEmail] No customer IDs provided, cannot send emails');
-      return {
-        success: true,
-        sentCount: 0,
-        failedCount: 0,
-        failures: [],
-      };
-    }
-
-    const results = {
-      sentCount: 0,
-      failedCount: 0,
-      failures: [] as Array<{ customerId: number; step: string; error: string }>,
-    };
-
-    // Get template to extract subject if not provided
-    let templateSubject = params.subject || 'Email Campaign';
-    if (!params.subject) {
-      try {
-        const templateUrl = this.buildUrl(`admin/config/templates/${params.templateId}`);
-        const templateResponse = await axios.get(templateUrl, {
-          headers: {
-            'Authorization': this.credentials.authHeader,
-            'Content-Type': 'application/json',
-          },
-        });
-        templateSubject = templateResponse.data?.subject || templateSubject;
-      } catch (error) {
-        console.warn('[SPLYNX sendMassEmail] Failed to fetch template subject, using default');
-      }
-    }
-
-    // Process each customer sequentially
-    for (const customerId of params.customerIds) {
-      try {
-        console.log(`[SPLYNX sendMassEmail] Processing customer ${customerId}...`);
-        
-        // Step 1: Get customer email
-        const customerEmail = await this.getCustomerEmail(customerId);
-        
-        if (!customerEmail) {
-          results.failedCount++;
-          results.failures.push({
-            customerId,
-            step: 'fetch_email',
-            error: 'No email address found',
-          });
-          continue;
-        }
-
-        // Step 2: Render template with customer data
-        let renderedHtml = await this.renderTemplate(params.templateId, customerId);
-        
-        // Merge custom variables into rendered HTML
-        renderedHtml = this.mergeCustomVariables(renderedHtml, params.customVariables);
-
-        // Step 3: Queue email
-        const emailId = await this.queueEmail({
-          recipient: customerEmail,
-          subject: templateSubject,
-          message: renderedHtml,
-          customerId,
-        });
-
-        // Step 4: Force send
-        await this.forceSendEmail(emailId);
-
-        results.sentCount++;
-        console.log(`[SPLYNX sendMassEmail] ✅ Successfully sent email to customer ${customerId} (${customerEmail})`);
-        
-      } catch (error: any) {
-        results.failedCount++;
-        
-        // Determine which step failed
-        let step = 'unknown';
-        if (error.message.includes('fetch customer')) {
-          step = 'fetch_email';
-        } else if (error.message.includes('render template')) {
-          step = 'render_template';
-        } else if (error.message.includes('queue email')) {
-          step = 'queue_email';
-        } else if (error.message.includes('send email')) {
-          step = 'force_send';
-        }
-        
-        results.failures.push({
-          customerId,
-          step,
-          error: error.message,
-        });
-        
-        console.error(`[SPLYNX sendMassEmail] ❌ Failed for customer ${customerId}:`, error.message);
-      }
-    }
-
-    console.log('[SPLYNX sendMassEmail] Campaign complete:');
-    console.log('[SPLYNX sendMassEmail]   Sent:', results.sentCount);
-    console.log('[SPLYNX sendMassEmail]   Failed:', results.failedCount);
-    
-    return {
-      success: results.failedCount === 0,
-      sentCount: results.sentCount,
-      failedCount: results.failedCount,
-      failures: results.failures,
-    };
+    throw new Error('sendMassEmail is temporarily disabled during migration to self-managed email templates. Please use the new email template system (coming soon).');
   }
 
   /**
-   * Preview email template with merged variables
-   * Used by workflow builder to show users how their email will look
+   * Send email directly with pre-rendered HTML
+   * This is the new simplified method that doesn't require Splynx templates
    */
-  async previewEmailTemplate(params: {
-    templateId: number;
+  async sendDirectEmail(params: {
     customerId: number;
-    customVariables?: Record<string, any>;
-  }): Promise<{
-    renderedHtml: string;
-    resolvedCustomerId: number;
-    resolvedCustomerEmail: string | null;
-    variableSummary: {
-      customVariablesReplaced: string[];
-      unresolvedCustomVariables: string[];
-    };
-  }> {
-    console.log('[SPLYNX previewEmailTemplate] Starting preview');
-    console.log('[SPLYNX previewEmailTemplate] Template ID:', params.templateId);
-    console.log('[SPLYNX previewEmailTemplate] Customer ID:', params.customerId);
-    console.log('[SPLYNX previewEmailTemplate] Custom variables:', params.customVariables ? Object.keys(params.customVariables) : 'none');
-
+    emailTo: string;
+    subject: string;
+    htmlMessage: string;
+  }): Promise<{ success: boolean; emailId?: number; error?: string }> {
     try {
-      // Step 1: Get customer email for display
-      const customerEmail = await this.getCustomerEmail(params.customerId);
-
-      // Step 2: Render template with Splynx (merges {{ customer.* }} variables)
-      let renderedHtml = await this.renderTemplate(params.templateId, params.customerId);
-
-      // Step 3: Track which custom variables will be replaced
-      const customVariablesReplaced: string[] = [];
-      const unresolvedCustomVariables: string[] = [];
-
-      if (params.customVariables) {
-        for (const [key, value] of Object.entries(params.customVariables)) {
-          const variableName = key.startsWith('custom.') ? key : `custom.${key}`;
-          const pattern = new RegExp(`\\[\\[\\s*${variableName.replace('.', '\\.')}\\s*\\]\\]`, 'g');
-          const matches = (renderedHtml.match(pattern) || []).length;
-
-          if (matches > 0) {
-            customVariablesReplaced.push(variableName);
-          } else {
-            unresolvedCustomVariables.push(variableName);
-          }
-        }
-      }
-
-      // Step 4: Merge custom.* variables into rendered HTML
-      renderedHtml = this.mergeCustomVariables(renderedHtml, params.customVariables);
-
-      console.log('[SPLYNX previewEmailTemplate] ✅ Preview generated successfully');
-      console.log('[SPLYNX previewEmailTemplate]   Custom variables replaced:', customVariablesReplaced.length);
-      console.log('[SPLYNX previewEmailTemplate]   Unresolved variables:', unresolvedCustomVariables.length);
-
+      console.log('[SPLYNX sendDirectEmail] Sending email');
+      console.log('[SPLYNX sendDirectEmail]   To:', params.emailTo);
+      console.log('[SPLYNX sendDirectEmail]   Subject:', params.subject);
+      console.log('[SPLYNX sendDirectEmail]   Customer ID:', params.customerId);
+      
+      // Queue the email
+      const emailId = await this.queueEmail({
+        recipient: params.emailTo,
+        subject: params.subject,
+        message: params.htmlMessage,
+        customerId: params.customerId,
+      });
+      
+      // Force send immediately
+      await this.forceSendEmail(emailId);
+      
+      console.log('[SPLYNX sendDirectEmail] ✅ Email sent successfully');
+      
       return {
-        renderedHtml,
-        resolvedCustomerId: params.customerId,
-        resolvedCustomerEmail: customerEmail,
-        variableSummary: {
-          customVariablesReplaced,
-          unresolvedCustomVariables,
-        },
+        success: true,
+        emailId,
       };
     } catch (error: any) {
-      console.error('[SPLYNX previewEmailTemplate] ❌ Error generating preview:', error.message);
-      throw new Error(`Failed to preview template: ${error.message}`);
+      console.error('[SPLYNX sendDirectEmail] ❌ Error:', error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
     }
   }
 
