@@ -120,13 +120,28 @@ export default function WorkflowStepBuilder({
 
   // Fetch Splynx projects when needed
   useEffect(() => {
-    const taskCreationStep = steps.find(
-      step => step.type === 'integration_action' && 
-      step.config?.action === 'create_splynx_task'
-    );
+    // Helper function to find create_splynx_task action in steps or child steps
+    const findTaskCreationIntegrationId = (stepsArray: WorkflowStep[]): number | null => {
+      for (const step of stepsArray) {
+        // Check top-level integration_action steps
+        if (step.type === 'integration_action' && step.config?.action === 'create_splynx_task') {
+          return step.config?.integrationId ?? null;
+        }
+        
+        // Check child steps inside for_each loops
+        if (step.type === 'for_each' && step.config?.childSteps) {
+          for (const childStep of step.config.childSteps) {
+            if (childStep.type === 'integration_action' && childStep.config?.action === 'create_splynx_task') {
+              return childStep.config?.integrationId ?? null;
+            }
+          }
+        }
+      }
+      return null;
+    };
 
     // Normalize undefined to null for comparison
-    const normalizedIntegrationId = taskCreationStep?.config?.integrationId ?? null;
+    const normalizedIntegrationId = findTaskCreationIntegrationId(steps);
 
     // Reset projects when integration changes (comparing normalized values)
     if (normalizedIntegrationId !== cachedIntegrationId) {
