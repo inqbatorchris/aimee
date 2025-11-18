@@ -43,6 +43,17 @@ interface EmailCampaignConfigProps {
   updateStep: (stepId: string, updates: Partial<WorkflowStep>) => void;
 }
 
+/**
+ * @deprecated MIGRATION IN PROGRESS
+ * This component currently uses the old Splynx-hosted template system (/api/splynx/templates).
+ * Those endpoints have been removed and email campaign functionality is temporarily unavailable.
+ * 
+ * TODO (Task #9): Update to use new self-managed template system:
+ * - Change queryKey from '/api/splynx/templates' to '/api/email-templates'
+ * - Update template selector to use internal templates
+ * - Add inline preview functionality
+ * - Update workflow action handler (server-side, Task #6)
+ */
 function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
   const [selectedPreviewCustomerId, setSelectedPreviewCustomerId] = useState<string>('');
