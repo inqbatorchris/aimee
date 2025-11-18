@@ -73,6 +73,10 @@ router.get('/available-items', authenticateToken, async (req: any, res) => {
       return res.status(400).json({ error: 'Organization not found' });
     }
 
+    // Get user's teams (users can belong to multiple teams)
+    const userTeams = await storage.getUserTeams(userId);
+    const userTeamIds = userTeams.map((t: any) => t.id);
+
     // Get all work items for the organization
     const allWorkItems = await storage.getWorkItems(organizationId);
     
@@ -80,6 +84,7 @@ router.get('/available-items', authenticateToken, async (req: any, res) => {
     if (allWorkItems.length > 0) {
       console.log('[Field App] Sample work item:', JSON.stringify(allWorkItems[0], null, 2));
       console.log('[Field App] First item keys:', Object.keys(allWorkItems[0]));
+      console.log('[Field App] User info:', { userId, userTeamIds });
     }
     
     // Apply filters
@@ -101,10 +106,17 @@ router.get('/available-items', authenticateToken, async (req: any, res) => {
     // Filter work items based on criteria - with detailed logging
     let step1 = allWorkItems.filter((item: any) => {
       const matchesAssignment = filters.assignedTo.some((assignmentType: string) => {
-        if (assignmentType === 'me') return item.assignedTo === userId;
+        if (assignmentType === 'me') {
+          // "My Work" = assigned directly to me ONLY (not team assignments)
+          return item.assignedTo === userId;
+        }
         if (assignmentType === 'team') {
-          // "My Team" means all work items in the organization
-          // No user-specific filtering - just return all items
+          // "My Team" = assigned to any of my teams OR assigned to me
+          return (item.teamId && userTeamIds.includes(item.teamId)) || 
+                 item.assignedTo === userId;
+        }
+        if (assignmentType === 'all') {
+          // "All Work" = everything in the organization
           return true;
         }
         return false;

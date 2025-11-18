@@ -55,6 +55,27 @@ export default function CreateFiberNode({ onComplete }: CreateFiberNodeProps) {
   const [networks, setNetworks] = useState<string[]>([]);
   const [session, setSession] = useState<any>(null);
 
+  // Helper function to generate auto-name
+  const generateNodeName = (type: string, networkName: string, userEmail: string) => {
+    const now = new Date();
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const time = `${hours}${minutes}`;
+    
+    // Extract username from email (before @) or use full name
+    const username = userEmail.includes('@') 
+      ? userEmail.split('@')[0] 
+      : userEmail.replace(/\s+/g, '.');
+    
+    // Generate short ID (last 6 chars of timestamp for uniqueness)
+    const itemId = Date.now().toString().slice(-6);
+    
+    // Capitalize node type
+    const capitalizedType = type.charAt(0).toUpperCase() + type.slice(1);
+    
+    return `${capitalizedType}-${networkName}-${username}:${time}-${itemId}`;
+  };
+
   // Load session and fetch networks
   useEffect(() => {
     const init = async () => {
@@ -73,7 +94,18 @@ export default function CreateFiberNode({ onComplete }: CreateFiberNodeProps) {
           const data = await response.json();
           setNetworks(data.networks || []);
           if (data.networks && data.networks.length > 0) {
-            setNetwork(data.networks[0]); // Set first as default
+            const defaultNetwork = data.networks[0];
+            setNetwork(defaultNetwork);
+            
+            // Generate initial name
+            if (savedSession?.email) {
+              const autoName = generateNodeName(
+                nodeType, 
+                defaultNetwork, 
+                savedSession.email
+              );
+              setName(autoName);
+            }
           }
         }
         
@@ -93,6 +125,18 @@ export default function CreateFiberNode({ onComplete }: CreateFiberNodeProps) {
       Object.values(photoUrls).forEach(url => URL.revokeObjectURL(url));
     };
   }, []);
+
+  // Auto-regenerate name when node type or network changes
+  useEffect(() => {
+    if (session?.email && network && nodeType) {
+      const autoName = generateNodeName(
+        nodeType, 
+        network, 
+        session.email
+      );
+      setName(autoName);
+    }
+  }, [nodeType, network, session]);
 
   const captureGPS = () => {
     if (!navigator.geolocation) {
@@ -273,18 +317,23 @@ export default function CreateFiberNode({ onComplete }: CreateFiberNodeProps) {
 
       {/* Form */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
-        {/* Chamber Name */}
+        {/* Node Name (Auto-generated) */}
         <div>
           <Label className="text-sm font-medium">
-            Chamber Name <span className="text-red-400">*</span>
+            Node Name <span className="text-red-400">*</span>
           </Label>
-          <Input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="Chamber-ABC-001"
-            className="bg-zinc-800 border-zinc-700 text-white mt-1"
-            data-testid="input-chamber-name"
-          />
+          <div className="relative">
+            <Input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Chamber-CCNet-user:1430-123456"
+              className="bg-zinc-800 border-zinc-700 text-white mt-1"
+              data-testid="input-node-name"
+            />
+            <p className="text-xs text-zinc-500 mt-1">
+              Auto-generated • Edit if needed
+            </p>
+          </div>
         </div>
 
         {/* Node Type */}
