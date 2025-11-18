@@ -1008,13 +1008,25 @@ export class WorkflowExecutor {
       // Create Splynx service and execute query
       const splynxService = new SplynxService({ baseUrl, authHeader });
       
+      // Only use incremental mode (sinceDate) for scheduled runs, not manual executions
+      const isScheduledRun = context.triggerSource && context.triggerSource.toLowerCase().includes('schedule');
+      const useSinceDate = isScheduledRun && context.lastSuccessfulRunAt 
+        ? new Date(context.lastSuccessfulRunAt) 
+        : undefined;
+      
+      if (useSinceDate) {
+        console.log(`[WorkflowExecutor]   📅 Incremental mode enabled (scheduled run since ${useSinceDate.toISOString()})`);
+      } else {
+        console.log(`[WorkflowExecutor]   📋 Full query mode (manual run or first execution)`);
+      }
+      
       const queryResult = await splynxService.queryEntities({
         entity,
         mode,
         filters: processedFilters,
         dateRange,
         limit,
-        sinceDate: context.lastSuccessfulRunAt ? new Date(context.lastSuccessfulRunAt) : undefined,
+        sinceDate: useSinceDate,
       });
       
       console.log(`[WorkflowExecutor]   📊 Query result:`, JSON.stringify(queryResult, null, 2));
