@@ -268,6 +268,7 @@ export default function FiberNetwork() {
     notes: '',
   });
   const [createWorkItemForNewNode, setCreateWorkItemForNewNode] = useState(false);
+  const [newNodeTemplate, setNewNodeTemplate] = useState<any>(null);
 
   // Fetch all fiber nodes
   const { data: nodesData, isLoading } = useQuery<{ nodes: FiberNode[] }>({
@@ -348,21 +349,14 @@ export default function FiberNetwork() {
         method: 'POST',
         body: nodeData,
       });
-      return response.json();
+      // apiRequest throws on error, so if we get here it succeeded
+      // Parse the JSON response from the fetch Response object
+      const data = await response.json();
+      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
-      toast({
-        title: 'Success',
-        description: 'Node created successfully',
-      });
-    },
-    onError: (error: any) => {
-      toast({
-        title: 'Error',
-        description: error.message || 'Failed to create node',
-        variant: 'destructive',
-      });
+      // Toast is handled in handleCreateNode to avoid duplicates
     },
   });
 
@@ -815,17 +809,70 @@ export default function FiberNetwork() {
       return;
     }
 
+    // Validate template selection if creating work item
+    if (createWorkItemForNewNode && !newNodeTemplate) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please select a workflow template',
+        variant: 'destructive',
+      });
+      return;
+    }
+
     try {
+      console.log('[CREATE NODE] Submitting node data:', newNodeData);
       const result = await createNodeMutation.mutateAsync(newNodeData);
-      setAddNodeDialogOpen(false);
-
+      console.log('[CREATE NODE] Node created successfully:', result);
+      
       // If user wants to create a work item for this node
-      if (createWorkItemForNewNode && result.node) {
-        setSelectedNode(result.node);
-        setWorkItemDialogOpen(true);
+      if (createWorkItemForNewNode && newNodeTemplate && result && result.node) {
+        console.log('[CREATE NODE] Creating work item for new node');
+        const workItemData = {
+          title: `${newNodeTemplate.name} - ${result.node.name}`,
+          description: `Work item for ${result.node.name} at ${result.node.address || 'Unknown location'}`,
+          status: 'Planning' as const,
+          assignedTo: currentUser?.id,
+          workflowTemplateId: newNodeTemplate.id,
+          workflowSource: 'manual',
+          workItemType: newNodeTemplate.id,
+          workflowMetadata: {
+            templateName: newNodeTemplate.name,
+            templateCategory: newNodeTemplate.category || 'Field Engineering',
+            fiberNodeId: result.node.id,
+            chamberName: result.node.name,
+            chamberLocation: {
+              latitude: result.node.latitude,
+              longitude: result.node.longitude,
+              address: result.node.address,
+              what3words: result.node.what3words,
+            },
+          },
+        };
+        
+        await createWorkItem(workItemData);
+        queryClient.invalidateQueries({ queryKey: ['/api/work-items'] });
+        
+        toast({
+          title: 'Success',
+          description: 'Node and work item created successfully',
+        });
+      } else if (!createWorkItemForNewNode) {
+        // Show success toast for node-only creation
+        toast({
+          title: 'Success',
+          description: 'Node created successfully',
+        });
       }
-
-      // Reset form
+    } catch (error) {
+      console.error('[CREATE NODE] Error:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to create node',
+        variant: 'destructive',
+      });
+    } finally {
+      // Always close dialog and reset form (in finally to ensure it runs even on error)
+      setAddNodeDialogOpen(false);
       setNewNodeData({
         name: '',
         nodeType: 'chamber',
@@ -837,8 +884,8 @@ export default function FiberNetwork() {
         address: '',
         notes: '',
       });
-    } catch (error) {
-      console.error('Failed to create node:', error);
+      setNewNodeTemplate(null);
+      setCreateWorkItemForNewNode(false);
     }
   };
 
@@ -2477,16 +2524,42 @@ export default function FiberNetwork() {
               />
             </div>
 
-            <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-              <Checkbox
-                id="create-work-item-checkbox"
-                checked={createWorkItemForNewNode}
-                onCheckedChange={(checked) => setCreateWorkItemForNewNode(checked as boolean)}
-                data-testid="checkbox-create-work-item-for-node"
-              />
-              <Label htmlFor="create-work-item-checkbox" className="cursor-pointer">
-                Create work item after adding node
-              </Label>
+            <div className="space-y-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="create-work-item-checkbox"
+                  checked={createWorkItemForNewNode}
+                  onCheckedChange={(checked) => setCreateWorkItemForNewNode(checked as boolean)}
+                  data-testid="checkbox-create-work-item-for-node"
+                />
+                <Label htmlFor="create-work-item-checkbox" className="cursor-pointer">
+                  Create work item after adding node
+                </Label>
+              </div>
+              
+              {createWorkItemForNewNode && (
+                <div className="ml-6">
+                  <Label>Workflow Template *</Label>
+                  <Select
+                    value={newNodeTemplate?.id?.toString()}
+                    onValueChange={(value) => {
+                      const template = templates?.find(t => t.id.toString() === value);
+                      setNewNodeTemplate(template || null);
+                    }}
+                  >
+                    <SelectTrigger data-testid="select-new-node-template">
+                      <SelectValue placeholder="Select a template..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {templates?.map((template: any) => (
+                        <SelectItem key={template.id} value={template.id.toString()}>
+                          {template.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
             </div>
 
             <div className="flex gap-2 pt-4 border-t">
@@ -2512,7 +2585,11 @@ export default function FiberNetwork() {
               </Button>
               <Button
                 onClick={handleCreateNode}
-                disabled={!newNodeData.name || createNodeMutation.isPending}
+                disabled={
+                  !newNodeData.name || 
+                  createNodeMutation.isPending ||
+                  (createWorkItemForNewNode && !newNodeTemplate)
+                }
                 data-testid="button-confirm-add-node"
               >
                 {createNodeMutation.isPending ? 'Creating...' : 'Add Node'}
