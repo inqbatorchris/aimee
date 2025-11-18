@@ -434,10 +434,14 @@ export class SplynxService {
   }
 
   async createSplynxTask(taskData: {
-    name: string;
-    project_id: number;
-    customer_id?: number;
+    taskName?: string;
+    name?: string;
+    projectId?: number;
+    project_id?: number;
+    customerId?: string | number;
+    customer_id?: string | number;
     description?: string;
+    dueDate?: string;
     assignee_id?: number;
     priority?: 'low' | 'medium' | 'high';
     status?: string;
@@ -448,9 +452,40 @@ export class SplynxService {
       const url = this.buildUrl('admin/scheduling/tasks');
       
       console.log('[SPLYNX createSplynxTask] Creating task at:', url);
-      console.log('[SPLYNX createSplynxTask] Task data:', JSON.stringify(taskData, null, 2));
+      console.log('[SPLYNX createSplynxTask] Input data:', JSON.stringify(taskData, null, 2));
       
-      const response = await axios.post(url, taskData, {
+      // Transform frontend parameters to Splynx API format
+      const splynxPayload: any = {
+        title: taskData.taskName || taskData.name,
+        project_id: taskData.projectId || taskData.project_id,
+        partner_id: 1, // Default partner ID - required by Splynx
+        workflow_status_id: 1, // Default status - required by Splynx
+      };
+
+      // Add optional fields
+      if (taskData.customerId || taskData.customer_id) {
+        splynxPayload.customer_id = parseInt(String(taskData.customerId || taskData.customer_id));
+      }
+      
+      if (taskData.description) {
+        splynxPayload.description = taskData.description;
+      }
+      
+      if (taskData.dueDate) {
+        // Handle relative dates like "+7 days" or absolute dates
+        if (taskData.dueDate.startsWith('+')) {
+          const days = parseInt(taskData.dueDate.replace('+', '').trim().split(' ')[0]);
+          const date = new Date();
+          date.setDate(date.getDate() + days);
+          splynxPayload.end_date = date.toISOString().split('T')[0];
+        } else {
+          splynxPayload.end_date = taskData.dueDate;
+        }
+      }
+      
+      console.log('[SPLYNX createSplynxTask] Splynx payload:', JSON.stringify(splynxPayload, null, 2));
+      
+      const response = await axios.post(url, splynxPayload, {
         headers: {
           'Authorization': this.credentials.authHeader,
           'Content-Type': 'application/json',
