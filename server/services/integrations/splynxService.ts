@@ -481,17 +481,19 @@ export class SplynxService {
         throw new Error('Workflow Status ID is required. Please set the "Workflow Status ID" field in your workflow configuration. Check your Splynx project settings to find valid status IDs.');
       }
       
-      // Transform frontend parameters to Splynx API format
+      // Transform frontend parameters to Splynx API format (matching exact Splynx API structure)
       const splynxPayload: any = {
         title: title,
         project_id: projectId,
-        partner_id: 1, // Required by Splynx API
+        partner_id: 1,
         workflow_status_id: taskData.workflowStatusId,
+        is_archived: "0",
+        closed: "0",
       };
 
-      // Add customer ID
+      // Add customer ID (Splynx uses related_customer_id)
       if (taskData.customerId || taskData.customer_id) {
-        splynxPayload.customer_id = parseInt(String(taskData.customerId || taskData.customer_id));
+        splynxPayload.related_customer_id = parseInt(String(taskData.customerId || taskData.customer_id));
       }
       
       // Add description
@@ -499,15 +501,23 @@ export class SplynxService {
         splynxPayload.description = taskData.description;
       }
       
-      // Add assignee (use assignee_id as a number)
+      // Add address
+      if (taskData.address) {
+        splynxPayload.address = taskData.address;
+      }
+      
+      // Add assignee (Splynx uses both assigned_to and assignee fields)
       if (taskData.assignee || taskData.assignee_id) {
         const assigneeId = parseInt(String(taskData.assignee || taskData.assignee_id));
         if (!isNaN(assigneeId)) {
-          splynxPayload.assignee_id = assigneeId;
+          splynxPayload.assignee = assigneeId;
+          splynxPayload.assigned_to = "assigned_to_team";
         }
+      } else {
+        splynxPayload.assigned_to = "assigned_to_team";
       }
       
-      // Add priority (ensure it has priority_ prefix)
+      // Add priority (with priority_ prefix)
       if (taskData.priority) {
         const priority = taskData.priority.startsWith('priority_') 
           ? taskData.priority 
@@ -515,7 +525,12 @@ export class SplynxService {
         splynxPayload.priority = priority;
       }
       
-      // Handle start_date (use simple field name)
+      // Handle is_scheduled flag
+      if (taskData.isScheduled !== undefined) {
+        splynxPayload.is_scheduled = taskData.isScheduled ? "1" : "0";
+      }
+      
+      // Handle scheduled_from (start date/time)
       if (taskData.scheduledFrom) {
         const date = new Date();
         let hasValidParse = false;
@@ -558,12 +573,45 @@ export class SplynxService {
             }
           }
           
-          splynxPayload.start_date = date.toISOString().slice(0, 19).replace('T', ' ');
+          splynxPayload.scheduled_from = date.toISOString().slice(0, 19).replace('T', ' ');
         } else {
           // Absolute date: normalize format for Splynx (YYYY-MM-DD HH:MM:SS)
           const dateStr = taskData.scheduledFrom.replace('T', ' ').substring(0, 19);
-          splynxPayload.start_date = dateStr;
+          splynxPayload.scheduled_from = dateStr;
         }
+      }
+      
+      // Handle duration (format: "Xh Ym")
+      if (taskData.duration) {
+        // Validate format: should be like "0h 30m" or "1h 0m"
+        const durationPattern = /^\d+h\s+\d+m$/;
+        if (durationPattern.test(taskData.duration)) {
+          splynxPayload.formatted_duration = taskData.duration;
+        } else {
+          // Try to convert plain minutes to "0h Xm" format
+          const minutes = parseInt(taskData.duration);
+          if (!isNaN(minutes)) {
+            splynxPayload.formatted_duration = `0h ${minutes}m`;
+          } else {
+            console.warn(`[SPLYNX createSplynxTask] Invalid duration format: ${taskData.duration}, using default: "0h 5m"`);
+            splynxPayload.formatted_duration = "0h 5m";
+          }
+        }
+      } else {
+        splynxPayload.formatted_duration = "0h 5m";
+      }
+      
+      // Handle travel times
+      if (taskData.travelTimeTo !== undefined) {
+        splynxPayload.travel_time_to = taskData.travelTimeTo;
+      } else {
+        splynxPayload.travel_time_to = 0;
+      }
+      
+      if (taskData.travelTimeFrom !== undefined) {
+        splynxPayload.travel_time_from = taskData.travelTimeFrom;
+      } else {
+        splynxPayload.travel_time_from = 0;
       }
       
       // Handle checklist template
