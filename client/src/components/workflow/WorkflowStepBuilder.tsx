@@ -32,10 +32,13 @@ interface WorkflowStepBuilderProps {
 interface EmailTemplate {
   id: number;
   title: string;
-  subject?: string;
-  description?: string;
-  code?: string;
-  type: string;
+  subject: string;
+  htmlBody: string;
+  variablesManifest: Record<string, string> | null;
+  status: string;
+  organizationId: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface EmailCampaignConfigProps {
@@ -44,15 +47,8 @@ interface EmailCampaignConfigProps {
 }
 
 /**
- * @deprecated MIGRATION IN PROGRESS
- * This component currently uses the old Splynx-hosted template system (/api/splynx/templates).
- * Those endpoints have been removed and email campaign functionality is temporarily unavailable.
- * 
- * TODO (Task #9): Update to use new self-managed template system:
- * - Change queryKey from '/api/splynx/templates' to '/api/email-templates'
- * - Update template selector to use internal templates
- * - Add inline preview functionality
- * - Update workflow action handler (server-side, Task #6)
+ * Email Campaign Configuration Component
+ * Updated to use the new self-managed template system (/api/email-templates)
  */
 function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
@@ -61,7 +57,7 @@ function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
   const { toast } = useToast();
   
   const { data: templates = [], isLoading } = useQuery<EmailTemplate[]>({
-    queryKey: ['/api/splynx/templates'],
+    queryKey: ['/api/email-templates'],
     retry: 1,
   });
 
@@ -87,32 +83,30 @@ function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
 
   // Preview mutation
   const previewMutation = useMutation({
-    mutationFn: async (params: { templateId: number; customerId: number; customVariables: any }) => {
-      const response = await apiRequest('/api/splynx/templates/preview', {
+    mutationFn: async (params: { templateId: number; customVariables: any }) => {
+      const response = await apiRequest(`/api/email-templates/${params.templateId}/preview`, {
         method: 'POST',
-        body: params,
+        body: { variables: params.customVariables },
       });
       return response.json();
     },
     onSuccess: (data) => {
       // Create blob URL for iframe
-      const blob = new Blob([data.renderedHtml], { type: 'text/html' });
+      const blob = new Blob([data.html], { type: 'text/html' });
       const url = URL.createObjectURL(blob);
       setPreviewBlobUrl(url);
       
-      // Show success message with variable summary
-      if (data.variableSummary?.customVariablesReplaced?.length > 0) {
-        toast({
-          title: 'Preview loaded',
-          description: `Replaced ${data.variableSummary.customVariablesReplaced.length} custom variable(s)`,
-        });
-      }
+      // Show success message
+      toast({
+        title: 'Preview loaded',
+        description: data.subject ? `Subject: ${data.subject}` : 'Template preview ready',
+      });
       
       // Warn about unresolved variables
-      if (data.variableSummary?.unresolvedCustomVariables?.length > 0) {
+      if (data.unresolvedVariables?.length > 0) {
         toast({
           title: 'Warning: Unresolved variables',
-          description: `${data.variableSummary.unresolvedCustomVariables.join(', ')} not found in template`,
+          description: `${data.unresolvedVariables.join(', ')} not found`,
           variant: 'destructive',
         });
       }
@@ -139,15 +133,6 @@ function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
       return;
     }
     
-    if (customerIds.length === 0) {
-      toast({
-        title: 'Add customer IDs',
-        description: 'Please add at least one customer ID to preview with',
-        variant: 'destructive',
-      });
-      return;
-    }
-    
     if (jsonError) {
       toast({
         title: 'Fix JSON error',
@@ -157,30 +142,13 @@ function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
       return;
     }
     
-    // Set first customer as default
-    setSelectedPreviewCustomerId(customerIds[0]);
     setIsPreviewOpen(true);
     
-    // Fetch preview with first customer
+    // Fetch preview with custom variables
     previewMutation.mutate({
       templateId: parseInt(templateId),
-      customerId: parseInt(customerIds[0]),
       customVariables: parsedCustomVariables,
     });
-  };
-
-  // Handle customer change in preview
-  const handleCustomerChange = (customerId: string) => {
-    setSelectedPreviewCustomerId(customerId);
-    
-    const templateId = step.config.parameters?.templateId;
-    if (templateId) {
-      previewMutation.mutate({
-        templateId: parseInt(templateId),
-        customerId: parseInt(customerId),
-        customVariables: parsedCustomVariables,
-      });
-    }
   };
 
   // Clean up blob URL when preview closes
