@@ -990,7 +990,7 @@ export class WorkflowExecutor {
       }
       
       // Decrypt credentials
-      const credentials = JSON.parse(this.decryptCredentials(splynxIntegration.credentialsEncrypted));
+      const credentials = this.decryptCredentials(splynxIntegration.credentialsEncrypted);
       const { baseUrl, authHeader } = credentials;
       
       if (!baseUrl || !authHeader) {
