@@ -79,8 +79,7 @@ function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
     mutationFn: async (params: { templateId: number; customerId: number; customVariables: any }) => {
       const response = await apiRequest('/api/splynx/templates/preview', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(params),
+        body: params,
       });
       return response.json();
     },
