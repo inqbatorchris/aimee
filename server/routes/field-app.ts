@@ -547,8 +547,8 @@ router.post('/sync', authenticateToken, async (req: any, res) => {
                 what3words: nodeData.what3words || null,
                 address: nodeData.address || null,
                 notes: nodeData.notes || null,
-                photos: [],
-                fiberDetails: {},
+                photos: nodeData.photos || [],
+                fiberDetails: nodeData.fiberDetails || {},
                 createdBy: userId,
                 updatedBy: userId
               })
@@ -583,6 +583,41 @@ router.post('/sync', authenticateToken, async (req: any, res) => {
               },
               ipAddress: req.ip || 'field-app'
             });
+            
+            // Automatically create sign-off work item (7 days due)
+            const dueDate = new Date();
+            dueDate.setDate(dueDate.getDate() + 7);
+            
+            const workItemTitle = `New node sign off: ${nodeData.name}`;
+            const workItemDescription = `Sign-off required for fiber network node:\n\n` +
+              `Node: ${nodeData.name}\n` +
+              `Type: ${nodeData.nodeType}\n` +
+              `Network: ${nodeData.network}\n` +
+              `Location: ${nodeData.latitude}, ${nodeData.longitude}\n` +
+              `Address: ${nodeData.address || 'Not provided'}\n` +
+              `Created: ${new Date().toLocaleString()}`;
+            
+            await storage.createWorkItem({
+              title: workItemTitle,
+              description: workItemDescription,
+              status: 'Planning',
+              assignedTo: userId,
+              dueDate: dueDate.toISOString(),
+              organizationId,
+              workflowTemplateId: 'fiber-node-signoff-v1',
+              workflowMetadata: {
+                fiberNodeId: newNode.id,
+                fiberNodeName: nodeData.name,
+                nodeLocation: {
+                  latitude: nodeData.latitude,
+                  longitude: nodeData.longitude,
+                  address: nodeData.address
+                },
+                createdInField: true
+              }
+            });
+            
+            console.log('[Sync] Auto-created sign-off work item for fiber node:', newNode.id);
             
             results.push({ type: 'fiberNetworkNode', id: update.entityId, success: true, serverId: newNode.id });
             break;
