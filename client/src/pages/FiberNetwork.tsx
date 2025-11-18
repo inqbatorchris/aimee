@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -219,6 +220,8 @@ export default function FiberNetwork() {
   const [workItemTeam, setWorkItemTeam] = useState<number | null>(null);
   const [workItemDueDate, setWorkItemDueDate] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [nodeToDelete, setNodeToDelete] = useState<FiberNode | null>(null);
   
   // Column visibility state
   const [visibleColumns, setVisibleColumns] = useState({
@@ -339,6 +342,30 @@ export default function FiberNetwork() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
+    },
+  });
+
+  // Delete node mutation
+  const deleteNodeMutation = useMutation({
+    mutationFn: async (nodeId: number) => {
+      const response = await apiRequest(`/api/fiber-network/nodes/${nodeId}`, {
+        method: 'DELETE',
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
+      toast({
+        title: 'Success',
+        description: 'Node deleted successfully',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to delete node',
+        variant: 'destructive',
+      });
     },
   });
 
@@ -515,6 +542,21 @@ export default function FiberNetwork() {
     });
     
     setSelectedNode({ ...selectedNode, ...updates });
+  };
+
+  const handleDeleteNode = async () => {
+    if (!nodeToDelete) return;
+    
+    try {
+      await deleteNodeMutation.mutateAsync(nodeToDelete.id);
+      setDeleteConfirmOpen(false);
+      setNodeToDelete(null);
+      if (selectedNode?.id === nodeToDelete.id) {
+        setSelectedNode(null);
+      }
+    } catch (error) {
+      console.error('Failed to delete node:', error);
+    }
   };
 
   const handlePhotoUpload = (file: File) => {
@@ -1843,14 +1885,27 @@ export default function FiberNetwork() {
                       </TableCell>
                     )}
                     <TableCell onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setSelectedNode(node)}
-                        data-testid={`button-view-${node.id}`}
-                      >
-                        View
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setSelectedNode(node)}
+                          data-testid={`button-view-${node.id}`}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => {
+                            setNodeToDelete(node);
+                            setDeleteConfirmOpen(true);
+                          }}
+                          data-testid={`button-delete-${node.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -2279,6 +2334,36 @@ export default function FiberNetwork() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Chamber</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{nodeToDelete?.name}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel 
+              onClick={() => {
+                setDeleteConfirmOpen(false);
+                setNodeToDelete(null);
+              }}
+              data-testid="button-cancel-delete"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteNode}
+              className="bg-red-600 hover:bg-red-700"
+              data-testid="button-confirm-delete"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {/* Work Item Creation Dialog */}
       <Dialog open={workItemDialogOpen} onOpenChange={setWorkItemDialogOpen}>
         <DialogContent className="sm:max-w-[500px]" data-testid="work-item-dialog">
