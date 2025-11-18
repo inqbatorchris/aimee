@@ -153,6 +153,7 @@ import {
   strategySettings,
   taskTypeConfigurations,
   workflowTemplates,
+  emailTemplates,
   workItemWorkflowExecutions,
   fieldTasks,
   fieldTaskExecutions,
@@ -165,6 +166,8 @@ import {
   type InsertTaskTypeConfiguration,
   type WorkflowTemplate,
   type InsertWorkflowTemplate,
+  type EmailTemplate,
+  type InsertEmailTemplate,
   type FieldTask,
   type InsertFieldTask,
   type FieldTaskExecution,
@@ -514,6 +517,13 @@ export interface ICleanStorage {
   createWorkflowTemplate(template: InsertWorkflowTemplate): Promise<WorkflowTemplate>;
   updateWorkflowTemplate(organizationId: number, id: string, data: Partial<WorkflowTemplate>): Promise<WorkflowTemplate | undefined>;
   deleteWorkflowTemplate(organizationId: number, id: string): Promise<boolean>;
+  
+  // Email Templates
+  getEmailTemplates(organizationId: number): Promise<EmailTemplate[]>;
+  getEmailTemplate(organizationId: number, id: number): Promise<EmailTemplate | undefined>;
+  createEmailTemplate(template: InsertEmailTemplate): Promise<EmailTemplate>;
+  updateEmailTemplate(organizationId: number, id: number, data: Partial<EmailTemplate>): Promise<EmailTemplate | undefined>;
+  deleteEmailTemplate(organizationId: number, id: number): Promise<boolean>;
   
   // Workflow Assignment & Execution
   assignWorkflowToWorkItem(organizationId: number, workItemId: number, templateId: string): Promise<{ workItem: any, execution: any }>;
@@ -3768,6 +3778,85 @@ export class CleanDatabaseStorage implements ICleanStorage {
         and(
           eq(workflowTemplates.organizationId, organizationId),
           eq(workflowTemplates.id, id)
+        )
+      );
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  // Email Templates operations
+  async getEmailTemplates(organizationId: number): Promise<EmailTemplate[]> {
+    return await db.select()
+      .from(emailTemplates)
+      .where(
+        and(
+          eq(emailTemplates.organizationId, organizationId),
+          eq(emailTemplates.status, 'active')
+        )
+      )
+      .orderBy(emailTemplates.title);
+  }
+
+  async getEmailTemplate(organizationId: number, id: number): Promise<EmailTemplate | undefined> {
+    const [template] = await db.select()
+      .from(emailTemplates)
+      .where(
+        and(
+          eq(emailTemplates.organizationId, organizationId),
+          eq(emailTemplates.id, id)
+        )
+      )
+      .limit(1);
+    return template;
+  }
+
+  async createEmailTemplate(template: InsertEmailTemplate): Promise<EmailTemplate> {
+    const [created] = await db.insert(emailTemplates).values(template).returning();
+    
+    await this.logActivity({
+      organizationId: created.organizationId,
+      userId: 1,
+      actionType: 'creation',
+      entityType: 'email_template',
+      entityId: created.id,
+      description: `Email template "${created.title}" created`,
+      metadata: { templateId: created.id }
+    });
+    
+    return created;
+  }
+
+  async updateEmailTemplate(organizationId: number, id: number, data: Partial<EmailTemplate>): Promise<EmailTemplate | undefined> {
+    const [updated] = await db.update(emailTemplates)
+      .set({ ...data, updatedAt: new Date() })
+      .where(
+        and(
+          eq(emailTemplates.organizationId, organizationId),
+          eq(emailTemplates.id, id)
+        )
+      )
+      .returning();
+    
+    if (updated) {
+      await this.logActivity({
+        organizationId: updated.organizationId,
+        userId: 1,
+        actionType: 'status_change',
+        entityType: 'email_template',
+        entityId: updated.id,
+        description: `Email template "${updated.title}" updated`,
+        metadata: { templateId: updated.id, ...data }
+      });
+    }
+    
+    return updated;
+  }
+
+  async deleteEmailTemplate(organizationId: number, id: number): Promise<boolean> {
+    const result = await db.delete(emailTemplates)
+      .where(
+        and(
+          eq(emailTemplates.organizationId, organizationId),
+          eq(emailTemplates.id, id)
         )
       );
     return result.rowCount !== null && result.rowCount > 0;
