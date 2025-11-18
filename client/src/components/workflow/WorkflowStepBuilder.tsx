@@ -10,6 +10,7 @@ import { Badge } from '@/components/ui/badge';
 import type { Integration, KeyResult, Objective } from '@shared/schema';
 import DataSourceQueryBuilder from './DataSourceQueryBuilder';
 import SplynxQueryBuilder from './SplynxQueryBuilder';
+import { VariableFieldPicker } from './VariableFieldPicker';
 
 interface WorkflowStep {
   id: string;
@@ -1026,16 +1027,15 @@ export default function WorkflowStepBuilder({
 
                                   <div>
                                     <Label className="text-xs">Task Name</Label>
-                                    <Input
-                                      placeholder="e.g., Follow up: {{currentItem.name}}"
+                                    <VariableFieldPicker
                                       value={childStep.config.parameters?.taskName || ''}
-                                      onChange={(e) => updateChildStep({
+                                      onChange={(value) => updateChildStep({
                                         config: {
                                           ...childStep.config,
-                                          parameters: { ...childStep.config.parameters, taskName: e.target.value }
+                                          parameters: { ...childStep.config.parameters, taskName: value }
                                         }
                                       })}
-                                      className="text-sm"
+                                      placeholder="e.g., Follow up: {{currentItem.name}}"
                                     />
                                   </div>
 
@@ -1095,16 +1095,15 @@ export default function WorkflowStepBuilder({
 
                                   <div>
                                     <Label className="text-xs">Customer ID</Label>
-                                    <Input
-                                      placeholder="{{currentItem.id}}"
+                                    <VariableFieldPicker
                                       value={childStep.config.parameters?.customerId || ''}
-                                      onChange={(e) => updateChildStep({
+                                      onChange={(value) => updateChildStep({
                                         config: {
                                           ...childStep.config,
-                                          parameters: { ...childStep.config.parameters, customerId: e.target.value }
+                                          parameters: { ...childStep.config.parameters, customerId: value }
                                         }
                                       })}
-                                      className="text-sm"
+                                      placeholder="{{currentItem.id}}"
                                     />
                                   </div>
 
