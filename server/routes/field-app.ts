@@ -609,7 +609,7 @@ router.post('/sync', authenticateToken, async (req: any, res) => {
               `Address: ${nodeData.address || 'Not provided'}\n` +
               `Created: ${new Date().toLocaleString()}`;
             
-            await storage.createWorkItem({
+            const newWorkItem = await storage.createWorkItem({
               title: workItemTitle,
               description: workItemDescription,
               status: 'Planning',
@@ -629,7 +629,22 @@ router.post('/sync', authenticateToken, async (req: any, res) => {
               }
             });
             
-            console.log('[Sync] Auto-created sign-off work item for fiber node:', newNode.id);
+            // Initialize the workflow execution record
+            try {
+              await db.insert(workItemWorkflowExecutions).values({
+                organizationId,
+                workItemId: newWorkItem.id,
+                workflowTemplateId: 'fiber-node-signoff-v1',
+                status: 'not_started',
+                executionData: {},
+                createdAt: new Date(),
+                updatedAt: new Date()
+              });
+              console.log('[Sync] Auto-created sign-off work item with initialized workflow for fiber node:', newNode.id);
+            } catch (workflowError) {
+              console.warn('[Sync] Failed to initialize workflow for sign-off work item (template may not exist):', workflowError);
+              console.log('[Sync] Auto-created sign-off work item (workflow not initialized) for fiber node:', newNode.id);
+            }
             
             results.push({ type: 'fiberNetworkNode', id: update.entityId, success: true, serverId: newNode.id });
             break;
