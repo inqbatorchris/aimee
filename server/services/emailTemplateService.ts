@@ -27,7 +27,7 @@ export class EmailTemplateService {
     return {
       subject: renderedSubject,
       html: renderedHtml,
-      unresolvedVariables: [...new Set(unresolvedVariables)], // Remove duplicates
+      unresolvedVariables: Array.from(new Set(unresolvedVariables)), // Remove duplicates
     };
   }
 
