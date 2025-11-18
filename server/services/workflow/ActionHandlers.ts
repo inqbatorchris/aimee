@@ -1,8 +1,9 @@
 import { db } from '../../db';
 import { eq, and, gte, lte, sql } from 'drizzle-orm';
-import { keyResults, workItems, objectives } from '@shared/schema';
+import { keyResults, workItems, objectives, emailTemplates } from '@shared/schema';
 import { SplynxService } from '../integrations/splynxService';
 import { PXCService } from '../integrations/pxcService';
+import { EmailTemplateService } from '../emailTemplateService';
 
 export class ActionHandlers {
   /**
@@ -59,6 +60,11 @@ export class ActionHandlers {
       authHeader,
     });
 
+    // Special handling for send_email_campaign using self-managed templates
+    if (action === 'send_email_campaign') {
+      return await this.handleSendEmailCampaign(splynxService, parameters, context);
+    }
+
     // Add lastSuccessfulRunAt to parameters for incremental fetching
     const enrichedParameters = {
       ...parameters,
@@ -79,6 +85,123 @@ export class ActionHandlers {
     
     // Return result directly - the WorkflowExecutor will handle storing it in context
     return result;
+  }
+
+  /**
+   * Handle send_email_campaign action using self-managed email templates
+   */
+  private async handleSendEmailCampaign(
+    splynxService: SplynxService,
+    parameters: any,
+    context: any
+  ): Promise<any> {
+    console.log('[ActionHandlers] 📧 Handling send_email_campaign with self-managed templates');
+    
+    const templateId = parseInt(parameters.templateId);
+    if (!templateId) {
+      throw new Error('templateId is required for send_email_campaign');
+    }
+
+    // Parse customerIds from string or array
+    let customerIds: number[] = [];
+    if (typeof parameters.customerIds === 'string' && parameters.customerIds.trim()) {
+      customerIds = parameters.customerIds.split(',').map((id: string) => parseInt(id.trim())).filter(Boolean);
+    } else if (Array.isArray(parameters.customerIds)) {
+      customerIds = parameters.customerIds.map((id: any) => parseInt(id)).filter(Boolean);
+    } else if (context?.queryResult && Array.isArray(context.queryResult)) {
+      // Use results from previous data query step
+      customerIds = context.queryResult.map((item: any) => parseInt(item.id)).filter(Boolean);
+    }
+
+    if (customerIds.length === 0) {
+      throw new Error('No customer IDs provided. Either specify customerIds parameter or use a data query step first.');
+    }
+
+    console.log(`[ActionHandlers]   Template ID: ${templateId}`);
+    console.log(`[ActionHandlers]   Customer IDs: ${customerIds.join(', ')}`);
+
+    // Load email template from database
+    const [template] = await db.select()
+      .from(emailTemplates)
+      .where(eq(emailTemplates.id, templateId))
+      .limit(1);
+
+    if (!template) {
+      throw new Error(`Email template ${templateId} not found`);
+    }
+
+    console.log(`[ActionHandlers]   ✓ Template loaded: ${template.title}`);
+
+    // Parse custom variables
+    let customVariables: Record<string, any> = {};
+    if (typeof parameters.customVariables === 'string' && parameters.customVariables.trim()) {
+      try {
+        customVariables = JSON.parse(parameters.customVariables);
+      } catch (error) {
+        console.warn('[ActionHandlers] Failed to parse customVariables, using empty object');
+      }
+    } else if (typeof parameters.customVariables === 'object') {
+      customVariables = parameters.customVariables;
+    }
+
+    // Send emails to all customers
+    const results: any[] = [];
+    const emailTemplateService = new EmailTemplateService();
+
+    for (const customerId of customerIds) {
+      try {
+        console.log(`[ActionHandlers]   📨 Sending to customer ${customerId}...`);
+
+        // Get customer email from Splynx
+        const customerEmail = await (splynxService as any).getCustomerEmail(customerId);
+        
+        if (!customerEmail) {
+          console.warn(`[ActionHandlers]   ⚠️ Customer ${customerId} has no email, skipping`);
+          results.push({
+            customerId,
+            success: false,
+            error: 'No email address found',
+          });
+          continue;
+        }
+
+        // Render template with variables
+        const rendered = emailTemplateService.renderTemplate(template, customVariables);
+
+        // Send email via Splynx
+        const sendResult = await splynxService.sendDirectEmail({
+          customerId,
+          emailTo: customerEmail,
+          subject: rendered.subject,
+          htmlMessage: rendered.html,
+        });
+
+        results.push({
+          customerId,
+          email: customerEmail,
+          ...sendResult,
+        });
+
+        console.log(`[ActionHandlers]   ✓ Email sent to customer ${customerId} (${customerEmail})`);
+      } catch (error: any) {
+        console.error(`[ActionHandlers]   ❌ Error sending to customer ${customerId}:`, error.message);
+        results.push({
+          customerId,
+          success: false,
+          error: error.message,
+        });
+      }
+    }
+
+    const successCount = results.filter(r => r.success).length;
+    console.log(`[ActionHandlers]   ✅ Campaign complete: ${successCount}/${customerIds.length} emails sent`);
+
+    return {
+      totalCustomers: customerIds.length,
+      successCount,
+      failureCount: customerIds.length - successCount,
+      results,
+    };
   }
 
   /**
