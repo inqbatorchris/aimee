@@ -482,14 +482,14 @@ export class SplynxService {
       }
       
       // Transform frontend parameters to Splynx API format
-      // Use the simple field names that Splynx API expects
       const splynxPayload: any = {
-        name: title,  // Splynx uses "name" not "title"
+        title: title,
         project_id: projectId,
+        partner_id: 1, // Required by Splynx API
         workflow_status_id: taskData.workflowStatusId,
       };
 
-      // Add customer ID (use standard customer_id field)
+      // Add customer ID
       if (taskData.customerId || taskData.customer_id) {
         splynxPayload.customer_id = parseInt(String(taskData.customerId || taskData.customer_id));
       }
@@ -507,18 +507,12 @@ export class SplynxService {
         }
       }
       
-      // Add priority (use simple format: low, medium, high)
+      // Add priority (ensure it has priority_ prefix)
       if (taskData.priority) {
-        // Remove "priority_" prefix if present
-        const priority = taskData.priority.replace('priority_', '');
-        const validPriorities = ['low', 'medium', 'high'];
-        
-        if (validPriorities.includes(priority)) {
-          splynxPayload.priority = priority;
-        } else {
-          console.warn(`[SPLYNX createSplynxTask] Invalid priority: ${taskData.priority}, defaulting to medium`);
-          splynxPayload.priority = 'medium';
-        }
+        const priority = taskData.priority.startsWith('priority_') 
+          ? taskData.priority 
+          : `priority_${taskData.priority}`;
+        splynxPayload.priority = priority;
       }
       
       // Handle start_date (use simple field name)
