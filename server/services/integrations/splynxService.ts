@@ -516,11 +516,13 @@ export class SplynxService {
       }
       // Note: If assignee is not set, we don't include assigned_to or assignee fields
       
-      // Add priority (with priority_ prefix)
+      // Add priority (with priority_ prefix and lowercase normalization)
       if (taskData.priority) {
-        const priority = taskData.priority.startsWith('priority_') 
-          ? taskData.priority 
-          : `priority_${taskData.priority}`;
+        // Normalize to lowercase and add prefix if needed
+        let priority = String(taskData.priority).toLowerCase();
+        if (!priority.startsWith('priority_')) {
+          priority = `priority_${priority}`;
+        }
         splynxPayload.priority = priority;
       }
       
