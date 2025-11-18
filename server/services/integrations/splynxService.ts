@@ -657,6 +657,16 @@ export class SplynxService {
       return html;
     }
 
+    // Debug: Log the HTML content to see what we're working with
+    console.log(`[SPLYNX mergeCustomVariables] 🔍 HTML preview (first 500 chars):`, html.substring(0, 500));
+    console.log(`[SPLYNX mergeCustomVariables] 🔍 Looking for [[ ]] patterns...`);
+    const bracketMatches = html.match(/\[\[.*?\]\]/g);
+    if (bracketMatches) {
+      console.log(`[SPLYNX mergeCustomVariables] 🔍 Found [[ ]] patterns:`, bracketMatches);
+    } else {
+      console.log(`[SPLYNX mergeCustomVariables] 🔍 No [[ ]] patterns found in HTML`);
+    }
+
     let mergedHtml = html;
     const replacedVariables: string[] = [];
     
@@ -667,6 +677,7 @@ export class SplynxService {
       
       // Create regex pattern to match [[ custom.variable ]] (with optional whitespace)
       const pattern = new RegExp(`\\[\\[\\s*${variableName.replace('.', '\\.')}\\s*\\]\\]`, 'g');
+      console.log(`[SPLYNX mergeCustomVariables] 🔍 Testing pattern for ${variableName}:`, pattern.toString());
       
       // Count matches before replacement
       const matches = (mergedHtml.match(pattern) || []).length;
