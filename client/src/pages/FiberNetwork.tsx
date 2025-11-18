@@ -2065,7 +2065,7 @@ export default function FiberNetwork() {
                               <Trash2 className="h-3 w-3" />
                             </Button>
                             <div className="absolute bottom-1 left-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded">
-                              {new Date(photo.timestamp).toLocaleDateString()}
+                              {photo.timestamp ? new Date(photo.timestamp).toLocaleDateString() : 'No date'}
                             </div>
                           </div>
                         ))}

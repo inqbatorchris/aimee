@@ -601,7 +601,7 @@ router.post('/sync', authenticateToken, async (req: any, res) => {
               title: workItemTitle,
               description: workItemDescription,
               status: 'Planning',
-              assignedTo: userId,
+              teamId: 16,
               dueDate: dueDate.toISOString(),
               organizationId,
               workflowTemplateId: 'fiber-node-signoff-v1',
