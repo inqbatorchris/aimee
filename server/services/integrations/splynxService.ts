@@ -506,16 +506,15 @@ export class SplynxService {
         splynxPayload.address = taskData.address;
       }
       
-      // Add assignee (Splynx uses both assigned_to and assignee fields)
+      // Add assignee (only include if user sets it in UI)
       if (taskData.assignee || taskData.assignee_id) {
         const assigneeId = parseInt(String(taskData.assignee || taskData.assignee_id));
         if (!isNaN(assigneeId)) {
           splynxPayload.assignee = assigneeId;
           splynxPayload.assigned_to = "assigned_to_team";
         }
-      } else {
-        splynxPayload.assigned_to = "assigned_to_team";
       }
+      // Note: If assignee is not set, we don't include assigned_to or assignee fields
       
       // Add priority (with priority_ prefix)
       if (taskData.priority) {
