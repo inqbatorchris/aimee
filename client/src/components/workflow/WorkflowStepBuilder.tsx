@@ -970,9 +970,232 @@ export default function WorkflowStepBuilder({
                           )}
 
                           {childStep.type === 'integration_action' && (
-                            <div className="text-sm text-muted-foreground text-center py-2">
-                              Integration actions in child steps are not yet fully supported.
-                              Use create_work_item or log_event instead.
+                            <div className="space-y-3">
+                              <div>
+                                <Label className="text-xs">Integration</Label>
+                                <Select
+                                  value={childStep.config?.integrationId?.toString() || ''}
+                                  onValueChange={(value) => updateChildStep({
+                                    config: { ...childStep.config, integrationId: parseInt(value) }
+                                  })}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select integration" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {integrations
+                                      .filter(i => i.platformType === 'splynx')
+                                      .map(integration => (
+                                        <SelectItem key={integration.id} value={integration.id.toString()}>
+                                          {integration.name} ({integration.platformType})
+                                        </SelectItem>
+                                      ))
+                                    }
+                                  </SelectContent>
+                                </Select>
+                              </div>
+
+                              {childStep.config?.integrationId && (
+                                <div>
+                                  <Label className="text-xs">Action</Label>
+                                  <Select
+                                    value={childStep.config.action}
+                                    onValueChange={(value) => updateChildStep({
+                                      config: { ...childStep.config, action: value }
+                                    })}
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select action" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="create_splynx_task">Create Splynx Task</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              )}
+
+                              {childStep.config?.action === 'create_splynx_task' && (
+                                <div className="space-y-2">
+                                  <div className="p-2 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded text-xs">
+                                    <p className="font-medium text-blue-900 dark:text-blue-100 mb-0.5">💡 Variable Helper</p>
+                                    <p className="text-blue-800 dark:text-blue-200">
+                                      Use <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{`{{currentItem.fieldName}}`}</code> to access loop data.
+                                      <br />Example: <code className="bg-blue-100 dark:bg-blue-900 px-1 rounded">{`{{currentItem.id}}`}</code>
+                                    </p>
+                                  </div>
+
+                                  <div>
+                                    <Label className="text-xs">Task Name</Label>
+                                    <Input
+                                      placeholder="e.g., Follow up: {{currentItem.name}}"
+                                      value={childStep.config.parameters?.taskName || ''}
+                                      onChange={(e) => updateChildStep({
+                                        config: {
+                                          ...childStep.config,
+                                          parameters: { ...childStep.config.parameters, taskName: e.target.value }
+                                        }
+                                      })}
+                                      className="text-sm"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <Label className="text-xs">Description (Optional)</Label>
+                                    <Textarea
+                                      placeholder="e.g., Customer ID: {{currentItem.id}}"
+                                      value={childStep.config.parameters?.description || ''}
+                                      onChange={(e) => updateChildStep({
+                                        config: {
+                                          ...childStep.config,
+                                          parameters: { ...childStep.config.parameters, description: e.target.value }
+                                        }
+                                      })}
+                                      rows={2}
+                                      className="text-sm"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <Label className="text-xs">Project/Task Type</Label>
+                                    {projectsError ? (
+                                      <div className="text-xs text-red-600 dark:text-red-400 p-2 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded">
+                                        {projectsError}
+                                      </div>
+                                    ) : loadingProjects ? (
+                                      <div className="text-xs text-muted-foreground p-2 bg-gray-50 dark:bg-gray-900 border rounded">
+                                        Loading...
+                                      </div>
+                                    ) : splynxProjects.length > 0 ? (
+                                      <Select
+                                        value={childStep.config.parameters?.projectId?.toString() || ''}
+                                        onValueChange={(value) => updateChildStep({
+                                          config: {
+                                            ...childStep.config,
+                                            parameters: { ...childStep.config.parameters, projectId: parseInt(value) }
+                                          }
+                                        })}
+                                      >
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="Select project" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          {splynxProjects.map(project => (
+                                            <SelectItem key={project.id} value={project.id.toString()}>
+                                              {project.title}
+                                            </SelectItem>
+                                          ))}
+                                        </SelectContent>
+                                      </Select>
+                                    ) : (
+                                      <div className="text-xs text-amber-600 dark:text-amber-400 p-2 bg-amber-50 dark:bg-amber-950 border rounded">
+                                        No projects configured
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div>
+                                    <Label className="text-xs">Customer ID</Label>
+                                    <Input
+                                      placeholder="{{currentItem.id}}"
+                                      value={childStep.config.parameters?.customerId || ''}
+                                      onChange={(e) => updateChildStep({
+                                        config: {
+                                          ...childStep.config,
+                                          parameters: { ...childStep.config.parameters, customerId: e.target.value }
+                                        }
+                                      })}
+                                      className="text-sm"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <Label className="text-xs">Workflow Status ID</Label>
+                                    <Input
+                                      placeholder="e.g., 24"
+                                      type="number"
+                                      value={childStep.config.parameters?.workflowStatusId || ''}
+                                      onChange={(e) => updateChildStep({
+                                        config: {
+                                          ...childStep.config,
+                                          parameters: { ...childStep.config.parameters, workflowStatusId: e.target.value ? parseInt(e.target.value) : undefined }
+                                        }
+                                      })}
+                                      className="text-sm"
+                                    />
+                                    <p className="text-xs text-muted-foreground mt-0.5">
+                                      Required - check your Splynx project settings
+                                    </p>
+                                  </div>
+
+                                  <div>
+                                    <Label className="text-xs">Priority</Label>
+                                    <Select
+                                      value={childStep.config.parameters?.priority || 'priority_medium'}
+                                      onValueChange={(value) => updateChildStep({
+                                        config: {
+                                          ...childStep.config,
+                                          parameters: { ...childStep.config.parameters, priority: value }
+                                        }
+                                      })}
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="priority_low">Low</SelectItem>
+                                        <SelectItem value="priority_medium">Medium</SelectItem>
+                                        <SelectItem value="priority_high">High</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+
+                                  <div>
+                                    <Label className="text-xs">Scheduled Start Date (Optional)</Label>
+                                    <Input
+                                      placeholder="e.g., +7 days or YYYY-MM-DD HH:mm"
+                                      value={childStep.config.parameters?.scheduledFrom || ''}
+                                      onChange={(e) => updateChildStep({
+                                        config: {
+                                          ...childStep.config,
+                                          parameters: { ...childStep.config.parameters, scheduledFrom: e.target.value }
+                                        }
+                                      })}
+                                      className="text-sm"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <Label className="text-xs">Assignee ID (Optional)</Label>
+                                    <Input
+                                      placeholder="e.g., 3"
+                                      type="number"
+                                      value={childStep.config.parameters?.assignee || ''}
+                                      onChange={(e) => updateChildStep({
+                                        config: {
+                                          ...childStep.config,
+                                          parameters: { ...childStep.config.parameters, assignee: e.target.value ? parseInt(e.target.value) : undefined }
+                                        }
+                                      })}
+                                      className="text-sm"
+                                    />
+                                  </div>
+
+                                  <div>
+                                    <Label className="text-xs">Duration (Optional)</Label>
+                                    <Input
+                                      placeholder="e.g., 0h 30m"
+                                      value={childStep.config.parameters?.duration || ''}
+                                      onChange={(e) => updateChildStep({
+                                        config: {
+                                          ...childStep.config,
+                                          parameters: { ...childStep.config.parameters, duration: e.target.value }
+                                        }
+                                      })}
+                                      className="text-sm"
+                                    />
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
