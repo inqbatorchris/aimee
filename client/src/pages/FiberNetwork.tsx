@@ -864,10 +864,27 @@ export default function FiberNetwork() {
         });
       }
     } catch (error) {
-      console.error('[CREATE NODE] Error:', error);
+      console.error('[CREATE NODE] Full error:', error);
+      console.error('[CREATE NODE] Error type:', typeof error);
+      console.error('[CREATE NODE] Error details:', error instanceof Error ? {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      } : 'Not an Error object');
+      
+      // Try to extract a meaningful error message
+      let errorMessage = 'Failed to create node';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (error && typeof error === 'object' && 'message' in error) {
+        errorMessage = String(error.message);
+      }
+      
       toast({
         title: 'Error',
-        description: error instanceof Error ? error.message : 'Failed to create node',
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {

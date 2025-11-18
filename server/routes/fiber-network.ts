@@ -7,8 +7,13 @@ import { z } from 'zod';
 
 const router = Router();
 
-// Validation schema for creating fiber network node
-const createNodeSchema = insertFiberNetworkNodeSchema.extend({
+// Validation schema for creating fiber network node (from client)
+// Client shouldn't send organizationId, createdBy, or updatedBy
+const createNodeSchema = insertFiberNetworkNodeSchema.omit({
+  organizationId: true,
+  createdBy: true,
+  updatedBy: true
+}).extend({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180)
 });
@@ -24,36 +29,29 @@ router.post('/nodes', authenticateToken, async (req: any, res) => {
       return res.status(400).json({ error: 'Invalid user authentication' });
     }
     
-    // Validate request body with Zod
+    // Validate request body with Zod (without organizationId)
     const validation = createNodeSchema.safeParse(req.body);
     if (!validation.success) {
+      console.error('Validation failed for fiber node creation:', validation.error.format());
       return res.status(400).json({ 
         error: 'Validation failed', 
         details: validation.error.format() 
       });
     }
     
-    const data = validation.data;
+    // Add organizationId to the validated data
+    const data = {
+      ...validation.data,
+      organizationId,
+      createdBy: req.user.id,
+      updatedBy: req.user.id
+    };
     
     // Create the fiber network node with numeric coordinates
+    // Use spread to include all fields from data
     const result = await db
       .insert(fiberNetworkNodes)
-      .values({
-        organizationId,
-        name: data.name,
-        nodeType: data.nodeType,
-        network: data.network,
-        status: data.status,
-        latitude: data.latitude,
-        longitude: data.longitude,
-        what3words: data.what3words || null,
-        address: data.address || null,
-        notes: data.notes || null,
-        photos: data.photos || [],
-        fiberDetails: data.fiberDetails || {},
-        createdBy: req.user.id,
-        updatedBy: req.user.id
-      })
+      .values(data as any) // Type assertion to bypass TypeScript issue
       .returning();
     
     const newNode = result[0];
