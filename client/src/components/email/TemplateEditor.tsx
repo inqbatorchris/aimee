@@ -163,11 +163,30 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
   });
 
   const handleSubmit = (data: TemplateFormData) => {
+    console.log('[TemplateEditor] Submitting form:', {
+      title: data.title,
+      subject: data.subject,
+      htmlBodyLength: data.htmlBody?.length || 0,
+      htmlBodyPreview: data.htmlBody?.substring(0, 100),
+      status: data.status
+    });
     saveMutation.mutate(data);
   };
 
   const handleInvalidSubmit = () => {
     const errors = form.formState.errors;
+    const values = form.getValues();
+    
+    console.log('[TemplateEditor] Form validation failed:', {
+      errors,
+      currentValues: {
+        title: values.title,
+        subject: values.subject,
+        htmlBodyLength: values.htmlBody?.length || 0,
+        htmlBodyPreview: values.htmlBody?.substring(0, 100),
+        status: values.status
+      }
+    });
     
     // Check if there are errors in the Details tab fields
     if (errors.title || errors.subject) {
