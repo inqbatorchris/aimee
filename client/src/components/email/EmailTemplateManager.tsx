@@ -274,49 +274,47 @@ export function EmailTemplateManager() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="w-20">Type</TableHead>
-                      <TableHead className="w-48">Name</TableHead>
-                      <TableHead className="w-64">Subject</TableHead>
-                      <TableHead className="w-40">Last Modified</TableHead>
-                      <TableHead className="w-24 text-right">Actions</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Subject</TableHead>
+                      <TableHead>Last Modified</TableHead>
+                      <TableHead className="w-16"></TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredTemplates.map((template) => (
-                      <TableRow key={template.id} data-testid={`template-row-${template.id}`}>
-                        <TableCell className="w-20">
+                      <TableRow 
+                        key={template.id} 
+                        data-testid={`template-row-${template.id}`}
+                        className="cursor-pointer hover:bg-muted/50"
+                        onClick={() => handleEdit(template)}
+                      >
+                        <TableCell>
                           <Badge variant="outline" className="text-xs">
                             {template.type}
                           </Badge>
                         </TableCell>
-                        <TableCell className="w-48 font-medium truncate">
+                        <TableCell className="font-medium">
                           {getTemplateDisplayName(template)}
                         </TableCell>
-                        <TableCell className="w-64 text-sm text-muted-foreground truncate">
+                        <TableCell className="text-sm text-muted-foreground">
                           {template.subject || <span className="italic opacity-50">No subject</span>}
                         </TableCell>
-                        <TableCell className="w-40 text-sm text-muted-foreground whitespace-nowrap">
+                        <TableCell className="text-sm text-muted-foreground">
                           {formatDate(template.updated_at)}
                         </TableCell>
-                        <TableCell className="w-24 text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleEdit(template)}
-                              data-testid={`button-edit-${template.id}`}
-                            >
-                              <Edit3 className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => handleDelete(template)}
-                              data-testid={`button-delete-${template.id}`}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
-                          </div>
+                        <TableCell className="w-16">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDelete(template);
+                            }}
+                            data-testid={`button-delete-${template.id}`}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
                         </TableCell>
                       </TableRow>
                     ))}
