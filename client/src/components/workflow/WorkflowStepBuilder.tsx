@@ -91,7 +91,7 @@ export default function WorkflowStepBuilder({
   objectives = []
 }: WorkflowStepBuilderProps) {
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
-  const [splynxProjects, setSplynxProjects] = useState<Array<{ id: number; name: string }>>([]);
+  const [splynxProjects, setSplynxProjects] = useState<Array<{ id: number; title: string }>>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [projectsError, setProjectsError] = useState<string | null>(null);
   const [cachedIntegrationId, setCachedIntegrationId] = useState<number | null>(null);
@@ -383,7 +383,7 @@ export default function WorkflowStepBuilder({
                       <SelectContent>
                         {splynxProjects.map(project => (
                           <SelectItem key={project.id} value={project.id.toString()}>
-                            {project.name}
+                            {project.title}
                           </SelectItem>
                         ))}
                       </SelectContent>
