@@ -542,13 +542,18 @@ export class WorkflowExecutor {
       
       console.log(`[WorkflowExecutor]   🔐 Credentials decrypted`);
       console.log(`[WorkflowExecutor]   🎬 Executing action: ${action}`);
-      console.log(`[WorkflowExecutor]   📝 Parameters:`, JSON.stringify(parameters, null, 2));
+      console.log(`[WorkflowExecutor]   📝 Original parameters:`, JSON.stringify(parameters, null, 2));
       
-      // Execute integration-specific action
+      // Process template variables in parameters recursively
+      const processedParameters = this.processParametersRecursively(parameters, context);
+      
+      console.log(`[WorkflowExecutor]   ✨ Processed parameters:`, JSON.stringify(processedParameters, null, 2));
+      
+      // Execute integration-specific action with processed parameters
       const result = await this.actionHandlers.executeIntegrationAction(
         integration.platformType,
         action,
-        parameters,
+        processedParameters,
         credentials,
         context
       );
@@ -1380,6 +1385,35 @@ export class WorkflowExecutor {
     return template.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, (match, path) => {
       return this.getNestedValue(context, path) || match;
     });
+  }
+
+  private processParametersRecursively(params: any, context: any): any {
+    // Handle null/undefined
+    if (params === null || params === undefined) {
+      return params;
+    }
+    
+    // Handle strings - apply template substitution
+    if (typeof params === 'string') {
+      return this.processTemplate(params, context);
+    }
+    
+    // Handle arrays - recursively process each element
+    if (Array.isArray(params)) {
+      return params.map(item => this.processParametersRecursively(item, context));
+    }
+    
+    // Handle objects - recursively process each property
+    if (typeof params === 'object') {
+      const processed: any = {};
+      for (const [key, value] of Object.entries(params)) {
+        processed[key] = this.processParametersRecursively(value, context);
+      }
+      return processed;
+    }
+    
+    // Return primitive values as-is (numbers, booleans, etc.)
+    return params;
   }
 
   private getNestedValue(obj: any, path: string): any {
