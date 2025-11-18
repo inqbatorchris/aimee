@@ -517,51 +517,260 @@ export class SplynxService {
     }
   }
 
-  async sendMassEmail(params: {
-    templateId: number;
-    customerIds?: number[];
-    customVariables?: Record<string, any>;
-  }): Promise<any> {
+  /**
+   * Helper: Fetch customer email address (with fallback to billing_email)
+   */
+  private async getCustomerEmail(customerId: number): Promise<string | null> {
     try {
-      const url = this.buildUrl('admin/messages/mass-sending');
+      const url = this.buildUrl(`admin/customers/customer/${customerId}`);
       
-      console.log('[SPLYNX sendMassEmail] Sending mass email with template:', params.templateId);
-      console.log('[SPLYNX sendMassEmail] Customer IDs:', params.customerIds?.length || 'all');
-      
-      const requestData: any = {
-        template_id: params.templateId,
-        type: 'email',
-      };
-
-      if (params.customerIds && params.customerIds.length > 0) {
-        requestData.customer_ids = params.customerIds;
-      }
-
-      if (params.customVariables) {
-        requestData.variables = params.customVariables;
-      }
-      
-      const response = await axios.post(url, requestData, {
+      const response = await axios.get(url, {
         headers: {
           'Authorization': this.credentials.authHeader,
           'Content-Type': 'application/json',
         },
       });
 
-      console.log('[SPLYNX sendMassEmail] Response:', response.status);
-      console.log('[SPLYNX sendMassEmail] Sent:', response.data);
+      const customer = response.data;
       
+      // Try email first, fallback to billing_email
+      const email = customer.email || customer.billing_email;
+      
+      if (!email) {
+        console.warn(`[SPLYNX getCustomerEmail] Customer ${customerId} has no email or billing_email`);
+        return null;
+      }
+      
+      return email;
+    } catch (error: any) {
+      console.error(`[SPLYNX getCustomerEmail] Error fetching customer ${customerId}:`, error.message);
+      throw new Error(`Failed to fetch customer ${customerId}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Helper: Render template with customer data
+   */
+  private async renderTemplate(templateId: number, customerId: number): Promise<string> {
+    try {
+      const url = this.buildUrl(`admin/config/templates/${templateId}-render-${customerId}`);
+      
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      return response.data?.result || '';
+    } catch (error: any) {
+      console.error(`[SPLYNX renderTemplate] Error rendering template ${templateId} for customer ${customerId}:`, error.message);
+      throw new Error(`Failed to render template: ${error.message}`);
+    }
+  }
+
+  /**
+   * Helper: Queue email in Splynx
+   */
+  private async queueEmail(params: {
+    recipient: string;
+    subject: string;
+    message: string;
+    customerId: number;
+  }): Promise<number> {
+    try {
+      const url = this.buildUrl('admin/config/mail');
+      
+      const emailData = {
+        type: 'message',
+        subject: params.subject,
+        recipient: params.recipient,
+        message: params.message,
+        customer_id: params.customerId,
+        status: 'new',
+      };
+      
+      const response = await axios.post(url, emailData, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const emailId = response.data?.id;
+      
+      if (!emailId) {
+        throw new Error('No email ID returned from queue');
+      }
+      
+      return emailId;
+    } catch (error: any) {
+      console.error(`[SPLYNX queueEmail] Error queueing email for ${params.recipient}:`, error.message);
+      throw new Error(`Failed to queue email: ${error.message}`);
+    }
+  }
+
+  /**
+   * Helper: Force send a queued email
+   */
+  private async forceSendEmail(emailId: number): Promise<void> {
+    try {
+      const url = this.buildUrl(`admin/config/mail/${emailId}--send`);
+      
+      await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+    } catch (error: any) {
+      console.error(`[SPLYNX forceSendEmail] Error sending email ${emailId}:`, error.message);
+      throw new Error(`Failed to send email: ${error.message}`);
+    }
+  }
+
+  /**
+   * Helper: Merge custom variables into HTML content
+   */
+  private mergeCustomVariables(html: string, customVariables?: Record<string, any>): string {
+    if (!customVariables) {
+      return html;
+    }
+
+    let mergedHtml = html;
+    
+    // Replace {{variable}} patterns with custom variable values
+    for (const [key, value] of Object.entries(customVariables)) {
+      const pattern = new RegExp(`{{\\s*${key}\\s*}}`, 'g');
+      mergedHtml = mergedHtml.replace(pattern, String(value));
+    }
+    
+    return mergedHtml;
+  }
+
+  /**
+   * Send mass email campaign using Splynx's 3-step process:
+   * 1. Render template with customer data
+   * 2. Queue email
+   * 3. Force send
+   */
+  async sendMassEmail(params: {
+    templateId: number;
+    customerIds?: number[];
+    customVariables?: Record<string, any>;
+    subject?: string;
+  }): Promise<any> {
+    console.log('[SPLYNX sendMassEmail] Starting mass email campaign');
+    console.log('[SPLYNX sendMassEmail] Template ID:', params.templateId);
+    console.log('[SPLYNX sendMassEmail] Customer IDs:', params.customerIds?.length || 'none provided');
+    console.log('[SPLYNX sendMassEmail] Custom variables:', params.customVariables ? Object.keys(params.customVariables) : 'none');
+
+    if (!params.customerIds || params.customerIds.length === 0) {
+      console.warn('[SPLYNX sendMassEmail] No customer IDs provided, cannot send emails');
       return {
         success: true,
-        sentCount: response.data?.sent_count || params.customerIds?.length || 0,
-        failedCount: response.data?.failed_count || 0,
-        details: response.data
+        sentCount: 0,
+        failedCount: 0,
+        failures: [],
       };
-    } catch (error: any) {
-      console.error('[SPLYNX sendMassEmail] Error:', error.message);
-      console.error('[SPLYNX sendMassEmail] Response:', error.response?.data);
-      throw new Error(`Failed to send mass email via Splynx: ${error.message}`);
     }
+
+    const results = {
+      sentCount: 0,
+      failedCount: 0,
+      failures: [] as Array<{ customerId: number; step: string; error: string }>,
+    };
+
+    // Get template to extract subject if not provided
+    let templateSubject = params.subject || 'Email Campaign';
+    if (!params.subject) {
+      try {
+        const templateUrl = this.buildUrl(`admin/config/templates/${params.templateId}`);
+        const templateResponse = await axios.get(templateUrl, {
+          headers: {
+            'Authorization': this.credentials.authHeader,
+            'Content-Type': 'application/json',
+          },
+        });
+        templateSubject = templateResponse.data?.subject || templateSubject;
+      } catch (error) {
+        console.warn('[SPLYNX sendMassEmail] Failed to fetch template subject, using default');
+      }
+    }
+
+    // Process each customer sequentially
+    for (const customerId of params.customerIds) {
+      try {
+        console.log(`[SPLYNX sendMassEmail] Processing customer ${customerId}...`);
+        
+        // Step 1: Get customer email
+        const customerEmail = await this.getCustomerEmail(customerId);
+        
+        if (!customerEmail) {
+          results.failedCount++;
+          results.failures.push({
+            customerId,
+            step: 'fetch_email',
+            error: 'No email address found',
+          });
+          continue;
+        }
+
+        // Step 2: Render template with customer data
+        let renderedHtml = await this.renderTemplate(params.templateId, customerId);
+        
+        // Merge custom variables into rendered HTML
+        renderedHtml = this.mergeCustomVariables(renderedHtml, params.customVariables);
+
+        // Step 3: Queue email
+        const emailId = await this.queueEmail({
+          recipient: customerEmail,
+          subject: templateSubject,
+          message: renderedHtml,
+          customerId,
+        });
+
+        // Step 4: Force send
+        await this.forceSendEmail(emailId);
+
+        results.sentCount++;
+        console.log(`[SPLYNX sendMassEmail] ✅ Successfully sent email to customer ${customerId} (${customerEmail})`);
+        
+      } catch (error: any) {
+        results.failedCount++;
+        
+        // Determine which step failed
+        let step = 'unknown';
+        if (error.message.includes('fetch customer')) {
+          step = 'fetch_email';
+        } else if (error.message.includes('render template')) {
+          step = 'render_template';
+        } else if (error.message.includes('queue email')) {
+          step = 'queue_email';
+        } else if (error.message.includes('send email')) {
+          step = 'force_send';
+        }
+        
+        results.failures.push({
+          customerId,
+          step,
+          error: error.message,
+        });
+        
+        console.error(`[SPLYNX sendMassEmail] ❌ Failed for customer ${customerId}:`, error.message);
+      }
+    }
+
+    console.log('[SPLYNX sendMassEmail] Campaign complete:');
+    console.log('[SPLYNX sendMassEmail]   Sent:', results.sentCount);
+    console.log('[SPLYNX sendMassEmail]   Failed:', results.failedCount);
+    
+    return {
+      success: results.failedCount === 0,
+      sentCount: results.sentCount,
+      failedCount: results.failedCount,
+      failures: results.failures,
+    };
   }
 
   async executeAction(action: string, parameters: any = {}): Promise<any> {
