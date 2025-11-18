@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../db';
-import { fiberNetworkNodes, fiberNetworkActivityLogs, workItems, insertFiberNetworkNode } from '../../shared/schema';
+import { fiberNetworkNodes, fiberNetworkActivityLogs, workItems, insertFiberNetworkNodeSchema } from '../../shared/schema';
 import { eq, and, sql, inArray } from 'drizzle-orm';
 import { authenticateToken } from '../auth';
 import { z } from 'zod';
@@ -8,16 +8,9 @@ import { z } from 'zod';
 const router = Router();
 
 // Validation schema for creating fiber network node
-const createNodeSchema = insertFiberNetworkNode.extend({
+const createNodeSchema = insertFiberNetworkNodeSchema.extend({
   latitude: z.number().min(-90).max(90),
   longitude: z.number().min(-180).max(180)
-}).omit({ 
-  id: true, 
-  organizationId: true, 
-  createdBy: true, 
-  updatedBy: true, 
-  createdAt: true, 
-  updatedAt: true 
 });
 
 // Create a new fiber network node
