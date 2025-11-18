@@ -199,7 +199,7 @@ export default function CreateFiberNode({ onComplete }: CreateFiberNodeProps) {
       // Save fiber node to IndexedDB
       await fieldDB.saveFiberNetworkNode(nodeData);
       
-      // Add node to sync queue
+      // Add node to sync queue (server will auto-create the sign-off work item)
       await fieldDB.addToSyncQueue('fiberNetworkNode', 'create', nodeId, {
         name: nodeData.name,
         nodeType: nodeData.nodeType,
@@ -212,52 +212,6 @@ export default function CreateFiberNode({ onComplete }: CreateFiberNodeProps) {
         notes: nodeData.notes,
         photos: nodeData.photos,
         fiberDetails: {}
-      });
-      
-      // Create automatic work item for sign-off
-      const workItemId = Date.now();
-      const dueDate = new Date();
-      dueDate.setDate(dueDate.getDate() + 7); // +7 days
-      
-      const workItem = {
-        id: workItemId,
-        title: `New node sign off: ${name.trim()}`,
-        description: `Sign-off required for fiber network node:\n\n` +
-                     `Node: ${name.trim()}\n` +
-                     `Type: ${nodeType}\n` +
-                     `Network: ${network}\n` +
-                     `Location: ${gpsLocation.latitude.toFixed(6)}, ${gpsLocation.longitude.toFixed(6)}\n` +
-                     `Address: ${address.trim() || 'Not provided'}\n` +
-                     `Created: ${new Date().toLocaleString()}`,
-        status: 'Planning',
-        priority: 'medium',
-        assigneeId: session.userId,
-        assigneeName: session.email,
-        dueDate: dueDate.toISOString(),
-        workflowTemplateId: 'fiber-node-signoff-v1',
-        organizationId: session.organizationId,
-        workflowMetadata: {
-          fiberNodeId: nodeId,
-          fiberNodeName: name.trim(),
-          nodeLocation: {
-            latitude: gpsLocation.latitude,
-            longitude: gpsLocation.longitude,
-            address: address.trim()
-          },
-          createdInField: true
-        }
-      };
-      
-      // Save work item to IndexedDB
-      await fieldDB.saveWorkItems([workItem as any]);
-      
-      // Add work item to sync queue
-      await fieldDB.addToSyncQueue('workItem', 'create', workItemId, workItem);
-      
-      // Update fiber node with work item ID
-      await fieldDB.saveFiberNetworkNode({
-        ...nodeData,
-        workItemId
       });
       
       setSuccess(true);
@@ -285,11 +239,11 @@ export default function CreateFiberNode({ onComplete }: CreateFiberNodeProps) {
     return (
       <div className="flex flex-col items-center justify-center p-8 text-center">
         <CheckCircle className="h-16 w-16 text-emerald-400 mb-4" />
-        <h2 className="text-xl font-semibold mb-2">Node & Work Item Created</h2>
+        <h2 className="text-xl font-semibold mb-2">Fiber Node Created</h2>
         <p className="text-zinc-400 mb-4">{name} saved offline</p>
         <p className="text-sm text-zinc-500 mb-4">
-          Sign-off work item created<br />
-          Will sync when you go online
+          Node and photos stored locally<br />
+          Sign-off work item will be created on sync
         </p>
       </div>
     );

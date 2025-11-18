@@ -100,6 +100,47 @@ export default function Sync({ session, onComplete }: SyncProps) {
               mimeType: photo.mimeType
             });
           }
+        } else if (item.type === 'fiberNetworkNode') {
+          // Handle fiber network node with photos
+          const nodeData = { ...item.data };
+          
+          // If node has photos, retrieve them from IndexedDB and convert to base64
+          if (nodeData.photos && Array.isArray(nodeData.photos) && nodeData.photos.length > 0) {
+            const photoDataArray = [];
+            
+            for (const photoId of nodeData.photos) {
+              const photo = await fieldDB.getPhoto(photoId);
+              if (photo) {
+                // Convert photo to base64
+                let blob: Blob;
+                if (photo.arrayBuffer) {
+                  blob = new Blob([photo.arrayBuffer], { type: photo.mimeType });
+                } else if (photo.blob) {
+                  blob = photo.blob;
+                } else {
+                  console.warn('Photo has no data:', photoId);
+                  continue;
+                }
+                
+                // Convert blob to base64
+                const reader = new FileReader();
+                const base64Data = await new Promise<string>((resolve) => {
+                  reader.onloadend = () => resolve(reader.result as string);
+                  reader.readAsDataURL(blob);
+                });
+                
+                photoDataArray.push({ data: base64Data });
+              }
+            }
+            
+            // Replace photo IDs with photo data
+            nodeData.photos = photoDataArray;
+          }
+          
+          updates.push({
+            ...item,
+            data: nodeData
+          });
         } else {
           updates.push(item);
         }
