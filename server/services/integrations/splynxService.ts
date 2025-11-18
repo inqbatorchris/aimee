@@ -538,11 +538,13 @@ export class SplynxService {
       
       // Handle scheduled_from (start date/time)
       if (taskData.scheduledFrom) {
-        // Handle relative dates like "+7 days", "+2 hours", or "+1 day 3 hours"
-        if (taskData.scheduledFrom.startsWith('+')) {
-          const date = new Date();
-          let hasValidParse = false;
-          
+        const date = new Date();
+        let hasValidParse = false;
+        
+        // Check if it's a relative date (starts with + or is just a number)
+        const isRelative = taskData.scheduledFrom.startsWith('+') || /^\d+$/.test(taskData.scheduledFrom.trim());
+        
+        if (isRelative) {
           // Try to parse all time segments (days, hours, minutes)
           const dayMatch = taskData.scheduledFrom.match(/(\d+)\s*day/i);
           const hourMatch = taskData.scheduledFrom.match(/(\d+)\s*hour/i);
@@ -569,10 +571,11 @@ export class SplynxService {
           
           if (!hasValidParse) {
             // Fallback: try to parse as just a number (assume days)
-            const numMatch = taskData.scheduledFrom.match(/\+\s*(\d+)/);
+            const numMatch = taskData.scheduledFrom.match(/\+?\s*(\d+)/);
             if (numMatch) {
               date.setDate(date.getDate() + parseInt(numMatch[1]));
               date.setHours(9, 0, 0, 0);
+              hasValidParse = true;
             }
           }
           
