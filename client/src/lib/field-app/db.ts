@@ -525,7 +525,22 @@ class FieldDatabase {
 
   async getAllUnsyncedFiberNodes(): Promise<FieldAppDB['fiberNetworkNodes']['value'][]> {
     const db = await this.ensureDB();
-    return db.getAllFromIndex('fiberNetworkNodes', 'by-sync-status', false);
+    // Return ALL fiber nodes created locally (both synced and unsynced)
+    // This allows users to see their locally-created nodes even after sync
+    return db.getAll('fiberNetworkNodes');
+  }
+
+  async markFiberNodeAsSynced(localId: string, serverId: number): Promise<void> {
+    const db = await this.ensureDB();
+    const node = await db.get('fiberNetworkNodes', localId);
+    
+    if (node) {
+      await db.put('fiberNetworkNodes', {
+        ...node,
+        syncedToServer: true,
+        serverId
+      });
+    }
   }
 
   async deleteFiberNetworkNode(id: string): Promise<void> {

@@ -237,8 +237,9 @@ export default function Sync({ session, onComplete }: SyncProps) {
             // The server ID (result.serverId) is the database ID
             console.log('[Sync] Mapping fiber node:', { localId: result.id, serverId: result.serverId });
             
-            // For now, we'll just mark it as synced via the queue cleanup
-            // In the future, we could update the node record to store both IDs
+            // Mark the fiber node as synced in IndexedDB
+            await fieldDB.markFiberNodeAsSynced(result.id as string, result.serverId);
+            console.log('[Sync] Marked fiber node as synced:', result.id);
           }
         }
       }
