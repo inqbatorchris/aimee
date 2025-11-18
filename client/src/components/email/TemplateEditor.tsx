@@ -67,6 +67,7 @@ const AVAILABLE_VARIABLES = [
   { key: '{{customer.login}}', label: 'Customer Login', description: 'Login username' },
   { key: '{{company.name}}', label: 'Company Name', description: 'Your company name' },
   { key: '{{company.email}}', label: 'Company Email', description: 'Your company email' },
+  { key: '[[ custom.your_var ]]', label: 'Custom Variable', description: 'Add your own variables using [[  ]] syntax' },
 ];
 
 export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorProps) {
@@ -276,7 +277,7 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
                           />
                         </FormControl>
                         <FormDescription className="text-xs">
-                          Use variables like {'{{customer.name}}'}, {'{{company.name}}'}, etc.
+                          Use {'{{customer.name}}'} for Splynx data, [[ custom.your_var ]] for workflow variables
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
