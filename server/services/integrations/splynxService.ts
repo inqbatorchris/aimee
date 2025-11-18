@@ -523,6 +523,7 @@ export class SplynxService {
   private async getCustomerEmail(customerId: number): Promise<string | null> {
     try {
       const url = this.buildUrl(`admin/customers/customer/${customerId}`);
+      console.log(`[SPLYNX getCustomerEmail] Fetching email for customer ${customerId}`);
       
       const response = await axios.get(url, {
         headers: {
@@ -537,13 +538,15 @@ export class SplynxService {
       const email = customer.email || customer.billing_email;
       
       if (!email) {
-        console.warn(`[SPLYNX getCustomerEmail] Customer ${customerId} has no email or billing_email`);
+        console.warn(`[SPLYNX getCustomerEmail] ⚠️ Customer ${customerId} has no email or billing_email`);
         return null;
       }
       
+      console.log(`[SPLYNX getCustomerEmail] ✅ Found email: ${email} for customer ${customerId}`);
       return email;
     } catch (error: any) {
-      console.error(`[SPLYNX getCustomerEmail] Error fetching customer ${customerId}:`, error.message);
+      console.error(`[SPLYNX getCustomerEmail] ❌ Error fetching customer ${customerId}:`, error.message);
+      console.error(`[SPLYNX getCustomerEmail] ❌ Status: ${error.response?.status}, Data:`, error.response?.data);
       throw new Error(`Failed to fetch customer ${customerId}: ${error.message}`);
     }
   }
@@ -554,6 +557,7 @@ export class SplynxService {
   private async renderTemplate(templateId: number, customerId: number): Promise<string> {
     try {
       const url = this.buildUrl(`admin/config/templates/${templateId}-render-${customerId}`);
+      console.log(`[SPLYNX renderTemplate] Requesting: ${url}`);
       
       const response = await axios.get(url, {
         headers: {
@@ -562,9 +566,13 @@ export class SplynxService {
         },
       });
 
+      console.log(`[SPLYNX renderTemplate] ✅ Response status: ${response.status}`);
+      console.log(`[SPLYNX renderTemplate] ✅ Rendered HTML length: ${response.data?.result?.length || 0} characters`);
+      
       return response.data?.result || '';
     } catch (error: any) {
-      console.error(`[SPLYNX renderTemplate] Error rendering template ${templateId} for customer ${customerId}:`, error.message);
+      console.error(`[SPLYNX renderTemplate] ❌ Error rendering template ${templateId} for customer ${customerId}:`, error.message);
+      console.error(`[SPLYNX renderTemplate] ❌ Status: ${error.response?.status}, Data:`, error.response?.data);
       throw new Error(`Failed to render template: ${error.message}`);
     }
   }
@@ -580,6 +588,8 @@ export class SplynxService {
   }): Promise<number> {
     try {
       const url = this.buildUrl('admin/config/mail');
+      console.log(`[SPLYNX queueEmail] Queuing email to: ${params.recipient}`);
+      console.log(`[SPLYNX queueEmail] Subject: ${params.subject}`);
       
       const emailData = {
         type: 'message',
@@ -598,6 +608,8 @@ export class SplynxService {
       });
 
       const emailId = response.data?.id;
+      console.log(`[SPLYNX queueEmail] ✅ Email queued with ID: ${emailId}`);
+      console.log(`[SPLYNX queueEmail] ✅ Full response:`, JSON.stringify(response.data));
       
       if (!emailId) {
         throw new Error('No email ID returned from queue');
@@ -605,7 +617,8 @@ export class SplynxService {
       
       return emailId;
     } catch (error: any) {
-      console.error(`[SPLYNX queueEmail] Error queueing email for ${params.recipient}:`, error.message);
+      console.error(`[SPLYNX queueEmail] ❌ Error queueing email for ${params.recipient}:`, error.message);
+      console.error(`[SPLYNX queueEmail] ❌ Status: ${error.response?.status}, Data:`, error.response?.data);
       throw new Error(`Failed to queue email: ${error.message}`);
     }
   }
@@ -616,15 +629,21 @@ export class SplynxService {
   private async forceSendEmail(emailId: number): Promise<void> {
     try {
       const url = this.buildUrl(`admin/config/mail/${emailId}--send`);
+      console.log(`[SPLYNX forceSendEmail] Force sending email ID: ${emailId}`);
+      console.log(`[SPLYNX forceSendEmail] Request URL: ${url}`);
       
-      await axios.get(url, {
+      const response = await axios.get(url, {
         headers: {
           'Authorization': this.credentials.authHeader,
           'Content-Type': 'application/json',
         },
       });
+      
+      console.log(`[SPLYNX forceSendEmail] ✅ Response status: ${response.status}`);
+      console.log(`[SPLYNX forceSendEmail] ✅ Email sent successfully!`);
     } catch (error: any) {
-      console.error(`[SPLYNX forceSendEmail] Error sending email ${emailId}:`, error.message);
+      console.error(`[SPLYNX forceSendEmail] ❌ Error sending email ${emailId}:`, error.message);
+      console.error(`[SPLYNX forceSendEmail] ❌ Status: ${error.response?.status}, Data:`, error.response?.data);
       throw new Error(`Failed to send email: ${error.message}`);
     }
   }
