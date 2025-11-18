@@ -428,6 +428,24 @@ export default function WorkflowStepBuilder({
                     Use +N days for relative dates
                   </p>
                 </div>
+
+                <div>
+                  <Label>Workflow Status ID</Label>
+                  <Input
+                    placeholder="e.g., 1"
+                    type="number"
+                    value={step.config.parameters?.workflowStatusId || ''}
+                    onChange={(e) => updateStep(step.id, {
+                      config: {
+                        ...step.config,
+                        parameters: { ...step.config.parameters, workflowStatusId: e.target.value ? parseInt(e.target.value) : undefined }
+                      }
+                    })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    The workflow status for this task (check your Splynx project settings)
+                  </p>
+                </div>
               </div>
             )}
 

@@ -442,6 +442,7 @@ export class SplynxService {
     customer_id?: string | number;
     description?: string;
     dueDate?: string;
+    workflowStatusId?: number;
     assignee_id?: number;
     priority?: 'low' | 'medium' | 'high';
     status?: string;
@@ -454,12 +455,30 @@ export class SplynxService {
       console.log('[SPLYNX createSplynxTask] Creating task at:', url);
       console.log('[SPLYNX createSplynxTask] Input data:', JSON.stringify(taskData, null, 2));
       
+      // Validate required fields
+      const title = taskData.taskName || taskData.name;
+      const projectId = taskData.projectId || taskData.project_id;
+      
+      if (!title) {
+        throw new Error('Task name is required. Please set the "Task Name" field in your workflow configuration.');
+      }
+      
+      if (!projectId) {
+        throw new Error('Project ID is required. Please select a project from the "Project/Task Type" dropdown in your workflow configuration.');
+      }
+      
+      if (!taskData.workflowStatusId) {
+        console.warn('[SPLYNX createSplynxTask] ⚠️ No workflowStatusId provided - you must specify a valid Workflow Status ID for your project.');
+        console.warn('[SPLYNX createSplynxTask] ⚠️ Check your Splynx project settings to find the correct workflow_status_id value.');
+        throw new Error('Workflow Status ID is required. Please set the "Workflow Status ID" field in your workflow configuration. Check your Splynx project settings to find valid status IDs.');
+      }
+      
       // Transform frontend parameters to Splynx API format
       const splynxPayload: any = {
-        title: taskData.taskName || taskData.name,
-        project_id: taskData.projectId || taskData.project_id,
+        title: title,
+        project_id: projectId,
         partner_id: 1, // Default partner ID - required by Splynx
-        workflow_status_id: 1, // Default status - required by Splynx
+        workflow_status_id: taskData.workflowStatusId,
       };
 
       // Add optional fields
