@@ -650,7 +650,7 @@ export class SplynxService {
 
   /**
    * Helper: Merge custom variables into HTML content
-   * Uses {{ custom.* }} namespace to avoid conflicts with Splynx's {{ customer.* }} variables
+   * Uses [[ custom.* ]] syntax to avoid conflicts with Splynx's Twig engine {{ variable }} syntax
    */
   private mergeCustomVariables(html: string, customVariables?: Record<string, any>): string {
     if (!customVariables) {
@@ -660,13 +660,13 @@ export class SplynxService {
     let mergedHtml = html;
     const replacedVariables: string[] = [];
     
-    // Replace {{ custom.variable }} patterns with custom variable values
+    // Replace [[ custom.variable ]] patterns with custom variable values
     for (const [key, value] of Object.entries(customVariables)) {
       // Ensure key uses custom.* namespace
       const variableName = key.startsWith('custom.') ? key : `custom.${key}`;
       
-      // Create regex pattern to match {{ custom.variable }} (with optional whitespace)
-      const pattern = new RegExp(`{{\\s*${variableName.replace('.', '\\.')}\\s*}}`, 'g');
+      // Create regex pattern to match [[ custom.variable ]] (with optional whitespace)
+      const pattern = new RegExp(`\\[\\[\\s*${variableName.replace('.', '\\.')}\\s*\\]\\]`, 'g');
       
       // Count matches before replacement
       const matches = (mergedHtml.match(pattern) || []).length;
@@ -680,7 +680,7 @@ export class SplynxService {
     if (replacedVariables.length > 0) {
       console.log(`[SPLYNX mergeCustomVariables] ✅ Replaced ${replacedVariables.length} custom variable(s):`, replacedVariables);
     } else {
-      console.warn(`[SPLYNX mergeCustomVariables] ⚠️ No custom.* variables found in HTML. Make sure your template uses {{ custom.variableName }} syntax.`);
+      console.warn(`[SPLYNX mergeCustomVariables] ⚠️ No [[ custom.* ]] variables found in HTML. Make sure your template uses [[ custom.variableName ]] syntax.`);
     }
     
     return mergedHtml;
@@ -847,7 +847,7 @@ export class SplynxService {
       if (params.customVariables) {
         for (const [key, value] of Object.entries(params.customVariables)) {
           const variableName = key.startsWith('custom.') ? key : `custom.${key}`;
-          const pattern = new RegExp(`{{\\s*${variableName.replace('.', '\\.')}\\s*}}`, 'g');
+          const pattern = new RegExp(`\\[\\[\\s*${variableName.replace('.', '\\.')}\\s*\\]\\]`, 'g');
           const matches = (renderedHtml.match(pattern) || []).length;
 
           if (matches > 0) {

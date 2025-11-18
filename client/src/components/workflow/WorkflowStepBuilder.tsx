@@ -257,7 +257,7 @@ function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
             <p className="text-xs text-destructive mt-1">{jsonError}</p>
           ) : (
             <p className="text-xs text-gray-500 mt-1">
-              Use <code className="text-xs bg-muted px-1 rounded">custom.*</code> namespace for your variables. Example: <code className="text-xs bg-muted px-1 rounded">{'{"custom.name": "value"}'}</code>
+              Use <code className="text-xs bg-muted px-1 rounded">[[ custom.name ]]</code> in your template, then define values here. Example: <code className="text-xs bg-muted px-1 rounded">{'{"custom.name": "value"}'}</code>
             </p>
           )}
         </div>
@@ -319,7 +319,7 @@ function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
                   <div className="mt-1 space-y-1">
                     {Object.entries(parsedCustomVariables).map(([key, value]) => (
                       <div key={key} className="text-xs bg-muted p-2 rounded">
-                        <div className="font-mono text-primary">{'{{'} {key} {'}}'}</div>
+                        <div className="font-mono text-primary">[[ {key} ]]</div>
                         <div className="text-muted-foreground mt-0.5">→ {String(value)}</div>
                       </div>
                     ))}
