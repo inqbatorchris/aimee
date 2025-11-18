@@ -242,7 +242,7 @@ function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
         <div>
           <Label>Custom Variables (optional, JSON)</Label>
           <Textarea
-            placeholder='{"custom.month": "January", "custom.offer": "50% off"}'
+            placeholder='{"custom_month": "January", "custom_offer": "50% off"}'
             rows={3}
             value={step.config.parameters?.customVariables || ''}
             onChange={(e) => updateStep(step.id, {
@@ -257,7 +257,7 @@ function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
             <p className="text-xs text-destructive mt-1">{jsonError}</p>
           ) : (
             <p className="text-xs text-gray-500 mt-1">
-              Use <code className="text-xs bg-muted px-1 rounded">[[ custom.name ]]</code> in your template, then define values here. Example: <code className="text-xs bg-muted px-1 rounded">{'{"custom.name": "value"}'}</code>
+              Use <code className="text-xs bg-muted px-1 rounded">[[ custom_name ]]</code> in your template, then define values here. Example: <code className="text-xs bg-muted px-1 rounded">{'{"custom_name": "value"}'}</code>
             </p>
           )}
         </div>
