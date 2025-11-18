@@ -344,10 +344,11 @@ export default function FiberNetwork() {
   // Create node mutation
   const createNodeMutation = useMutation({
     mutationFn: async (nodeData: typeof newNodeData) => {
-      return apiRequest('/api/fiber-network/nodes', {
+      const response = await apiRequest('/api/fiber-network/nodes', {
         method: 'POST',
         body: nodeData,
       });
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
