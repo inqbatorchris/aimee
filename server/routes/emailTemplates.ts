@@ -2,6 +2,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { insertEmailTemplateSchema } from '../../shared/schema';
 import { emailTemplateService } from '../services/emailTemplateService';
+import { authenticateToken } from '../auth.js';
+import { storage } from '../storage.js';
 
 const router = Router();
 
@@ -9,14 +11,14 @@ const router = Router();
  * GET /api/email-templates
  * List all email templates for the organization
  */
-router.get('/', async (req, res) => {
+router.get('/', authenticateToken, async (req, res) => {
   try {
     const user = (req as any).user;
     if (!user) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const templates = await (req as any).storage.getEmailTemplates(user.organizationId);
+    const templates = await storage.getEmailTemplates(user.organizationId);
     res.json(templates);
   } catch (error: any) {
     console.error('[EmailTemplates API] Error fetching templates:', error);
@@ -28,7 +30,7 @@ router.get('/', async (req, res) => {
  * GET /api/email-templates/:id
  * Get a single email template
  */
-router.get('/:id', async (req, res) => {
+router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const user = (req as any).user;
     if (!user) {
@@ -40,7 +42,7 @@ router.get('/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid template ID' });
     }
 
-    const template = await (req as any).storage.getEmailTemplate(user.organizationId, id);
+    const template = await storage.getEmailTemplate(user.organizationId, id);
     if (!template) {
       return res.status(404).json({ error: 'Template not found' });
     }
@@ -56,12 +58,14 @@ router.get('/:id', async (req, res) => {
  * POST /api/email-templates
  * Create a new email template
  */
-router.post('/', async (req, res) => {
+router.post('/', authenticateToken, async (req, res) => {
   try {
     const user = (req as any).user;
     if (!user) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
+
+    console.log('[EmailTemplates API] Creating template:', req.body);
 
     // Validate request body
     const templateData = insertEmailTemplateSchema.parse({
@@ -69,7 +73,8 @@ router.post('/', async (req, res) => {
       organizationId: user.organizationId,
     });
 
-    const created = await (req as any).storage.createEmailTemplate(templateData);
+    const created = await storage.createEmailTemplate(templateData);
+    console.log('[EmailTemplates API] Template created successfully:', created.id);
     res.status(201).json(created);
   } catch (error: any) {
     console.error('[EmailTemplates API] Error creating template:', error);
@@ -84,7 +89,7 @@ router.post('/', async (req, res) => {
  * PATCH /api/email-templates/:id
  * Update an existing email template
  */
-router.patch('/:id', async (req, res) => {
+router.patch('/:id', authenticateToken, async (req, res) => {
   try {
     const user = (req as any).user;
     if (!user) {
@@ -96,7 +101,7 @@ router.patch('/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid template ID' });
     }
 
-    const updated = await (req as any).storage.updateEmailTemplate(
+    const updated = await storage.updateEmailTemplate(
       user.organizationId,
       id,
       req.body
@@ -117,7 +122,7 @@ router.patch('/:id', async (req, res) => {
  * DELETE /api/email-templates/:id
  * Delete an email template
  */
-router.delete('/:id', async (req, res) => {
+router.delete('/:id', authenticateToken, async (req, res) => {
   try {
     const user = (req as any).user;
     if (!user) {
@@ -129,7 +134,7 @@ router.delete('/:id', async (req, res) => {
       return res.status(400).json({ error: 'Invalid template ID' });
     }
 
-    const deleted = await (req as any).storage.deleteEmailTemplate(user.organizationId, id);
+    const deleted = await storage.deleteEmailTemplate(user.organizationId, id);
     if (!deleted) {
       return res.status(404).json({ error: 'Template not found' });
     }
@@ -145,7 +150,7 @@ router.delete('/:id', async (req, res) => {
  * POST /api/email-templates/:id/preview
  * Preview email template with variable replacement
  */
-router.post('/:id/preview', async (req, res) => {
+router.post('/:id/preview', authenticateToken, async (req, res) => {
   try {
     const user = (req as any).user;
     if (!user) {
@@ -157,7 +162,7 @@ router.post('/:id/preview', async (req, res) => {
       return res.status(400).json({ error: 'Invalid template ID' });
     }
 
-    const template = await (req as any).storage.getEmailTemplate(user.organizationId, id);
+    const template = await storage.getEmailTemplate(user.organizationId, id);
     if (!template) {
       return res.status(404).json({ error: 'Template not found' });
     }
