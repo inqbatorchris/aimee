@@ -1,4 +1,6 @@
 import axios from 'axios';
+import { EmailTemplateService } from '../emailTemplateService';
+import type { EmailTemplate } from '../../../shared/schema';
 
 interface SplynxCredentials {
   baseUrl: string;
@@ -379,7 +381,7 @@ export class SplynxService {
   /**
    * Helper: Fetch customer email address (with fallback to billing_email)
    */
-  private async getCustomerEmail(customerId: number): Promise<string | null> {
+  async getCustomerEmail(customerId: number): Promise<string | null> {
     try {
       const url = this.buildUrl(`admin/customers/customer/${customerId}`);
       console.log(`[SPLYNX getCustomerEmail] Fetching email for customer ${customerId}`);
@@ -563,32 +565,6 @@ export class SplynxService {
 
       case 'get_task_types':
         return await this.getTaskTypes();
-
-      case 'send_email_campaign':
-        // Parse customerIds from string if needed
-        let customerIds = parameters.customerIds;
-        if (typeof customerIds === 'string' && customerIds.trim()) {
-          customerIds = customerIds.split(',').map((id: string) => parseInt(id.trim())).filter(Boolean);
-        } else if (!Array.isArray(customerIds)) {
-          customerIds = undefined;
-        }
-
-        // Parse customVariables from JSON string if needed
-        let customVariables = parameters.customVariables;
-        if (typeof customVariables === 'string' && customVariables.trim()) {
-          try {
-            customVariables = JSON.parse(customVariables);
-          } catch (error) {
-            console.warn('[SPLYNX executeAction] Failed to parse customVariables JSON, using empty object');
-            customVariables = {};
-          }
-        }
-
-        return await this.sendMassEmail({
-          templateId: parseInt(parameters.templateId),
-          customerIds,
-          customVariables
-        });
         
       default:
         throw new Error(`Unknown Splynx action: ${action}`);
