@@ -11,6 +11,7 @@ import type { Integration, KeyResult, Objective } from '@shared/schema';
 import DataSourceQueryBuilder from './DataSourceQueryBuilder';
 import SplynxQueryBuilder from './SplynxQueryBuilder';
 import { VariableFieldPicker } from './VariableFieldPicker';
+import { DataInspectorPanel } from './DataInspectorPanel';
 
 interface WorkflowStep {
   id: string;
@@ -836,8 +837,9 @@ export default function WorkflowStepBuilder({
                   No child steps. Click "Add Child Step" to configure loop body.
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {childSteps.map((childStep: WorkflowStep, childIndex: number) => {
+                <div className="flex gap-4">
+                  <div className="flex-1 space-y-2">
+                    {childSteps.map((childStep: WorkflowStep, childIndex: number) => {
                     const childStepType = STEP_TYPES[childStep.type];
                     const updateChildStep = (updates: Partial<WorkflowStep>) => {
                       const updated = [...childSteps];
@@ -1201,6 +1203,8 @@ export default function WorkflowStepBuilder({
                       </div>
                     );
                   })}
+                  </div>
+                  <DataInspectorPanel steps={steps} currentStepIndex={index} />
                 </div>
               )}
             </div>
