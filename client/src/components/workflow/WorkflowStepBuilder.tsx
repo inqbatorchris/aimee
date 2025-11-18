@@ -52,7 +52,6 @@ interface EmailCampaignConfigProps {
  */
 function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
   const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [selectedPreviewCustomerId, setSelectedPreviewCustomerId] = useState<string>('');
   const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
   const { toast } = useToast();
   
@@ -60,12 +59,6 @@ function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
     queryKey: ['/api/email-templates'],
     retry: 1,
   });
-
-  // Get customer IDs from the config
-  const customerIdsStr = step.config.parameters?.customerIds || '';
-  const customerIds = customerIdsStr.trim() 
-    ? customerIdsStr.split(',').map((id: string) => id.trim()).filter(Boolean)
-    : [];
 
   // Parse custom variables
   const customVariablesStr = step.config.parameters?.customVariables || '';
@@ -246,7 +239,7 @@ function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
           variant="outline"
           size="sm"
           onClick={handlePreview}
-          disabled={!step.config.parameters?.templateId || customerIds.length === 0 || !!jsonError}
+          disabled={!step.config.parameters?.templateId || !!jsonError}
           className="w-full"
           data-testid="button-preview-email"
         >
@@ -260,71 +253,48 @@ function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
           <DialogHeader>
             <DialogTitle>Email Template Preview</DialogTitle>
             <DialogDescription>
-              See how your email will look with merged variables
+              Preview with custom variables applied
             </DialogDescription>
           </DialogHeader>
 
           <div className="flex-1 grid grid-cols-4 gap-4 overflow-hidden">
-            {/* Left Panel - Settings */}
+            {/* Left Panel - Variable Info */}
             <div className="col-span-1 space-y-4 overflow-y-auto">
-              <div>
-                <Label className="text-xs font-semibold">Preview Customer</Label>
-                <Select 
-                  value={selectedPreviewCustomerId} 
-                  onValueChange={handleCustomerChange}
-                  disabled={previewMutation.isPending}
-                >
-                  <SelectTrigger className="mt-1">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {customerIds.map((id: string) => (
-                      <SelectItem key={id} value={id}>
-                        Customer {id}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {previewMutation.data?.resolvedCustomerEmail && (
-                    <>Email: {previewMutation.data.resolvedCustomerEmail}</>
-                  )}
-                </p>
-              </div>
-
-              {Object.keys(parsedCustomVariables).length > 0 && (
+              {Object.keys(parsedCustomVariables).length > 0 ? (
                 <div>
                   <Label className="text-xs font-semibold">Custom Variables</Label>
                   <div className="mt-1 space-y-1">
                     {Object.entries(parsedCustomVariables).map(([key, value]) => (
                       <div key={key} className="text-xs bg-muted p-2 rounded">
-                        <div className="font-mono text-primary">[[ {key} ]]</div>
+                        <div className="font-mono text-primary">{'{{' + key + '}}'}</div>
                         <div className="text-muted-foreground mt-0.5">→ {String(value)}</div>
                       </div>
                     ))}
                   </div>
                 </div>
+              ) : (
+                <div>
+                  <Label className="text-xs font-semibold">Variables</Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    No custom variables provided. Standard variables (customer.name, company.name, etc.) will show as placeholders.
+                  </p>
+                </div>
               )}
 
-              {previewMutation.data?.variableSummary && (
+              {previewMutation.data?.unresolvedVariables && previewMutation.data.unresolvedVariables.length > 0 && (
                 <div>
-                  <Label className="text-xs font-semibold">Variable Status</Label>
-                  <div className="mt-1 space-y-2">
-                    {previewMutation.data.variableSummary.customVariablesReplaced.length > 0 && (
-                      <div>
-                        <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
-                          ✓ {previewMutation.data.variableSummary.customVariablesReplaced.length} Replaced
-                        </Badge>
+                  <Label className="text-xs font-semibold">Unresolved Variables</Label>
+                  <div className="mt-1 space-y-1">
+                    {previewMutation.data.unresolvedVariables.map((varName: string) => (
+                      <div key={varName} className="text-xs bg-yellow-50 text-yellow-700 border border-yellow-200 p-2 rounded">
+                        <div className="font-mono">{varName}</div>
+                        <div className="text-xs mt-0.5">Not replaced</div>
                       </div>
-                    )}
-                    {previewMutation.data.variableSummary.unresolvedCustomVariables.length > 0 && (
-                      <div>
-                        <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-700 border-yellow-200">
-                          ⚠ {previewMutation.data.variableSummary.unresolvedCustomVariables.length} Not Found
-                        </Badge>
-                      </div>
-                    )}
+                    ))}
                   </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    These variables will be replaced with actual customer data when the email is sent.
+                  </p>
                 </div>
               )}
             </div>
@@ -347,7 +317,7 @@ function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
                 />
               ) : (
                 <div className="flex-1 flex items-center justify-center">
-                  <p className="text-sm text-muted-foreground">Select a customer to preview</p>
+                  <p className="text-sm text-muted-foreground">Click Preview Email to see your template</p>
                 </div>
               )}
             </div>
