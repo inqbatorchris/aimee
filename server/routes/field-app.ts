@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { storage } from '../storage';
 import { authenticateToken } from '../auth';
 import { db } from '../db';
-import { workItems, workItemWorkflowExecutions, workItemWorkflowExecutionSteps } from '@shared/schema';
+import { workItems, workItemWorkflowExecutions, workItemWorkflowExecutionSteps, fiberNetworkNodes, fiberNetworkActivityLogs } from '@shared/schema';
 import { and, eq, inArray, asc } from 'drizzle-orm';
 import multer from 'multer';
 import path from 'path';
@@ -509,6 +509,84 @@ router.post('/sync', authenticateToken, async (req: any, res) => {
             results.push({ type: 'workflowStep', id: update.entityId, success: true });
             break;
 
+          case 'fiberNetworkNode':
+            // Create fiber network node from field app
+            const nodeData = update.data;
+            
+            console.log('[Sync] Processing fiber network node creation:', { 
+              id: nodeData.id,
+              name: nodeData.name,
+              nodeType: nodeData.nodeType,
+              workItemId: nodeData.workItemId,
+              latitude: nodeData.latitude,
+              longitude: nodeData.longitude
+            });
+            
+            // Validate node data
+            if (!nodeData.name || nodeData.latitude == null || nodeData.longitude == null) {
+              console.warn('[Sync] Invalid fiber node data:', nodeData);
+              conflicts.push({
+                entityId: update.entityId,
+                type: update.type,
+                error: 'Missing required fields: name, latitude, longitude'
+              });
+              break;
+            }
+            
+            // Create the fiber network node with numeric coordinates
+            const nodeResult = await db
+              .insert(fiberNetworkNodes)
+              .values({
+                organizationId,
+                name: nodeData.name,
+                nodeType: nodeData.nodeType || 'chamber',
+                network: nodeData.network || 'FibreLtd',
+                status: nodeData.status || 'planned',
+                latitude: nodeData.latitude,
+                longitude: nodeData.longitude,
+                what3words: nodeData.what3words || null,
+                address: nodeData.address || null,
+                notes: nodeData.notes || null,
+                photos: [],
+                fiberDetails: {},
+                createdBy: userId,
+                updatedBy: userId
+              })
+              .returning();
+            
+            const newNode = nodeResult[0];
+            
+            console.log('[Sync] Fiber network node created:', {
+              id: newNode.id,
+              name: newNode.name,
+              latitude: newNode.latitude,
+              longitude: newNode.longitude
+            });
+            
+            // Log the creation in fiber network activity logs
+            await db.insert(fiberNetworkActivityLogs).values({
+              organizationId,
+              userId,
+              userName: req.user.fullName || req.user.email || 'Field User',
+              actionType: 'create',
+              entityType: 'fiber_node',
+              entityId: newNode.id,
+              changes: {
+                added: { 
+                  name: nodeData.name, 
+                  nodeType: nodeData.nodeType, 
+                  network: nodeData.network, 
+                  status: nodeData.status,
+                  latitude: nodeData.latitude,
+                  longitude: nodeData.longitude
+                }
+              },
+              ipAddress: req.ip || 'field-app'
+            });
+            
+            results.push({ type: 'fiberNetworkNode', id: update.entityId, success: true, serverId: newNode.id });
+            break;
+
           default:
             console.warn(`Unknown update type: ${update.type}`);
         }
@@ -758,7 +836,8 @@ router.post('/upload-photo', authenticateToken, upload.single('file'), async (re
                 actionType: 'file_upload',
                 entityType: 'work_item',
                 entityId: parseInt(workItemId),
-                details: {
+                description: `Photo uploaded from field app: ${file.filename}`,
+                metadata: {
                   action: 'photo_uploaded',
                   fileName: file.filename,
                   fileSize: file.size,

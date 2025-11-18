@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, Polygon } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Polygon, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { booleanPointInPolygon, point, polygon } from '@turf/turf';
@@ -186,6 +186,25 @@ function PolygonDrawer({
   return null;
 }
 
+// Component to handle map clicks for adding new nodes
+function MapClickHandler({ 
+  onMapClick,
+  disabled
+}: {
+  onMapClick: (lat: number, lng: number) => void;
+  disabled: boolean;
+}) {
+  useMapEvents({
+    click: (e) => {
+      if (!disabled) {
+        onMapClick(e.latlng.lat, e.latlng.lng);
+      }
+    },
+  });
+  
+  return null;
+}
+
 export default function FiberNetwork() {
   const { toast } = useToast();
   const { currentUser } = useAuth();
@@ -234,6 +253,21 @@ export default function FiberNetwork() {
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPolygon, setCurrentPolygon] = useState<[number, number][]>([]);
   const [selectedPolygon, setSelectedPolygon] = useState<[number, number][]>([]);
+
+  // Add Node dialog state
+  const [addNodeDialogOpen, setAddNodeDialogOpen] = useState(false);
+  const [newNodeData, setNewNodeData] = useState({
+    name: '',
+    nodeType: 'chamber',
+    network: 'FibreLtd',
+    status: 'planned',
+    latitude: 0,
+    longitude: 0,
+    what3words: '',
+    address: '',
+    notes: '',
+  });
+  const [createWorkItemForNewNode, setCreateWorkItemForNewNode] = useState(false);
 
   // Fetch all fiber nodes
   const { data: nodesData, isLoading } = useQuery<{ nodes: FiberNode[] }>({
@@ -304,6 +338,30 @@ export default function FiberNetwork() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
+    },
+  });
+
+  // Create node mutation
+  const createNodeMutation = useMutation({
+    mutationFn: async (nodeData: typeof newNodeData) => {
+      return apiRequest('/api/fiber-network/nodes', {
+        method: 'POST',
+        body: nodeData,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
+      toast({
+        title: 'Success',
+        description: 'Node created successfully',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to create node',
+        variant: 'destructive',
+      });
     },
   });
 
@@ -726,6 +784,61 @@ export default function FiberNetwork() {
         return [...prev, nodeId];
       }
     });
+  };
+
+  // Handle map click for adding new node
+  const handleMapClick = (lat: number, lng: number) => {
+    setNewNodeData({
+      name: '',
+      nodeType: 'chamber',
+      network: 'FibreLtd',
+      status: 'planned',
+      latitude: lat,
+      longitude: lng,
+      what3words: '',
+      address: '',
+      notes: '',
+    });
+    setCreateWorkItemForNewNode(false);
+    setAddNodeDialogOpen(true);
+  };
+
+  // Handle creating new node
+  const handleCreateNode = async () => {
+    if (!newNodeData.name) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please provide a name for the node',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      const result = await createNodeMutation.mutateAsync(newNodeData);
+      setAddNodeDialogOpen(false);
+
+      // If user wants to create a work item for this node
+      if (createWorkItemForNewNode && result.node) {
+        setSelectedNode(result.node);
+        setWorkItemDialogOpen(true);
+      }
+
+      // Reset form
+      setNewNodeData({
+        name: '',
+        nodeType: 'chamber',
+        network: 'FibreLtd',
+        status: 'planned',
+        latitude: 0,
+        longitude: 0,
+        what3words: '',
+        address: '',
+        notes: '',
+      });
+    } catch (error) {
+      console.error('Failed to create node:', error);
+    }
   };
 
   // Center map on UK (default location)
@@ -1183,6 +1296,12 @@ export default function FiberNetwork() {
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            
+            {/* Map click handler for adding nodes (disabled during selection modes) */}
+            <MapClickHandler 
+              onMapClick={handleMapClick} 
+              disabled={!!selectionMode || isDrawing}
             />
             
             {filteredNodes.length === 0 && nodes.length > 0 && (
@@ -2215,6 +2334,187 @@ export default function FiberNetwork() {
                 data-testid="button-confirm-create-work-item"
               >
                 Create {selectedNodes.length > 1 ? `${selectedNodes.length} ` : ''}Work Item{selectedNodes.length > 1 ? 's' : ''}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Node Dialog */}
+      <Dialog open={addNodeDialogOpen} onOpenChange={setAddNodeDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]" data-testid="add-node-dialog">
+          <DialogHeader>
+            <DialogTitle>
+              <Plus className="w-5 h-5 inline mr-2" />
+              Add New Fiber Network Node
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Name *</Label>
+                <Input
+                  value={newNodeData.name}
+                  onChange={(e) => setNewNodeData({ ...newNodeData, name: e.target.value })}
+                  placeholder="e.g., Chamber 1, Cabinet A"
+                  data-testid="input-node-name"
+                />
+              </div>
+
+              <div>
+                <Label>Node Type</Label>
+                <Select
+                  value={newNodeData.nodeType}
+                  onValueChange={(value) => setNewNodeData({ ...newNodeData, nodeType: value })}
+                >
+                  <SelectTrigger data-testid="select-node-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="chamber">Chamber</SelectItem>
+                    <SelectItem value="cabinet">Cabinet</SelectItem>
+                    <SelectItem value="pole">Pole</SelectItem>
+                    <SelectItem value="splice_closure">Splice Closure</SelectItem>
+                    <SelectItem value="customer_premise">Customer Premise</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Network</Label>
+                <Select
+                  value={newNodeData.network}
+                  onValueChange={(value) => setNewNodeData({ ...newNodeData, network: value })}
+                >
+                  <SelectTrigger data-testid="select-node-network">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="CCNet">CCNet</SelectItem>
+                    <SelectItem value="FibreLtd">FibreLtd</SelectItem>
+                    <SelectItem value="S&MFibre">S&MFibre</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Status</Label>
+                <Select
+                  value={newNodeData.status}
+                  onValueChange={(value) => setNewNodeData({ ...newNodeData, status: value })}
+                >
+                  <SelectTrigger data-testid="select-node-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="planned">Planned</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="build_complete">Build Complete</SelectItem>
+                    <SelectItem value="awaiting_evidence">Awaiting Evidence</SelectItem>
+                    <SelectItem value="action_required">Action Required</SelectItem>
+                    <SelectItem value="decommissioned">Decommissioned</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Latitude</Label>
+                <Input
+                  type="number"
+                  step="0.00000001"
+                  value={newNodeData.latitude}
+                  onChange={(e) => setNewNodeData({ ...newNodeData, latitude: parseFloat(e.target.value) || 0 })}
+                  data-testid="input-node-latitude"
+                />
+              </div>
+
+              <div>
+                <Label>Longitude</Label>
+                <Input
+                  type="number"
+                  step="0.00000001"
+                  value={newNodeData.longitude}
+                  onChange={(e) => setNewNodeData({ ...newNodeData, longitude: parseFloat(e.target.value) || 0 })}
+                  data-testid="input-node-longitude"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>What3Words</Label>
+              <Input
+                value={newNodeData.what3words}
+                onChange={(e) => setNewNodeData({ ...newNodeData, what3words: e.target.value })}
+                placeholder="///word.word.word"
+                data-testid="input-node-what3words"
+              />
+            </div>
+
+            <div>
+              <Label>Address</Label>
+              <Textarea
+                value={newNodeData.address}
+                onChange={(e) => setNewNodeData({ ...newNodeData, address: e.target.value })}
+                placeholder="Enter address..."
+                rows={2}
+                data-testid="textarea-node-address"
+              />
+            </div>
+
+            <div>
+              <Label>Notes</Label>
+              <Textarea
+                value={newNodeData.notes}
+                onChange={(e) => setNewNodeData({ ...newNodeData, notes: e.target.value })}
+                placeholder="Add notes..."
+                rows={3}
+                data-testid="textarea-node-notes"
+              />
+            </div>
+
+            <div className="flex items-center gap-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+              <Checkbox
+                id="create-work-item-checkbox"
+                checked={createWorkItemForNewNode}
+                onCheckedChange={(checked) => setCreateWorkItemForNewNode(checked as boolean)}
+                data-testid="checkbox-create-work-item-for-node"
+              />
+              <Label htmlFor="create-work-item-checkbox" className="cursor-pointer">
+                Create work item after adding node
+              </Label>
+            </div>
+
+            <div className="flex gap-2 pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setAddNodeDialogOpen(false);
+                  setNewNodeData({
+                    name: '',
+                    nodeType: 'chamber',
+                    network: 'FibreLtd',
+                    status: 'planned',
+                    latitude: 0,
+                    longitude: 0,
+                    what3words: '',
+                    address: '',
+                    notes: '',
+                  });
+                }}
+                data-testid="button-cancel-add-node"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCreateNode}
+                disabled={!newNodeData.name || createNodeMutation.isPending}
+                data-testid="button-confirm-add-node"
+              >
+                {createNodeMutation.isPending ? 'Creating...' : 'Add Node'}
               </Button>
             </div>
           </div>

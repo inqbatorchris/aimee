@@ -1,10 +1,97 @@
 import { Router } from 'express';
 import { db } from '../db';
-import { fiberNetworkNodes, fiberNetworkActivityLogs, workItems } from '../../shared/schema';
+import { fiberNetworkNodes, fiberNetworkActivityLogs, workItems, insertFiberNetworkNode } from '../../shared/schema';
 import { eq, and, sql, inArray } from 'drizzle-orm';
 import { authenticateToken } from '../auth';
+import { z } from 'zod';
 
 const router = Router();
+
+// Validation schema for creating fiber network node
+const createNodeSchema = insertFiberNetworkNode.extend({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180)
+}).omit({ 
+  id: true, 
+  organizationId: true, 
+  createdBy: true, 
+  updatedBy: true, 
+  createdAt: true, 
+  updatedAt: true 
+});
+
+// Create a new fiber network node
+router.post('/nodes', authenticateToken, async (req: any, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    
+    // Validate user ID
+    if (!req.user.id || isNaN(req.user.id)) {
+      console.error('Invalid user ID:', req.user);
+      return res.status(400).json({ error: 'Invalid user authentication' });
+    }
+    
+    // Validate request body with Zod
+    const validation = createNodeSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({ 
+        error: 'Validation failed', 
+        details: validation.error.format() 
+      });
+    }
+    
+    const data = validation.data;
+    
+    // Create the fiber network node with numeric coordinates
+    const result = await db
+      .insert(fiberNetworkNodes)
+      .values({
+        organizationId,
+        name: data.name,
+        nodeType: data.nodeType,
+        network: data.network,
+        status: data.status,
+        latitude: data.latitude,
+        longitude: data.longitude,
+        what3words: data.what3words || null,
+        address: data.address || null,
+        notes: data.notes || null,
+        photos: data.photos || [],
+        fiberDetails: data.fiberDetails || {},
+        createdBy: req.user.id,
+        updatedBy: req.user.id
+      })
+      .returning();
+    
+    const newNode = result[0];
+    
+    // Log the creation
+    await db.insert(fiberNetworkActivityLogs).values({
+      organizationId,
+      userId: req.user.id,
+      userName: req.user.fullName || req.user.email,
+      actionType: 'create',
+      entityType: 'fiber_node',
+      entityId: newNode.id,
+      changes: {
+        added: { 
+          name: data.name, 
+          nodeType: data.nodeType, 
+          network: data.network, 
+          status: data.status, 
+          latitude: data.latitude, 
+          longitude: data.longitude 
+        }
+      },
+      ipAddress: req.ip
+    });
+    
+    res.status(201).json({ node: newNode });
+  } catch (error) {
+    console.error('Error creating fiber network node:', error);
+    res.status(500).json({ error: 'Failed to create fiber network node' });
+  }
+});
 
 // Get all fiber network nodes for an organization
 router.get('/nodes', authenticateToken, async (req: any, res) => {

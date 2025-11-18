@@ -11,7 +11,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Camera, Check, X, Image as ImageIcon, MapPin, Navigation } from 'lucide-react';
+import { Camera, Check, X, Image as ImageIcon, MapPin, Navigation, Plus, Trash2 } from 'lucide-react';
+import { v4 as uuidv4 } from 'uuid';
 
 interface WorkflowStepProps {
   step: any;
@@ -34,6 +35,17 @@ export default function WorkflowStep({
   const [capturing, setCapturing] = useState(false);
   const [capturingLocation, setCapturingLocation] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [fiberNodes, setFiberNodes] = useState<any[]>(data?.fiberNodes || []);
+  const [showNodeForm, setShowNodeForm] = useState(false);
+  const [newNode, setNewNode] = useState({
+    name: '',
+    nodeType: 'chamber',
+    network: 'FibreLtd',
+    status: 'planned',
+    what3words: '',
+    address: '',
+    notes: '',
+  });
 
   // Load photo blobs and create object URLs
   useEffect(() => {
@@ -191,6 +203,74 @@ export default function WorkflowStep({
     );
   };
 
+  const handleAddFiberNode = async () => {
+    if (!newNode.name) {
+      alert('Please provide a name for the node');
+      return;
+    }
+
+    // Get current location
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your device');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const nodeId = uuidv4();
+        const nodeData = {
+          id: nodeId,
+          workItemId,
+          ...newNode,
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude,
+          createdAt: new Date(),
+          syncedToServer: false,
+        };
+
+        // Save to IndexedDB
+        await fieldDB.saveFiberNetworkNode(nodeData);
+        
+        // Add to sync queue
+        await fieldDB.addToSyncQueue('fiberNetworkNode', 'create', nodeId, nodeData);
+
+        // Update local state
+        const updatedNodes = [...fiberNodes, nodeData];
+        setFiberNodes(updatedNodes);
+        
+        // Reset form
+        setNewNode({
+          name: '',
+          nodeType: 'chamber',
+          network: 'FibreLtd',
+          status: 'planned',
+          what3words: '',
+          address: '',
+          notes: '',
+        });
+        setShowNodeForm(false);
+        
+        // Update step data
+        setStepData({ ...stepData, fiberNodes: updatedNodes });
+      },
+      (error) => {
+        alert(`Failed to capture location: ${error.message}`);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      }
+    );
+  };
+
+  const handleDeleteFiberNode = async (nodeId: string) => {
+    await fieldDB.deleteFiberNetworkNode(nodeId);
+    const updatedNodes = fiberNodes.filter(n => n.id !== nodeId);
+    setFiberNodes(updatedNodes);
+    setStepData({ ...stepData, fiberNodes: updatedNodes });
+  };
+
   const isStepComplete = () => {
     if (!step.required) return true;
 
@@ -221,6 +301,9 @@ export default function WorkflowStep({
 
       case 'geolocation':
         return stepData.geolocation && stepData.geolocation.latitude && stepData.geolocation.longitude;
+
+      case 'fiber_network_node':
+        return fiberNodes.length > 0;
 
       default:
         return true;
@@ -488,6 +571,174 @@ export default function WorkflowStep({
                   </Button>
                 )}
               </div>
+            )}
+          </div>
+        );
+
+      case 'fiber_network_node':
+        return (
+          <div className="space-y-4">
+            {/* List of created nodes */}
+            {fiberNodes.length > 0 && (
+              <div className="space-y-2">
+                <Label className="text-sm text-zinc-400">Created Nodes ({fiberNodes.length})</Label>
+                {fiberNodes.map((node) => (
+                  <div key={node.id} className="bg-zinc-800 border border-zinc-700 rounded-lg p-3">
+                    <div className="flex justify-between items-start mb-2">
+                      <div className="flex-1">
+                        <div className="font-medium text-white">{node.name}</div>
+                        <div className="text-xs text-zinc-400 mt-1">
+                          {node.nodeType} • {node.network} • {node.status}
+                        </div>
+                      </div>
+                      {!disabled && (
+                        <Button
+                          onClick={() => handleDeleteFiberNode(node.id)}
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 w-7 p-0 text-red-400 hover:text-red-300 hover:bg-red-950/30"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                    <div className="text-xs text-zinc-500 font-mono">
+                      {node.latitude.toFixed(6)}, {node.longitude.toFixed(6)}
+                    </div>
+                    {node.notes && (
+                      <div className="text-xs text-zinc-400 mt-2">{node.notes}</div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Add new node form */}
+            {!disabled && (
+              <>
+                {!showNodeForm ? (
+                  <Button
+                    onClick={() => setShowNodeForm(true)}
+                    className="w-full bg-emerald-600 hover:bg-emerald-700"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Network Node
+                  </Button>
+                ) : (
+                  <div className="space-y-3 bg-zinc-800 border border-zinc-700 rounded-lg p-4">
+                    <div>
+                      <Label htmlFor="node-name" className="text-sm">
+                        Node Name <span className="text-red-400">*</span>
+                      </Label>
+                      <Input
+                        id="node-name"
+                        value={newNode.name}
+                        onChange={(e) => setNewNode({ ...newNode, name: e.target.value })}
+                        placeholder="e.g., Node 123"
+                        className="bg-zinc-900 border-zinc-700 text-white mt-1"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="node-type" className="text-sm">Node Type</Label>
+                      <select
+                        id="node-type"
+                        value={newNode.nodeType}
+                        onChange={(e) => setNewNode({ ...newNode, nodeType: e.target.value })}
+                        className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-white mt-1"
+                      >
+                        <option value="chamber">Chamber</option>
+                        <option value="pole">Pole</option>
+                        <option value="cabinet">Cabinet</option>
+                        <option value="splice_point">Splice Point</option>
+                        <option value="customer_premise">Customer Premise</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="node-network" className="text-sm">Network</Label>
+                      <select
+                        id="node-network"
+                        value={newNode.network}
+                        onChange={(e) => setNewNode({ ...newNode, network: e.target.value })}
+                        className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-white mt-1"
+                      >
+                        <option value="FibreLtd">FibreLtd</option>
+                        <option value="Openreach">Openreach</option>
+                        <option value="CityFibre">CityFibre</option>
+                        <option value="Virgin">Virgin</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="node-status" className="text-sm">Status</Label>
+                      <select
+                        id="node-status"
+                        value={newNode.status}
+                        onChange={(e) => setNewNode({ ...newNode, status: e.target.value })}
+                        className="w-full bg-zinc-900 border border-zinc-700 rounded px-2 py-1.5 text-white mt-1"
+                      >
+                        <option value="planned">Planned</option>
+                        <option value="under_construction">Under Construction</option>
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                        <option value="decommissioned">Decommissioned</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="node-what3words" className="text-sm">What3Words</Label>
+                      <Input
+                        id="node-what3words"
+                        value={newNode.what3words}
+                        onChange={(e) => setNewNode({ ...newNode, what3words: e.target.value })}
+                        placeholder="e.g., ///filled.count.soap"
+                        className="bg-zinc-900 border-zinc-700 text-white mt-1"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="node-address" className="text-sm">Address</Label>
+                      <Input
+                        id="node-address"
+                        value={newNode.address}
+                        onChange={(e) => setNewNode({ ...newNode, address: e.target.value })}
+                        placeholder="Street address"
+                        className="bg-zinc-900 border-zinc-700 text-white mt-1"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="node-notes" className="text-sm">Notes</Label>
+                      <Textarea
+                        id="node-notes"
+                        value={newNode.notes}
+                        onChange={(e) => setNewNode({ ...newNode, notes: e.target.value })}
+                        placeholder="Additional information"
+                        className="bg-zinc-900 border-zinc-700 text-white mt-1"
+                        rows={3}
+                      />
+                    </div>
+
+                    <div className="flex gap-2 mt-4">
+                      <Button
+                        onClick={() => setShowNodeForm(false)}
+                        variant="outline"
+                        className="flex-1 border-zinc-700 hover:bg-zinc-700"
+                      >
+                        Cancel
+                      </Button>
+                      <Button
+                        onClick={handleAddFiberNode}
+                        className="flex-1 bg-emerald-600 hover:bg-emerald-700"
+                      >
+                        <MapPin className="h-4 w-4 mr-2" />
+                        Save Node
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              </>
             )}
           </div>
         );

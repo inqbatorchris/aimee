@@ -16,7 +16,8 @@ import {
   Trash2,
   FileText,
   Image,
-  Edit
+  Edit,
+  MapPin
 } from 'lucide-react';
 
 interface SyncProps {
@@ -244,6 +245,8 @@ export default function Sync({ session, onComplete }: SyncProps) {
         return <Image className="h-4 w-4" />;
       case 'workflowStep':
         return <CheckCircle className="h-4 w-4" />;
+      case 'fiberNetworkNode':
+        return <MapPin className="h-4 w-4" />;
       default:
         return <Edit className="h-4 w-4" />;
     }
@@ -279,6 +282,16 @@ export default function Sync({ session, onComplete }: SyncProps) {
               {stats?.pendingSync || 0}
             </p>
           </div>
+
+          {stats?.fiberNodes > 0 && (
+            <div className="bg-zinc-800 rounded-lg p-3">
+              <div className="flex items-center gap-2 text-zinc-400 text-xs mb-1">
+                <MapPin className="h-3 w-3" />
+                Fiber Nodes
+              </div>
+              <p className="text-2xl font-semibold">{stats.fiberNodes}</p>
+            </div>
+          )}
         </div>
       </div>
 
