@@ -166,6 +166,27 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
     saveMutation.mutate(data);
   };
 
+  const handleInvalidSubmit = () => {
+    const errors = form.formState.errors;
+    
+    // Check if there are errors in the Details tab fields
+    if (errors.title || errors.subject) {
+      setActiveTab('details');
+      toast({
+        title: 'Required fields missing',
+        description: 'Please fill in all required fields on the Details tab.',
+        variant: 'destructive',
+      });
+    } else if (errors.htmlBody) {
+      setActiveTab('content');
+      toast({
+        title: 'Email body required',
+        description: 'Please add content to your email template.',
+        variant: 'destructive',
+      });
+    }
+  };
+
   const handleClose = () => {
     onClose();
     form.reset();
@@ -230,7 +251,7 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
           </div>
         ) : (
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(handleSubmit)} className="mt-6">
+            <form onSubmit={form.handleSubmit(handleSubmit, handleInvalidSubmit)} className="mt-6">
               <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
                 <TabsList className="grid w-full grid-cols-3">
                   <TabsTrigger value="details" data-testid="tab-details">
