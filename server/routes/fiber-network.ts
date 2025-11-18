@@ -296,6 +296,68 @@ router.patch('/nodes/:id', authenticateToken, async (req: any, res) => {
   }
 });
 
+// Delete a fiber network node
+router.delete('/nodes/:id', authenticateToken, async (req: any, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    const nodeId = parseInt(req.params.id);
+    
+    // Validate user ID
+    if (!req.user.id || isNaN(req.user.id)) {
+      console.error('Invalid user ID:', req.user);
+      return res.status(400).json({ error: 'Invalid user authentication' });
+    }
+    
+    // Check if node exists and belongs to this organization
+    const existingNode = await db
+      .select()
+      .from(fiberNetworkNodes)
+      .where(
+        and(
+          eq(fiberNetworkNodes.id, nodeId),
+          eq(fiberNetworkNodes.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+    
+    if (existingNode.length === 0) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+    
+    // Delete the node
+    const result = await db
+      .delete(fiberNetworkNodes)
+      .where(
+        and(
+          eq(fiberNetworkNodes.id, nodeId),
+          eq(fiberNetworkNodes.organizationId, organizationId)
+        )
+      )
+      .returning();
+    
+    // Log the deletion
+    await db.insert(fiberNetworkActivityLogs).values({
+      organizationId,
+      userId: req.user.id,
+      userName: req.user.fullName || req.user.email,
+      actionType: 'delete',
+      entityType: 'fiber_node',
+      entityId: nodeId,
+      changes: { deleted: existingNode[0] },
+      ipAddress: req.ip
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Node deleted successfully',
+      deletedNode: result[0] 
+    });
+  } catch (error) {
+    console.error('Error deleting fiber network node:', error);
+    res.status(500).json({ error: 'Failed to delete fiber network node' });
+  }
+});
+
 // Get activity logs for a node
 router.get('/nodes/:id/activity', authenticateToken, async (req: any, res) => {
   try {
