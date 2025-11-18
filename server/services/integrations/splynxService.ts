@@ -650,6 +650,7 @@ export class SplynxService {
 
   /**
    * Helper: Merge custom variables into HTML content
+   * Uses {{ custom.* }} namespace to avoid conflicts with Splynx's {{ customer.* }} variables
    */
   private mergeCustomVariables(html: string, customVariables?: Record<string, any>): string {
     if (!customVariables) {
@@ -657,11 +658,29 @@ export class SplynxService {
     }
 
     let mergedHtml = html;
+    const replacedVariables: string[] = [];
     
-    // Replace {{variable}} patterns with custom variable values
+    // Replace {{ custom.variable }} patterns with custom variable values
     for (const [key, value] of Object.entries(customVariables)) {
-      const pattern = new RegExp(`{{\\s*${key}\\s*}}`, 'g');
-      mergedHtml = mergedHtml.replace(pattern, String(value));
+      // Ensure key uses custom.* namespace
+      const variableName = key.startsWith('custom.') ? key : `custom.${key}`;
+      
+      // Create regex pattern to match {{ custom.variable }} (with optional whitespace)
+      const pattern = new RegExp(`{{\\s*${variableName.replace('.', '\\.')}\\s*}}`, 'g');
+      
+      // Count matches before replacement
+      const matches = (mergedHtml.match(pattern) || []).length;
+      
+      if (matches > 0) {
+        mergedHtml = mergedHtml.replace(pattern, String(value));
+        replacedVariables.push(`${variableName} (${matches} occurrence${matches > 1 ? 's' : ''})`);
+      }
+    }
+    
+    if (replacedVariables.length > 0) {
+      console.log(`[SPLYNX mergeCustomVariables] ✅ Replaced ${replacedVariables.length} custom variable(s):`, replacedVariables);
+    } else {
+      console.warn(`[SPLYNX mergeCustomVariables] ⚠️ No custom.* variables found in HTML. Make sure your template uses {{ custom.variableName }} syntax.`);
     }
     
     return mergedHtml;
@@ -790,6 +809,75 @@ export class SplynxService {
       failedCount: results.failedCount,
       failures: results.failures,
     };
+  }
+
+  /**
+   * Preview email template with merged variables
+   * Used by workflow builder to show users how their email will look
+   */
+  async previewEmailTemplate(params: {
+    templateId: number;
+    customerId: number;
+    customVariables?: Record<string, any>;
+  }): Promise<{
+    renderedHtml: string;
+    resolvedCustomerId: number;
+    resolvedCustomerEmail: string | null;
+    variableSummary: {
+      customVariablesReplaced: string[];
+      unresolvedCustomVariables: string[];
+    };
+  }> {
+    console.log('[SPLYNX previewEmailTemplate] Starting preview');
+    console.log('[SPLYNX previewEmailTemplate] Template ID:', params.templateId);
+    console.log('[SPLYNX previewEmailTemplate] Customer ID:', params.customerId);
+    console.log('[SPLYNX previewEmailTemplate] Custom variables:', params.customVariables ? Object.keys(params.customVariables) : 'none');
+
+    try {
+      // Step 1: Get customer email for display
+      const customerEmail = await this.getCustomerEmail(params.customerId);
+
+      // Step 2: Render template with Splynx (merges {{ customer.* }} variables)
+      let renderedHtml = await this.renderTemplate(params.templateId, params.customerId);
+
+      // Step 3: Track which custom variables will be replaced
+      const customVariablesReplaced: string[] = [];
+      const unresolvedCustomVariables: string[] = [];
+
+      if (params.customVariables) {
+        for (const [key, value] of Object.entries(params.customVariables)) {
+          const variableName = key.startsWith('custom.') ? key : `custom.${key}`;
+          const pattern = new RegExp(`{{\\s*${variableName.replace('.', '\\.')}\\s*}}`, 'g');
+          const matches = (renderedHtml.match(pattern) || []).length;
+
+          if (matches > 0) {
+            customVariablesReplaced.push(variableName);
+          } else {
+            unresolvedCustomVariables.push(variableName);
+          }
+        }
+      }
+
+      // Step 4: Merge custom.* variables into rendered HTML
+      renderedHtml = this.mergeCustomVariables(renderedHtml, params.customVariables);
+
+      console.log('[SPLYNX previewEmailTemplate] ✅ Preview generated successfully');
+      console.log('[SPLYNX previewEmailTemplate]   Custom variables replaced:', customVariablesReplaced.length);
+      console.log('[SPLYNX previewEmailTemplate]   Unresolved variables:', unresolvedCustomVariables.length);
+
+      return {
+        renderedHtml,
+        resolvedCustomerId: params.customerId,
+        resolvedCustomerEmail: customerEmail,
+        variableSummary: {
+          customVariablesReplaced,
+          unresolvedCustomVariables,
+        },
+      };
+    } catch (error: any) {
+      console.error('[SPLYNX previewEmailTemplate] ❌ Error generating preview:', error.message);
+      throw new Error(`Failed to preview template: ${error.message}`);
+    }
   }
 
   async executeAction(action: string, parameters: any = {}): Promise<any> {

@@ -1271,6 +1271,59 @@ router.get('/templates/:id', async (req, res) => {
   }
 });
 
+// Preview email template with custom variables
+router.post('/templates/preview', async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated or missing organization' });
+    }
+
+    // Validate request body
+    const { templateId, customerId, customVariables } = req.body;
+    
+    if (!templateId) {
+      return res.status(400).json({ error: 'templateId is required' });
+    }
+    
+    if (!customerId) {
+      return res.status(400).json({ error: 'customerId is required' });
+    }
+
+    const installation = await storage.getIntegration(user.organizationId, 'splynx');
+    if (!installation || !installation.isEnabled) {
+      return res.status(400).json({ error: 'Splynx integration not enabled' });
+    }
+
+    if (!installation.credentialsEncrypted) {
+      return res.status(400).json({ error: 'No credentials configured' });
+    }
+
+    const decrypted = decrypt(installation.credentialsEncrypted);
+    const credentials = JSON.parse(decrypted);
+
+    if (!credentials.baseUrl || !credentials.authHeader) {
+      return res.status(400).json({ error: 'Invalid credentials configuration' });
+    }
+
+    const splynxService = new SplynxService({
+      baseUrl: credentials.baseUrl,
+      authHeader: credentials.authHeader,
+    });
+
+    const preview = await splynxService.previewEmailTemplate({
+      templateId: parseInt(templateId),
+      customerId: parseInt(customerId),
+      customVariables: customVariables || {},
+    });
+
+    res.json(preview);
+  } catch (error: any) {
+    console.error('Error previewing email template:', error);
+    res.status(500).json({ error: error.message || 'Failed to preview email template' });
+  }
+});
+
 // Create email template
 router.post('/templates', async (req, res) => {
   try {

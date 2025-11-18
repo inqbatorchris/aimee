@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database, Calculator, Loader2 } from 'lucide-react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database, Calculator, Loader2, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -8,6 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useToast } from '@/hooks/use-toast';
+import { apiRequest } from '@/lib/queryClient';
 import type { Integration, KeyResult, Objective } from '@shared/schema';
 import DataSourceQueryBuilder from './DataSourceQueryBuilder';
 
@@ -41,86 +44,339 @@ interface EmailCampaignConfigProps {
 }
 
 function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [selectedPreviewCustomerId, setSelectedPreviewCustomerId] = useState<string>('');
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const { toast } = useToast();
+  
   const { data: templates = [], isLoading } = useQuery<EmailTemplate[]>({
     queryKey: ['/api/splynx/templates'],
     retry: 1,
   });
 
+  // Get customer IDs from the config
+  const customerIdsStr = step.config.parameters?.customerIds || '';
+  const customerIds = customerIdsStr.trim() 
+    ? customerIdsStr.split(',').map((id: string) => id.trim()).filter(Boolean)
+    : [];
+
+  // Parse custom variables
+  const customVariablesStr = step.config.parameters?.customVariables || '';
+  let parsedCustomVariables: Record<string, any> = {};
+  let jsonError = '';
+  
+  if (customVariablesStr.trim()) {
+    try {
+      parsedCustomVariables = JSON.parse(customVariablesStr);
+      jsonError = '';
+    } catch (e) {
+      jsonError = 'Invalid JSON format';
+    }
+  }
+
+  // Preview mutation
+  const previewMutation = useMutation({
+    mutationFn: async (params: { templateId: number; customerId: number; customVariables: any }) => {
+      const response = await apiRequest('/api/splynx/templates/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(params),
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      // Create blob URL for iframe
+      const blob = new Blob([data.renderedHtml], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      setPreviewBlobUrl(url);
+      
+      // Show success message with variable summary
+      if (data.variableSummary?.customVariablesReplaced?.length > 0) {
+        toast({
+          title: 'Preview loaded',
+          description: `Replaced ${data.variableSummary.customVariablesReplaced.length} custom variable(s)`,
+        });
+      }
+      
+      // Warn about unresolved variables
+      if (data.variableSummary?.unresolvedCustomVariables?.length > 0) {
+        toast({
+          title: 'Warning: Unresolved variables',
+          description: `${data.variableSummary.unresolvedCustomVariables.join(', ')} not found in template`,
+          variant: 'destructive',
+        });
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Preview failed',
+        description: error.message || 'Failed to generate preview',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // Handle preview button click
+  const handlePreview = () => {
+    const templateId = step.config.parameters?.templateId;
+    
+    if (!templateId) {
+      toast({
+        title: 'Select a template',
+        description: 'Please select an email template first',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    if (customerIds.length === 0) {
+      toast({
+        title: 'Add customer IDs',
+        description: 'Please add at least one customer ID to preview with',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    if (jsonError) {
+      toast({
+        title: 'Fix JSON error',
+        description: jsonError,
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    // Set first customer as default
+    setSelectedPreviewCustomerId(customerIds[0]);
+    setIsPreviewOpen(true);
+    
+    // Fetch preview with first customer
+    previewMutation.mutate({
+      templateId: parseInt(templateId),
+      customerId: parseInt(customerIds[0]),
+      customVariables: parsedCustomVariables,
+    });
+  };
+
+  // Handle customer change in preview
+  const handleCustomerChange = (customerId: string) => {
+    setSelectedPreviewCustomerId(customerId);
+    
+    const templateId = step.config.parameters?.templateId;
+    if (templateId) {
+      previewMutation.mutate({
+        templateId: parseInt(templateId),
+        customerId: parseInt(customerId),
+        customVariables: parsedCustomVariables,
+      });
+    }
+  };
+
+  // Clean up blob URL when preview closes
+  useEffect(() => {
+    return () => {
+      if (previewBlobUrl) {
+        URL.revokeObjectURL(previewBlobUrl);
+      }
+    };
+  }, [previewBlobUrl]);
+
   return (
-    <div className="space-y-3">
-      <div>
-        <Label>Email Template</Label>
-        <Select
-          value={step.config.parameters?.templateId?.toString()}
-          onValueChange={(value) => updateStep(step.id, {
-            config: {
-              ...step.config,
-              parameters: { ...step.config.parameters, templateId: parseInt(value) }
-            }
-          })}
+    <>
+      <div className="space-y-3">
+        <div>
+          <Label>Email Template</Label>
+          <Select
+            value={step.config.parameters?.templateId?.toString()}
+            onValueChange={(value) => updateStep(step.id, {
+              config: {
+                ...step.config,
+                parameters: { ...step.config.parameters, templateId: parseInt(value) }
+              }
+            })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={isLoading ? "Loading templates..." : "Select email template"} />
+            </SelectTrigger>
+            <SelectContent>
+              {isLoading ? (
+                <div className="flex items-center justify-center py-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                </div>
+              ) : templates.length === 0 ? (
+                <div className="text-sm text-muted-foreground px-2 py-2">
+                  No templates found. Create one in Splynx Setup.
+                </div>
+              ) : (
+                templates.map(template => (
+                  <SelectItem key={template.id} value={template.id.toString()}>
+                    {template.title}
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-gray-500 mt-1">
+            Select the email template to send. Templates are managed in Splynx Setup.
+          </p>
+        </div>
+
+        <div>
+          <Label>Customer IDs (optional)</Label>
+          <Textarea
+            placeholder="Leave empty to use results from previous data query step, or enter comma-separated customer IDs"
+            rows={2}
+            value={step.config.parameters?.customerIds || ''}
+            onChange={(e) => updateStep(step.id, {
+              config: {
+                ...step.config,
+                parameters: { ...step.config.parameters, customerIds: e.target.value }
+              }
+            })}
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            If left empty, will use customer IDs from a previous data query step result.
+          </p>
+        </div>
+
+        <div>
+          <Label>Custom Variables (optional, JSON)</Label>
+          <Textarea
+            placeholder='{"custom.month": "January", "custom.offer": "50% off"}'
+            rows={3}
+            value={step.config.parameters?.customVariables || ''}
+            onChange={(e) => updateStep(step.id, {
+              config: {
+                ...step.config,
+                parameters: { ...step.config.parameters, customVariables: e.target.value }
+              }
+            })}
+            className={jsonError ? 'border-destructive' : ''}
+          />
+          {jsonError ? (
+            <p className="text-xs text-destructive mt-1">{jsonError}</p>
+          ) : (
+            <p className="text-xs text-gray-500 mt-1">
+              Use <code className="text-xs bg-muted px-1 rounded">custom.*</code> namespace for your variables. Example: <code className="text-xs bg-muted px-1 rounded">{'{"custom.name": "value"}'}</code>
+            </p>
+          )}
+        </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handlePreview}
+          disabled={!step.config.parameters?.templateId || customerIds.length === 0 || !!jsonError}
+          className="w-full"
+          data-testid="button-preview-email"
         >
-          <SelectTrigger>
-            <SelectValue placeholder={isLoading ? "Loading templates..." : "Select email template"} />
-          </SelectTrigger>
-          <SelectContent>
-            {isLoading ? (
-              <div className="flex items-center justify-center py-2">
-                <Loader2 className="h-4 w-4 animate-spin" />
-              </div>
-            ) : templates.length === 0 ? (
-              <div className="text-sm text-muted-foreground px-2 py-2">
-                No templates found. Create one in Splynx Setup.
-              </div>
-            ) : (
-              templates.map(template => (
-                <SelectItem key={template.id} value={template.id.toString()}>
-                  {template.title}
-                </SelectItem>
-              ))
-            )}
-          </SelectContent>
-        </Select>
-        <p className="text-xs text-gray-500 mt-1">
-          Select the email template to send. Templates are managed in Splynx Setup.
-        </p>
+          <Eye className="h-4 w-4 mr-2" />
+          Preview Email
+        </Button>
       </div>
 
-      <div>
-        <Label>Customer IDs (optional)</Label>
-        <Textarea
-          placeholder="Leave empty to use results from previous data query step, or enter comma-separated customer IDs"
-          rows={2}
-          value={step.config.parameters?.customerIds || ''}
-          onChange={(e) => updateStep(step.id, {
-            config: {
-              ...step.config,
-              parameters: { ...step.config.parameters, customerIds: e.target.value }
-            }
-          })}
-        />
-        <p className="text-xs text-gray-500 mt-1">
-          If left empty, will use customer IDs from a previous data query step result.
-        </p>
-      </div>
+      <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
+        <DialogContent className="max-w-6xl h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Email Template Preview</DialogTitle>
+            <DialogDescription>
+              See how your email will look with merged variables
+            </DialogDescription>
+          </DialogHeader>
 
-      <div>
-        <Label>Custom Variables (optional, JSON)</Label>
-        <Textarea
-          placeholder='{"month": "January", "offer": "50% off"}'
-          rows={3}
-          value={step.config.parameters?.customVariables || ''}
-          onChange={(e) => updateStep(step.id, {
-            config: {
-              ...step.config,
-              parameters: { ...step.config.parameters, customVariables: e.target.value }
-            }
-          })}
-        />
-        <p className="text-xs text-gray-500 mt-1">
-          Additional variables to use in the email template. Must be valid JSON.
-        </p>
-      </div>
-    </div>
+          <div className="flex-1 grid grid-cols-4 gap-4 overflow-hidden">
+            {/* Left Panel - Settings */}
+            <div className="col-span-1 space-y-4 overflow-y-auto">
+              <div>
+                <Label className="text-xs font-semibold">Preview Customer</Label>
+                <Select 
+                  value={selectedPreviewCustomerId} 
+                  onValueChange={handleCustomerChange}
+                  disabled={previewMutation.isPending}
+                >
+                  <SelectTrigger className="mt-1">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {customerIds.map((id: string) => (
+                      <SelectItem key={id} value={id}>
+                        Customer {id}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {previewMutation.data?.resolvedCustomerEmail && (
+                    <>Email: {previewMutation.data.resolvedCustomerEmail}</>
+                  )}
+                </p>
+              </div>
+
+              {Object.keys(parsedCustomVariables).length > 0 && (
+                <div>
+                  <Label className="text-xs font-semibold">Custom Variables</Label>
+                  <div className="mt-1 space-y-1">
+                    {Object.entries(parsedCustomVariables).map(([key, value]) => (
+                      <div key={key} className="text-xs bg-muted p-2 rounded">
+                        <div className="font-mono text-primary">{'{{'} {key} {'}}'}</div>
+                        <div className="text-muted-foreground mt-0.5">→ {String(value)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {previewMutation.data?.variableSummary && (
+                <div>
+                  <Label className="text-xs font-semibold">Variable Status</Label>
+                  <div className="mt-1 space-y-2">
+                    {previewMutation.data.variableSummary.customVariablesReplaced.length > 0 && (
+                      <div>
+                        <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">
+                          ✓ {previewMutation.data.variableSummary.customVariablesReplaced.length} Replaced
+                        </Badge>
+                      </div>
+                    )}
+                    {previewMutation.data.variableSummary.unresolvedCustomVariables.length > 0 && (
+                      <div>
+                        <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-700 border-yellow-200">
+                          ⚠ {previewMutation.data.variableSummary.unresolvedCustomVariables.length} Not Found
+                        </Badge>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Right Panel - Preview */}
+            <div className="col-span-3 flex flex-col overflow-hidden border rounded-lg">
+              {previewMutation.isPending ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="text-center">
+                    <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">Generating preview...</p>
+                  </div>
+                </div>
+              ) : previewBlobUrl ? (
+                <iframe
+                  src={previewBlobUrl}
+                  sandbox="allow-same-origin"
+                  className="w-full h-full"
+                  title="Email Preview"
+                />
+              ) : (
+                <div className="flex-1 flex items-center justify-center">
+                  <p className="text-sm text-muted-foreground">Select a customer to preview</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
 
