@@ -83,6 +83,13 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
   // Fetch individual template data when editing
   const { data: template, isLoading: isLoadingTemplate } = useQuery<EmailTemplate>({
     queryKey: templateId ? ['/api/email-templates', templateId] : ['templates-null'],
+    queryFn: async () => {
+      if (!templateId) return null;
+      const response = await apiRequest(`/api/email-templates/${templateId}`, {
+        method: 'GET',
+      });
+      return response.json();
+    },
     enabled: isOpen && !!templateId,
     retry: 1,
   });
