@@ -81,17 +81,19 @@ export class EmailTemplateService {
   }
 
   /**
-   * Validate that all required variables are provided
+   * Validate that all variables used in the template are provided
+   * Note: variablesManifest is now a Record<string, string> for documentation only.
+   * We validate against actual variables found in the template content.
    */
   validateVariables(
     template: EmailTemplate,
     variables: Record<string, any>
   ): { valid: boolean; missing: string[] } {
-    const requiredVars = template.variablesManifest
-      ?.filter(v => v.required)
-      .map(v => v.name) || [];
+    // Extract all variables from template content
+    const usedVariables = this.extractVariables(template);
     
-    const missing = requiredVars.filter(name => !(name in variables));
+    // Find which variables are missing from the provided data
+    const missing = usedVariables.filter(name => !(name in variables));
     
     return {
       valid: missing.length === 0,

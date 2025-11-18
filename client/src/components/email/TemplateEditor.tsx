@@ -1,16 +1,3 @@
-/**
- * @deprecated MIGRATION IN PROGRESS
- * This component currently uses the old Splynx-hosted template system (/api/splynx/templates).
- * Those endpoints have been removed and this component is temporarily non-functional.
- * 
- * TODO (Task #8): Refactor to use new self-managed template system:
- * - Change API calls from /api/splynx/templates to /api/email-templates
- * - Remove [[ custom_variable ]] bracket syntax workarounds
- * - Switch to clean {{variable}} syntax for all variables
- * - Add variable helper UI for easy insertion
- * - Update schema to match new EmailTemplate (htmlBody instead of code)
- */
-
 import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
@@ -52,20 +39,23 @@ import { EmailBodyEditor } from "./EmailBodyEditor";
 
 const templateSchema = z.object({
   title: z.string().min(1, "Title is required").max(255),
-  subject: z.string().max(500).optional(),
-  description: z.string().optional(),
-  code: z.string().optional(),
+  subject: z.string().min(1, "Subject is required").max(500),
+  htmlBody: z.string().min(1, "Email body is required"),
+  status: z.enum(['active', 'draft', 'archived']).default('active'),
 });
 
 type TemplateFormData = z.infer<typeof templateSchema>;
 
 interface EmailTemplate {
   id: number;
-  title?: string;
-  subject?: string;
-  description?: string;
-  code?: string;
-  type: string;
+  organizationId: number;
+  title: string;
+  subject: string;
+  htmlBody: string;
+  variablesManifest: Record<string, string> | null;
+  status: 'active' | 'draft' | 'archived';
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface TemplateEditorProps {
@@ -80,7 +70,7 @@ const AVAILABLE_VARIABLES = [
   { key: '{{customer.login}}', label: 'Customer Login', description: 'Login username' },
   { key: '{{company.name}}', label: 'Company Name', description: 'Your company name' },
   { key: '{{company.email}}', label: 'Company Email', description: 'Your company email' },
-  { key: '[[ custom_variable ]]', label: 'Custom Variable', description: 'Add your own variables with underscores' },
+  { key: '{{custom_variable}}', label: 'Custom Variable', description: 'Define your own variables in workflow configuration' },
 ];
 
 export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorProps) {
@@ -92,7 +82,7 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
 
   // Fetch individual template data when editing
   const { data: template, isLoading: isLoadingTemplate } = useQuery<EmailTemplate>({
-    queryKey: templateId ? [`/api/splynx/templates/${templateId}`] : ['templates-null'],
+    queryKey: templateId ? ['/api/email-templates', templateId] : ['templates-null'],
     enabled: isOpen && !!templateId,
     retry: 1,
   });
@@ -102,37 +92,37 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
     defaultValues: {
       title: "",
       subject: "",
-      description: "",
-      code: "",
+      htmlBody: "",
+      status: "active",
     },
   });
 
   useEffect(() => {
     if (templateId && template) {
       // Editing existing template
-      const codeContent = template.code || "";
+      const htmlBodyContent = template.htmlBody || "";
       console.log('[TemplateEditor] Loading template:', {
         id: templateId,
         title: template.title,
-        hasCode: !!template.code,
-        codeLength: template.code?.length || 0,
-        codePreview: template.code?.substring(0, 100)
+        hasBody: !!template.htmlBody,
+        bodyLength: template.htmlBody?.length || 0,
+        bodyPreview: template.htmlBody?.substring(0, 100)
       });
       form.reset({
         title: template.title || "",
         subject: template.subject || "",
-        description: template.description || "",
-        code: codeContent,
+        htmlBody: htmlBodyContent,
+        status: template.status || 'active',
       });
-      setHtmlContent(codeContent);
+      setHtmlContent(htmlBodyContent);
     } else if (!templateId) {
       // Creating new template
       console.log('[TemplateEditor] Creating new template');
       form.reset({
         title: "",
         subject: "",
-        description: "",
-        code: "",
+        htmlBody: "",
+        status: "active",
       });
       setHtmlContent('');
     }
@@ -141,11 +131,11 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
   const saveMutation = useMutation({
     mutationFn: async (data: TemplateFormData) => {
       const url = templateId
-        ? `/api/splynx/templates/${templateId}`
-        : '/api/splynx/templates';
+        ? `/api/email-templates/${templateId}`
+        : '/api/email-templates';
       
       const response = await apiRequest(url, {
-        method: templateId ? 'PUT' : 'POST',
+        method: templateId ? 'PATCH' : 'POST',
         body: data,
       });
       
@@ -156,9 +146,9 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
         title: templateId ? 'Template updated' : 'Template created',
         description: `Email template has been ${templateId ? 'updated' : 'created'} successfully.`,
       });
-      queryClient.invalidateQueries({ queryKey: ['/api/splynx/templates'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/email-templates'] });
       if (templateId) {
-        queryClient.invalidateQueries({ queryKey: [`/api/splynx/templates/${templateId}`] });
+        queryClient.invalidateQueries({ queryKey: ['/api/email-templates', templateId] });
       }
       onClose();
       form.reset();
@@ -202,12 +192,12 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
   };
 
   const handleOpenCodeDialog = () => {
-    setCodeDraft(form.getValues('code') || '');
+    setCodeDraft(form.getValues('htmlBody') || '');
     setShowCodeDialog(true);
   };
 
   const handleSaveCode = () => {
-    form.setValue('code', codeDraft, { shouldDirty: true });
+    form.setValue('htmlBody', codeDraft, { shouldDirty: true });
     setHtmlContent(codeDraft);
     setShowCodeDialog(false);
     toast({
@@ -281,7 +271,7 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
                     name="subject"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Email Subject</FormLabel>
+                        <FormLabel>Email Subject *</FormLabel>
                         <FormControl>
                           <Input
                             placeholder="e.g., {{company.name}} Newsletter - {{month}}"
@@ -290,7 +280,7 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
                           />
                         </FormControl>
                         <FormDescription className="text-xs">
-                          Use {'{{customer.name}}'} for Splynx data, [[ custom_variable ]] for workflow variables
+                          Use {'{{variable}}'} syntax for all dynamic variables
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -299,16 +289,20 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
 
                   <FormField
                     control={form.control}
-                    name="description"
+                    name="status"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Description (Optional)</FormLabel>
+                        <FormLabel>Status</FormLabel>
                         <FormControl>
-                          <Input
-                            placeholder="Internal description for this template"
+                          <select
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                             {...field}
-                            data-testid="input-template-description"
-                          />
+                            data-testid="select-template-status"
+                          >
+                            <option value="active">Active</option>
+                            <option value="draft">Draft</option>
+                            <option value="archived">Archived</option>
+                          </select>
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -321,7 +315,7 @@ export function TemplateEditor({ isOpen, onClose, templateId }: TemplateEditorPr
                     <div className="col-span-2 space-y-4">
                       <FormField
                         control={form.control}
-                        name="code"
+                        name="htmlBody"
                         render={({ field }) => (
                           <FormItem>
                             <div className="flex items-center justify-between mb-2">

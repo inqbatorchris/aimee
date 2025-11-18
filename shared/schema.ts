@@ -2762,19 +2762,15 @@ export const emailTemplates = pgTable("email_templates", {
   
   // Template details
   title: varchar("title", { length: 256 }).notNull(),
-  subject: varchar("subject", { length: 500 }),
-  description: text("description"),
+  subject: varchar("subject", { length: 500 }).notNull(),
   htmlBody: text("html_body").notNull(),
   
-  // Variables manifest - defines what variables this template uses
-  variablesManifest: jsonb("variables_manifest").$type<{
-    name: string;
-    description: string;
-    required: boolean;
-  }[]>().default([]),
+  // Variables manifest - stores variable name-to-description mappings for documentation
+  // Frontend sends actual variable values as Record<string, string> to preview endpoint
+  variablesManifest: jsonb("variables_manifest").$type<Record<string, string> | null>(),
   
   // Status and visibility
-  status: varchar("status", { length: 20 }).default('active').notNull(), // active, archived
+  status: varchar("status", { length: 20 }).default('active').notNull(), // active, draft, archived
   
   // Timestamps
   createdAt: timestamp("created_at").defaultNow(),

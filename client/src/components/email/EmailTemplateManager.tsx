@@ -1,15 +1,3 @@
-/**
- * @deprecated MIGRATION IN PROGRESS
- * This component currently uses the old Splynx-hosted template system (/api/splynx/templates).
- * Those endpoints have been removed and this component is temporarily non-functional.
- * 
- * TODO (Task #7): Refactor to use new self-managed template system:
- * - Change queryKey from '/api/splynx/templates' to '/api/email-templates'
- * - Update all API calls to use /api/email-templates endpoints
- * - Remove Splynx-specific logic
- * - Update to work with new EmailTemplate schema (id, organizationId, title, subject, htmlBody, variablesManifest)
- */
-
 import { useState, useMemo } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,13 +6,6 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Table,
   TableBody,
@@ -43,66 +24,52 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Plus, Edit3, Trash2, RefreshCw, Loader2, Mail, Search, Filter } from "lucide-react";
+import { Plus, Edit3, Trash2, Loader2, Mail, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { TemplateEditor } from "./TemplateEditor";
 
 interface EmailTemplate {
   id: number;
+  organizationId: number;
   title: string;
   subject: string;
-  description: string;
-  type: string;
-  updated_at?: string;
+  htmlBody: string;
+  variablesManifest: Record<string, string> | null;
+  status: 'active' | 'draft' | 'archived';
+  createdAt: string;
+  updatedAt: string;
 }
 
 // Helper function to get display name with fallback chain
 export function getTemplateDisplayName(template: EmailTemplate): string {
   if (template.title && template.title.trim()) return template.title;
   if (template.subject && template.subject.trim()) return template.subject;
-  if (template.description && template.description.trim()) {
-    const snippet = template.description.slice(0, 40);
-    return snippet.length < template.description.length ? `${snippet}...` : snippet;
-  }
-  return `${template.type.toUpperCase()} #${template.id}`;
+  return `Template #${template.id}`;
 }
 
 export function EmailTemplateManager() {
   const [isEditorOpen, setIsEditorOpen] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null);
   const [templateToDelete, setTemplateToDelete] = useState<EmailTemplate | null>(null);
-  const [selectedType, setSelectedType] = useState<string>('mail');
   const [searchQuery, setSearchQuery] = useState('');
   const [showOnlyMissingSubject, setShowOnlyMissingSubject] = useState(false);
   const { toast } = useToast();
 
   const { data: templates = [], isLoading, refetch, isFetching } = useQuery<EmailTemplate[]>({
-    queryKey: ['/api/splynx/templates'],
+    queryKey: ['/api/email-templates'],
     retry: 1,
   });
-
-  // Get unique template types
-  const templateTypes = useMemo(() => {
-    const types = new Set(templates.map(t => t.type));
-    return ['all', ...Array.from(types)].sort();
-  }, [templates]);
 
   // Filter templates
   const filteredTemplates = useMemo(() => {
     return templates.filter(template => {
-      // Type filter
-      if (selectedType !== 'all' && template.type !== selectedType) {
-        return false;
-      }
-
       // Search filter
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
         const matchesSearch = 
           template.title?.toLowerCase().includes(query) ||
-          template.subject?.toLowerCase().includes(query) ||
-          template.description?.toLowerCase().includes(query);
+          template.subject?.toLowerCase().includes(query);
         if (!matchesSearch) return false;
       }
 
@@ -113,11 +80,11 @@ export function EmailTemplateManager() {
 
       return true;
     });
-  }, [templates, selectedType, searchQuery, showOnlyMissingSubject]);
+  }, [templates, searchQuery, showOnlyMissingSubject]);
 
   const deleteMutation = useMutation({
     mutationFn: async (templateId: number) => {
-      const response = await apiRequest(`/api/splynx/templates/${templateId}`, {
+      const response = await apiRequest(`/api/email-templates/${templateId}`, {
         method: 'DELETE',
       });
       return response.json();
@@ -127,7 +94,7 @@ export function EmailTemplateManager() {
         title: 'Template deleted',
         description: 'Email template has been deleted successfully.',
       });
-      queryClient.invalidateQueries({ queryKey: ['/api/splynx/templates'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/email-templates'] });
       setTemplateToDelete(null);
     },
     onError: (error: any) => {
@@ -184,30 +151,14 @@ export function EmailTemplateManager() {
               <Mail className="h-5 w-5" />
               <CardTitle>Email Templates</CardTitle>
             </div>
-            <div className="flex gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => refetch()}
-                disabled={isFetching}
-                data-testid="button-sync-templates"
-              >
-                {isFetching ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                )}
-                Sync from Splynx
-              </Button>
-              <Button
-                size="sm"
-                onClick={handleCreateNew}
-                data-testid="button-create-template"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                New Template
-              </Button>
-            </div>
+            <Button
+              size="sm"
+              onClick={handleCreateNew}
+              data-testid="button-create-template"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              New Template
+            </Button>
           </div>
         </CardHeader>
         <CardContent>
@@ -223,72 +174,41 @@ export function EmailTemplateManager() {
             </div>
           ) : (
             <>
-              <div className="mb-4 p-4 border rounded-lg bg-muted/30 space-y-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Filter className="h-4 w-4" />
-                  <span className="text-sm font-medium">Filters</span>
-                  <Badge variant="secondary" className="ml-auto">
-                    {filteredTemplates.length} of {templates.length}
-                  </Badge>
+              <div className="mb-4 flex items-center gap-4">
+                <div className="relative flex-1">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    placeholder="Search templates by title or subject..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-9"
+                  />
                 </div>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="type-filter" className="text-xs">Template Type</Label>
-                    <Select value={selectedType} onValueChange={setSelectedType}>
-                      <SelectTrigger id="type-filter">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {templateTypes.map(type => (
-                          <SelectItem key={type} value={type}>
-                            {type === 'all' ? 'All Types' : type}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="search-filter" className="text-xs">Search</Label>
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                      <Input
-                        id="search-filter"
-                        placeholder="Search title, subject, description..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="pl-9"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label className="text-xs">Options</Label>
-                    <div className="flex items-center space-x-2 h-10">
-                      <Checkbox
-                        id="missing-subject"
-                        checked={showOnlyMissingSubject}
-                        onCheckedChange={(checked) => setShowOnlyMissingSubject(checked as boolean)}
-                      />
-                      <label
-                        htmlFor="missing-subject"
-                        className="text-sm leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                      >
-                        Only missing subject
-                      </label>
-                    </div>
-                  </div>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="missing-subject"
+                    checked={showOnlyMissingSubject}
+                    onCheckedChange={(checked) => setShowOnlyMissingSubject(checked as boolean)}
+                  />
+                  <label
+                    htmlFor="missing-subject"
+                    className="text-sm leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 whitespace-nowrap"
+                  >
+                    Only missing subject
+                  </label>
                 </div>
+                <Badge variant="secondary">
+                  {filteredTemplates.length} template{filteredTemplates.length !== 1 ? 's' : ''}
+                </Badge>
               </div>
 
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Name</TableHead>
+                      <TableHead>Title</TableHead>
                       <TableHead>Subject</TableHead>
+                      <TableHead>Status</TableHead>
                       <TableHead>Last Modified</TableHead>
                       <TableHead className="w-16"></TableHead>
                     </TableRow>
@@ -301,19 +221,19 @@ export function EmailTemplateManager() {
                         className="cursor-pointer hover:bg-muted/50"
                         onClick={() => handleEdit(template)}
                       >
-                        <TableCell>
-                          <Badge variant="outline" className="text-xs">
-                            {template.type}
-                          </Badge>
-                        </TableCell>
                         <TableCell className="font-medium">
                           {getTemplateDisplayName(template)}
                         </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
                           {template.subject || <span className="italic opacity-50">No subject</span>}
                         </TableCell>
+                        <TableCell>
+                          <Badge variant={template.status === 'active' ? 'default' : 'secondary'} className="text-xs">
+                            {template.status}
+                          </Badge>
+                        </TableCell>
                         <TableCell className="text-sm text-muted-foreground">
-                          {formatDate(template.updated_at)}
+                          {formatDate(template.updatedAt)}
                         </TableCell>
                         <TableCell className="w-16">
                           <Button
