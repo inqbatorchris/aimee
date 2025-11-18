@@ -39,6 +39,7 @@ Side Panels (canonical): Use Sheet from shadcn/ui for all slide-out detail/edit 
 -   **AI Agent Workflows (Automation)**: Autonomous AI-driven automation with manual, webhook, and scheduled triggers.
     -   **Record Browser for Data Queries**: Agent Builder's Data Source Query step features intelligent ID field detection and human-readable record selection.
     -   **Splynx Query System**: Integrates with Splynx for querying entities (customers, leads, support_tickets) with advanced filtering (including customer labels and date ranges) and dual operation modes (Count/List). Supports variable interpolation and optional Key Result auto-update.
+    -   **Splynx Task Creation**: Create tasks in Splynx scheduling system with automatic field mapping (taskName→title, projectId→project_id, customerId→customer_id). **Required fields**: Task Name, Project ID, and Workflow Status ID. The Workflow Status ID must match valid status IDs from your Splynx project's workflow configuration (check Splynx Admin → Scheduling → Projects → [Your Project] → Workflow settings).
     -   **Workflow Iteration & Work Item Creation**: Supports `for_each` loops to iterate over query results and create platform work items or Splynx tasks dynamically.
 -   **Offline Sync System**: Manual synchronization using IndexedDB for data persistence, sync queue management, and conflict resolution.
 -   **AI Assistant Action Approval System**: Implements an action approval workflow for AI write operations using OpenAI's function calling with a custom approval layer.
