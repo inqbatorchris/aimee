@@ -12,6 +12,7 @@ import WorkList from './WorkList';
 import WorkDetail from './WorkDetail';
 import Sync from './Sync';
 import CreateFiberNode from './CreateFiberNode';
+import OfflineNodes from './OfflineNodes';
 import { Button } from '@/components/ui/button';
 import { Switch as ToggleSwitch } from '@/components/ui/switch';
 import { Home, Download as DownloadIcon, RefreshCw, User, WifiOff, Wifi, MapPin } from 'lucide-react';
@@ -253,6 +254,11 @@ export default function FieldApp() {
           {/* Create Fiber Node */}
           <Route path="/field-app/create-fiber-node">
             {() => <CreateFiberNode onComplete={() => setLocation('/field-app')} />}
+          </Route>
+          
+          {/* Offline Nodes */}
+          <Route path="/field-app/offline-nodes">
+            {() => <OfflineNodes />}
           </Route>
         </Switch>
       </main>
