@@ -650,34 +650,34 @@ export class SplynxService {
 
   /**
    * Helper: Merge custom variables into HTML content
-   * Uses [[ custom.* ]] syntax to avoid conflicts with Splynx's Twig engine {{ variable }} syntax
+   * Uses [[ custom_* ]] syntax (underscores, not dots) to avoid conflicts with:
+   * - Splynx's Twig engine {{ variable }} syntax
+   * - TipTap editor auto-linking (custom.name becomes a hyperlink)
    */
   private mergeCustomVariables(html: string, customVariables?: Record<string, any>): string {
     if (!customVariables) {
       return html;
     }
 
-    // Debug: Log the HTML content to see what we're working with
-    console.log(`[SPLYNX mergeCustomVariables] 🔍 HTML preview (first 500 chars):`, html.substring(0, 500));
-    console.log(`[SPLYNX mergeCustomVariables] 🔍 Looking for [[ ]] patterns...`);
-    const bracketMatches = html.match(/\[\[.*?\]\]/g);
-    if (bracketMatches) {
-      console.log(`[SPLYNX mergeCustomVariables] 🔍 Found [[ ]] patterns:`, bracketMatches);
-    } else {
-      console.log(`[SPLYNX mergeCustomVariables] 🔍 No [[ ]] patterns found in HTML`);
-    }
-
     let mergedHtml = html;
     const replacedVariables: string[] = [];
     
-    // Replace [[ custom.variable ]] patterns with custom variable values
+    // Replace [[ custom_variable ]] patterns with custom variable values
     for (const [key, value] of Object.entries(customVariables)) {
-      // Ensure key uses custom.* namespace
-      const variableName = key.startsWith('custom.') ? key : `custom.${key}`;
+      // Normalize key: convert dots to underscores and ensure custom_ prefix
+      let variableName = key;
+      if (key.startsWith('custom.')) {
+        variableName = key.replace('custom.', 'custom_');
+      } else if (key.startsWith('custom_')) {
+        variableName = key;
+      } else {
+        variableName = `custom_${key}`;
+      }
       
-      // Create regex pattern to match [[ custom.variable ]] (with optional whitespace)
-      const pattern = new RegExp(`\\[\\[\\s*${variableName.replace('.', '\\.')}\\s*\\]\\]`, 'g');
-      console.log(`[SPLYNX mergeCustomVariables] 🔍 Testing pattern for ${variableName}:`, pattern.toString());
+      // Create regex pattern to match [[ custom_variable ]] (with optional whitespace)
+      // Escape underscores for regex
+      const escapedName = variableName.replace(/_/g, '\\_');
+      const pattern = new RegExp(`\\[\\[\\s*${escapedName}\\s*\\]\\]`, 'g');
       
       // Count matches before replacement
       const matches = (mergedHtml.match(pattern) || []).length;
@@ -691,7 +691,7 @@ export class SplynxService {
     if (replacedVariables.length > 0) {
       console.log(`[SPLYNX mergeCustomVariables] ✅ Replaced ${replacedVariables.length} custom variable(s):`, replacedVariables);
     } else {
-      console.warn(`[SPLYNX mergeCustomVariables] ⚠️ No [[ custom.* ]] variables found in HTML. Make sure your template uses [[ custom.variableName ]] syntax.`);
+      console.log(`[SPLYNX mergeCustomVariables] ℹ️ No custom variables replaced. Use [[ custom_variable ]] syntax in your template.`);
     }
     
     return mergedHtml;
