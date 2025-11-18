@@ -216,7 +216,7 @@ export default function WorkflowStepBuilder({
     }
   };
 
-  const renderStepConfig = (step: WorkflowStep) => {
+  const renderStepConfig = (step: WorkflowStep, stepIndex: number) => {
     switch (step.type) {
       case 'integration_action':
         return (
@@ -1204,7 +1204,7 @@ export default function WorkflowStepBuilder({
                     );
                   })}
                   </div>
-                  <DataInspectorPanel steps={steps} currentStepIndex={index} />
+                  <DataInspectorPanel steps={steps} currentStepIndex={stepIndex} />
                 </div>
               )}
             </div>
@@ -1443,7 +1443,7 @@ export default function WorkflowStepBuilder({
                     </Select>
                   </div>
 
-                  {renderStepConfig(step)}
+                  {renderStepConfig(step, index)}
                 </div>
               </div>
             )}
