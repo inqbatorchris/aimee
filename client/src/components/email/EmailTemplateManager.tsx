@@ -274,31 +274,31 @@ export function EmailTemplateManager() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Type</TableHead>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Subject</TableHead>
-                      <TableHead>Last Modified</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                      <TableHead className="w-20">Type</TableHead>
+                      <TableHead className="w-48">Name</TableHead>
+                      <TableHead className="w-64">Subject</TableHead>
+                      <TableHead className="w-40">Last Modified</TableHead>
+                      <TableHead className="w-24 text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {filteredTemplates.map((template) => (
                       <TableRow key={template.id} data-testid={`template-row-${template.id}`}>
-                        <TableCell>
+                        <TableCell className="w-20">
                           <Badge variant="outline" className="text-xs">
                             {template.type}
                           </Badge>
                         </TableCell>
-                        <TableCell className="font-medium">
+                        <TableCell className="w-48 font-medium truncate">
                           {getTemplateDisplayName(template)}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground max-w-md truncate">
+                        <TableCell className="w-64 text-sm text-muted-foreground truncate">
                           {template.subject || <span className="italic opacity-50">No subject</span>}
                         </TableCell>
-                        <TableCell className="text-sm text-muted-foreground">
+                        <TableCell className="w-40 text-sm text-muted-foreground whitespace-nowrap">
                           {formatDate(template.updated_at)}
                         </TableCell>
-                        <TableCell className="text-right">
+                        <TableCell className="w-24 text-right">
                           <div className="flex justify-end gap-2">
                             <Button
                               variant="ghost"
