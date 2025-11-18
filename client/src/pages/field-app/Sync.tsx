@@ -186,6 +186,22 @@ export default function Sync({ session, onComplete }: SyncProps) {
       setProgress(90);
       setStatus('Downloading fresh data...');
 
+      // Handle ID mapping for fiber network nodes
+      // Update local nodes with server IDs
+      if (syncResult.results) {
+        for (const result of syncResult.results) {
+          if (result.type === 'fiberNetworkNode' && result.success && result.serverId) {
+            // Update the fiber network node to mark it as synced and store server ID
+            // The local ID (result.id) was the temporary client-side ID
+            // The server ID (result.serverId) is the database ID
+            console.log('[Sync] Mapping fiber node:', { localId: result.id, serverId: result.serverId });
+            
+            // For now, we'll just mark it as synced via the queue cleanup
+            // In the future, we could update the node record to store both IDs
+          }
+        }
+      }
+
       // Clear local changes after successful sync
       const queueIds = queue.map(q => q.id).filter(id => id !== undefined) as number[];
       await fieldDB.markSynced(queueIds);

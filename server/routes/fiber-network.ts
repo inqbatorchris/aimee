@@ -454,4 +454,16 @@ router.post('/nodes/from-workflow', authenticateToken, async (req: any, res) => 
   }
 });
 
+// Get available networks list for field app
+router.get('/networks', authenticateToken, async (req: any, res) => {
+  try {
+    // Return standard list of networks
+    const networks = ['CCNet', 'FibreLtd', 'S&MFibre'];
+    res.json({ networks });
+  } catch (error) {
+    console.error('Error fetching networks:', error);
+    res.status(500).json({ error: 'Failed to fetch networks' });
+  }
+});
+
 export default router;
