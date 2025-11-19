@@ -591,7 +591,7 @@ function StepEditor({ step, onSave, onCancel }: { step: WorkflowTemplateStep; on
                         {field.type === 'select' && (
                           <div className="space-y-2">
                             <Label htmlFor={`field-options-${index}`} className="text-xs">
-                              Dropdown Options (comma-separated)
+                              Dropdown Options (comma or semicolon separated)
                             </Label>
                             <Input
                               id={`field-options-${index}`}
@@ -599,12 +599,18 @@ function StepEditor({ step, onSave, onCancel }: { step: WorkflowTemplateStep; on
                               onChange={e => {
                                 const optionsText = e.target.value;
                                 const optionsArray = optionsText
-                                  .split(',')
+                                  .split(/[,;]/)
                                   .map(opt => opt.trim())
                                   .filter(opt => opt.length > 0);
                                 handleUpdateFormField(index, { options: optionsArray.length > 0 ? optionsArray : undefined });
                               }}
-                              placeholder="e.g., CCNet, FibreLtd, S&MFibre"
+                              onKeyDown={e => {
+                                // Allow comma and semicolon explicitly
+                                if (e.key === ',' || e.key === ';') {
+                                  e.stopPropagation();
+                                }
+                              }}
+                              placeholder="e.g., CCNet; FibreLtd; S&MFibre"
                               data-testid={`input-form-field-options-${index}`}
                             />
                             {field.options && field.options.length > 0 && (
