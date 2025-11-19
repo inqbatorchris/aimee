@@ -65,7 +65,7 @@ interface FieldAppDB extends DBSchema {
         title?: string;
         label?: string;
         description?: string;
-        type: 'checklist' | 'form' | 'photo' | 'signature' | 'measurement' | 'notes' | 'text_input';
+        type: 'checklist' | 'form' | 'photo' | 'signature' | 'measurement' | 'notes' | 'text_input' | 'fiber_network_node';
         required: boolean;
         order: number;
         config?: any;
@@ -127,7 +127,7 @@ interface FieldAppDB extends DBSchema {
     key: number;
     value: {
       id?: number;
-      type: 'workItem' | 'workflowStep' | 'photo';
+      type: 'workItem' | 'workflowStep' | 'photo' | 'fiberNetworkNode';
       action: 'update' | 'create';
       entityId: string | number;
       data: any;
@@ -140,10 +140,35 @@ interface FieldAppDB extends DBSchema {
       'by-timestamp': Date;
     };
   };
+
+  fiberNetworkNodes: {
+    key: string; // uuid for offline created nodes
+    value: {
+      id: string; // Temporary UUID for offline, becomes server ID after sync
+      workItemId: number;
+      name: string;
+      nodeType: string;
+      network: string;
+      status: string;
+      latitude: number;
+      longitude: number;
+      what3words?: string;
+      address?: string;
+      notes?: string;
+      photos?: string[]; // Array of photo IDs
+      createdAt: Date;
+      syncedToServer: boolean;
+      serverId?: number; // Set after successful sync
+    };
+    indexes: {
+      'by-work-item': number;
+      'by-sync-status': boolean;
+    };
+  };
 }
 
 const DB_NAME = 'FieldAppDB';
-const DB_VERSION = 2; // Incremented for settings store
+const DB_VERSION = 3; // Incremented for fiber network nodes store
 
 class FieldDatabase {
   private db: IDBPDatabase<FieldAppDB> | null = null;
@@ -197,6 +222,13 @@ class FieldDatabase {
           });
           syncStore.createIndex('by-status', 'syncStatus');
           syncStore.createIndex('by-timestamp', 'timestamp');
+        }
+
+        // Fiber network nodes store
+        if (!db.objectStoreNames.contains('fiberNetworkNodes')) {
+          const fiberNodeStore = db.createObjectStore('fiberNetworkNodes', { keyPath: 'id' });
+          fiberNodeStore.createIndex('by-work-item', 'workItemId');
+          fiberNodeStore.createIndex('by-sync-status', 'syncedToServer');
         }
       }
     });
@@ -480,20 +512,58 @@ class FieldDatabase {
     await tx.done;
   }
   
+  // Fiber network nodes management
+  async saveFiberNetworkNode(node: FieldAppDB['fiberNetworkNodes']['value']): Promise<void> {
+    const db = await this.ensureDB();
+    await db.put('fiberNetworkNodes', node);
+  }
+
+  async getFiberNetworkNodes(workItemId: number): Promise<FieldAppDB['fiberNetworkNodes']['value'][]> {
+    const db = await this.ensureDB();
+    return db.getAllFromIndex('fiberNetworkNodes', 'by-work-item', workItemId);
+  }
+
+  async getAllUnsyncedFiberNodes(): Promise<FieldAppDB['fiberNetworkNodes']['value'][]> {
+    const db = await this.ensureDB();
+    // Return ALL fiber nodes created locally (both synced and unsynced)
+    // This allows users to see their locally-created nodes even after sync
+    return db.getAll('fiberNetworkNodes');
+  }
+
+  async markFiberNodeAsSynced(localId: string, serverId: number): Promise<void> {
+    const db = await this.ensureDB();
+    const node = await db.get('fiberNetworkNodes', localId);
+    
+    if (node) {
+      await db.put('fiberNetworkNodes', {
+        ...node,
+        syncedToServer: true,
+        serverId
+      });
+    }
+  }
+
+  async deleteFiberNetworkNode(id: string): Promise<void> {
+    const db = await this.ensureDB();
+    await db.delete('fiberNetworkNodes', id);
+  }
+
   // Database statistics
   async getStats(): Promise<{
     workItems: number;
     templates: number;
     photos: number;
+    fiberNodes: number;
     pendingSync: number;
     storageUsed?: number;
   }> {
     const db = await this.ensureDB();
     
-    const [workItems, templates, photos, pendingSync] = await Promise.all([
+    const [workItems, templates, photos, fiberNodes, pendingSync] = await Promise.all([
       db.count('workItems'),
       db.count('workflowTemplates'),
       db.count('photos'),
+      db.count('fiberNetworkNodes'),
       db.count('syncQueue')
     ]);
     
@@ -504,7 +574,7 @@ class FieldDatabase {
       storageUsed = estimate.usage;
     }
     
-    return { workItems, templates, photos, pendingSync, storageUsed };
+    return { workItems, templates, photos, fiberNodes, pendingSync, storageUsed };
   }
   
   // Clear cache (manual only, as requested)
@@ -517,7 +587,8 @@ class FieldDatabase {
       'workflowTemplates', 
       'workflowExecutions', 
       'photos', 
-      'syncQueue'
+      'syncQueue',
+      'fiberNetworkNodes'
     ], 'readwrite');
     
     await Promise.all([
@@ -525,7 +596,8 @@ class FieldDatabase {
       tx.objectStore('workflowTemplates').clear(),
       tx.objectStore('workflowExecutions').clear(),
       tx.objectStore('photos').clear(),
-      tx.objectStore('syncQueue').clear()
+      tx.objectStore('syncQueue').clear(),
+      tx.objectStore('fiberNetworkNodes').clear()
     ]);
     
     await tx.done;

@@ -2,11 +2,13 @@ import { Router } from 'express';
 import { storage } from '../storage';
 import { authenticateToken } from '../auth';
 import { WorkflowExecutor } from '../services/workflow/WorkflowExecutor';
-import { insertAgentWorkflowSchema, insertAgentWorkflowRunSchema, agentWorkflowSchedules } from '../../shared/schema';
+import { insertAgentWorkflowSchema, insertAgentWorkflowRunSchema, agentWorkflowSchedules, integrations } from '../../shared/schema';
 import { z } from 'zod';
 import { IntegrationCatalogImporter } from '../services/integrations/IntegrationCatalogImporter';
+import { SplynxService } from '../services/integrations/splynxService';
 import { db } from '../db';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
+import crypto from 'crypto';
 
 const router = Router();
 
@@ -24,6 +26,25 @@ function frequencyToCron(frequency: string): string {
     default:
       return '0 * * * *'; // Default to hourly
   }
+}
+
+// Helper function to decrypt credentials
+function decryptCredentials(encrypted: string): string {
+  const encryptionKey = process.env.ENCRYPTION_KEY;
+  if (!encryptionKey) {
+    throw new Error('ENCRYPTION_KEY environment variable is not set');
+  }
+
+  const [ivHex, encryptedText] = encrypted.split(':');
+  const iv = Buffer.from(ivHex, 'hex');
+  // Hash the encryption key to get the correct 32-byte key for AES-256
+  const key = crypto.createHash('sha256').update(String(encryptionKey)).digest();
+
+  const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+  let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+  decrypted += decipher.final('utf8');
+
+  return decrypted;
 }
 
 // Apply authentication middleware to all routes
@@ -258,6 +279,72 @@ router.delete('/workflows/:id', async (req, res) => {
   } catch (error) {
     console.error('Error deleting workflow:', error);
     res.status(500).json({ error: 'Failed to delete workflow' });
+  }
+});
+
+// Test Splynx query (for Agent Builder UI)
+router.post('/workflows/test-splynx-query', async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated or missing organization' });
+    }
+
+    const { entity, mode, filters, dateRange, dateRangeField, limit } = req.body;
+    
+    if (!entity) {
+      return res.status(400).json({ error: 'Entity is required' });
+    }
+
+    // Get Splynx integration credentials
+    const [splynxIntegration] = await db
+      .select()
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.organizationId, user.organizationId),
+          eq(integrations.platformType, 'splynx')
+        )
+      )
+      .limit(1);
+
+    if (!splynxIntegration || !splynxIntegration.credentialsEncrypted) {
+      return res.status(400).json({ error: 'Splynx integration not configured' });
+    }
+
+    // Decrypt credentials
+    const credentials = JSON.parse(decryptCredentials(splynxIntegration.credentialsEncrypted));
+    const { baseUrl, authHeader } = credentials;
+
+    if (!baseUrl || !authHeader) {
+      return res.status(400).json({ error: 'Splynx credentials incomplete' });
+    }
+
+    // Query Splynx using SplynxService
+    const splynxService = new SplynxService({ baseUrl, authHeader });
+
+    // For testing, we want to show the TRUE total count, not limited
+    // So we query with a high limit to get all matching records
+    const fullResult = await splynxService.queryEntities({
+      entity,
+      mode: 'list', // Always use list mode to get records
+      filters: filters || [],
+      dateRange,
+      dateRangeField,
+      limit: 10000, // High limit to get all matching records
+    });
+
+    // Return the full count but only first 5 records as samples
+    const sampleLimit = limit || 5;
+    res.json({
+      count: fullResult.count, // True total count
+      records: fullResult.records?.slice(0, sampleLimit) || [], // Only first 5 as samples
+    });
+  } catch (error) {
+    console.error('Error testing Splynx query:', error);
+    res.status(500).json({ 
+      error: error instanceof Error ? error.message : 'Failed to test query' 
+    });
   }
 });
 

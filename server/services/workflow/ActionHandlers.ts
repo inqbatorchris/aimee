@@ -47,8 +47,7 @@ export class ActionHandlers {
     const { baseUrl, authHeader } = credentials || {};
     
     console.log(`[ActionHandlers] 🔧 Splynx Action: ${action}`);
-    console.log(`[ActionHandlers]   Base URL: ${baseUrl}`);
-    console.log(`[ActionHandlers]   Has Auth Header: ${!!authHeader}`);
+    console.log(`[ActionHandlers]   Credentials: ✓ Loaded`);
     
     if (!baseUrl || !authHeader) {
       throw new Error('Splynx credentials not configured');

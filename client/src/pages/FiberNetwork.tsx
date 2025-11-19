@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, Polygon } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Polygon, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { booleanPointInPolygon, point, polygon } from '@turf/turf';
@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -186,6 +187,25 @@ function PolygonDrawer({
   return null;
 }
 
+// Component to handle map clicks for adding new nodes
+function MapClickHandler({ 
+  onMapClick,
+  disabled
+}: {
+  onMapClick: (lat: number, lng: number) => void;
+  disabled: boolean;
+}) {
+  useMapEvents({
+    click: (e) => {
+      if (!disabled) {
+        onMapClick(e.latlng.lat, e.latlng.lng);
+      }
+    },
+  });
+  
+  return null;
+}
+
 export default function FiberNetwork() {
   const { toast } = useToast();
   const { currentUser } = useAuth();
@@ -200,6 +220,8 @@ export default function FiberNetwork() {
   const [workItemTeam, setWorkItemTeam] = useState<number | null>(null);
   const [workItemDueDate, setWorkItemDueDate] = useState<string>('');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [nodeToDelete, setNodeToDelete] = useState<FiberNode | null>(null);
   
   // Column visibility state
   const [visibleColumns, setVisibleColumns] = useState({
@@ -234,6 +256,22 @@ export default function FiberNetwork() {
   const [isDrawing, setIsDrawing] = useState(false);
   const [currentPolygon, setCurrentPolygon] = useState<[number, number][]>([]);
   const [selectedPolygon, setSelectedPolygon] = useState<[number, number][]>([]);
+
+  // Add Node dialog state
+  const [addNodeDialogOpen, setAddNodeDialogOpen] = useState(false);
+  const [newNodeData, setNewNodeData] = useState({
+    name: '',
+    nodeType: 'chamber',
+    network: 'FibreLtd',
+    status: 'planned',
+    latitude: 0,
+    longitude: 0,
+    what3words: '',
+    address: '',
+    notes: '',
+  });
+  const [createWorkItemForNewNode, setCreateWorkItemForNewNode] = useState(false);
+  const [newNodeTemplate, setNewNodeTemplate] = useState<any>(null);
 
   // Fetch all fiber nodes
   const { data: nodesData, isLoading } = useQuery<{ nodes: FiberNode[] }>({
@@ -304,6 +342,48 @@ export default function FiberNetwork() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
+    },
+  });
+
+  // Delete node mutation
+  const deleteNodeMutation = useMutation({
+    mutationFn: async (nodeId: number) => {
+      const response = await apiRequest(`/api/fiber-network/nodes/${nodeId}`, {
+        method: 'DELETE',
+      });
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
+      toast({
+        title: 'Success',
+        description: 'Node deleted successfully',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to delete node',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // Create node mutation
+  const createNodeMutation = useMutation({
+    mutationFn: async (nodeData: typeof newNodeData) => {
+      const response = await apiRequest('/api/fiber-network/nodes', {
+        method: 'POST',
+        body: nodeData,
+      });
+      // apiRequest throws on error, so if we get here it succeeded
+      // Parse the JSON response from the fetch Response object
+      const data = await response.json();
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
+      // Toast is handled in handleCreateNode to avoid duplicates
     },
   });
 
@@ -462,6 +542,21 @@ export default function FiberNetwork() {
     });
     
     setSelectedNode({ ...selectedNode, ...updates });
+  };
+
+  const handleDeleteNode = async () => {
+    if (!nodeToDelete) return;
+    
+    try {
+      await deleteNodeMutation.mutateAsync(nodeToDelete.id);
+      setDeleteConfirmOpen(false);
+      setNodeToDelete(null);
+      if (selectedNode?.id === nodeToDelete.id) {
+        setSelectedNode(null);
+      }
+    } catch (error) {
+      console.error('Failed to delete node:', error);
+    }
   };
 
   const handlePhotoUpload = (file: File) => {
@@ -726,6 +821,131 @@ export default function FiberNetwork() {
         return [...prev, nodeId];
       }
     });
+  };
+
+  // Handle map click for adding new node
+  const handleMapClick = (lat: number, lng: number) => {
+    setNewNodeData({
+      name: '',
+      nodeType: 'chamber',
+      network: 'FibreLtd',
+      status: 'planned',
+      latitude: lat,
+      longitude: lng,
+      what3words: '',
+      address: '',
+      notes: '',
+    });
+    setCreateWorkItemForNewNode(false);
+    setAddNodeDialogOpen(true);
+  };
+
+  // Handle creating new node
+  const handleCreateNode = async () => {
+    if (!newNodeData.name) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please provide a name for the node',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    // Validate template selection if creating work item
+    if (createWorkItemForNewNode && !newNodeTemplate) {
+      toast({
+        title: 'Validation Error',
+        description: 'Please select a workflow template',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      console.log('[CREATE NODE] Submitting node data:', newNodeData);
+      const result = await createNodeMutation.mutateAsync(newNodeData);
+      console.log('[CREATE NODE] Node created successfully:', result);
+      
+      // If user wants to create a work item for this node
+      if (createWorkItemForNewNode && newNodeTemplate && result && result.node) {
+        console.log('[CREATE NODE] Creating work item for new node');
+        const workItemData = {
+          title: `${newNodeTemplate.name} - ${result.node.name}`,
+          description: `Work item for ${result.node.name} at ${result.node.address || 'Unknown location'}`,
+          status: 'Planning' as const,
+          assignedTo: currentUser?.id,
+          workflowTemplateId: newNodeTemplate.id,
+          workflowSource: 'manual',
+          workItemType: newNodeTemplate.id,
+          workflowMetadata: {
+            templateName: newNodeTemplate.name,
+            templateCategory: newNodeTemplate.category || 'Field Engineering',
+            fiberNodeId: result.node.id,
+            chamberName: result.node.name,
+            chamberLocation: {
+              latitude: result.node.latitude,
+              longitude: result.node.longitude,
+              address: result.node.address,
+              what3words: result.node.what3words,
+            },
+          },
+        };
+        
+        await createWorkItem(workItemData);
+        queryClient.invalidateQueries({ queryKey: ['/api/work-items'] });
+        
+        toast({
+          title: 'Success',
+          description: 'Node and work item created successfully',
+        });
+      } else if (!createWorkItemForNewNode) {
+        // Show success toast for node-only creation
+        toast({
+          title: 'Success',
+          description: 'Node created successfully',
+        });
+      }
+    } catch (error) {
+      console.error('[CREATE NODE] Full error:', error);
+      console.error('[CREATE NODE] Error type:', typeof error);
+      console.error('[CREATE NODE] Error details:', error instanceof Error ? {
+        message: error.message,
+        stack: error.stack,
+        name: error.name
+      } : 'Not an Error object');
+      
+      // Try to extract a meaningful error message
+      let errorMessage = 'Failed to create node';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (error && typeof error === 'object' && 'message' in error) {
+        errorMessage = String(error.message);
+      }
+      
+      toast({
+        title: 'Error',
+        description: errorMessage,
+        variant: 'destructive',
+      });
+    } finally {
+      // Always close dialog and reset form (in finally to ensure it runs even on error)
+      setAddNodeDialogOpen(false);
+      setNewNodeData({
+        name: '',
+        nodeType: 'chamber',
+        network: 'FibreLtd',
+        status: 'planned',
+        latitude: 0,
+        longitude: 0,
+        what3words: '',
+        address: '',
+        notes: '',
+      });
+      setNewNodeTemplate(null);
+      setCreateWorkItemForNewNode(false);
+    }
   };
 
   // Center map on UK (default location)
@@ -1183,6 +1403,12 @@ export default function FiberNetwork() {
             <TileLayer
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
+            
+            {/* Map click handler for adding nodes (disabled during selection modes) */}
+            <MapClickHandler 
+              onMapClick={handleMapClick} 
+              disabled={!!selectionMode || isDrawing}
             />
             
             {filteredNodes.length === 0 && nodes.length > 0 && (
@@ -1659,14 +1885,27 @@ export default function FiberNetwork() {
                       </TableCell>
                     )}
                     <TableCell onClick={(e) => e.stopPropagation()}>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() => setSelectedNode(node)}
-                        data-testid={`button-view-${node.id}`}
-                      >
-                        View
-                      </Button>
+                      <div className="flex items-center gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => setSelectedNode(node)}
+                          data-testid={`button-view-${node.id}`}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          onClick={() => {
+                            setNodeToDelete(node);
+                            setDeleteConfirmOpen(true);
+                          }}
+                          data-testid={`button-delete-${node.id}`}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))
@@ -1826,7 +2065,7 @@ export default function FiberNetwork() {
                               <Trash2 className="h-3 w-3" />
                             </Button>
                             <div className="absolute bottom-1 left-1 bg-black/60 text-white text-xs px-1.5 py-0.5 rounded">
-                              {new Date(photo.timestamp).toLocaleDateString()}
+                              {photo.timestamp ? new Date(photo.timestamp).toLocaleDateString() : 'No date'}
                             </div>
                           </div>
                         ))}
@@ -2095,6 +2334,36 @@ export default function FiberNetwork() {
           </div>
         </DialogContent>
       </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <AlertDialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Chamber</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete "{nodeToDelete?.name}"? This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel 
+              onClick={() => {
+                setDeleteConfirmOpen(false);
+                setNodeToDelete(null);
+              }}
+              data-testid="button-cancel-delete"
+            >
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteNode}
+              className="bg-red-600 hover:bg-red-700"
+              data-testid="button-confirm-delete"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {/* Work Item Creation Dialog */}
       <Dialog open={workItemDialogOpen} onOpenChange={setWorkItemDialogOpen}>
         <DialogContent className="sm:max-w-[500px]" data-testid="work-item-dialog">
@@ -2215,6 +2484,217 @@ export default function FiberNetwork() {
                 data-testid="button-confirm-create-work-item"
               >
                 Create {selectedNodes.length > 1 ? `${selectedNodes.length} ` : ''}Work Item{selectedNodes.length > 1 ? 's' : ''}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Node Dialog */}
+      <Dialog open={addNodeDialogOpen} onOpenChange={setAddNodeDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]" data-testid="add-node-dialog">
+          <DialogHeader>
+            <DialogTitle>
+              <Plus className="w-5 h-5 inline mr-2" />
+              Add New Fiber Network Node
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 max-h-[70vh] overflow-y-auto">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Name *</Label>
+                <Input
+                  value={newNodeData.name}
+                  onChange={(e) => setNewNodeData({ ...newNodeData, name: e.target.value })}
+                  placeholder="e.g., Chamber 1, Cabinet A"
+                  data-testid="input-node-name"
+                />
+              </div>
+
+              <div>
+                <Label>Node Type</Label>
+                <Select
+                  value={newNodeData.nodeType}
+                  onValueChange={(value) => setNewNodeData({ ...newNodeData, nodeType: value })}
+                >
+                  <SelectTrigger data-testid="select-node-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="chamber">Chamber</SelectItem>
+                    <SelectItem value="cabinet">Cabinet</SelectItem>
+                    <SelectItem value="pole">Pole</SelectItem>
+                    <SelectItem value="splice_closure">Splice Closure</SelectItem>
+                    <SelectItem value="customer_premise">Customer Premise</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Network</Label>
+                <Select
+                  value={newNodeData.network}
+                  onValueChange={(value) => setNewNodeData({ ...newNodeData, network: value })}
+                >
+                  <SelectTrigger data-testid="select-node-network">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="CCNet">CCNet</SelectItem>
+                    <SelectItem value="FibreLtd">FibreLtd</SelectItem>
+                    <SelectItem value="S&MFibre">S&MFibre</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Status</Label>
+                <Select
+                  value={newNodeData.status}
+                  onValueChange={(value) => setNewNodeData({ ...newNodeData, status: value })}
+                >
+                  <SelectTrigger data-testid="select-node-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="planned">Planned</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="build_complete">Build Complete</SelectItem>
+                    <SelectItem value="awaiting_evidence">Awaiting Evidence</SelectItem>
+                    <SelectItem value="action_required">Action Required</SelectItem>
+                    <SelectItem value="decommissioned">Decommissioned</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Latitude</Label>
+                <Input
+                  type="number"
+                  step="0.00000001"
+                  value={newNodeData.latitude}
+                  onChange={(e) => setNewNodeData({ ...newNodeData, latitude: parseFloat(e.target.value) || 0 })}
+                  data-testid="input-node-latitude"
+                />
+              </div>
+
+              <div>
+                <Label>Longitude</Label>
+                <Input
+                  type="number"
+                  step="0.00000001"
+                  value={newNodeData.longitude}
+                  onChange={(e) => setNewNodeData({ ...newNodeData, longitude: parseFloat(e.target.value) || 0 })}
+                  data-testid="input-node-longitude"
+                />
+              </div>
+            </div>
+
+            <div>
+              <Label>What3Words</Label>
+              <Input
+                value={newNodeData.what3words}
+                onChange={(e) => setNewNodeData({ ...newNodeData, what3words: e.target.value })}
+                placeholder="///word.word.word"
+                data-testid="input-node-what3words"
+              />
+            </div>
+
+            <div>
+              <Label>Address</Label>
+              <Textarea
+                value={newNodeData.address}
+                onChange={(e) => setNewNodeData({ ...newNodeData, address: e.target.value })}
+                placeholder="Enter address..."
+                rows={2}
+                data-testid="textarea-node-address"
+              />
+            </div>
+
+            <div>
+              <Label>Notes</Label>
+              <Textarea
+                value={newNodeData.notes}
+                onChange={(e) => setNewNodeData({ ...newNodeData, notes: e.target.value })}
+                placeholder="Add notes..."
+                rows={3}
+                data-testid="textarea-node-notes"
+              />
+            </div>
+
+            <div className="space-y-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+              <div className="flex items-center gap-2">
+                <Checkbox
+                  id="create-work-item-checkbox"
+                  checked={createWorkItemForNewNode}
+                  onCheckedChange={(checked) => setCreateWorkItemForNewNode(checked as boolean)}
+                  data-testid="checkbox-create-work-item-for-node"
+                />
+                <Label htmlFor="create-work-item-checkbox" className="cursor-pointer">
+                  Create work item after adding node
+                </Label>
+              </div>
+              
+              {createWorkItemForNewNode && (
+                <div className="ml-6">
+                  <Label>Workflow Template *</Label>
+                  <Select
+                    value={newNodeTemplate?.id?.toString()}
+                    onValueChange={(value) => {
+                      const template = templates?.find(t => t.id.toString() === value);
+                      setNewNodeTemplate(template || null);
+                    }}
+                  >
+                    <SelectTrigger data-testid="select-new-node-template">
+                      <SelectValue placeholder="Select a template..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {templates?.map((template: any) => (
+                        <SelectItem key={template.id} value={template.id.toString()}>
+                          {template.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-2 pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setAddNodeDialogOpen(false);
+                  setNewNodeData({
+                    name: '',
+                    nodeType: 'chamber',
+                    network: 'FibreLtd',
+                    status: 'planned',
+                    latitude: 0,
+                    longitude: 0,
+                    what3words: '',
+                    address: '',
+                    notes: '',
+                  });
+                }}
+                data-testid="button-cancel-add-node"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleCreateNode}
+                disabled={
+                  !newNodeData.name || 
+                  createNodeMutation.isPending ||
+                  (createWorkItemForNewNode && !newNodeTemplate)
+                }
+                data-testid="button-confirm-add-node"
+              >
+                {createNodeMutation.isPending ? 'Creating...' : 'Add Node'}
               </Button>
             </div>
           </div>

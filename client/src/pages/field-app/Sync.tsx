@@ -16,7 +16,8 @@ import {
   Trash2,
   FileText,
   Image,
-  Edit
+  Edit,
+  MapPin
 } from 'lucide-react';
 
 interface SyncProps {
@@ -99,6 +100,47 @@ export default function Sync({ session, onComplete }: SyncProps) {
               mimeType: photo.mimeType
             });
           }
+        } else if (item.type === 'fiberNetworkNode') {
+          // Handle fiber network node with photos
+          const nodeData = { ...item.data };
+          
+          // If node has photos, retrieve them from IndexedDB and convert to base64
+          if (nodeData.photos && Array.isArray(nodeData.photos) && nodeData.photos.length > 0) {
+            const photoDataArray = [];
+            
+            for (const photoId of nodeData.photos) {
+              const photo = await fieldDB.getPhoto(photoId);
+              if (photo) {
+                // Convert photo to base64
+                let blob: Blob;
+                if (photo.arrayBuffer) {
+                  blob = new Blob([photo.arrayBuffer], { type: photo.mimeType });
+                } else if (photo.blob) {
+                  blob = photo.blob;
+                } else {
+                  console.warn('Photo has no data:', photoId);
+                  continue;
+                }
+                
+                // Convert blob to base64
+                const reader = new FileReader();
+                const base64Data = await new Promise<string>((resolve) => {
+                  reader.onloadend = () => resolve(reader.result as string);
+                  reader.readAsDataURL(blob);
+                });
+                
+                photoDataArray.push({ data: base64Data });
+              }
+            }
+            
+            // Replace photo IDs with photo data
+            nodeData.photos = photoDataArray;
+          }
+          
+          updates.push({
+            ...item,
+            data: nodeData
+          });
         } else {
           updates.push(item);
         }
@@ -185,6 +227,23 @@ export default function Sync({ session, onComplete }: SyncProps) {
       setProgress(90);
       setStatus('Downloading fresh data...');
 
+      // Handle ID mapping for fiber network nodes
+      // Update local nodes with server IDs
+      if (syncResult.results) {
+        for (const result of syncResult.results) {
+          if (result.type === 'fiberNetworkNode' && result.success && result.serverId) {
+            // Update the fiber network node to mark it as synced and store server ID
+            // The local ID (result.id) was the temporary client-side ID
+            // The server ID (result.serverId) is the database ID
+            console.log('[Sync] Mapping fiber node:', { localId: result.id, serverId: result.serverId });
+            
+            // Mark the fiber node as synced in IndexedDB
+            await fieldDB.markFiberNodeAsSynced(result.id as string, result.serverId);
+            console.log('[Sync] Marked fiber node as synced:', result.id);
+          }
+        }
+      }
+
       // Clear local changes after successful sync
       const queueIds = queue.map(q => q.id).filter(id => id !== undefined) as number[];
       await fieldDB.markSynced(queueIds);
@@ -244,6 +303,8 @@ export default function Sync({ session, onComplete }: SyncProps) {
         return <Image className="h-4 w-4" />;
       case 'workflowStep':
         return <CheckCircle className="h-4 w-4" />;
+      case 'fiberNetworkNode':
+        return <MapPin className="h-4 w-4" />;
       default:
         return <Edit className="h-4 w-4" />;
     }
@@ -279,6 +340,16 @@ export default function Sync({ session, onComplete }: SyncProps) {
               {stats?.pendingSync || 0}
             </p>
           </div>
+
+          {stats?.fiberNodes > 0 && (
+            <div className="bg-zinc-800 rounded-lg p-3">
+              <div className="flex items-center gap-2 text-zinc-400 text-xs mb-1">
+                <MapPin className="h-3 w-3" />
+                Fiber Nodes
+              </div>
+              <p className="text-2xl font-semibold">{stats.fiberNodes}</p>
+            </div>
+          )}
         </div>
       </div>
 

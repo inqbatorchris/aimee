@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { CleanDatabaseStorage } from '../storage';
 import { authenticateToken } from '../auth.js';
-import { TABLE_REGISTRY } from '../services/workflow/tableRegistry.js';
+import { TABLE_REGISTRY, TABLE_RELATIONSHIPS } from '../services/workflow/tableRegistry.js';
 import { db } from '../db.js';
 import { eq, and, ne, gt, lt, gte, lte, like, notLike, sql, count, isNull, isNotNull } from 'drizzle-orm';
 
@@ -52,6 +52,29 @@ router.get('/fields/:tableName', authenticateToken, async (req, res) => {
     console.error('Error fetching data fields:', error);
     res.status(500).json({ 
       error: 'Failed to fetch data fields',
+      message: error.message 
+    });
+  }
+});
+
+router.get('/relationships', authenticateToken, async (req, res) => {
+  try {
+    const { tableName } = req.query;
+    
+    if (tableName) {
+      // Return relationships for a specific table
+      const relationships = TABLE_RELATIONSHIPS.filter(
+        rel => rel.parentTable === tableName || rel.childTable === tableName
+      );
+      res.json({ relationships });
+    } else {
+      // Return all relationships
+      res.json({ relationships: TABLE_RELATIONSHIPS });
+    }
+  } catch (error: any) {
+    console.error('Error fetching relationships:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch relationships',
       message: error.message 
     });
   }
@@ -214,5 +237,110 @@ function buildJsonbCondition(jsonPath: any, operator: string, value: any): any {
       throw new Error(`Unknown operator for JSONB: ${operator}`);
   }
 }
+
+// Endpoint to fetch records from a table for selection in filters
+router.get('/records/:tableName', authenticateToken, async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 0;
+    const { tableName } = req.params;
+    const { limit = 100 } = req.query;
+    
+    // Validate table name
+    if (!tableName || typeof tableName !== 'string') {
+      return res.status(400).json({ 
+        error: 'Invalid table name',
+        message: 'Table name is required and must be a string' 
+      });
+    }
+    
+    // Get table schema from registry
+    const tableSchema = TABLE_REGISTRY[tableName];
+    if (!tableSchema) {
+      return res.status(400).json({ 
+        error: 'Table not registered',
+        message: `Table '${tableName}' is not registered for data source queries` 
+      });
+    }
+    
+    // Define display field mapping for each table
+    const displayFieldMap: Record<string, string> = {
+      'objectives': 'title',
+      'key_results': 'title',
+      'key_result_tasks': 'title',
+      'profit_centers': 'name',
+      'work_items': 'title',
+      'address_records': 'fullAddress',
+      'field_tasks': 'title',
+      'rag_status_records': 'ragStatus',
+      'tariff_records': 'name',
+    };
+    
+    const displayField = displayFieldMap[tableName] || 'name';
+    
+    // Build query conditions
+    const conditions: any[] = [];
+    
+    // Add organization isolation if the table has organizationId column
+    if ('organizationId' in tableSchema) {
+      conditions.push(eq((tableSchema as any).organizationId, organizationId));
+    }
+    
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+    
+    // Fetch records - use try/catch for ordering since not all tables have id
+    let records: any[] = [];
+    try {
+      records = await db
+        .select()
+        .from(tableSchema)
+        .where(whereClause)
+        .limit(Number(limit))
+        .orderBy((tableSchema as any).id);
+    } catch (orderError) {
+      // If ordering by id fails, try without ordering
+      records = await db
+        .select()
+        .from(tableSchema)
+        .where(whereClause)
+        .limit(Number(limit));
+    }
+    
+    // Format records for dropdown display
+    const formattedRecords = records.map((record: any) => {
+      let displayValue = record[displayField] || `Record ${record.id || record.ID || 'Unknown'}`;
+      
+      // Add additional context for specific tables
+      if (tableName === 'objectives') {
+        displayValue = `${record.title} (${record.status || 'draft'})`;
+      } else if (tableName === 'key_results') {
+        displayValue = `${record.title} (${record.currentValue || 0}/${record.targetValue || 0})`;
+      } else if (tableName === 'profit_centers') {
+        displayValue = `${record.name}${record.type ? ` - ${record.type}` : ''}`;
+      }
+      
+      return {
+        id: record.id || record.ID,
+        displayValue,
+        rawData: {
+          title: record.title || record.name,
+          status: record.status,
+          type: record.type,
+        }
+      };
+    });
+    
+    res.json({ 
+      records: formattedRecords,
+      tableName,
+      count: formattedRecords.length,
+    });
+  } catch (error: any) {
+    console.error('Error fetching table records:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch table records',
+      message: error.message 
+    });
+  }
+});
 
 export default router;

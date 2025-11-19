@@ -1,13 +1,17 @@
 import { Router } from 'express';
 import { storage } from '../storage';
 import { authenticateToken } from '../auth';
-import { insertIntegrationSchema, insertDatabaseConnectionSchema, type InsertIntegration } from '../../shared/schema';
+import { insertIntegrationSchema, insertDatabaseConnectionSchema, type InsertIntegration, integrations } from '../../shared/schema';
 import { z } from 'zod';
 import crypto from 'crypto';
 import axios from 'axios';
 import { triggerDiscovery } from '../services/integrations/TriggerDiscoveryService';
 import { IntegrationCatalogImporter } from '../services/integrations/IntegrationCatalogImporter';
 import { DatabaseService } from '../services/integrations/databaseService';
+import { SplynxLabelService } from '../services/integrations/SplynxLabelService';
+import { SplynxService } from '../services/integrations/splynxService';
+import { db } from '../db';
+import { eq, and } from 'drizzle-orm';
 
 const router = Router();
 
@@ -1379,6 +1383,187 @@ router.post('/openai/test', async (req, res) => {
   } catch (error: any) {
     console.error('Error testing OpenAI connection:', error);
     res.status(500).json({ error: 'Failed to test connection' });
+  }
+});
+
+// Get Splynx entity schema metadata
+router.get('/splynx/schema/:entity?', async (req, res) => {
+  try {
+    const { entity } = req.params;
+    
+    // Define field schemas for each Splynx entity
+    const schemas = {
+      customers: {
+        entity: 'customers',
+        label: 'Customers',
+        fields: [
+          // Basic Identification
+          { name: 'id', label: 'Customer ID', type: 'number', operators: ['equals', 'not_equals', 'greater_than', 'less_than'] },
+          { name: 'login', label: 'Login', type: 'string', operators: ['equals', 'not_equals', 'contains'] },
+          { name: 'name', label: 'Name', type: 'string', operators: ['equals', 'not_equals', 'contains'] },
+          
+          // Contact Information
+          { name: 'email', label: 'Email', type: 'string', operators: ['equals', 'not_equals', 'contains'] },
+          { name: 'billing_email', label: 'Billing Email', type: 'string', operators: ['equals', 'not_equals', 'contains'] },
+          { name: 'phone', label: 'Phone', type: 'string', operators: ['equals', 'contains'] },
+          
+          // Status & Category
+          { name: 'status', label: 'Status', type: 'string', operators: ['equals', 'not_equals'], options: ['new', 'active', 'inactive', 'blocked', 'disabled'] },
+          { name: 'category', label: 'Category', type: 'string', operators: ['equals', 'not_equals'], options: ['individual', 'business'] },
+          
+          // Relationships
+          { name: 'partner_id', label: 'Partner ID', type: 'number', operators: ['equals', 'not_equals', 'is_null', 'not_null'] },
+          { name: 'location_id', label: 'Location ID', type: 'number', operators: ['equals', 'not_equals'] },
+          
+          // Dates
+          { name: 'date_add', label: 'Date Added', type: 'date', operators: ['equals', 'greater_than', 'less_than', 'greater_than_or_equal', 'less_than_or_equal'] },
+          { name: 'date_of_birth', label: 'Date of Birth', type: 'date', operators: ['equals', 'greater_than', 'less_than'] },
+          
+          // Address Fields
+          { name: 'street_1', label: 'Street 1', type: 'string', operators: ['contains'] },
+          { name: 'street_2', label: 'Street 2', type: 'string', operators: ['contains'] },
+          { name: 'city', label: 'City', type: 'string', operators: ['equals', 'contains'] },
+          { name: 'zip_code', label: 'ZIP Code', type: 'string', operators: ['equals', 'contains'] },
+          
+          // Additional Fields
+          { name: 'identification', label: 'Identification Number', type: 'string', operators: ['equals', 'contains'] },
+          { name: 'geo_data', label: 'Geo Coordinates', type: 'string', operators: ['contains'] },
+          { name: 'added_by', label: 'Added By', type: 'string', operators: ['equals', 'contains'] },
+          
+          // Customer Labels (array of label objects with id, label, color)
+          { name: 'customer_labels', label: 'Customer Labels', type: 'string', operators: ['contains', 'does_not_contain'] }
+        ],
+        dateField: 'date_add'
+      },
+      leads: {
+        entity: 'leads',
+        label: 'Leads',
+        fields: [
+          { name: 'id', label: 'Lead ID', type: 'number', operators: ['equals', 'not_equals', 'greater_than', 'less_than'] },
+          { name: 'name', label: 'Name', type: 'string', operators: ['equals', 'not_equals', 'contains'] },
+          { name: 'email', label: 'Email', type: 'string', operators: ['equals', 'not_equals', 'contains'] },
+          { name: 'phone', label: 'Phone', type: 'string', operators: ['equals', 'contains'] },
+          { name: 'status', label: 'Status', type: 'string', operators: ['equals', 'not_equals'], options: ['new', 'in_progress', 'qualified', 'converted', 'lost'] },
+          { name: 'source', label: 'Source', type: 'string', operators: ['equals', 'contains'] },
+          { name: 'date_add', label: 'Date Added', type: 'date', operators: ['equals', 'greater_than', 'less_than', 'greater_than_or_equal', 'less_than_or_equal'] }
+        ],
+        dateField: 'date_add'
+      },
+      support_tickets: {
+        entity: 'support_tickets',
+        label: 'Support Tickets',
+        fields: [
+          { name: 'id', label: 'Ticket ID', type: 'number', operators: ['equals', 'not_equals', 'greater_than', 'less_than'] },
+          { name: 'subject', label: 'Subject', type: 'string', operators: ['equals', 'contains'] },
+          { name: 'description', label: 'Description', type: 'string', operators: ['contains'] },
+          { name: 'status', label: 'Status', type: 'string', operators: ['equals', 'not_equals'], options: ['open', 'pending', 'solved', 'closed'] },
+          { name: 'priority', label: 'Priority', type: 'string', operators: ['equals'], options: ['low', 'normal', 'high', 'critical'] },
+          { name: 'customer_id', label: 'Customer ID', type: 'number', operators: ['equals', 'not_equals'] },
+          { name: 'date_created', label: 'Date Created', type: 'date', operators: ['equals', 'greater_than', 'less_than', 'greater_than_or_equal', 'less_than_or_equal'] }
+        ],
+        dateField: 'date_created'
+      },
+      scheduling_tasks: {
+        entity: 'scheduling_tasks',
+        label: 'Scheduling Tasks',
+        fields: [
+          { name: 'id', label: 'Task ID', type: 'number', operators: ['equals', 'not_equals', 'greater_than', 'less_than'] },
+          { name: 'subject', label: 'Subject', type: 'string', operators: ['equals', 'contains'] },
+          { name: 'description', label: 'Description', type: 'string', operators: ['contains'] },
+          { name: 'status', label: 'Status', type: 'string', operators: ['equals', 'not_equals'], options: ['new', 'in_progress', 'done', 'postponed', 'canceled'] },
+          { name: 'assigned_id', label: 'Assigned To (Admin ID)', type: 'number', operators: ['equals', 'not_equals'] },
+          { name: 'customer_id', label: 'Customer ID', type: 'number', operators: ['equals', 'not_equals'] },
+          { name: 'date', label: 'Task Date', type: 'date', operators: ['equals', 'greater_than', 'less_than', 'greater_than_or_equal', 'less_than_or_equal'] },
+          { name: 'time_from', label: 'Start Time', type: 'time', operators: ['equals', 'greater_than', 'less_than'] },
+          { name: 'time_to', label: 'End Time', type: 'time', operators: ['equals', 'greater_than', 'less_than'] }
+        ],
+        dateField: 'date'
+      }
+    };
+    
+    // If specific entity requested, return only that schema
+    if (entity) {
+      const schema = schemas[entity as keyof typeof schemas];
+      if (!schema) {
+        return res.status(404).json({ error: `Unknown entity: ${entity}` });
+      }
+      
+      // For customers entity, fetch actual label options from Splynx using cached service
+      if (entity === 'customers' && req.user?.organizationId) {
+        try {
+          const labelOptions = await SplynxLabelService.getLabels(req.user.organizationId);
+          
+          // Find and update the customer_labels field with options
+          const customerLabelsField = schema.fields.find(f => f.name === 'customer_labels');
+          if (customerLabelsField && labelOptions.length > 0) {
+            customerLabelsField.options = labelOptions;
+          }
+        } catch (labelError: any) {
+          // Log error but don't fail the whole request - return schema without label options
+          console.warn('Failed to fetch customer label options:', labelError.message);
+        }
+      }
+      
+      return res.json(schema);
+    }
+    
+    // Return all schemas
+    res.json(schemas);
+  } catch (error: any) {
+    console.error('Error fetching Splynx schema:', error);
+    res.status(500).json({ error: 'Failed to fetch schema' });
+  }
+});
+
+// Get Splynx projects for task creation
+router.get('/splynx/projects', async (req, res) => {
+  try {
+    if (!req.user?.organizationId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const integrationId = req.query.integrationId;
+    if (!integrationId || typeof integrationId !== 'string') {
+      return res.status(400).json({ error: 'integrationId query parameter is required' });
+    }
+
+    // Get specific Splynx integration by ID
+    const [splynxIntegration] = await db
+      .select()
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.id, parseInt(integrationId)),
+          eq(integrations.organizationId, req.user.organizationId),
+          eq(integrations.platformType, 'splynx')
+        )
+      )
+      .limit(1);
+
+    if (!splynxIntegration) {
+      return res.status(404).json({ error: 'Splynx integration not found' });
+    }
+
+    if (!splynxIntegration.credentialsEncrypted) {
+      return res.status(400).json({ error: 'Splynx credentials not configured' });
+    }
+
+    // Decrypt credentials
+    const credentials = JSON.parse(decrypt(splynxIntegration.credentialsEncrypted));
+    const { baseUrl, authHeader } = credentials;
+
+    if (!baseUrl || !authHeader) {
+      return res.status(400).json({ error: 'Splynx credentials incomplete' });
+    }
+
+    // Create Splynx service and fetch projects
+    const splynxService = new SplynxService({ baseUrl, authHeader });
+    const projects = await splynxService.getSplynxProjects();
+
+    res.json({ projects });
+  } catch (error: any) {
+    console.error('Error fetching Splynx projects:', error);
+    res.status(500).json({ error: 'Failed to fetch Splynx projects', details: error.message });
   }
 });
 

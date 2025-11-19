@@ -145,6 +145,23 @@ export default function WorkList({ stats }: WorkListProps) {
             </button>
           ))}
         </div>
+        
+        {/* Offline Nodes Link */}
+        {stats?.fiberNodes > 0 && (
+          <button
+            onClick={() => setLocation('/field-app/offline-nodes')}
+            className="w-full mt-2 p-2 bg-amber-600/20 hover:bg-amber-600/30 border border-amber-500/30 rounded-lg flex items-center justify-between text-sm transition-colors"
+            data-testid="button-view-offline-nodes"
+          >
+            <div className="flex items-center gap-2">
+              <MapPin className="h-4 w-4 text-amber-400" />
+              <span className="text-amber-400 font-medium">
+                {stats.fiberNodes} offline node{stats.fiberNodes !== 1 ? 's' : ''}
+              </span>
+            </div>
+            <ChevronRight className="h-4 w-4 text-amber-400" />
+          </button>
+        )}
       </div>
 
       {/* Work Items List */}

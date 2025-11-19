@@ -41,8 +41,7 @@ export default function Download({ session, onComplete }: DownloadProps) {
   const [selectedTemplateIds, setSelectedTemplateIds] = useState<Set<string>>(new Set());
   const [pendingTemplateIds, setPendingTemplateIds] = useState<Set<string>>(new Set());
   const [filters, setFilters] = useState({
-    assignedToMe: true,
-    myTeam: false,
+    assignmentFilter: 'me' as 'me' | 'team' | 'all',
     planning: true,
     ready: true,
     inProgress: true,
@@ -88,12 +87,9 @@ export default function Download({ session, onComplete }: DownloadProps) {
     try {
       // Build query params from filters
       const params = new URLSearchParams();
-      // Assignment filters are mutually exclusive - only send one
-      if (filters.myTeam) {
-        params.append('assignedTo', 'team');
-      } else if (filters.assignedToMe) {
-        params.append('assignedTo', 'me');
-      }
+      // Send assignment filter
+      params.append('assignedTo', filters.assignmentFilter);
+      
       if (filters.planning) params.append('status', 'Planning');
       if (filters.ready) params.append('status', 'Ready');
       if (filters.inProgress) params.append('status', 'In Progress');
@@ -346,12 +342,12 @@ export default function Download({ session, onComplete }: DownloadProps) {
       {/* Assignment */}
       <div>
         <Label className="text-xs font-semibold text-zinc-300 mb-3 block uppercase tracking-wider">Assignment</Label>
-        <div className="grid grid-cols-2 gap-2">
+        <div className="grid grid-cols-3 gap-2">
           <button
             type="button"
-            onClick={() => setPendingFilters({...pendingFilters, assignedToMe: true, myTeam: false})}
+            onClick={() => setPendingFilters({...pendingFilters, assignmentFilter: 'me'})}
             className={`py-3 px-4 rounded-lg text-sm font-medium transition-all ${
-              pendingFilters.assignedToMe
+              pendingFilters.assignmentFilter === 'me'
                 ? 'bg-emerald-600 text-white'
                 : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
             }`}
@@ -360,14 +356,25 @@ export default function Download({ session, onComplete }: DownloadProps) {
           </button>
           <button
             type="button"
-            onClick={() => setPendingFilters({...pendingFilters, myTeam: true, assignedToMe: false})}
+            onClick={() => setPendingFilters({...pendingFilters, assignmentFilter: 'team'})}
             className={`py-3 px-4 rounded-lg text-sm font-medium transition-all ${
-              pendingFilters.myTeam
+              pendingFilters.assignmentFilter === 'team'
                 ? 'bg-emerald-600 text-white'
                 : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
             }`}
           >
             👥 My Team
+          </button>
+          <button
+            type="button"
+            onClick={() => setPendingFilters({...pendingFilters, assignmentFilter: 'all'})}
+            className={`py-3 px-4 rounded-lg text-sm font-medium transition-all ${
+              pendingFilters.assignmentFilter === 'all'
+                ? 'bg-emerald-600 text-white'
+                : 'bg-zinc-800 text-zinc-400 border border-zinc-700'
+            }`}
+          >
+            🌐 All Work
           </button>
         </div>
       </div>
@@ -576,7 +583,7 @@ export default function Download({ session, onComplete }: DownloadProps) {
         </div>
         
         {/* Active Filter Count - Compact Badge */}
-        {(selectedTemplateIds.size > 0 || !filters.assignedToMe || filters.myTeam || 
+        {(selectedTemplateIds.size > 0 || filters.assignmentFilter !== 'me' || 
           !filters.planning || !filters.ready || !filters.inProgress || 
           filters.stuck || filters.completed || filters.archived || 
           filters.dateRange !== 'week') && (

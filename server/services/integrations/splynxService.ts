@@ -15,6 +15,35 @@ interface LeadFilter {
   statusFilter?: string;
 }
 
+// Types for unified query system
+export type SplynxEntity = 'customers' | 'leads' | 'support_tickets' | 'scheduling_tasks';
+export type QueryMode = 'count' | 'list';
+
+export interface SplynxFilter {
+  field: string;
+  operator: 'equals' | 'not_equals' | 'contains' | 'does_not_contain' | 'greater_than' | 'less_than' | 'greater_than_or_equal' | 'less_than_or_equal' | 'is_null' | 'not_null';
+  value: string;
+}
+
+export interface SplynxQueryConfig {
+  entity: SplynxEntity;
+  mode: QueryMode;
+  filters?: SplynxFilter[];
+  dateRange?: string;
+  dateRangeField?: 'date_add' | 'last_update';
+  limit?: number;
+  sinceDate?: Date;
+}
+
+export interface SplynxQueryResult {
+  count: number;
+  records?: Array<{
+    id: number | string;
+    attributes: Record<string, any>;
+    raw: any;
+  }>;
+}
+
 export class SplynxService {
   private credentials: SplynxCredentials;
 
@@ -93,7 +122,7 @@ export class SplynxService {
       console.log('[SPLYNX getLeadCount] 📡 REQUEST DETAILS:');
       console.log('[SPLYNX getLeadCount]   URL:', url);
       console.log('[SPLYNX getLeadCount]   Params:', JSON.stringify(params, null, 2));
-      console.log('[SPLYNX getLeadCount]   Auth Header:', this.credentials.authHeader.substring(0, 20) + '...');
+      console.log('[SPLYNX getLeadCount]   Has Auth: ✓');
       console.log('[SPLYNX getLeadCount]   Method: GET');
       
       const response = await axios.get(url, {
@@ -385,6 +414,11 @@ export class SplynxService {
     try {
       const url = this.buildUrl(`admin/customers/customer/${customerId}`);
       console.log(`[SPLYNX getCustomerEmail] Fetching email for customer ${customerId}`);
+  async getSplynxProjects(): Promise<any[]> {
+    try {
+      const url = this.buildUrl('admin/scheduling/projects');
+      
+      console.log('[SPLYNX getSplynxProjects] Fetching projects from:', url);
       
       const response = await axios.get(url, {
         headers: {
@@ -436,6 +470,256 @@ export class SplynxService {
       };
       
       const response = await axios.post(url, emailData, {
+      console.log('[SPLYNX getSplynxProjects] Response:', response.status);
+      
+      if (Array.isArray(response.data)) {
+        return response.data;
+      } else if (response.data?.items) {
+        return response.data.items;
+      }
+      
+      return [];
+    } catch (error: any) {
+      console.error('[SPLYNX getSplynxProjects] Error:', error.message);
+      throw new Error(`Failed to fetch projects from Splynx: ${error.message}`);
+    }
+  }
+
+  async createSplynxTask(taskData: {
+    taskName?: string;
+    name?: string;
+    projectId?: number;
+    project_id?: number;
+    customerId?: string | number;
+    customer_id?: string | number;
+    description?: string;
+    address?: string;
+    dueDate?: string;
+    scheduledFrom?: string;
+    workflowStatusId?: number;
+    assignee?: number;
+    assignee_id?: number;
+    priority?: string;
+    isScheduled?: boolean;
+    duration?: string;
+    travelTimeTo?: number;
+    travelTimeFrom?: number;
+    checklistTemplateId?: number;
+    status?: string;
+    start_date?: string;
+    end_date?: string;
+  }): Promise<any> {
+    try {
+      const url = this.buildUrl('admin/scheduling/tasks');
+      
+      console.log('[SPLYNX createSplynxTask] Creating task at:', url);
+      console.log('[SPLYNX createSplynxTask] Input data:', JSON.stringify(taskData, null, 2));
+      
+      // Validate required fields
+      const title = taskData.taskName || taskData.name;
+      const projectId = taskData.projectId || taskData.project_id;
+      
+      if (!title) {
+        throw new Error('Task name is required. Please set the "Task Name" field in your workflow configuration.');
+      }
+      
+      if (!projectId) {
+        throw new Error('Project ID is required. Please select a project from the "Project/Task Type" dropdown in your workflow configuration.');
+      }
+      
+      if (!taskData.workflowStatusId) {
+        console.warn('[SPLYNX createSplynxTask] ⚠️ No workflowStatusId provided - you must specify a valid Workflow Status ID for your project.');
+        console.warn('[SPLYNX createSplynxTask] ⚠️ Check your Splynx project settings to find the correct workflow_status_id value.');
+        throw new Error('Workflow Status ID is required. Please set the "Workflow Status ID" field in your workflow configuration. Check your Splynx project settings to find valid status IDs.');
+      }
+      
+      // Transform frontend parameters to Splynx API format (matching exact Splynx API structure)
+      const splynxPayload: any = {
+        title: title,
+        project_id: projectId,
+        partner_id: 1,
+        workflow_status_id: taskData.workflowStatusId,
+        is_archived: "0",
+        closed: "0",
+      };
+
+      // Add customer ID (Splynx uses related_customer_id)
+      if (taskData.customerId || taskData.customer_id) {
+        splynxPayload.related_customer_id = parseInt(String(taskData.customerId || taskData.customer_id));
+      }
+      
+      // Add description
+      if (taskData.description) {
+        splynxPayload.description = taskData.description;
+      }
+      
+      // Add address
+      if (taskData.address) {
+        splynxPayload.address = taskData.address;
+      }
+      
+      // Add assignee (only include if user sets it in UI)
+      if (taskData.assignee || taskData.assignee_id) {
+        const assigneeId = parseInt(String(taskData.assignee || taskData.assignee_id));
+        if (!isNaN(assigneeId)) {
+          splynxPayload.assignee = assigneeId;
+          splynxPayload.assigned_to = "assigned_to_team";
+        }
+      }
+      // Note: If assignee is not set, we don't include assigned_to or assignee fields
+      
+      // Add priority (with priority_ prefix and lowercase normalization)
+      if (taskData.priority) {
+        // Normalize to lowercase and add prefix if needed
+        let priority = String(taskData.priority).toLowerCase();
+        if (!priority.startsWith('priority_')) {
+          priority = `priority_${priority}`;
+        }
+        splynxPayload.priority = priority;
+      }
+      
+      // Handle is_scheduled flag
+      if (taskData.isScheduled !== undefined) {
+        splynxPayload.is_scheduled = taskData.isScheduled ? "1" : "0";
+      }
+      
+      // Handle scheduled_from (start date/time)
+      if (taskData.scheduledFrom) {
+        const date = new Date();
+        let hasValidParse = false;
+        
+        // Check if it's a relative date (starts with + or is just a number)
+        const isRelative = taskData.scheduledFrom.startsWith('+') || /^\d+$/.test(taskData.scheduledFrom.trim());
+        
+        if (isRelative) {
+          // Try to parse all time segments (days, hours, minutes)
+          const dayMatch = taskData.scheduledFrom.match(/(\d+)\s*day/i);
+          const hourMatch = taskData.scheduledFrom.match(/(\d+)\s*hour/i);
+          const minuteMatch = taskData.scheduledFrom.match(/(\d+)\s*minute/i);
+          
+          if (dayMatch) {
+            date.setDate(date.getDate() + parseInt(dayMatch[1]));
+            // Only set to 9 AM if no hours/minutes specified
+            if (!hourMatch && !minuteMatch) {
+              date.setHours(9, 0, 0, 0);
+            }
+            hasValidParse = true;
+          }
+          
+          if (hourMatch) {
+            date.setHours(date.getHours() + parseInt(hourMatch[1]));
+            hasValidParse = true;
+          }
+          
+          if (minuteMatch) {
+            date.setMinutes(date.getMinutes() + parseInt(minuteMatch[1]));
+            hasValidParse = true;
+          }
+          
+          if (!hasValidParse) {
+            // Fallback: try to parse as just a number (assume days)
+            const numMatch = taskData.scheduledFrom.match(/\+?\s*(\d+)/);
+            if (numMatch) {
+              date.setDate(date.getDate() + parseInt(numMatch[1]));
+              date.setHours(9, 0, 0, 0);
+              hasValidParse = true;
+            }
+          }
+          
+          splynxPayload.scheduled_from = date.toISOString().slice(0, 19).replace('T', ' ');
+        } else {
+          // Absolute date: normalize format for Splynx (YYYY-MM-DD HH:MM:SS)
+          const dateStr = taskData.scheduledFrom.replace('T', ' ').substring(0, 19);
+          splynxPayload.scheduled_from = dateStr;
+        }
+      }
+      
+      // Handle duration (format: "Xh Ym")
+      if (taskData.duration) {
+        // Validate format: should be like "0h 30m" or "1h 0m"
+        const durationPattern = /^\d+h\s+\d+m$/;
+        if (durationPattern.test(taskData.duration)) {
+          splynxPayload.formatted_duration = taskData.duration;
+        } else {
+          // Try to convert plain minutes to "0h Xm" format
+          const minutes = parseInt(taskData.duration);
+          if (!isNaN(minutes)) {
+            splynxPayload.formatted_duration = `0h ${minutes}m`;
+          } else {
+            console.warn(`[SPLYNX createSplynxTask] Invalid duration format: ${taskData.duration}, using default: "0h 5m"`);
+            splynxPayload.formatted_duration = "0h 5m";
+          }
+        }
+      } else {
+        splynxPayload.formatted_duration = "0h 5m";
+      }
+      
+      // Handle travel times
+      if (taskData.travelTimeTo !== undefined) {
+        splynxPayload.travel_time_to = taskData.travelTimeTo;
+      } else {
+        splynxPayload.travel_time_to = 0;
+      }
+      
+      if (taskData.travelTimeFrom !== undefined) {
+        splynxPayload.travel_time_from = taskData.travelTimeFrom;
+      } else {
+        splynxPayload.travel_time_from = 0;
+      }
+      
+      // Handle checklist template
+      if (taskData.checklistTemplateId !== undefined) {
+        splynxPayload.checklist_template_id = taskData.checklistTemplateId;
+      }
+      
+      // Handle end date (due date)
+      if (taskData.dueDate) {
+        const isRelative = taskData.dueDate.startsWith('+') || /^\d+$/.test(taskData.dueDate.trim());
+        
+        if (isRelative) {
+          // Handle relative dates like "+7 days", "+2 hours", or just "5"
+          const date = new Date();
+          let hasValidParse = false;
+          
+          const dayMatch = taskData.dueDate.match(/(\d+)\s*day/i);
+          const hourMatch = taskData.dueDate.match(/(\d+)\s*hour/i);
+          const minuteMatch = taskData.dueDate.match(/(\d+)\s*minute/i);
+          
+          if (dayMatch) {
+            date.setDate(date.getDate() + parseInt(dayMatch[1]));
+            hasValidParse = true;
+          }
+          
+          if (hourMatch) {
+            date.setHours(date.getHours() + parseInt(hourMatch[1]));
+            hasValidParse = true;
+          }
+          
+          if (minuteMatch) {
+            date.setMinutes(date.getMinutes() + parseInt(minuteMatch[1]));
+            hasValidParse = true;
+          }
+          
+          if (!hasValidParse) {
+            // Fallback: try to parse as just a number (assume days)
+            const numMatch = taskData.dueDate.match(/\+?\s*(\d+)/);
+            if (numMatch) {
+              date.setDate(date.getDate() + parseInt(numMatch[1]));
+              hasValidParse = true;
+            }
+          }
+          
+          splynxPayload.end_date = date.toISOString().split('T')[0];
+        } else {
+          // Absolute date: normalize format (YYYY-MM-DD)
+          const dateStr = taskData.dueDate.split('T')[0];
+          splynxPayload.end_date = dateStr;
+        }
+      }
+      
+      console.log('[SPLYNX createSplynxTask] Splynx payload:', JSON.stringify(splynxPayload, null, 2));
+      
+      const response = await axios.post(url, splynxPayload, {
         headers: {
           'Authorization': this.credentials.authHeader,
           'Content-Type': 'application/json',
@@ -467,6 +751,78 @@ export class SplynxService {
       console.log(`[SPLYNX forceSendEmail] Force sending email ID: ${emailId}`);
       console.log(`[SPLYNX forceSendEmail] Request URL: ${url}`);
       
+      console.log('[SPLYNX createSplynxTask] Response:', response.status);
+      console.log('[SPLYNX createSplynxTask] Created task:', response.data);
+      
+      return response.data;
+    } catch (error: any) {
+      console.error('[SPLYNX createSplynxTask] Error:', error.message);
+      console.error('[SPLYNX createSplynxTask] Response:', error.response?.data);
+      throw new Error(`Failed to create task in Splynx: ${error.message}`);
+    }
+  }
+
+  /**
+   * Unified query method for all Splynx entities
+   * Supports both count and list modes with advanced filtering
+   */
+  async queryEntities(config: SplynxQueryConfig): Promise<SplynxQueryResult> {
+    const { entity, mode, filters = [], dateRange, dateRangeField, limit = 10000, sinceDate } = config;
+    
+    console.log(`[SPLYNX queryEntities] 🔍 Query started`);
+    console.log(`[SPLYNX queryEntities]   Entity: ${entity}`);
+    console.log(`[SPLYNX queryEntities]   Mode: ${mode}`);
+    console.log(`[SPLYNX queryEntities]   Filters: ${filters.length}`);
+    
+    // Get entity endpoint mapping
+    const endpoint = this.getEntityEndpoint(entity);
+    const url = this.buildUrl(endpoint);
+    
+    // Separate client-side filters (customer_labels) from API filters
+    const apiFilters = filters.filter(f => f.field !== 'customer_labels');
+    const clientFilters = filters.filter(f => f.field === 'customer_labels');
+    
+    // Build query parameters from API filters only
+    const params: any = {
+      main_attributes: {},
+      limit: limit
+    };
+    
+    // Apply API filters
+    for (const filter of apiFilters) {
+      this.applyFilterToParams(params, filter, entity);
+    }
+    
+    // Apply date range if specified
+    if (dateRange) {
+      const dateFilter = this.getDateRangeFilter(dateRange);
+      // Use specified dateRangeField or fall back to default
+      const dateField = dateRangeField || this.getDateFieldForEntity(entity);
+      if (dateFilter.dateFrom && dateField) {
+        params.main_attributes[dateField] = ['>=', dateFilter.dateFrom.split('T')[0]];
+      }
+      console.log(`[SPLYNX queryEntities]   📅 Date range: ${dateRange} on field: ${dateField}`);
+    }
+    
+    // Apply incremental since date
+    if (sinceDate) {
+      // Use specified dateRangeField or fall back to default
+      const dateField = dateRangeField || this.getDateFieldForEntity(entity);
+      const dateStr = sinceDate.toISOString().split('T')[0];
+      if (dateField) {
+        params.main_attributes[dateField] = ['>=', dateStr];
+      }
+      console.log(`[SPLYNX queryEntities]   🔄 Incremental mode since: ${dateStr} on field: ${dateField}`);
+    }
+    
+    if (clientFilters.length > 0) {
+      console.log(`[SPLYNX queryEntities]   🎯 Client-side filters: ${clientFilters.length}`);
+    }
+    
+    console.log(`[SPLYNX queryEntities]   📡 Request URL: ${url}`);
+    console.log(`[SPLYNX queryEntities]   📝 Params:`, JSON.stringify(params, null, 2));
+    
+    try {
       const response = await axios.get(url, {
         headers: {
           'Authorization': this.credentials.authHeader,
@@ -537,6 +893,268 @@ export class SplynxService {
         success: false,
         error: error.message,
       };
+        params,
+      });
+      
+      console.log(`[SPLYNX queryEntities]   ✅ Response: ${response.status}`);
+      
+      // Normalize response data
+      let data = Array.isArray(response.data) ? response.data : response.data?.items || [];
+      
+      console.log(`[SPLYNX queryEntities]   📊 Initial records: ${data.length}`);
+      
+      // Normalize records with IDs and attributes FIRST
+      // Flatten the structure so attributes are at root level for easy variable access
+      let records = data.map((item: any) => {
+        const attributes = this.extractEntityAttributes(item, entity);
+        return {
+          id: item.id,
+          ...attributes, // Flatten attributes to root level for easy access like {{currentItem.name}}
+          attributes,    // Keep nested version for backward compatibility
+          raw: item      // Keep full raw data for advanced use cases
+        };
+      });
+      
+      // Apply client-side filters for customer_labels AFTER normalization
+      if (clientFilters.length > 0 && entity === 'customers') {
+        records = this.applyClientSideFiltersToNormalizedRecords(records, clientFilters);
+        console.log(`[SPLYNX queryEntities]   🔍 After client filtering: ${records.length} records`);
+      }
+      
+      const count = records.length;
+      console.log(`[SPLYNX queryEntities]   📊 Final records: ${count}`);
+      
+      // Return based on mode
+      if (mode === 'count') {
+        return { count };
+      } else {
+        return { count, records };
+      }
+    } catch (error: any) {
+      console.error(`[SPLYNX queryEntities]   ❌ ERROR: ${error.message}`);
+      console.error(`[SPLYNX queryEntities]   Response:`, error.response?.data);
+      throw new Error(`Failed to query ${entity} from Splynx: ${error.message}`);
+    }
+  }
+  
+  /**
+   * Apply client-side filters to normalized records for fields that can't be filtered via Splynx API
+   * (e.g., customer_labels which requires searching within array of objects)
+   */
+  private applyClientSideFiltersToNormalizedRecords(records: any[], filters: SplynxFilter[]): any[] {
+    let filtered = records;
+    
+    for (const filter of filters) {
+      const { field, operator, value } = filter;
+      
+      if (field === 'customer_labels' && operator === 'contains') {
+        // Filter customers where any label's text matches the search value
+        // Uses exact match (case-insensitive) since UI provides dropdown of exact labels
+        const searchTerm = value.toLowerCase().trim();
+        filtered = filtered.filter((record: any) => {
+          // Access customer_labels from the normalized attributes
+          const labels = record.attributes?.customer_labels || [];
+          
+          // Guard against empty or invalid labels array
+          if (!Array.isArray(labels) || labels.length === 0) {
+            return false;
+          }
+          
+          // Search within the array for exact matching label text (case-insensitive)
+          return labels.some((labelObj: any) => 
+            labelObj.label?.toLowerCase().trim() === searchTerm
+          );
+        });
+      }
+      
+      if (field === 'customer_labels' && operator === 'does_not_contain') {
+        // Filter customers where NO label's text matches the search value
+        // Uses exact match (case-insensitive) since UI provides dropdown of exact labels
+        const searchTerm = value.toLowerCase().trim();
+        filtered = filtered.filter((record: any) => {
+          // Access customer_labels from the normalized attributes
+          const labels = record.attributes?.customer_labels || [];
+          
+          // Guard against empty or invalid labels array
+          if (!Array.isArray(labels) || labels.length === 0) {
+            return true; // Include records with no labels when excluding
+          }
+          
+          // Exclude if ANY label matches exactly (case-insensitive)
+          return !labels.some((labelObj: any) => 
+            labelObj.label?.toLowerCase().trim() === searchTerm
+          );
+        });
+      }
+    }
+    
+    return filtered;
+  }
+  
+  /**
+   * Get Splynx API endpoint for entity type
+   */
+  private getEntityEndpoint(entity: SplynxEntity): string {
+    const endpoints: Record<SplynxEntity, string> = {
+      'customers': 'admin/customers/customer',
+      'leads': 'admin/crm/leads',
+      'support_tickets': 'admin/support/tickets',
+      'scheduling_tasks': 'admin/scheduling/tasks'
+    };
+    
+    return endpoints[entity];
+  }
+  
+  /**
+   * Get the date field name for incremental fetching by entity
+   */
+  private getDateFieldForEntity(entity: SplynxEntity): string {
+    const dateFields: Record<SplynxEntity, string> = {
+      'customers': 'date_add',
+      'leads': 'date_add',
+      'support_tickets': 'date_created',
+      'scheduling_tasks': 'date'
+    };
+    
+    return dateFields[entity];
+  }
+  
+  /**
+   * Apply a single filter to Splynx API params
+   */
+  private applyFilterToParams(params: any, filter: SplynxFilter, entity: SplynxEntity): void {
+    const { field, operator, value } = filter;
+    
+    // Handle operators and convert to Splynx format
+    switch (operator) {
+      case 'equals':
+        params.main_attributes[field] = value;
+        break;
+        
+      case 'not_equals':
+        params.main_attributes[field] = ['!=', value];
+        break;
+        
+      case 'contains':
+        params.main_attributes[field] = ['like', `%${value}%`];
+        break;
+        
+      case 'greater_than':
+        params.main_attributes[field] = ['>', value];
+        break;
+        
+      case 'less_than':
+        params.main_attributes[field] = ['<', value];
+        break;
+        
+      case 'greater_than_or_equal':
+        params.main_attributes[field] = ['>=', value];
+        break;
+        
+      case 'less_than_or_equal':
+        params.main_attributes[field] = ['<=', value];
+        break;
+        
+      case 'is_null':
+        params.main_attributes[field] = ['is', 'null'];
+        break;
+        
+      case 'not_null':
+        params.main_attributes[field] = ['is not', 'null'];
+        break;
+        
+      default:
+        console.warn(`[SPLYNX] Unknown operator: ${operator}`);
+    }
+  }
+  
+  /**
+   * Extract key attributes from raw Splynx record based on entity type
+   */
+  private extractEntityAttributes(record: any, entity: SplynxEntity): Record<string, any> {
+    // Common attributes all entities have
+    const common = {
+      id: record.id,
+    };
+    
+    // Entity-specific attributes
+    switch (entity) {
+      case 'customers':
+        return {
+          ...common,
+          // Basic identification
+          login: record.login,
+          name: record.name || `${record.firstname || ''} ${record.lastname || ''}`.trim(),
+          
+          // Contact information
+          email: record.email,
+          billing_email: record.billing_email,
+          phone: record.phone,
+          
+          // Status & Category
+          status: record.status,
+          category: record.category,
+          
+          // Relationships
+          partner_id: record.partner_id,
+          location_id: record.location_id,
+          
+          // Dates
+          date_add: record.date_add,
+          date_of_birth: record.date_of_birth,
+          
+          // Address fields
+          street_1: record.street_1 || record.street,
+          street_2: record.street_2,
+          city: record.city,
+          zip_code: record.zip_code,
+          
+          // Additional fields
+          identification: record.identification,
+          geo_data: record.geo_data,
+          added_by: record.added_by,
+          
+          // Customer Labels - array of objects with {id, label, color}
+          customer_labels: record.customer_labels || [],
+        };
+        
+      case 'leads':
+        return {
+          ...common,
+          name: record.name || `${record.firstname || ''} ${record.lastname || ''}`.trim(),
+          email: record.email,
+          phone: record.phone,
+          status: record.status,
+          date_add: record.date_add,
+          source: record.source,
+        };
+        
+      case 'support_tickets':
+        return {
+          ...common,
+          subject: record.subject,
+          description: record.description,
+          status: record.status,
+          priority: record.priority,
+          date_created: record.date_created,
+          customer_id: record.customer_id,
+        };
+        
+      case 'scheduling_tasks':
+        return {
+          ...common,
+          subject: record.subject,
+          description: record.description,
+          status: record.status,
+          assigned_id: record.assigned_id,
+          date: record.date,
+          time_from: record.time_from,
+          time_to: record.time_to,
+          customer_id: record.customer_id,
+        };
+        
+      default:
+        return common;
     }
   }
 
@@ -545,6 +1163,18 @@ export class SplynxService {
     const parsedSinceDate = sinceDate ? new Date(sinceDate) : undefined;
     
     switch (action) {
+      // New unified query action
+      case 'splynx_query':
+        return await this.queryEntities({
+          entity: parameters.entity,
+          mode: parameters.mode || 'count',
+          filters: parameters.filters || [],
+          dateRange: parameters.dateRange,
+          limit: parameters.limit,
+          sinceDate: parsedSinceDate
+        });
+      
+      // Legacy actions for backward compatibility
       case 'count_leads':
         return await this.getLeadCount(filters, parsedSinceDate);
       
@@ -565,6 +1195,12 @@ export class SplynxService {
 
       case 'get_task_types':
         return await this.getTaskTypes();
+
+      case 'get_splynx_projects':
+        return await this.getSplynxProjects();
+
+      case 'create_splynx_task':
+        return await this.createSplynxTask(parameters);
         
       default:
         throw new Error(`Unknown Splynx action: ${action}`);
