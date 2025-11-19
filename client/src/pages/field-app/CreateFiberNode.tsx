@@ -56,9 +56,20 @@ export default function CreateFiberNode({ onComplete }: CreateFiberNodeProps) {
   const [networks, setNetworks] = useState<string[]>([]);
   const [session, setSession] = useState<any>(null);
 
-  // Fetch node types from API
+  // Fetch node types from API with authentication
   const { data: nodeTypes = [] } = useQuery({
     queryKey: ['/api/fiber-network/node-types'],
+    queryFn: async () => {
+      const response = await fetch('/api/fiber-network/node-types', {
+        headers: {
+          'Authorization': `Bearer ${session?.token}`
+        }
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch node types');
+      }
+      return response.json();
+    },
     enabled: !!session?.token,
   });
 
