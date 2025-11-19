@@ -110,6 +110,39 @@ router.get('/', async (req, res) => {
   }
 });
 
+// Get all integration triggers (for webhook configuration)
+// IMPORTANT: This route must come BEFORE /:platformType to avoid route conflicts
+router.get('/integration-triggers', async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated or missing organization' });
+    }
+
+    const organizationId = user.organizationId;
+    
+    // Get all integrations for this org
+    const integrations = await storage.getIntegrations(organizationId);
+    
+    // Get triggers for all integrations
+    const allTriggers = [];
+    for (const integration of integrations) {
+      const triggers = await storage.getIntegrationTriggers(integration.id);
+      const enrichedTriggers = triggers.map(trigger => ({
+        ...trigger,
+        integrationName: integration.name,
+        integrationType: integration.platformType,
+      }));
+      allTriggers.push(...enrichedTriggers);
+    }
+    
+    res.json(allTriggers);
+  } catch (error: any) {
+    console.error('Error fetching integration triggers:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get specific integration
 router.get('/:platformType', async (req, res) => {
   try {
@@ -152,38 +185,6 @@ router.get('/:platformType', async (req, res) => {
   } catch (error) {
     console.error('Error fetching integration:', error);
     res.status(500).json({ error: 'Failed to fetch integration' });
-  }
-});
-
-// Get all integration triggers (for webhook configuration)
-router.get('/integration-triggers', async (req, res) => {
-  try {
-    const user = req.user;
-    if (!user || !user.organizationId) {
-      return res.status(401).json({ error: 'User not authenticated or missing organization' });
-    }
-
-    const organizationId = user.organizationId;
-    
-    // Get all integrations for this org
-    const integrations = await storage.getIntegrations(organizationId);
-    
-    // Get triggers for all integrations
-    const allTriggers = [];
-    for (const integration of integrations) {
-      const triggers = await storage.getIntegrationTriggers(integration.id);
-      const enrichedTriggers = triggers.map(trigger => ({
-        ...trigger,
-        integrationName: integration.name,
-        integrationType: integration.platformType,
-      }));
-      allTriggers.push(...enrichedTriggers);
-    }
-    
-    res.json(allTriggers);
-  } catch (error: any) {
-    console.error('Error fetching integration triggers:', error);
-    res.status(500).json({ error: error.message });
   }
 });
 
