@@ -387,6 +387,67 @@ export default function FiberNetwork() {
     },
   });
 
+  // Settings dialog state
+  const [settingsDialogOpen, setSettingsDialogOpen] = useState(false);
+  const [newNodeTypeName, setNewNodeTypeName] = useState('');
+  const [newNodeTypeLabel, setNewNodeTypeLabel] = useState('');
+
+  // Fetch node types
+  const { data: nodeTypesData } = useQuery<{ nodeTypes: any[] }>({
+    queryKey: ['/api/fiber-network/node-types'],
+  });
+
+  const nodeTypes = nodeTypesData?.nodeTypes || [];
+
+  // Create node type mutation
+  const createNodeTypeMutation = useMutation({
+    mutationFn: async (data: { value: string; label: string }) => {
+      return apiRequest('/api/fiber-network/node-types', {
+        method: 'POST',
+        body: data,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/node-types'] });
+      setNewNodeTypeName('');
+      setNewNodeTypeLabel('');
+      toast({
+        title: 'Success',
+        description: 'Node type created successfully',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to create node type',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // Delete node type mutation
+  const deleteNodeTypeMutation = useMutation({
+    mutationFn: async (id: number) => {
+      return apiRequest(`/api/fiber-network/node-types/${id}`, {
+        method: 'DELETE',
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/node-types'] });
+      toast({
+        title: 'Success',
+        description: 'Node type deleted successfully',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to delete node type',
+        variant: 'destructive',
+      });
+    },
+  });
+
   const nodes = nodesData?.nodes || [];
   
   // Check if filters are active
@@ -1118,6 +1179,18 @@ export default function FiberNetwork() {
                 <TableIcon className="h-5 w-5" />
               </Button>
             </div>
+            
+            {/* Settings Button */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setSettingsDialogOpen(true)}
+              data-testid="button-settings"
+              className="h-12 ml-2"
+              title="Manage Node Types"
+            >
+              <Settings className="h-5 w-5" />
+            </Button>
           </div>
           
           {/* Search and Filters Row */}
@@ -1315,6 +1388,19 @@ export default function FiberNetwork() {
               Table
             </Button>
           </div>
+          
+          {/* Settings Button */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setSettingsDialogOpen(true)}
+            data-testid="button-settings-desktop"
+            className="h-9"
+            title="Manage Node Types"
+          >
+            <Settings className="h-4 w-4 mr-1" />
+            Node Types
+          </Button>
         </div>
 
         {/* Expandable Filter Row - Shared by both mobile and desktop */}
@@ -2696,6 +2782,108 @@ export default function FiberNetwork() {
               >
                 {createNodeMutation.isPending ? 'Creating...' : 'Add Node'}
               </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Settings Dialog - Manage Node Types */}
+      <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]" data-testid="settings-dialog">
+          <DialogHeader>
+            <DialogTitle>Manage Node Types</DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-6">
+            {/* Existing Node Types */}
+            <div>
+              <h3 className="text-sm font-medium mb-3">Available Node Types</h3>
+              <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                {nodeTypes.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    <p className="text-sm">No node types configured</p>
+                    <p className="text-xs mt-1">Add your first node type below</p>
+                  </div>
+                ) : (
+                  nodeTypes.map((nodeType: any) => (
+                    <div
+                      key={nodeType.id}
+                      className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border"
+                      data-testid={`node-type-${nodeType.value}`}
+                    >
+                      <div>
+                        <div className="font-medium">{nodeType.label}</div>
+                        <div className="text-xs text-gray-500">{nodeType.value}</div>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => {
+                          if (confirm(`Are you sure you want to delete "${nodeType.label}"?`)) {
+                            deleteNodeTypeMutation.mutate(nodeType.id);
+                          }
+                        }}
+                        disabled={deleteNodeTypeMutation.isPending}
+                        data-testid={`button-delete-${nodeType.value}`}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Add New Node Type */}
+            <div className="border-t pt-4">
+              <h3 className="text-sm font-medium mb-3">Add New Node Type</h3>
+              <div className="space-y-3">
+                <div>
+                  <Label>Value *</Label>
+                  <Input
+                    value={newNodeTypeName}
+                    onChange={(e) => setNewNodeTypeName(e.target.value.toLowerCase().replace(/\s+/g, '_'))}
+                    placeholder="e.g., pole, splice_closure"
+                    data-testid="input-node-type-value"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Internal value (lowercase, underscores only)
+                  </p>
+                </div>
+                <div>
+                  <Label>Display Label *</Label>
+                  <Input
+                    value={newNodeTypeLabel}
+                    onChange={(e) => setNewNodeTypeLabel(e.target.value)}
+                    placeholder="e.g., Pole, Splice Closure"
+                    data-testid="input-node-type-label"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Label shown to users
+                  </p>
+                </div>
+                <Button
+                  onClick={() => {
+                    if (!newNodeTypeName || !newNodeTypeLabel) {
+                      toast({
+                        title: 'Validation Error',
+                        description: 'Please provide both value and label',
+                        variant: 'destructive',
+                      });
+                      return;
+                    }
+                    createNodeTypeMutation.mutate({
+                      value: newNodeTypeName,
+                      label: newNodeTypeLabel,
+                    });
+                  }}
+                  disabled={!newNodeTypeName || !newNodeTypeLabel || createNodeTypeMutation.isPending}
+                  className="w-full"
+                  data-testid="button-add-node-type"
+                >
+                  {createNodeTypeMutation.isPending ? 'Adding...' : 'Add Node Type'}
+                </Button>
+              </div>
             </div>
           </div>
         </DialogContent>
