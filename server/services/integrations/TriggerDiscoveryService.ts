@@ -299,6 +299,31 @@ export class TriggerDiscoveryService {
     return storage.getAllTriggersForOrganization(organizationId);
   }
 
+  /**
+   * Get metadata for a specific trigger
+   */
+  public getTriggerMetadata(platformType: string, triggerKey: string): TriggerDefinition | null {
+    let triggers: TriggerDefinition[] = [];
+    
+    // Get the appropriate trigger set based on platform type
+    switch (platformType.toLowerCase()) {
+      case 'splynx':
+        triggers = TriggerDiscoveryService.splynxTriggers;
+        break;
+      case 'xero':
+        triggers = this.getXeroTriggers();
+        break;
+      case 'airtable':
+        triggers = this.getAirtableTriggers();
+        break;
+      default:
+        return null;
+    }
+    
+    // Find and return the matching trigger
+    return triggers.find(t => t.triggerKey === triggerKey) || null;
+  }
+
   // Placeholder for other integrations
   private getXeroTriggers(): TriggerDefinition[] {
     return [
@@ -319,6 +344,20 @@ export class TriggerDiscoveryService {
         eventType: 'webhook',
         payloadSchema: {},
         availableFields: ['payment_id', 'invoice_id', 'amount', 'date']
+      }
+    ];
+  }
+
+  private getAirtableTriggers(): TriggerDefinition[] {
+    return [
+      {
+        triggerKey: 'record_created',
+        name: 'Record Created',
+        description: 'Triggered when a new record is created in Airtable',
+        category: 'data',
+        eventType: 'webhook',
+        payloadSchema: {},
+        availableFields: ['record_id', 'table_name', 'fields']
       }
     ];
   }
