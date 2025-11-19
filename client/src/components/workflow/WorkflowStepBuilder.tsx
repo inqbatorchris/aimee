@@ -15,6 +15,7 @@ import type { Integration, KeyResult, Objective } from '@shared/schema';
 import DataSourceQueryBuilder from './DataSourceQueryBuilder';
 import SplynxQueryBuilder from './SplynxQueryBuilder';
 import { VariableFieldPicker } from './VariableFieldPicker';
+import { WorkflowTemplateSelector } from './WorkflowTemplateSelector';
 import { DataInspectorPanel } from './DataInspectorPanel';
 
 interface WorkflowStep {
@@ -1598,13 +1599,13 @@ export default function WorkflowStepBuilder({
             </div>
 
             <div>
-              <Label>Workflow Template (Optional)</Label>
-              <Input
-                placeholder="Template ID to attach to created work item"
+              <WorkflowTemplateSelector
                 value={step.config.templateId || ''}
-                onChange={(e) => updateStep(step.id, {
-                  config: { ...step.config, templateId: e.target.value }
+                onChange={(value) => updateStep(step.id, {
+                  config: { ...step.config, templateId: value }
                 })}
+                label="Workflow Template (Optional)"
+                placeholder="Select a template to attach"
               />
               <p className="text-xs text-muted-foreground mt-1">
                 Attach a workflow template to the created work item
@@ -1613,43 +1614,43 @@ export default function WorkflowStepBuilder({
 
             <div>
               <Label>Splynx Ticket ID (Optional)</Label>
-              <Input
-                placeholder="e.g., {{trigger.ticket_id}}"
+              <VariableFieldPicker
                 value={step.config.splynxTicketId || ''}
-                onChange={(e) => updateStep(step.id, {
-                  config: { ...step.config, splynxTicketId: e.target.value }
+                onChange={(value) => updateStep(step.id, {
+                  config: { ...step.config, splynxTicketId: value }
                 })}
+                placeholder="e.g., {{trigger.ticket_id}}"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Link to Splynx ticket (for status syncing)
+                Link to Splynx ticket (for status syncing). Click to insert variables from previous steps.
               </p>
             </div>
 
             <div>
               <Label>Splynx Task ID (Optional)</Label>
-              <Input
-                placeholder="e.g., {{trigger.task_id}}"
+              <VariableFieldPicker
                 value={step.config.splynxTaskId || ''}
-                onChange={(e) => updateStep(step.id, {
-                  config: { ...step.config, splynxTaskId: e.target.value }
+                onChange={(value) => updateStep(step.id, {
+                  config: { ...step.config, splynxTaskId: value }
                 })}
+                placeholder="e.g., {{trigger.task_id}}"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Link to Splynx task (for status syncing)
+                Link to Splynx task (for status syncing). Click to insert variables from previous steps.
               </p>
             </div>
 
             <div>
               <Label>External Reference (Optional)</Label>
-              <Input
-                placeholder="e.g., splynx_customer_{{currentItem.id}}"
+              <VariableFieldPicker
                 value={step.config.externalReference || ''}
-                onChange={(e) => updateStep(step.id, {
-                  config: { ...step.config, externalReference: e.target.value }
+                onChange={(value) => updateStep(step.id, {
+                  config: { ...step.config, externalReference: value }
                 })}
+                placeholder="e.g., splynx_customer_{{currentItem.id}}"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Link to external system record
+                Link to external system record. Click to insert variables from previous steps.
               </p>
             </div>
           </div>
