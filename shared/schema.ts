@@ -2559,7 +2559,7 @@ export const workflowStepSchema = z.object({
   title: z.string().optional(),
   label: z.string().optional(),
   description: z.string().optional(),
-  type: z.enum(['checklist', 'form', 'photo', 'signature', 'measurement', 'notes', 'checkbox', 'text_input', 'file_upload', 'approval', 'kb_link', 'comment', 'geolocation', 'fiber_network_node']),
+  type: z.enum(['checklist', 'form', 'photo', 'signature', 'measurement', 'notes', 'checkbox', 'text_input', 'file_upload', 'approval', 'kb_link', 'comment', 'geolocation', 'fiber_network_node', 'splynx_ticket']),
   required: z.boolean().default(false),
   order: z.number(),
   config: z.any().optional(),

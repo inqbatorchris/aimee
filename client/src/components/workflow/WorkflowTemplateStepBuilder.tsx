@@ -9,7 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet';
-import { CheckSquare, Type, Upload, ThumbsUp, Link2, MessageSquare, GripVertical, Trash2, Plus, Camera, FileText, List, PenTool, Ruler, X, MapPin } from 'lucide-react';
+import { CheckSquare, Type, Upload, ThumbsUp, Link2, MessageSquare, GripVertical, Trash2, Plus, Camera, FileText, List, PenTool, Ruler, X, MapPin, Ticket } from 'lucide-react';
 
 export interface ChecklistItem {
   id: string;
@@ -41,7 +41,7 @@ export interface DataOutputConfig {
 
 export interface WorkflowTemplateStep {
   id: string;
-  type: 'checklist' | 'form' | 'photo' | 'geolocation' | 'signature' | 'measurement' | 'notes' | 'checkbox' | 'text_input' | 'file_upload' | 'approval' | 'kb_link' | 'comment' | 'data_output';
+  type: 'checklist' | 'form' | 'photo' | 'geolocation' | 'signature' | 'measurement' | 'notes' | 'checkbox' | 'text_input' | 'file_upload' | 'approval' | 'kb_link' | 'comment' | 'data_output' | 'splynx_ticket';
   title?: string;
   label?: string;
   description?: string;
@@ -70,6 +70,7 @@ const STEP_TYPES = [
   { value: 'measurement', label: 'Measurement', icon: Ruler, description: 'Numeric measurement', category: 'field' },
   
   // Data Integration (NEW)
+  { value: 'splynx_ticket', label: 'Splynx Ticket', icon: Ticket, description: 'Manage support ticket - view, respond, update status', category: 'integration' },
   { value: 'data_output', label: 'Save to Source', icon: Upload, description: 'Save workflow data back to originating record', category: 'integration' },
   
   // Legacy Web Types

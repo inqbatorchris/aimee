@@ -24,6 +24,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import SplynxTicketStep from './steps/SplynxTicketStep';
 
 interface WorkflowStep {
   id: string;
@@ -67,8 +68,13 @@ export default function ChamberWorkflowExecutor({
   const [isGettingLocation, setIsGettingLocation] = useState(false);
 
   // Fetch workflow template
-  const { data: template, isLoading: isLoadingTemplate } = useQuery({
+  const { data: template, isLoading: isLoadingTemplate } = useQuery<any>({
     queryKey: [`/api/workflows/templates/${templateId}`],
+  });
+
+  // Fetch work item to access metadata
+  const { data: workItem } = useQuery<any>({
+    queryKey: [`/api/work-items/${workItemId}`],
   });
 
   // Assign workflow to work item
@@ -570,6 +576,38 @@ export default function ChamberWorkflowExecutor({
               />
             )}
           </div>
+        );
+
+      case 'splynx_ticket':
+        return (
+          <SplynxTicketStep
+            workItemId={workItemId}
+            ticketId={workItem?.workflowMetadata?.splynx_ticket_id}
+            taskId={workItem?.workflowMetadata?.splynx_task_id}
+            onSave={(data) => {
+              setExecutionData(prev => ({
+                ...prev,
+                [currentStep.id]: {
+                  ...data,
+                  completed: true
+                }
+              }));
+              
+              // Move to next step or complete
+              if (isLastStep) {
+                const updatedData = {
+                  ...executionData,
+                  [currentStep.id]: {
+                    ...data,
+                    completed: true
+                  }
+                };
+                completeWorkflowMutation.mutate(updatedData);
+              } else {
+                setCurrentStepIndex(currentStepIndex + 1);
+              }
+            }}
+          />
         );
 
       default:
