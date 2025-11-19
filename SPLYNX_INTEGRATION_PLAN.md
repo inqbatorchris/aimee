@@ -1,7 +1,498 @@
-# Splynx Ticketing Integration - Detailed Implementation Plan
+# Splynx Ticketing Integration + Webhook Enhancements - Detailed Implementation Plan
 
 ## Overview
-Enable WorkItems created from Splynx tickets/tasks to display live ticket data and sync status updates back to Splynx using existing infrastructure with minimal changes.
+Enable WorkItems created from Splynx tickets/tasks to display live ticket data and sync status updates back to Splynx using existing infrastructure with minimal changes. Additionally, enhance the webhook trigger functionality with endpoint display and detailed event logging.
+
+---
+
+## **Part 0: Webhook Trigger Enhancements** 🎣
+
+### Current State
+- ✅ Webhook backend fully implemented (`server/routes/webhooks.ts`)
+- ✅ Webhook events table exists (`webhookEvents`)
+- ✅ Events are logged with full details (payload, headers, IP, verified status)
+- ❌ **UI doesn't show webhook endpoint URL** - users can't see where to send webhooks
+- ❌ **No webhook event log viewer** - can't debug or monitor incoming webhooks
+
+### Required Changes
+
+#### **1. Display Webhook Endpoint in UI**
+
+**File**: `client/src/pages/agents/AgentWorkflowEdit.tsx`
+
+Update the trigger configuration section to show webhook URL when webhook trigger is selected:
+
+```typescript
+// After line 340 (in the trigger type selection area)
+{triggerType === 'webhook' && (
+  <div className="space-y-3 mt-4 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200">
+    <div className="flex items-center gap-2 mb-2">
+      <Zap className="h-4 w-4 text-blue-600" />
+      <Label className="font-semibold">Webhook Configuration</Label>
+    </div>
+    
+    <div>
+      <Label className="text-xs text-muted-foreground">Webhook Endpoint</Label>
+      <div className="flex items-center gap-2 mt-1">
+        <Input
+          value={webhookEndpoint}
+          readOnly
+          className="font-mono text-xs bg-white dark:bg-gray-800"
+          data-testid="input-webhook-endpoint"
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => {
+            navigator.clipboard.writeText(webhookEndpoint);
+            toast({
+              title: 'Copied!',
+              description: 'Webhook endpoint URL copied to clipboard',
+            });
+          }}
+          data-testid="button-copy-webhook"
+        >
+          <Copy className="h-4 w-4" />
+        </Button>
+      </div>
+      <p className="text-xs text-muted-foreground mt-2">
+        Send POST requests to this endpoint to trigger the workflow
+      </p>
+    </div>
+    
+    <div>
+      <Label className="text-xs text-muted-foreground">Webhook Trigger</Label>
+      <Select
+        value={selectedTriggerId?.toString() || ''}
+        onValueChange={(value) => setSelectedTriggerId(parseInt(value))}
+      >
+        <SelectTrigger data-testid="select-webhook-trigger">
+          <SelectValue placeholder="Select a trigger event" />
+        </SelectTrigger>
+        <SelectContent>
+          {availableTriggers.map(trigger => (
+            <SelectItem key={trigger.id} value={trigger.id.toString()}>
+              {trigger.name}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      <p className="text-xs text-muted-foreground mt-1">
+        Choose from 35 available webhook events
+      </p>
+    </div>
+    
+    <div className="pt-3 border-t border-gray-200">
+      <Button
+        variant="link"
+        size="sm"
+        className="p-0 h-auto text-blue-600"
+        onClick={() => setShowEventLog(true)}
+        data-testid="link-view-events"
+      >
+        <Clock className="h-3 w-3 mr-1" />
+        View Recent Webhook Events
+      </Button>
+    </div>
+  </div>
+)}
+```
+
+Add state management:
+```typescript
+const [selectedTriggerId, setSelectedTriggerId] = useState<number | null>(null);
+const [showEventLog, setShowEventLog] = useState(false);
+const [webhookEndpoint, setWebhookEndpoint] = useState('');
+
+// Fetch available triggers when integration is selected
+const { data: availableTriggers = [] } = useQuery({
+  queryKey: ['/api/integration-triggers'],
+  enabled: triggerType === 'webhook',
+});
+
+// Generate webhook endpoint URL
+useEffect(() => {
+  if (workflow && selectedTriggerId) {
+    const trigger = availableTriggers.find(t => t.id === selectedTriggerId);
+    if (trigger) {
+      const baseUrl = window.location.origin;
+      const endpoint = `${baseUrl}/api/webhooks/${trigger.integrationType}/${workflow.organizationId}/${trigger.triggerKey}`;
+      setWebhookEndpoint(endpoint);
+    }
+  }
+}, [workflow, selectedTriggerId, availableTriggers]);
+
+// Load selected trigger from workflow config
+useEffect(() => {
+  if (workflow?.triggerConfig) {
+    const config = workflow.triggerConfig as any;
+    if (config.triggerId) {
+      setSelectedTriggerId(config.triggerId);
+    }
+  }
+}, [workflow]);
+
+// Save selected trigger ID in triggerConfig
+const handleSave = () => {
+  const triggerConfig: any = {};
+  
+  if (triggerType === 'schedule') {
+    triggerConfig.frequency = frequency;
+  } else if (triggerType === 'webhook' && selectedTriggerId) {
+    triggerConfig.triggerId = selectedTriggerId;
+  }
+  
+  // ... rest of save logic
+};
+```
+
+**Effort**: ~80 lines, 30 minutes
+
+---
+
+#### **2. Webhook Event Log Viewer**
+
+Create new component to display webhook events in a dialog:
+
+**File**: `client/src/components/webhooks/WebhookEventLog.tsx`
+
+```typescript
+import { useQuery } from '@tanstack/react-query';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { formatDistanceToNow } from 'date-fns';
+import { CheckCircle, XCircle, Clock, RefreshCw, ChevronDown, ChevronRight } from 'lucide-react';
+import { useState } from 'react';
+
+interface WebhookEventLogProps {
+  open: boolean;
+  onClose: () => void;
+  organizationId: number;
+  workflowId?: number;
+}
+
+export function WebhookEventLog({ open, onClose, organizationId, workflowId }: WebhookEventLogProps) {
+  const [expandedEventId, setExpandedEventId] = useState<number | null>(null);
+  
+  const { data: events = [], isLoading, refetch } = useQuery({
+    queryKey: ['/api/webhooks/events', organizationId],
+    enabled: open,
+  });
+
+  // Filter events by workflow if workflowId is provided
+  const filteredEvents = workflowId 
+    ? events.filter((e: any) => e.workflowRunId && e.workflowId === workflowId)
+    : events;
+
+  return (
+    <Dialog open={open} onOpenChange={onClose}>
+      <DialogContent className="max-w-4xl max-h-[80vh]">
+        <DialogHeader>
+          <div className="flex items-center justify-between">
+            <DialogTitle>Webhook Event Log</DialogTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => refetch()}
+              data-testid="button-refresh-events"
+            >
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </div>
+        </DialogHeader>
+        
+        {isLoading ? (
+          <div className="flex items-center justify-center py-8">
+            <Clock className="h-6 w-6 animate-spin text-muted-foreground" />
+          </div>
+        ) : filteredEvents.length === 0 ? (
+          <div className="text-center py-8 text-muted-foreground">
+            No webhook events received yet
+          </div>
+        ) : (
+          <ScrollArea className="h-[500px] pr-4">
+            <div className="space-y-2">
+              {filteredEvents.map((event: any) => (
+                <div
+                  key={event.id}
+                  className="border rounded-lg p-3 hover:bg-accent/50 transition-colors"
+                  data-testid={`event-${event.id}`}
+                >
+                  {/* Event Header */}
+                  <div
+                    className="flex items-start justify-between cursor-pointer"
+                    onClick={() => setExpandedEventId(
+                      expandedEventId === event.id ? null : event.id
+                    )}
+                  >
+                    <div className="flex items-start gap-3 flex-1">
+                      {/* Status Icon */}
+                      <div className="mt-1">
+                        {event.processed ? (
+                          event.workflowTriggered ? (
+                            <CheckCircle className="h-5 w-5 text-green-600" />
+                          ) : (
+                            <CheckCircle className="h-5 w-5 text-gray-400" />
+                          )
+                        ) : (
+                          <Clock className="h-5 w-5 text-yellow-600" />
+                        )}
+                      </div>
+                      
+                      {/* Event Info */}
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-semibold text-sm">
+                            {event.triggerKey}
+                          </span>
+                          {event.verified && (
+                            <Badge variant="outline" className="text-xs bg-green-50 text-green-700">
+                              Verified
+                            </Badge>
+                          )}
+                          {event.workflowTriggered && (
+                            <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700">
+                              Workflow Triggered
+                            </Badge>
+                          )}
+                        </div>
+                        
+                        <div className="text-xs text-muted-foreground space-y-0.5">
+                          <div>Event ID: {event.eventId || 'N/A'}</div>
+                          <div>Source: {event.sourceIp}</div>
+                          <div>
+                            {formatDistanceToNow(new Date(event.createdAt), { addSuffix: true })}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    {/* Expand Icon */}
+                    <div className="ml-2">
+                      {expandedEventId === event.id ? (
+                        <ChevronDown className="h-4 w-4" />
+                      ) : (
+                        <ChevronRight className="h-4 w-4" />
+                      )}
+                    </div>
+                  </div>
+                  
+                  {/* Expanded Details */}
+                  {expandedEventId === event.id && (
+                    <div className="mt-3 pt-3 border-t space-y-3">
+                      {/* Headers */}
+                      <div>
+                        <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">
+                          Headers
+                        </div>
+                        <pre className="text-xs bg-muted p-2 rounded overflow-x-auto">
+                          {JSON.stringify(event.headers, null, 2)}
+                        </pre>
+                      </div>
+                      
+                      {/* Payload */}
+                      <div>
+                        <div className="text-xs font-semibold text-muted-foreground uppercase mb-1">
+                          Payload
+                        </div>
+                        <pre className="text-xs bg-muted p-2 rounded overflow-x-auto max-h-64 overflow-y-auto">
+                          {JSON.stringify(event.payload, null, 2)}
+                        </pre>
+                      </div>
+                      
+                      {/* Error Message (if any) */}
+                      {event.errorMessage && (
+                        <div>
+                          <div className="text-xs font-semibold text-red-600 uppercase mb-1">
+                            Error
+                          </div>
+                          <div className="text-xs bg-red-50 text-red-900 p-2 rounded">
+                            {event.errorMessage}
+                          </div>
+                        </div>
+                      )}
+                      
+                      {/* Workflow Run Link */}
+                      {event.workflowRunId && (
+                        <div className="pt-2 border-t">
+                          <Button
+                            variant="link"
+                            size="sm"
+                            className="p-0 h-auto text-blue-600"
+                            onClick={() => {
+                              // Navigate to workflow run details
+                              window.location.href = `/agents?runId=${event.workflowRunId}`;
+                            }}
+                          >
+                            View Workflow Run →
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </ScrollArea>
+        )}
+      </DialogContent>
+    </Dialog>
+  );
+}
+```
+
+**Effort**: ~180 lines, 60 minutes
+
+Import and use in `AgentWorkflowEdit.tsx`:
+```typescript
+import { WebhookEventLog } from '@/components/webhooks/WebhookEventLog';
+
+// In the component:
+{showEventLog && workflow && (
+  <WebhookEventLog
+    open={showEventLog}
+    onClose={() => setShowEventLog(false)}
+    organizationId={workflow.organizationId}
+    workflowId={workflow.id}
+  />
+)}
+```
+
+---
+
+#### **3. Backend Enhancement - Get Integration Triggers**
+
+**File**: `server/routes/integrations.ts`
+
+Add endpoint to fetch all available integration triggers:
+
+```typescript
+// Get all integration triggers (for webhook configuration)
+router.get('/integration-triggers', authenticateToken, async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId;
+    
+    // Get all integrations for this org
+    const integrations = await storage.getIntegrations(organizationId);
+    
+    // Get triggers for all integrations
+    const allTriggers = [];
+    for (const integration of integrations) {
+      const triggers = await storage.getIntegrationTriggers(integration.id);
+      const enrichedTriggers = triggers.map(trigger => ({
+        ...trigger,
+        integrationName: integration.name,
+        integrationType: integration.platformType,
+      }));
+      allTriggers.push(...enrichedTriggers);
+    }
+    
+    res.json(allTriggers);
+  } catch (error: any) {
+    console.error('Error fetching integration triggers:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+```
+
+**Effort**: ~20 lines, 10 minutes
+
+---
+
+### **MOCKUP: Webhook Configuration with Endpoint Display**
+
+```
+┌────────────────────────────────────────────────────────────────┐
+│  Edit Agent Workflow                        [Run] [Cancel] [Save]│
+├────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│  Trigger Configuration                                           │
+│  ┌────────────────────────────────────────────────────────────┐│
+│  │ Enabled                                              [ON]  ││
+│  │                                                              ││
+│  │ Trigger Type                                                ││
+│  │ ⚡ Webhook                                            ▼     ││
+│  │ Trigger when a webhook is received                          ││
+│  │                                                              ││
+│  │ ⚡ Webhook Configuration                                    ││
+│  │ ┌──────────────────────────────────────────────────────────┐││
+│  │ │ WEBHOOK ENDPOINT                                         │││
+│  │ │ ┌────────────────────────────────────────────┬─────────┐│││
+│  │ │ │ https://aimee.works/api/webhooks/splynx... │ [Copy] ││││
+│  │ │ └────────────────────────────────────────────┴─────────┘│││
+│  │ │ Send POST requests to this endpoint to trigger workflow │││
+│  │ │                                                           │││
+│  │ │ WEBHOOK TRIGGER                                          │││
+│  │ │ Ticket Created                                     ▼     │││
+│  │ │ Choose from 35 available webhook events                  │││
+│  │ │                                                           │││
+│  │ │ ─────────────────────────────────────────────────────── │││
+│  │ │ 🕐 View Recent Webhook Events                           │││
+│  │ └──────────────────────────────────────────────────────────┘││
+│  └────────────────────────────────────────────────────────────┘│
+└────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### **MOCKUP: Webhook Event Log Viewer**
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  Webhook Event Log                                    [Refresh↻] │
+├──────────────────────────────────────────────────────────────────┤
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │ ✅ ticket_created                 [Verified] [Triggered]   │ │
+│  │    Event ID: evt_12345                                     ▼│ │
+│  │    Source: 192.168.1.100                                    │ │
+│  │    2 minutes ago                                            │ │
+│  │    ┌──────────────────────────────────────────────────────┐│ │
+│  │    │ HEADERS                                               ││ │
+│  │    │ {                                                     ││ │
+│  │    │   "Content-Type": "application/json",                ││ │
+│  │    │   "X-Splynx-Signature": "sha256=abc123..."           ││ │
+│  │    │ }                                                     ││ │
+│  │    │                                                       ││ │
+│  │    │ PAYLOAD                                               ││ │
+│  │    │ {                                                     ││ │
+│  │    │   "id": 12345,                                        ││ │
+│  │    │   "subject": "Internet Down",                         ││ │
+│  │    │   "customer_id": 456,                                 ││ │
+│  │    │   "status": "new",                                    ││ │
+│  │    │   "priority": "high"                                  ││ │
+│  │    │ }                                                     ││ │
+│  │    │                                                       ││ │
+│  │    │ ─────────────────────────────────────────────────────││ │
+│  │    │ View Workflow Run →                                  ││ │
+│  │    └──────────────────────────────────────────────────────┘│ │
+│  └────────────────────────────────────────────────────────────┘ │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │ ✅ payment_received                         [Verified]     │ │
+│  │    Event ID: evt_12344                                     ▶│ │
+│  │    Source: 192.168.1.100                                    │ │
+│  │    15 minutes ago                                           │ │
+│  └────────────────────────────────────────────────────────────┘ │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │ ⏱️ customer_created                                        │ │
+│  │    Event ID: evt_12343                                     ▶│ │
+│  │    Source: 192.168.1.100                                    │ │
+│  │    1 hour ago                                               │ │
+│  └────────────────────────────────────────────────────────────┘ │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+### **Implementation Summary for Webhook Enhancements**
+
+| Change | Lines | Effort |
+|--------|-------|--------|
+| Display webhook endpoint in AgentWorkflowEdit | 80 | 30 min |
+| WebhookEventLog component | 180 | 60 min |
+| Integration triggers API endpoint | 20 | 10 min |
+| **Webhook Enhancements Subtotal** | **280** | **~100 min** |
 
 ---
 
@@ -1219,6 +1710,11 @@ Update completion callback configuration UI (around line 800-1000):
 
 | File | Lines Added | Effort | Type |
 |------|-------------|--------|------|
+| **Webhook Enhancements** | | | |
+| `client/src/pages/agents/AgentWorkflowEdit.tsx` | 80 | 30 min | Webhook endpoint UI |
+| `client/src/components/webhooks/WebhookEventLog.tsx` | 180 | 60 min | New component |
+| `server/routes/integrations.ts` | 20 | 10 min | New endpoint |
+| **Splynx Integration** | | | |
 | `shared/schema.ts` | 30 | 15 min | Schema update |
 | `server/routes/work-items.ts` | 50 | 30 min | New endpoint |
 | `server/services/integrations/splynxService.ts` | 25 | 15 min | New methods |
@@ -1228,7 +1724,7 @@ Update completion callback configuration UI (around line 800-1000):
 | `client/src/components/workflow/WorkflowStepBuilder.tsx` | 180 | 85 min | UI updates |
 | `client/src/components/workflow/WorkflowTemplateSelector.tsx` | 30 | 20 min | New component |
 | `client/src/pages/templates/TemplateEdit.tsx` | 80 | 30 min | UI updates |
-| **TOTAL** | **~725 lines** | **~5 hours** | |
+| **TOTAL** | **~1,005 lines** | **~7 hours** | |
 
 ---
 
@@ -1293,4 +1789,4 @@ Update completion callback configuration UI (around line 800-1000):
 5. Test with real Splynx instance
 6. Deploy to production
 
-**Estimated Total Time**: ~6-8 hours (including testing)
+**Estimated Total Time**: ~8-10 hours (including testing and webhook enhancements)
