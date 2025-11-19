@@ -128,11 +128,25 @@ router.get('/integration-triggers', async (req, res) => {
     const allTriggers = [];
     for (const integration of integrations) {
       const triggers = await storage.getIntegrationTriggers(integration.id);
-      const enrichedTriggers = triggers.map(trigger => ({
-        ...trigger,
-        integrationName: integration.name,
-        integrationType: integration.platformType,
-      }));
+      const enrichedTriggers = triggers.map(trigger => {
+        // Enrich with trigger metadata from TriggerDiscoveryService
+        const triggerMetadata = triggerDiscovery.getTriggerMetadata(
+          integration.platformType,
+          trigger.triggerKey
+        );
+        
+        return {
+          ...trigger,
+          integrationName: integration.name,
+          integrationType: integration.platformType,
+          // Add metadata from TriggerDiscoveryService
+          name: triggerMetadata?.name || trigger.triggerKey,
+          description: triggerMetadata?.description || '',
+          category: triggerMetadata?.category,
+          availableFields: triggerMetadata?.availableFields || [],
+          payloadSchema: triggerMetadata?.payloadSchema,
+        };
+      });
       allTriggers.push(...enrichedTriggers);
     }
     
