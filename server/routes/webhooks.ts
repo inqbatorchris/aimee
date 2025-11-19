@@ -267,7 +267,15 @@ async function handleWebhookRequest(req: any, res: Response, integrationType: st
             }]
           });
 
-          await executor.executeWorkflow(workflow, {
+          // Convert workflowDefinition to configuration.steps format for executor
+          const workflowWithConfig = {
+            ...workflow,
+            configuration: {
+              steps: workflow.workflowDefinition || []
+            }
+          };
+
+          await executor.executeWorkflow(workflowWithConfig, {
             triggerSource: 'webhook',
             organizationId: integration.organizationId.toString(),
             webhookData: {
@@ -275,7 +283,9 @@ async function handleWebhookRequest(req: any, res: Response, integrationType: st
               event: triggerKey,
               data: payload,
               eventId: webhookEvent.id
-            }
+            },
+            // Add trigger alias for template variables like {{trigger.subject}}
+            trigger: payload
           });
 
           await storage.updateWorkflowRun(runResult.id, {
@@ -487,15 +497,25 @@ router.post('/integration/:integrationId/:triggerKey', async (req: Request, res:
         });
         const runId = runResult.id;
 
+        // Convert workflowDefinition to configuration.steps format for executor
+        const workflowWithConfig = {
+          ...workflow,
+          configuration: {
+            steps: workflow.workflowDefinition || []
+          }
+        };
+
         // Execute the workflow with the event data as context
-        await executor.executeWorkflow(workflow, {
+        await executor.executeWorkflow(workflowWithConfig, {
           triggerSource: 'integration_event',
           organizationId: integration.organizationId.toString(),
           webhookData: {
             integration: integration.platformType,
             event: triggerKey,
             data: eventData
-          }
+          },
+          // Add trigger alias for template variables like {{trigger.xxx}}
+          trigger: eventData
         });
 
         // Mark run as completed
