@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database, Calculator, Loader2, Eye } from 'lucide-react';
 import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database, Calculator, Cloud, Repeat, ClipboardList } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -7,6 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useToast } from '@/hooks/use-toast';
+import { apiRequest } from '@/lib/queryClient';
 import type { Integration, KeyResult, Objective } from '@shared/schema';
 import DataSourceQueryBuilder from './DataSourceQueryBuilder';
 import SplynxQueryBuilder from './SplynxQueryBuilder';
@@ -26,6 +31,305 @@ interface WorkflowStepBuilderProps {
   integrations?: Integration[];
   keyResults?: KeyResult[];
   objectives?: Objective[];
+}
+
+interface EmailTemplate {
+  id: number;
+  title: string;
+  subject: string;
+  htmlBody: string;
+  variablesManifest: Record<string, string> | null;
+  status: string;
+  organizationId: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface EmailCampaignConfigProps {
+  step: WorkflowStep;
+  updateStep: (stepId: string, updates: Partial<WorkflowStep>) => void;
+}
+
+/**
+ * Email Campaign Configuration Component
+ * Updated to use the new self-managed template system (/api/email-templates)
+ */
+function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
+  const [previewBlobUrl, setPreviewBlobUrl] = useState<string | null>(null);
+  const { toast } = useToast();
+  
+  const { data: templates = [], isLoading } = useQuery<EmailTemplate[]>({
+    queryKey: ['/api/email-templates'],
+    retry: 1,
+  });
+
+  // Parse custom variables
+  const customVariablesStr = step.config.parameters?.customVariables || '';
+  let parsedCustomVariables: Record<string, any> = {};
+  let jsonError = '';
+  
+  if (customVariablesStr.trim()) {
+    try {
+      parsedCustomVariables = JSON.parse(customVariablesStr);
+      jsonError = '';
+    } catch (e) {
+      jsonError = 'Invalid JSON format';
+    }
+  }
+
+  // Preview mutation
+  const previewMutation = useMutation({
+    mutationFn: async (params: { templateId: number; customVariables: any }) => {
+      const response = await apiRequest(`/api/email-templates/${params.templateId}/preview`, {
+        method: 'POST',
+        body: { variables: params.customVariables },
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      // Create blob URL for iframe
+      const blob = new Blob([data.html], { type: 'text/html' });
+      const url = URL.createObjectURL(blob);
+      setPreviewBlobUrl(url);
+      
+      // Show success message
+      toast({
+        title: 'Preview loaded',
+        description: data.subject ? `Subject: ${data.subject}` : 'Template preview ready',
+      });
+      
+      // Warn about unresolved variables
+      if (data.unresolvedVariables?.length > 0) {
+        toast({
+          title: 'Warning: Unresolved variables',
+          description: `${data.unresolvedVariables.join(', ')} not found`,
+          variant: 'destructive',
+        });
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Preview failed',
+        description: error.message || 'Failed to generate preview',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // Handle preview button click
+  const handlePreview = () => {
+    const templateId = step.config.parameters?.templateId;
+    
+    if (!templateId) {
+      toast({
+        title: 'Select a template',
+        description: 'Please select an email template first',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    if (jsonError) {
+      toast({
+        title: 'Fix JSON error',
+        description: jsonError,
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    setIsPreviewOpen(true);
+    
+    // Fetch preview with custom variables
+    previewMutation.mutate({
+      templateId: parseInt(templateId),
+      customVariables: parsedCustomVariables,
+    });
+  };
+
+  // Clean up blob URL when preview closes
+  useEffect(() => {
+    return () => {
+      if (previewBlobUrl) {
+        URL.revokeObjectURL(previewBlobUrl);
+      }
+    };
+  }, [previewBlobUrl]);
+
+  return (
+    <>
+      <div className="space-y-3">
+        <div>
+          <Label>Email Template</Label>
+          <Select
+            value={step.config.parameters?.templateId?.toString()}
+            onValueChange={(value) => updateStep(step.id, {
+              config: {
+                ...step.config,
+                parameters: { ...step.config.parameters, templateId: parseInt(value) }
+              }
+            })}
+          >
+            <SelectTrigger>
+              <SelectValue placeholder={isLoading ? "Loading templates..." : "Select email template"} />
+            </SelectTrigger>
+            <SelectContent>
+              {isLoading ? (
+                <div className="flex items-center justify-center py-2">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                </div>
+              ) : templates.length === 0 ? (
+                <div className="text-sm text-muted-foreground px-2 py-2">
+                  No templates found. Create one in Splynx Setup.
+                </div>
+              ) : (
+                templates.map(template => (
+                  <SelectItem key={template.id} value={template.id.toString()}>
+                    {template.title}
+                  </SelectItem>
+                ))
+              )}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-gray-500 mt-1">
+            Select the email template to send. Templates are managed in Splynx Setup.
+          </p>
+        </div>
+
+        <div>
+          <Label>Customer IDs (optional)</Label>
+          <Textarea
+            placeholder="Leave empty to use results from previous data query step, or enter comma-separated customer IDs"
+            rows={2}
+            value={step.config.parameters?.customerIds || ''}
+            onChange={(e) => updateStep(step.id, {
+              config: {
+                ...step.config,
+                parameters: { ...step.config.parameters, customerIds: e.target.value }
+              }
+            })}
+          />
+          <p className="text-xs text-gray-500 mt-1">
+            If left empty, will use customer IDs from a previous data query step result.
+          </p>
+        </div>
+
+        <div>
+          <Label>Custom Variables (optional, JSON)</Label>
+          <Textarea
+            placeholder='{"custom_month": "January", "custom_offer": "50% off"}'
+            rows={3}
+            value={step.config.parameters?.customVariables || ''}
+            onChange={(e) => updateStep(step.id, {
+              config: {
+                ...step.config,
+                parameters: { ...step.config.parameters, customVariables: e.target.value }
+              }
+            })}
+            className={jsonError ? 'border-destructive' : ''}
+          />
+          {jsonError ? (
+            <p className="text-xs text-destructive mt-1">{jsonError}</p>
+          ) : (
+            <p className="text-xs text-gray-500 mt-1">
+              Use <code className="text-xs bg-muted px-1 rounded">[[ custom_name ]]</code> in your template, then define values here. Example: <code className="text-xs bg-muted px-1 rounded">{'{"custom_name": "value"}'}</code>
+            </p>
+          )}
+        </div>
+
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={handlePreview}
+          disabled={!step.config.parameters?.templateId || !!jsonError}
+          className="w-full"
+          data-testid="button-preview-email"
+        >
+          <Eye className="h-4 w-4 mr-2" />
+          Preview Email
+        </Button>
+      </div>
+
+      <Dialog open={isPreviewOpen} onOpenChange={setIsPreviewOpen}>
+        <DialogContent className="max-w-6xl h-[85vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Email Template Preview</DialogTitle>
+            <DialogDescription>
+              Preview with custom variables applied
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="flex-1 grid grid-cols-4 gap-4 overflow-hidden">
+            {/* Left Panel - Variable Info */}
+            <div className="col-span-1 space-y-4 overflow-y-auto">
+              {Object.keys(parsedCustomVariables).length > 0 ? (
+                <div>
+                  <Label className="text-xs font-semibold">Custom Variables</Label>
+                  <div className="mt-1 space-y-1">
+                    {Object.entries(parsedCustomVariables).map(([key, value]) => (
+                      <div key={key} className="text-xs bg-muted p-2 rounded">
+                        <div className="font-mono text-primary">{'{{' + key + '}}'}</div>
+                        <div className="text-muted-foreground mt-0.5">→ {String(value)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div>
+                  <Label className="text-xs font-semibold">Variables</Label>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    No custom variables provided. Standard variables (customer.name, company.name, etc.) will show as placeholders.
+                  </p>
+                </div>
+              )}
+
+              {previewMutation.data?.unresolvedVariables && previewMutation.data.unresolvedVariables.length > 0 && (
+                <div>
+                  <Label className="text-xs font-semibold">Unresolved Variables</Label>
+                  <div className="mt-1 space-y-1">
+                    {previewMutation.data.unresolvedVariables.map((varName: string) => (
+                      <div key={varName} className="text-xs bg-yellow-50 text-yellow-700 border border-yellow-200 p-2 rounded">
+                        <div className="font-mono">{varName}</div>
+                        <div className="text-xs mt-0.5">Not replaced</div>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    These variables will be replaced with actual customer data when the email is sent.
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* Right Panel - Preview */}
+            <div className="col-span-3 flex flex-col overflow-hidden border rounded-lg">
+              {previewMutation.isPending ? (
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="text-center">
+                    <Loader2 className="h-8 w-8 animate-spin mx-auto mb-2 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">Generating preview...</p>
+                  </div>
+                </div>
+              ) : previewBlobUrl ? (
+                <iframe
+                  src={previewBlobUrl}
+                  sandbox="allow-same-origin"
+                  className="w-full h-full"
+                  title="Email Preview"
+                />
+              ) : (
+                <div className="flex-1 flex items-center justify-center">
+                  <p className="text-sm text-muted-foreground">Click Preview Email to see your template</p>
+                </div>
+              )}
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
 }
 
 const STEP_TYPES = {
@@ -274,10 +578,15 @@ export default function WorkflowStepBuilder({
                     <SelectItem value="count_customers">Count Customers</SelectItem>
                     <SelectItem value="get_revenue">Get Revenue</SelectItem>
                     <SelectItem value="get_tickets">Get Support Tickets</SelectItem>
+                    <SelectItem value="send_email_campaign">Send Email Campaign</SelectItem>
                     <SelectItem value="create_splynx_task">Create Splynx Task</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+            )}
+
+            {step.config.action === 'send_email_campaign' && (
+              <EmailCampaignConfig step={step} updateStep={updateStep} />
             )}
 
             {(step.config.action === 'count_leads' || step.config.action === 'count_customers') && (

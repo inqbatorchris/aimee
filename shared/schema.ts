@@ -2755,6 +2755,31 @@ export const workflowTemplates = pgTable("workflow_templates", {
   index("idx_workflow_menu").on(table.displayInMenu),
 ]);
 
+// Email Templates - Self-managed email templates for campaigns
+export const emailTemplates = pgTable("email_templates", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  
+  // Template details
+  title: varchar("title", { length: 256 }).notNull(),
+  subject: varchar("subject", { length: 500 }).notNull(),
+  htmlBody: text("html_body").notNull(),
+  
+  // Variables manifest - stores variable name-to-description mappings for documentation
+  // Frontend sends actual variable values as Record<string, string> to preview endpoint
+  variablesManifest: jsonb("variables_manifest").$type<Record<string, string> | null>(),
+  
+  // Status and visibility
+  status: varchar("status", { length: 20 }).default('active').notNull(), // active, draft, archived
+  
+  // Timestamps
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_email_templates_org").on(table.organizationId),
+  index("idx_email_templates_status").on(table.status),
+]);
+
 // Field Tasks - Main task entity synced from Splynx
 export const fieldTasks = pgTable("field_tasks", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -3369,6 +3394,12 @@ export const insertWorkflowTemplateSchema = createInsertSchema(workflowTemplates
   updatedAt: true,
 });
 
+export const insertEmailTemplateSchema = createInsertSchema(emailTemplates).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 export const insertFieldTaskSchema = createInsertSchema(fieldTasks).omit({
   id: true,
   createdAt: true,
@@ -3438,6 +3469,9 @@ export type InsertTaskTypeConfiguration = z.infer<typeof insertTaskTypeConfigura
 
 export type WorkflowTemplate = typeof workflowTemplates.$inferSelect;
 export type InsertWorkflowTemplate = z.infer<typeof insertWorkflowTemplateSchema>;
+
+export type EmailTemplate = typeof emailTemplates.$inferSelect;
+export type InsertEmailTemplate = z.infer<typeof insertEmailTemplateSchema>;
 
 export type FieldTask = typeof fieldTasks.$inferSelect;
 export type InsertFieldTask = z.infer<typeof insertFieldTaskSchema>;

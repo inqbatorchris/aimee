@@ -226,23 +226,48 @@ async function initializeCoreFeatures() {
         organizationId,
         createdBy: adminUserId,
         updatedBy: adminUserId,
+      },
+      {
+        featureKey: 'splynx_email_campaigns',
+        name: 'Splynx Email Campaigns',
+        description: 'Automated email campaign deployment with template management and customer filtering through Splynx integration',
+        category: 'integrations',
+        status: 'live',
+        isEnabled: true,
+        isVisible: true,
+        developmentProgress: 100,
+        icon: 'Mail',
+        route: '/integrations/splynx/setup',
+        features: ['Email Template Management', 'Campaign Deployment', 'Customer Filtering', 'Workflow Integration'],
+        settings: {
+          maxTemplates: 100,
+          enableVariableSubstitution: true,
+          requiresSplynxConnection: true
+        },
+        developerDocs: {
+          overview: "Splynx Email Campaigns enables users to create, manage, and deploy email campaigns to filtered customer segments. Templates are managed through Splynx Setup page, campaigns are deployed via Agent Builder workflows.",
+          databaseTables: [
+            { name: "integration_actions", description: "Stores send_email_campaign action definition (ID: 52)" }
+          ],
+          apiEndpoints: [
+            "/api/splynx/templates - Email template CRUD operations",
+            "/api/splynx/templates/:id - Get/update/delete specific template"
+          ]
+        },
+        organizationId,
+        createdBy: adminUserId,
+        updatedBy: adminUserId,
       }
     ];
 
     // Check and create features
     for (const featureData of coreFeatures) {
-      const existing = await coreStorage.getPlatformFeatureByKey(organizationId, featureData.featureKey);
-      
-      if (existing) {
-        console.log(`✓ Feature "${featureData.name}" already exists, skipping...`);
-        continue;
-      }
-
       try {
         const feature = await coreStorage.createPlatformFeature(featureData);
-        console.log(`✓ Created feature: ${feature.name} (${feature.featureKey})`);
+        console.log(`✓ Created feature: ${feature.name}`);
       } catch (error: any) {
-        console.error(`✗ Failed to create feature ${featureData.name}:`, error.message);
+        // Feature might already exist
+        console.log(`ℹ Feature "${featureData.name}" may already exist, skipping...`);
       }
     }
 
@@ -320,8 +345,8 @@ Browse through the knowledge base categories or contact your administrator for a
       summary: 'Introduction to aimee.works platform and getting started guide',
       category: 'Getting Started',
       tags: ['welcome', 'introduction', 'getting-started'],
-      status: 'published',
-      visibility: 'internal',
+      status: 'published' as 'published',
+      visibility: 'internal' as 'internal',
       authorId: adminUserId,
       estimatedReadingTime: 3,
       organizationId,
@@ -345,6 +370,7 @@ Browse through the knowledge base categories or contact your administrator for a
     console.log('- AI Site Builder (Coming Soon)');
     console.log('- CRM (Coming Soon)');
     console.log('- E-Commerce (Coming Soon)');
+    console.log('- Splynx Email Campaigns (Live)');
 
   } catch (error) {
     console.error('❌ Core features initialization failed:', error);

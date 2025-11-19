@@ -1,4 +1,6 @@
 import axios from 'axios';
+import { EmailTemplateService } from '../emailTemplateService';
+import type { EmailTemplate } from '../../../shared/schema';
 
 interface SplynxCredentials {
   baseUrl: string;
@@ -405,6 +407,13 @@ export class SplynxService {
     }
   }
 
+  /**
+   * Helper: Fetch customer email address (with fallback to billing_email)
+   */
+  async getCustomerEmail(customerId: number): Promise<string | null> {
+    try {
+      const url = this.buildUrl(`admin/customers/customer/${customerId}`);
+      console.log(`[SPLYNX getCustomerEmail] Fetching email for customer ${customerId}`);
   async getSplynxProjects(): Promise<any[]> {
     try {
       const url = this.buildUrl('admin/scheduling/projects');
@@ -418,6 +427,49 @@ export class SplynxService {
         },
       });
 
+      const customer = response.data;
+      
+      // Try email first, fallback to billing_email
+      const email = customer.email || customer.billing_email;
+      
+      if (!email) {
+        console.warn(`[SPLYNX getCustomerEmail] ⚠️ Customer ${customerId} has no email or billing_email`);
+        return null;
+      }
+      
+      console.log(`[SPLYNX getCustomerEmail] ✅ Found email: ${email} for customer ${customerId}`);
+      return email;
+    } catch (error: any) {
+      console.error(`[SPLYNX getCustomerEmail] ❌ Error fetching customer ${customerId}:`, error.message);
+      console.error(`[SPLYNX getCustomerEmail] ❌ Status: ${error.response?.status}, Data:`, error.response?.data);
+      throw new Error(`Failed to fetch customer ${customerId}: ${error.message}`);
+    }
+  }
+
+  /**
+   * Helper: Queue email in Splynx
+   */
+  private async queueEmail(params: {
+    recipient: string;
+    subject: string;
+    message: string;
+    customerId: number;
+  }): Promise<number> {
+    try {
+      const url = this.buildUrl('admin/config/mail');
+      console.log(`[SPLYNX queueEmail] Queuing email to: ${params.recipient}`);
+      console.log(`[SPLYNX queueEmail] Subject: ${params.subject}`);
+      
+      const emailData = {
+        type: 'message',
+        subject: params.subject,
+        recipient: params.recipient,
+        message: params.message,
+        customer_id: params.customerId,
+        status: 'new',
+      };
+      
+      const response = await axios.post(url, emailData, {
       console.log('[SPLYNX getSplynxProjects] Response:', response.status);
       
       if (Array.isArray(response.data)) {
@@ -674,6 +726,31 @@ export class SplynxService {
         },
       });
 
+      const emailId = response.data?.id;
+      console.log(`[SPLYNX queueEmail] ✅ Email queued with ID: ${emailId}`);
+      console.log(`[SPLYNX queueEmail] ✅ Full response:`, JSON.stringify(response.data));
+      
+      if (!emailId) {
+        throw new Error('No email ID returned from queue');
+      }
+      
+      return emailId;
+    } catch (error: any) {
+      console.error(`[SPLYNX queueEmail] ❌ Error queueing email for ${params.recipient}:`, error.message);
+      console.error(`[SPLYNX queueEmail] ❌ Status: ${error.response?.status}, Data:`, error.response?.data);
+      throw new Error(`Failed to queue email: ${error.message}`);
+    }
+  }
+
+  /**
+   * Helper: Force send a queued email
+   */
+  private async forceSendEmail(emailId: number): Promise<void> {
+    try {
+      const url = this.buildUrl(`admin/config/mail/${emailId}--send`);
+      console.log(`[SPLYNX forceSendEmail] Force sending email ID: ${emailId}`);
+      console.log(`[SPLYNX forceSendEmail] Request URL: ${url}`);
+      
       console.log('[SPLYNX createSplynxTask] Response:', response.status);
       console.log('[SPLYNX createSplynxTask] Created task:', response.data);
       
@@ -751,6 +828,71 @@ export class SplynxService {
           'Authorization': this.credentials.authHeader,
           'Content-Type': 'application/json',
         },
+      });
+      
+      console.log(`[SPLYNX forceSendEmail] ✅ Response status: ${response.status}`);
+      console.log(`[SPLYNX forceSendEmail] ✅ Email sent successfully!`);
+    } catch (error: any) {
+      console.error(`[SPLYNX forceSendEmail] ❌ Error sending email ${emailId}:`, error.message);
+      console.error(`[SPLYNX forceSendEmail] ❌ Status: ${error.response?.status}, Data:`, error.response?.data);
+      throw new Error(`Failed to send email: ${error.message}`);
+    }
+  }
+
+  /**
+   * @deprecated This method is being refactored to use self-managed email templates
+   * TODO: Refactor to use new emailTemplateService with {{variable}} replacement (Task #6)
+   * 
+   * TEMPORARY STUB: Throws not implemented error
+   */
+  async sendMassEmail(params: {
+    templateId: number;
+    customerIds?: number[];
+    customVariables?: Record<string, any>;
+    subject?: string;
+  }): Promise<any> {
+    throw new Error('sendMassEmail is temporarily disabled during migration to self-managed email templates. Please use the new email template system (coming soon).');
+  }
+
+  /**
+   * Send email directly with pre-rendered HTML
+   * This is the new simplified method that doesn't require Splynx templates
+   */
+  async sendDirectEmail(params: {
+    customerId: number;
+    emailTo: string;
+    subject: string;
+    htmlMessage: string;
+  }): Promise<{ success: boolean; emailId?: number; error?: string }> {
+    try {
+      console.log('[SPLYNX sendDirectEmail] Sending email');
+      console.log('[SPLYNX sendDirectEmail]   To:', params.emailTo);
+      console.log('[SPLYNX sendDirectEmail]   Subject:', params.subject);
+      console.log('[SPLYNX sendDirectEmail]   Customer ID:', params.customerId);
+      
+      // Queue the email
+      const emailId = await this.queueEmail({
+        recipient: params.emailTo,
+        subject: params.subject,
+        message: params.htmlMessage,
+        customerId: params.customerId,
+      });
+      
+      // Force send immediately
+      await this.forceSendEmail(emailId);
+      
+      console.log('[SPLYNX sendDirectEmail] ✅ Email sent successfully');
+      
+      return {
+        success: true,
+        emailId,
+      };
+    } catch (error: any) {
+      console.error('[SPLYNX sendDirectEmail] ❌ Error:', error.message);
+      return {
+        success: false,
+        error: error.message,
+      };
         params,
       });
       
