@@ -35,11 +35,14 @@ export function WorkflowTemplateSelector({
   return (
     <div className="space-y-2">
       {label && <Label>{label}</Label>}
-      <Select value={value} onValueChange={onChange}>
+      <Select value={value || ''} onValueChange={onChange}>
         <SelectTrigger data-testid="select-workflow-template">
           <SelectValue placeholder={placeholder} />
         </SelectTrigger>
         <SelectContent>
+          <SelectItem value="" data-testid="option-template-none">
+            No template
+          </SelectItem>
           {!templates || templates.length === 0 ? (
             <div className="p-2 text-sm text-muted-foreground">No templates available</div>
           ) : (
