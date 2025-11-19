@@ -1016,6 +1016,112 @@ export class SplynxService {
     }
   }
 
+  async getTicketDetails(ticketId: string): Promise<any> {
+    try {
+      const url = this.buildUrl(`admin/support/tickets/${ticketId}`);
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error(`Failed to fetch ticket details for ID ${ticketId}:`, error.message);
+      throw new Error(`Failed to fetch ticket details: ${error.message}`);
+    }
+  }
+
+  async getTicketMessages(ticketId: string): Promise<any[]> {
+    try {
+      const url = this.buildUrl(`admin/support/tickets/${ticketId}/messages`);
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error: any) {
+      console.error(`Failed to fetch ticket messages for ID ${ticketId}:`, error.message);
+      throw new Error(`Failed to fetch ticket messages: ${error.message}`);
+    }
+  }
+
+  async getTaskDetails(taskId: string): Promise<any> {
+    try {
+      const url = this.buildUrl(`admin/scheduling/tasks/${taskId}`);
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+      return response.data;
+    } catch (error: any) {
+      console.error(`Failed to fetch task details for ID ${taskId}:`, error.message);
+      throw new Error(`Failed to fetch task details: ${error.message}`);
+    }
+  }
+
+  async updateTicketStatus(ticketId: string, statusId: string): Promise<any> {
+    try {
+      const url = this.buildUrl(`admin/support/tickets/${ticketId}`);
+      const response = await axios.put(url, {
+        status_id: statusId,
+      }, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+      console.log(`Successfully updated ticket ${ticketId} status to ${statusId}`);
+      return response.data;
+    } catch (error: any) {
+      console.error(`Failed to update ticket ${ticketId} status:`, error.message);
+      throw new Error(`Failed to update ticket status: ${error.message}`);
+    }
+  }
+
+  async addTicketMessage(ticketId: string, message: string, isInternal: boolean = false): Promise<any> {
+    try {
+      const url = this.buildUrl(`admin/support/tickets/${ticketId}/messages`);
+      const response = await axios.post(url, {
+        message,
+        type: isInternal ? 'internal' : 'public',
+      }, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+      console.log(`Successfully added message to ticket ${ticketId}`);
+      return response.data;
+    } catch (error: any) {
+      console.error(`Failed to add message to ticket ${ticketId}:`, error.message);
+      throw new Error(`Failed to add ticket message: ${error.message}`);
+    }
+  }
+
+  async updateTaskStatus(taskId: string, statusId: string): Promise<any> {
+    try {
+      const url = this.buildUrl(`admin/scheduling/tasks/${taskId}`);
+      const response = await axios.put(url, {
+        status: statusId,
+      }, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+      console.log(`Successfully updated task ${taskId} status to ${statusId}`);
+      return response.data;
+    } catch (error: any) {
+      console.error(`Failed to update task ${taskId} status:`, error.message);
+      throw new Error(`Failed to update task status: ${error.message}`);
+    }
+  }
+
   async executeAction(action: string, parameters: any = {}): Promise<any> {
     const { sinceDate, ...filters } = parameters;
     const parsedSinceDate = sinceDate ? new Date(sinceDate) : undefined;

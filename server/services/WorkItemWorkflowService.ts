@@ -443,6 +443,79 @@ export class WorkItemWorkflowService {
 
     console.log(`[Callback] Mapped data:`, JSON.stringify(mappedData, null, 2));
 
+    // Handle Splynx-specific callbacks (update ticket/task status)
+    if (callback.action === 'update_splynx_status' || callback.splynxAction) {
+      const { splynxAction, splynxEntityType, splynxStatusId, splynxMessage, integrationId } = callback;
+      
+      // Get work item to access metadata
+      const [workItem] = await db
+        .select()
+        .from(workItems)
+        .where(eq(workItems.id, workItemId))
+        .limit(1);
+      
+      if (workItem?.workflowMetadata) {
+        const metadata = workItem.workflowMetadata as any;
+        const ticketId = metadata.splynx_ticket_id;
+        const taskId = metadata.splynx_task_id;
+        const entityType = splynxEntityType || (ticketId ? 'ticket' : taskId ? 'task' : null);
+        const entityId = ticketId || taskId;
+        
+        if (entityId && entityType && integrationId) {
+          try {
+            // Get integration credentials
+            const { integrations } = await import('@shared/schema');
+            const { eq } = await import('drizzle-orm');
+            
+            const [integration] = await db
+              .select()
+              .from(integrations)
+              .where(eq(integrations.id, integrationId))
+              .limit(1);
+            
+            if (integration?.credentialsEncrypted) {
+              // Decrypt credentials (reuse from integrations.ts)
+              const crypto = await import('crypto');
+              const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+              const parts = integration.credentialsEncrypted.split(':');
+              const iv = Buffer.from(parts[0], 'hex');
+              const encryptedText = parts[1];
+              const key = crypto.createHash('sha256').update(String(ENCRYPTION_KEY)).digest();
+              const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+              let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+              decrypted += decipher.final('utf8');
+              const credentials = JSON.parse(decrypted);
+              
+              // Create Splynx service
+              const { SplynxService } = await import('../services/integrations/splynxService');
+              const splynxService = new SplynxService(credentials);
+              
+              // Execute Splynx action
+              if (splynxAction === 'update_status' && splynxStatusId) {
+                if (entityType === 'ticket') {
+                  await splynxService.updateTicketStatus(entityId, splynxStatusId);
+                  console.log(`[Callback] Updated Splynx ticket ${entityId} status to ${splynxStatusId}`);
+                } else if (entityType === 'task') {
+                  await splynxService.updateTaskStatus(entityId, splynxStatusId);
+                  console.log(`[Callback] Updated Splynx task ${entityId} status to ${splynxStatusId}`);
+                }
+              }
+              
+              // Add message if configured
+              if (splynxMessage && entityType === 'ticket') {
+                const processedMessage = splynxMessage.replace(/\{workItemId\}/g, workItemId.toString())
+                  .replace(/\{completedAt\}/g, new Date().toISOString());
+                await splynxService.addTicketMessage(entityId, processedMessage);
+                console.log(`[Callback] Added message to Splynx ticket ${entityId}`);
+              }
+            }
+          } catch (error: any) {
+            console.error(`[Callback] Splynx update failed:`, error.message);
+          }
+        }
+      }
+    }
+
     // Execute webhook if URL is provided
     if (callback.webhookUrl) {
       const method = callback.webhookMethod || 'POST';

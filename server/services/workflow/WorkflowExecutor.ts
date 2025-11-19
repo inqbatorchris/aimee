@@ -1543,7 +1543,7 @@ export class WorkflowExecutor {
 
   private async executeCreateWorkItem(step: any, context: any): Promise<StepExecutionResult> {
     try {
-      const { title, description, assigneeId, dueDate, status = 'Planning', externalReference } = step.config || {};
+      const { title, description, assigneeId, dueDate, status = 'Planning', externalReference, templateId, splynxTicketId, splynxTaskId } = step.config || {};
       
       if (!title) {
         throw new Error('title is required for create_work_item step');
@@ -1555,6 +1555,10 @@ export class WorkflowExecutor {
       const processedTitle = this.processTemplate(title, context);
       const processedDescription = description ? this.processTemplate(description, context) : undefined;
       const processedExternalRef = externalReference ? this.processTemplate(externalReference, context) : undefined;
+      
+      // Process Splynx IDs from templates
+      const processedSplynxTicketId = splynxTicketId ? this.processTemplate(splynxTicketId, context) : undefined;
+      const processedSplynxTaskId = splynxTaskId ? this.processTemplate(splynxTaskId, context) : undefined;
       
       // Calculate due date if it's a relative date like "+7 days"
       let processedDueDate = dueDate;
@@ -1573,6 +1577,20 @@ export class WorkflowExecutor {
         throw new Error('organizationId not found in context');
       }
       
+      // Build workflowMetadata with Splynx linking
+      const workflowMetadata: any = {};
+      if (processedExternalRef) {
+        workflowMetadata.externalReference = processedExternalRef;
+      }
+      if (processedSplynxTicketId) {
+        workflowMetadata.splynx_ticket_id = processedSplynxTicketId;
+        console.log(`[WorkflowExecutor]   🔗 Linking to Splynx ticket: ${processedSplynxTicketId}`);
+      }
+      if (processedSplynxTaskId) {
+        workflowMetadata.splynx_task_id = processedSplynxTaskId;
+        console.log(`[WorkflowExecutor]   🔗 Linking to Splynx task: ${processedSplynxTaskId}`);
+      }
+      
       // Create the work item
       const workItem = await storage.createWorkItem({
         organizationId,
@@ -1581,10 +1599,14 @@ export class WorkflowExecutor {
         status: status as any,
         assignedTo: assigneeId || null,
         dueDate: processedDueDate || null,
-        workflowMetadata: processedExternalRef ? { externalReference: processedExternalRef } : null,
+        workflowMetadata: Object.keys(workflowMetadata).length > 0 ? workflowMetadata : null,
+        workflowTemplateId: templateId || null,
         createdBy: context.userId || null,
       });
       
+      if (templateId) {
+        console.log(`[WorkflowExecutor]   📋 Attached workflow template: ${templateId}`);
+      }
       console.log(`[WorkflowExecutor]   ✅ Work item created: ID ${workItem.id}`);
       
       return {
