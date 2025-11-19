@@ -20,6 +20,7 @@ interface ExecutionContext {
   userId?: number;
   webhookData?: any;
   manualData?: any;
+  trigger?: any;  // Flattened webhook payload for easy variable access
 }
 
 interface StepExecutionResult {
