@@ -1,8 +1,12 @@
 import { Router, Request } from 'express';
 import { authenticateToken } from '../auth';
 import { storage } from '../storage';
-import { insertWorkflowTemplateSchema } from '@shared/schema';
+import { insertWorkflowTemplateSchema, integrations, workItems } from '@shared/schema';
 import { z } from 'zod';
+import { db } from '../db';
+import { eq, and } from 'drizzle-orm';
+import { SplynxService } from '../services/integrations/splynxService';
+import crypto from 'crypto';
 
 interface AuthRequest extends Request {
   user?: {
@@ -14,6 +18,122 @@ interface AuthRequest extends Request {
 }
 
 const router = Router();
+
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+const IV_LENGTH = 16;
+
+if (!ENCRYPTION_KEY) {
+  throw new Error('ENCRYPTION_KEY environment variable is required for completion callbacks');
+}
+
+function decrypt(text: string): string {
+  if (!text) return '';
+  
+  try {
+    const parts = text.split(':');
+    if (parts.length !== 2) {
+      throw new Error('Invalid encrypted data format');
+    }
+    
+    const iv = Buffer.from(parts[0], 'hex');
+    const encryptedText = parts[1];
+    const key = crypto.createHash('sha256').update(String(ENCRYPTION_KEY)).digest();
+    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+    let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch (error) {
+    console.error('Decryption failed:', error);
+    throw new Error('Failed to decrypt data');
+  }
+}
+
+async function processCompletionCallbacks(
+  callbacks: any[],
+  completedStepId: string,
+  stepData: any,
+  workItemId: number,
+  organizationId: number
+) {
+  console.log(`[CompletionCallbacks] Processing callbacks for step ${completedStepId}`);
+  
+  for (const callback of callbacks) {
+    try {
+      const matchingMappings = callback.fieldMappings?.filter((m: any) => m.sourceStepId === completedStepId) || [];
+      
+      if (matchingMappings.length === 0) {
+        console.log(`[CompletionCallbacks] No mappings for step ${completedStepId} in callback ${callback.action}`);
+        continue;
+      }
+
+      console.log(`[CompletionCallbacks] Found ${matchingMappings.length} mappings for step ${completedStepId}`);
+
+      if (callback.integrationName === 'splynx') {
+        const [workItem] = await db
+          .select()
+          .from(workItems)
+          .where(eq(workItems.id, workItemId))
+          .limit(1);
+
+        if (!workItem) {
+          console.error(`[CompletionCallbacks] Work item ${workItemId} not found`);
+          continue;
+        }
+
+        const ticketId = workItem.workflowMetadata?.splynx_ticket_id;
+        if (!ticketId) {
+          console.error(`[CompletionCallbacks] No Splynx ticket ID in work item metadata`);
+          continue;
+        }
+
+        const [integration] = await db
+          .select()
+          .from(integrations)
+          .where(
+            and(
+              eq(integrations.organizationId, organizationId),
+              eq(integrations.platformType, 'splynx')
+            )
+          )
+          .limit(1);
+
+        if (!integration || !integration.credentialsEncrypted) {
+          console.error(`[CompletionCallbacks] Splynx integration not found or not configured`);
+          continue;
+        }
+
+        const credentials = JSON.parse(decrypt(integration.credentialsEncrypted));
+        const splynxService = new SplynxService({ 
+          baseUrl: credentials.baseUrl, 
+          authHeader: credentials.authHeader 
+        });
+
+        if (callback.action === 'addTicketMessage') {
+          const messageMapping = matchingMappings.find((m: any) => m.targetField === 'message');
+          const isInternalMapping = matchingMappings.find((m: any) => m.targetField === 'isInternal');
+          
+          const message = stepData?.data?.[messageMapping?.sourceField] || stepData?.[messageMapping?.sourceField];
+          const isInternal = stepData?.data?.[isInternalMapping?.sourceField] || stepData?.[isInternalMapping?.sourceField];
+
+          if (message) {
+            console.log(`[CompletionCallbacks] Adding message to ticket ${ticketId}`);
+            await splynxService.addTicketMessage(ticketId, message, isInternal === 'true' || isInternal === true);
+          }
+        } else if (callback.action === 'updateTicketStatus') {
+          const statusMapping = matchingMappings.find((m: any) => m.targetField === 'statusId');
+          const statusId = stepData?.data?.[statusMapping?.sourceField] || stepData?.[statusMapping?.sourceField];
+
+          if (statusId) {
+            console.log(`[CompletionCallbacks] Updating ticket ${ticketId} status to ${statusId}`);
+            await splynxService.updateTicketStatus(ticketId, statusId);
+          }
+        }
+      }
+    } catch (error) {
+      console.error(`[CompletionCallbacks] Error processing callback:`, error);
+    }
+  }
+}
 
 // Transform database step format to UI-compatible format
 function transformStepForUI(dbStep: any) {
@@ -271,6 +391,17 @@ router.put('/work-items/:workItemId/workflow/steps/:stepId', authenticateToken, 
       stepId,
       stepData
     );
+
+    // Process completion callbacks if this step has any
+    if (workflow.template?.completionCallbacks) {
+      await processCompletionCallbacks(
+        workflow.template.completionCallbacks,
+        stepId,
+        stepData,
+        parseInt(workItemId),
+        user.organizationId
+      );
+    }
 
     res.json(updated);
   } catch (error) {

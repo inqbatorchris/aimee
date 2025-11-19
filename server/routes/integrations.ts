@@ -1684,4 +1684,65 @@ router.get('/splynx/entity/:entityType/:entityId', async (req, res) => {
   }
 });
 
+// Post a message to a Splynx ticket
+router.post('/splynx/entity/ticket/:ticketId/message', async (req, res) => {
+  try {
+    if (!req.user?.organizationId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { ticketId } = req.params;
+    const { integrationId, message, isInternal } = req.body;
+
+    if (!integrationId) {
+      return res.status(400).json({ error: 'integrationId is required' });
+    }
+
+    if (!message) {
+      return res.status(400).json({ error: 'message is required' });
+    }
+
+    // Get specific Splynx integration by ID
+    const [splynxIntegration] = await db
+      .select()
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.id, parseInt(integrationId)),
+          eq(integrations.organizationId, req.user.organizationId),
+          eq(integrations.platformType, 'splynx')
+        )
+      )
+      .limit(1);
+
+    if (!splynxIntegration) {
+      return res.status(404).json({ error: 'Splynx integration not found' });
+    }
+
+    if (!splynxIntegration.credentialsEncrypted) {
+      return res.status(400).json({ error: 'Splynx credentials not configured' });
+    }
+
+    // Decrypt credentials
+    const credentials = JSON.parse(decrypt(splynxIntegration.credentialsEncrypted));
+    const { baseUrl, authHeader } = credentials;
+
+    if (!baseUrl || !authHeader) {
+      return res.status(400).json({ error: 'Splynx credentials incomplete' });
+    }
+
+    // Create Splynx service and send message
+    const splynxService = new SplynxService({ baseUrl, authHeader });
+    const result = await splynxService.addTicketMessage(ticketId, message, isInternal === 'true' || isInternal === true);
+
+    res.json({ 
+      success: true,
+      result
+    });
+  } catch (error: any) {
+    console.error(`Error sending message to Splynx ticket:`, error);
+    res.status(500).json({ error: 'Failed to send message', details: error.message });
+  }
+});
+
 export default router;
