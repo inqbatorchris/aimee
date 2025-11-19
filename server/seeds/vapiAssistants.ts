@@ -76,6 +76,7 @@ Your role is to:
           description: 'Check queue status for human escalation',
         },
       ],
+      knowledgeBaseIds: [], // Populate after uploading KB files to Vapi platform
       isActive: true,
     },
     {
@@ -136,7 +137,7 @@ When customer shows interest, offer to schedule a personalized demo:
           description: 'Schedule a callback if customer wants to think about it',
         },
       ],
-      knowledgeBaseIds: ['coverage-areas', 'packages', 'promotions', 'installation-faq'],
+      knowledgeBaseIds: [], // Populate after uploading KB files to Vapi platform
       isActive: true,
     },
     {
@@ -232,7 +233,7 @@ Create support ticket when:
           description: 'Schedule callback from human support agent',
         },
       ],
-      knowledgeBaseIds: ['troubleshooting-guide', 'billing-faq', 'account-management', 'technical-specs'],
+      knowledgeBaseIds: [], // Populate after uploading KB files to Vapi platform
       isActive: true,
     },
   ];
