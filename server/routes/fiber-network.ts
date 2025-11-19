@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db';
-import { fiberNetworkNodes, fiberNetworkActivityLogs, workItems, insertFiberNetworkNodeSchema } from '../../shared/schema';
-import { eq, and, sql, inArray } from 'drizzle-orm';
+import { fiberNetworkNodes, fiberNetworkActivityLogs, fiberNodeTypes, workItems, insertFiberNetworkNodeSchema, insertFiberNodeTypeSchema } from '../../shared/schema';
+import { eq, and, sql, inArray, desc } from 'drizzle-orm';
 import { authenticateToken } from '../auth';
 import { z } from 'zod';
 
@@ -463,6 +463,163 @@ router.get('/networks', authenticateToken, async (req: any, res) => {
   } catch (error) {
     console.error('Error fetching networks:', error);
     res.status(500).json({ error: 'Failed to fetch networks' });
+  }
+});
+
+// ========================================
+// NODE TYPE MANAGEMENT ENDPOINTS
+// ========================================
+
+// Get all active node types for the organization
+router.get('/node-types', authenticateToken, async (req: any, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    
+    const nodeTypes = await db
+      .select()
+      .from(fiberNodeTypes)
+      .where(
+        and(
+          eq(fiberNodeTypes.organizationId, organizationId),
+          eq(fiberNodeTypes.isActive, true)
+        )
+      )
+      .orderBy(fiberNodeTypes.sortOrder, fiberNodeTypes.label);
+    
+    res.json({ nodeTypes });
+  } catch (error) {
+    console.error('Error fetching node types:', error);
+    res.status(500).json({ error: 'Failed to fetch node types' });
+  }
+});
+
+// Create a new node type
+router.post('/node-types', authenticateToken, async (req: any, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    
+    // Validate user ID
+    if (!req.user.id || isNaN(req.user.id)) {
+      console.error('Invalid user ID:', req.user);
+      return res.status(400).json({ error: 'Invalid user authentication' });
+    }
+    
+    // Validate request body
+    const validation = insertFiberNodeTypeSchema.safeParse({
+      ...req.body,
+      organizationId,
+      createdBy: req.user.id,
+    });
+    
+    if (!validation.success) {
+      console.error('Validation failed for node type creation:', validation.error.format());
+      return res.status(400).json({ 
+        error: 'Validation failed', 
+        details: validation.error.format() 
+      });
+    }
+    
+    // Check if node type with same value already exists for this organization
+    const existingType = await db
+      .select()
+      .from(fiberNodeTypes)
+      .where(
+        and(
+          eq(fiberNodeTypes.organizationId, organizationId),
+          eq(fiberNodeTypes.value, validation.data.value)
+        )
+      )
+      .limit(1);
+    
+    if (existingType.length > 0) {
+      return res.status(400).json({ 
+        error: 'Node type already exists',
+        details: 'A node type with this value already exists for your organization' 
+      });
+    }
+    
+    // Create the node type
+    const result = await db
+      .insert(fiberNodeTypes)
+      .values(validation.data)
+      .returning();
+    
+    res.status(201).json({ nodeType: result[0] });
+  } catch (error) {
+    console.error('Error creating node type:', error);
+    res.status(500).json({ error: 'Failed to create node type' });
+  }
+});
+
+// Delete a node type
+router.delete('/node-types/:id', authenticateToken, async (req: any, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    const nodeTypeId = parseInt(req.params.id);
+    
+    // Validate user ID
+    if (!req.user.id || isNaN(req.user.id)) {
+      console.error('Invalid user ID:', req.user);
+      return res.status(400).json({ error: 'Invalid user authentication' });
+    }
+    
+    // Check if node type exists and belongs to this organization
+    const existingType = await db
+      .select()
+      .from(fiberNodeTypes)
+      .where(
+        and(
+          eq(fiberNodeTypes.id, nodeTypeId),
+          eq(fiberNodeTypes.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+    
+    if (existingType.length === 0) {
+      return res.status(404).json({ error: 'Node type not found' });
+    }
+    
+    // Check if any nodes are using this type
+    const nodesUsingType = await db
+      .select({ count: sql<number>`COUNT(*)::int` })
+      .from(fiberNetworkNodes)
+      .where(
+        and(
+          eq(fiberNetworkNodes.organizationId, organizationId),
+          sql`${fiberNetworkNodes.nodeType}::text = ${existingType[0].value}`
+        )
+      );
+    
+    if (nodesUsingType[0].count > 0) {
+      return res.status(400).json({ 
+        error: 'Cannot delete node type',
+        details: `${nodesUsingType[0].count} node(s) are using this type. Please reassign them first.`
+      });
+    }
+    
+    // Soft delete by setting isActive to false
+    const result = await db
+      .update(fiberNodeTypes)
+      .set({ 
+        isActive: false,
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(fiberNodeTypes.id, nodeTypeId),
+          eq(fiberNodeTypes.organizationId, organizationId)
+        )
+      )
+      .returning();
+    
+    res.json({ 
+      success: true, 
+      message: 'Node type deleted successfully',
+      nodeType: result[0]
+    });
+  } catch (error) {
+    console.error('Error deleting node type:', error);
+    res.status(500).json({ error: 'Failed to delete node type' });
   }
 });
 
