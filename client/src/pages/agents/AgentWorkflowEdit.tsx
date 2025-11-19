@@ -325,6 +325,8 @@ export default function AgentWorkflowEdit() {
                   integrations={integrations}
                   keyResults={keyResults}
                   objectives={objectives}
+                  triggerType={triggerType}
+                  selectedTrigger={availableTriggers.find((t: any) => t.id === selectedTriggerId)}
                 />
               </CardContent>
             </Card>
