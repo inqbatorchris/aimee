@@ -1,7 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database, Calculator, Loader2, Eye } from 'lucide-react';
-import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database, Calculator, Cloud, Repeat, ClipboardList } from 'lucide-react';
+import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database, Calculator, Loader2, Eye, Cloud, Repeat, ClipboardList } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
