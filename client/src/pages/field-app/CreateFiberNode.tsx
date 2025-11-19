@@ -57,7 +57,7 @@ export default function CreateFiberNode({ onComplete }: CreateFiberNodeProps) {
   const [session, setSession] = useState<any>(null);
 
   // Fetch node types from API with authentication
-  const { data: nodeTypes = [] } = useQuery({
+  const { data: nodeTypesData } = useQuery({
     queryKey: ['/api/fiber-network/node-types'],
     queryFn: async () => {
       const response = await fetch('/api/fiber-network/node-types', {
@@ -72,6 +72,8 @@ export default function CreateFiberNode({ onComplete }: CreateFiberNodeProps) {
     },
     enabled: !!session?.token,
   });
+  
+  const nodeTypes = nodeTypesData?.nodeTypes || [];
 
   // Helper function to generate auto-name
   const generateNodeName = (type: string, networkName: string, userEmail: string) => {
