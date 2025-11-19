@@ -4186,7 +4186,7 @@ export const xeroChartOfAccounts = pgTable("xero_chart_of_accounts", {
 ]);
 
 // Profit Centers - Business segments for financial analysis
-export const profitCenters = pgTable("profit_centers", {
+export const profitCenters: any = pgTable("profit_centers", {
   id: serial("id").primaryKey(),
   organizationId: integer("organization_id").references(() => organizations.id).notNull(),
   
@@ -4226,7 +4226,7 @@ export const profitCenters = pgTable("profit_centers", {
   requiresXeroAccount: boolean("requires_xero_account").default(true),
   
   // Hierarchy support
-  parentProfitCenterId: integer("parent_profit_center_id").references(() => profitCenters.id),
+  parentProfitCenterId: integer("parent_profit_center_id").references((): any => profitCenters.id),
   displayOrder: integer("display_order").default(0),
   
   // Status
