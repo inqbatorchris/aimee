@@ -4491,33 +4491,31 @@ export const vapiAssistants = pgTable("vapi_assistants", {
   
   // Assistant details
   name: varchar("name", { length: 255 }).notNull(),
+  role: varchar("role", { length: 100 }), // 'triage', 'sales', 'support'
   description: text("description"),
-  role: varchar("role", { length: 100 }).notNull(), // 'triage', 'sales', 'support'
   
-  // Configuration
-  systemPrompt: text("system_prompt").notNull(),
-  voice: varchar("voice", { length: 100 }).default("jennifer"), // Vapi voice ID
+  // LLM Configuration
+  systemPrompt: text("system_prompt"),
+  modelProvider: varchar("model_provider", { length: 50 }).default("openai"),
+  modelName: varchar("model_name", { length: 100 }).default("gpt-4"),
+  temperature: decimal("temperature", { precision: 3, scale: 2 }).default("0.7"),
+  
+  // Voice Configuration
+  voiceProvider: varchar("voice_provider", { length: 50 }),
+  voiceId: varchar("voice_id", { length: 255 }),
   firstMessage: text("first_message"),
   
   // Tools and capabilities
-  enabledTools: jsonb("enabled_tools").default([]).$type<string[]>(), // Tool names
-  knowledgeFileIds: jsonb("knowledge_file_ids").default([]).$type<string[]>(), // Vapi file IDs
+  toolsConfig: jsonb("tools_config").default([]), // Array of tool configurations
+  knowledgeBaseIds: jsonb("knowledge_base_ids").default([]).$type<string[]>(), // Vapi file IDs
   
-  // Handoff configuration
-  canHandoffTo: jsonb("can_handoff_to").default([]).$type<string[]>(), // Other assistant IDs
+  // Duration limits
+  maxDurationSeconds: integer("max_duration_seconds").default(300),
   
-  // Performance tracking
-  totalCalls: integer("total_calls").default(0),
-  autonomousCallsCount: integer("autonomous_calls_count").default(0),
-  averageDurationSeconds: integer("average_duration_seconds"),
-  averageSentiment: decimal("average_sentiment", { precision: 3, scale: 2 }),
-  
-  // A/B testing
+  // Status
   isActive: boolean("is_active").default(true),
-  variantGroup: varchar("variant_group", { length: 100 }), // For A/B testing groups
   
   // Audit
-  createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
