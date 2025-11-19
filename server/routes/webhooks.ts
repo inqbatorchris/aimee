@@ -147,29 +147,49 @@ async function handleWebhookRequest(req: any, res: Response, integrationType: st
       return res.status(404).json({ error: 'Trigger not found' });
     }
 
+    // Parse the payload first to check for ping requests
+    let payload: any;
+    try {
+      if (Buffer.isBuffer(req.body)) {
+        const bodyString = req.body.toString();
+        const contentType = req.get('Content-Type') || '';
+        
+        if (contentType.includes('application/x-www-form-urlencoded')) {
+          // Parse form-urlencoded data
+          const params = new URLSearchParams(bodyString);
+          payload = {};
+          params.forEach((value, key) => {
+            payload[key] = value;
+          });
+        } else {
+          // Parse JSON
+          payload = JSON.parse(bodyString);
+        }
+      } else {
+        payload = req.body;
+      }
+    } catch (error) {
+      console.error(`[WEBHOOK] Failed to parse webhook payload:`, error);
+      return res.status(400).json({ error: 'Invalid payload format' });
+    }
+
+    // Handle Splynx ping requests immediately (before signature verification)
+    if (payload.type === 'ping') {
+      console.log(`[WEBHOOK] Ping request received for ${triggerKey}`);
+      return res.status(200).send('ok');
+    }
+
     // Verify webhook signature if secret is configured
     let verified = false;
     if (trigger.webhookSecret) {
       verified = await verifyWebhookSignature(req, trigger.webhookSecret);
       if (!verified) {
         console.log(`[WEBHOOK] Signature verification failed for ${triggerKey}`);
+        return res.status(401).json({ error: 'Invalid signature' });
       }
     } else {
       console.log(`[WEBHOOK] No webhook secret configured for trigger ${triggerKey}, skipping verification`);
       verified = true; // If no secret is configured, consider it verified
-    }
-
-    // Parse the payload
-    let payload: any;
-    try {
-      if (Buffer.isBuffer(req.body)) {
-        payload = JSON.parse(req.body.toString());
-      } else {
-        payload = req.body;
-      }
-    } catch (error) {
-      console.error(`[WEBHOOK] Failed to parse webhook payload:`, error);
-      return res.status(400).json({ error: 'Invalid JSON payload' });
     }
 
     // Extract request metadata
@@ -320,7 +340,9 @@ async function handleWebhookRequest(req: any, res: Response, integrationType: st
 }
 
 /**
- * Verify webhook signature using HMAC SHA-256
+ * Verify webhook signature using HMAC SHA-1 (Splynx standard)
+ * Splynx generates signatures using: HMAC-SHA1(secret, raw_request_body)
+ * and sends them in the X-Splynx-Signature header
  */
 async function verifyWebhookSignature(req: any, secret: string): Promise<boolean> {
   try {
@@ -333,24 +355,31 @@ async function verifyWebhookSignature(req: any, secret: string): Promise<boolean
 
     const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body));
     
+    // Splynx uses SHA1 (not SHA256!)
     const expectedSignature = crypto
-      .createHmac('sha256', secret)
+      .createHmac('sha1', secret)
       .update(rawBody)
       .digest('hex');
 
     let receivedSignature = signature;
-    if (signature.startsWith('sha256=')) {
+    // Handle different signature formats
+    if (signature.startsWith('sha1=')) {
+      receivedSignature = signature.slice(5);
+    } else if (signature.startsWith('sha256=')) {
       receivedSignature = signature.slice(7);
     } else if (signature.startsWith('Bearer ')) {
       receivedSignature = signature.slice(7);
     }
 
+    // Timing-safe comparison to prevent timing attacks
     const isValid = crypto.timingSafeEqual(
       Buffer.from(expectedSignature, 'hex'),
       Buffer.from(receivedSignature, 'hex')
     );
 
     console.log(`[WEBHOOK] Signature verification: ${isValid ? 'PASSED' : 'FAILED'}`);
+    console.log(`[WEBHOOK] Expected (SHA1): ${expectedSignature.substring(0, 16)}...`);
+    console.log(`[WEBHOOK] Received: ${receivedSignature.substring(0, 16)}...`);
     return isValid;
 
   } catch (error) {
