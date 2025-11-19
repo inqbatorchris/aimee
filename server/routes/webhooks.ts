@@ -122,6 +122,162 @@ router.post('/splynx/:organizationId/:triggerKey', async (req: Request, res: Res
 });
 
 /**
+ * Vapi webhook endpoint for voice AI events
+ * Route: POST /api/webhooks/vapi/:organizationId
+ */
+router.post('/vapi/:organizationId', async (req: Request, res: Response) => {
+  const startTime = Date.now();
+  console.log(`[WEBHOOK] Vapi webhook received for organization: ${req.params.organizationId}`);
+  
+  try {
+    const { organizationId } = req.params;
+    const orgId = parseInt(organizationId);
+    
+    if (isNaN(orgId)) {
+      return res.status(400).json({ error: 'Invalid organization ID' });
+    }
+
+    // Parse Vapi webhook payload
+    let payload: any;
+    try {
+      if (Buffer.isBuffer(req.body)) {
+        payload = JSON.parse(req.body.toString());
+      } else {
+        payload = req.body;
+      }
+    } catch (error) {
+      console.error(`[WEBHOOK] Failed to parse Vapi payload:`, error);
+      return res.status(400).json({ error: 'Invalid JSON payload' });
+    }
+
+    const { message: { type, call } } = payload;
+    
+    console.log(`[WEBHOOK] Vapi event type: ${type}, call ID: ${call?.id}`);
+
+    // Handle different Vapi event types
+    switch (type) {
+      case 'status-update':
+        await handleVapiStatusUpdate(orgId, call, payload);
+        break;
+      
+      case 'function-call':
+        // Function calls are handled by direct API endpoints, not webhooks
+        console.log(`[WEBHOOK] Function call webhook received (handled by direct API)`);
+        break;
+      
+      case 'end-of-call-report':
+        await handleVapiEndOfCall(orgId, call, payload);
+        break;
+      
+      case 'transcript':
+        await handleVapiTranscript(orgId, call, payload);
+        break;
+      
+      default:
+        console.log(`[WEBHOOK] Unknown Vapi event type: ${type}`);
+    }
+
+    // Log the webhook event
+    await storage.createWebhookEvent({
+      organizationId: orgId,
+      source: 'vapi',
+      eventType: type,
+      payload,
+      processedAt: new Date(),
+      processingTimeMs: Date.now() - startTime,
+    });
+
+    res.json({ success: true, processingTime: Date.now() - startTime });
+
+  } catch (error: any) {
+    const processingTime = Date.now() - startTime;
+    console.error(`[WEBHOOK] Error processing Vapi webhook (${processingTime}ms):`, error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      processingTime
+    });
+  }
+});
+
+// Vapi webhook event handlers
+async function handleVapiStatusUpdate(organizationId: number, call: any, payload: any) {
+  console.log(`[VAPI] Status update: ${call.status}`);
+  
+  // Check if call record exists
+  const existing = await storage.getVapiCallByVapiId(call.id, organizationId);
+  
+  if (!existing) {
+    // Create new call record
+    await storage.createVapiCall({
+      organizationId,
+      vapiCallId: call.id,
+      assistantId: call.assistantId,
+      phoneNumberId: call.phoneNumberId,
+      customerPhoneNumber: call.customer?.number,
+      status: call.status as any,
+      startedAt: call.startedAt ? new Date(call.startedAt) : new Date(),
+      rawCallData: payload,
+    });
+  } else {
+    // Update existing call
+    await storage.updateVapiCall(existing.id, {
+      status: call.status as any,
+      rawCallData: payload,
+    });
+  }
+}
+
+async function handleVapiEndOfCall(organizationId: number, call: any, payload: any) {
+  console.log(`[VAPI] End of call report for: ${call.id}`);
+  
+  const existing = await storage.getVapiCallByVapiId(call.id, organizationId);
+  if (!existing) {
+    console.error(`[VAPI] Call not found: ${call.id}`);
+    return;
+  }
+
+  // Extract analysis from end-of-call report
+  const analysis = payload.message?.analysis || {};
+  const transcript = payload.message?.transcript || '';
+  
+  // Determine if call was autonomous
+  const wasAutonomous = !call.endedReason?.includes('forward') && 
+                        call.endedReason !== 'assistant_forwarded';
+  
+  // Extract actions taken from transcript/metadata
+  const metadata = payload.message?.metadata || {};
+  
+  await storage.updateVapiCall(existing.id, {
+    endedAt: call.endedAt ? new Date(call.endedAt) : new Date(),
+    durationSeconds: call.duration || 0,
+    endReason: call.endedReason as any,
+    wasAutonomous,
+    transcript,
+    summary: analysis.summary || '',
+    sentimentScore: analysis.sentiment || '0',
+    customerIntent: metadata.intent || '',
+    knowledgeGaps: metadata.knowledgeGaps || [],
+    knowledgeFilesUsed: metadata.knowledgeFilesUsed || [],
+  });
+
+  console.log(`[VAPI] Call ${call.id} completed. Autonomous: ${wasAutonomous}`);
+}
+
+async function handleVapiTranscript(organizationId: number, call: any, payload: any) {
+  console.log(`[VAPI] Transcript update for: ${call.id}`);
+  
+  const existing = await storage.getVapiCallByVapiId(call.id, organizationId);
+  if (!existing) {
+    return;
+  }
+
+  const transcript = payload.message?.transcript || '';
+  await storage.updateVapiCall(existing.id, {
+    transcript,
+  });
+}
+
+/**
  * Reusable webhook request handler - processes webhooks for any integration type
  */
 async function handleWebhookRequest(req: any, res: Response, integrationType: string, startTime: number) {

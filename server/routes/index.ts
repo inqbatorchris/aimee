@@ -61,6 +61,8 @@ import financeRoutes from './finance.js';
 console.log('✅ Finance routes loaded:', typeof financeRoutes);
 import dataExplorerRoutes from './data-explorer.js';
 console.log('✅ Data explorer routes loaded:', typeof dataExplorerRoutes);
+import vapiRoutes from './vapi.js';
+console.log('✅ Vapi routes loaded:', typeof vapiRoutes);
 
 const router = Router();
 console.log('🔥 Express Router created');
@@ -122,6 +124,8 @@ console.log('🔗 Mounting finance routes');
 router.use('/finance', financeRoutes);
 console.log('🔗 Mounting data-explorer routes');
 router.use('/data-explorer', dataExplorerRoutes);
+console.log('🔗 Mounting vapi routes');
+router.use('/vapi', vapiRoutes);
 
 // Direct feature routes
 router.use('/', coreFeatureRoutes);
