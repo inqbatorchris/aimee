@@ -240,7 +240,7 @@ router.patch('/nodes/:id', authenticateToken, async (req: any, res) => {
   try {
     const organizationId = req.user.organizationId;
     const nodeId = parseInt(req.params.id);
-    const { name, status, what3words, address, notes, photos, fiberDetails } = req.body;
+    const { name, nodeType, status, what3words, address, notes, photos, fiberDetails } = req.body;
     
     // Validate user ID
     if (!req.user.id || isNaN(req.user.id)) {
@@ -255,6 +255,7 @@ router.patch('/nodes/:id', authenticateToken, async (req: any, res) => {
     };
     
     if (name !== undefined) updateData.name = name;
+    if (nodeType !== undefined) updateData.nodeType = nodeType;
     if (status !== undefined) updateData.status = status;
     if (what3words !== undefined) updateData.what3words = what3words;
     if (address !== undefined) updateData.address = address;
