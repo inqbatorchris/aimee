@@ -3167,6 +3167,29 @@ export const fiberNetworkActivityLogs = pgTable("fiber_network_activity_logs", {
   index("idx_fiber_activity_timestamp").on(table.timestamp),
 ]);
 
+// Fiber Node Types - Configurable node types (chamber, cabinet, pole, etc.)
+export const fiberNodeTypes = pgTable("fiber_node_types", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  
+  // Node type details
+  value: varchar("value", { length: 50 }).notNull(), // e.g., 'chamber', 'cabinet', 'pole'
+  label: varchar("label", { length: 100 }).notNull(), // e.g., 'Chamber', 'Cabinet', 'Pole'
+  description: text("description"),
+  isActive: boolean("is_active").default(true),
+  
+  // Display order
+  sortOrder: integer("sort_order").default(0),
+  
+  // Audit
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_fiber_node_types_org").on(table.organizationId),
+  unique("unique_node_type_per_org").on(table.organizationId, table.value),
+]);
+
 // ========================================
 // AIRTABLE INTEGRATION MODULE
 // ========================================
@@ -3519,12 +3542,21 @@ export const insertFiberNetworkActivityLogSchema = createInsertSchema(fiberNetwo
   timestamp: true,
 });
 
+export const insertFiberNodeTypeSchema = createInsertSchema(fiberNodeTypes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
 // Types for Fiber Network
 export type FiberNetworkNode = typeof fiberNetworkNodes.$inferSelect;
 export type InsertFiberNetworkNode = z.infer<typeof insertFiberNetworkNodeSchema>;
 
 export type FiberNetworkActivityLog = typeof fiberNetworkActivityLogs.$inferSelect;
 export type InsertFiberNetworkActivityLog = z.infer<typeof insertFiberNetworkActivityLogSchema>;
+
+export type FiberNodeType = typeof fiberNodeTypes.$inferSelect;
+export type InsertFiberNodeType = z.infer<typeof insertFiberNodeTypeSchema>;
 
 // Insert schemas for Airtable integration
 export const insertAirtableConnectionSchema = createInsertSchema(airtableConnections).omit({
