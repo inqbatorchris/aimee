@@ -19,6 +19,7 @@ interface VariableFieldPickerProps {
   availableFields?: FieldOption[];
   multiline?: boolean;
   rows?: number;
+  variablePrefix?: string;
 }
 
 const DEFAULT_FIELDS: FieldOption[] = [
@@ -40,7 +41,8 @@ export function VariableFieldPicker({
   className = "",
   availableFields = DEFAULT_FIELDS,
   multiline = false,
-  rows = 3
+  rows = 3,
+  variablePrefix = 'currentItem'
 }: VariableFieldPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -66,7 +68,7 @@ export function VariableFieldPicker({
   );
 
   const handleSelectField = (fieldName: string) => {
-    onChange(`{{currentItem.${fieldName}}}`);
+    onChange(`{{${variablePrefix}.${fieldName}}}`);
     setIsOpen(false);
     setSearch('');
   };
