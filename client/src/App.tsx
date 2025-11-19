@@ -105,6 +105,7 @@ const Transactions = lazy(() => import("@/pages/finance/Transactions"));
 const ProfitCenters = lazy(() => import("@/pages/finance/ProfitCenters"));
 const ChartOfAccounts = lazy(() => import("@/pages/finance/ChartOfAccounts"));
 const OkrAnalysis = lazy(() => import("@/pages/finance/OkrAnalysis"));
+const VapiPerformanceDashboard = lazy(() => import("@/pages/VapiPerformanceDashboard"));
 
 // Agent & Workflow Pages
 const AgentBuilder = lazy(() => import("@/pages/AgentBuilder"));
@@ -590,6 +591,7 @@ function AppContent() {
               <Route path="/finance/profit-centers" component={ProfitCenters} />
               <Route path="/finance/chart-of-accounts" component={ChartOfAccounts} />
               <Route path="/finance/okr-analysis" component={OkrAnalysis} />
+              <Route path="/vapi/performance" component={VapiPerformanceDashboard} />
               <Route path="/integrations/microsoft/setup" component={() => <ComingSoon featureName="Microsoft Outlook Integration" description="Sync your email and calendar with Microsoft Outlook" />} />
               <Route path="/integrations/firebase/setup" component={() => <ComingSoon featureName="Firebase Integration" description="Connect to Google's Firebase platform for app development" />} />
               <Route path="/integrations/openai/setup" component={() => <ComingSoon featureName="OpenAI Integration" description="Integrate AI models for intelligent automation" />} />
