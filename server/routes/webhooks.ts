@@ -275,6 +275,11 @@ async function handleWebhookRequest(req: any, res: Response, integrationType: st
             }
           };
 
+          // Flatten Splynx payload for easier variable access
+          const flattenedTrigger = integrationType === 'splynx' && payload.data?.attributes
+            ? { ...payload.data, ...payload.data.attributes, _raw: payload }
+            : payload;
+
           await executor.executeWorkflow(workflowWithConfig, {
             triggerSource: 'webhook',
             organizationId: integration.organizationId.toString(),
@@ -285,7 +290,8 @@ async function handleWebhookRequest(req: any, res: Response, integrationType: st
               eventId: webhookEvent.id
             },
             // Add trigger alias for template variables like {{trigger.subject}}
-            trigger: payload
+            // Flattened for Splynx so {{trigger.subject}} works instead of {{trigger.data.attributes.subject}}
+            trigger: flattenedTrigger
           });
 
           await storage.updateWorkflowRun(runResult.id, {

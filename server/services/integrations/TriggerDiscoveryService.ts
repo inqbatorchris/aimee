@@ -82,16 +82,18 @@ export class TriggerDiscoveryService {
       payloadSchema: {
         type: 'object',
         properties: {
-          ticket_id: { type: 'string' },
-          customer_id: { type: 'string' },
-          subject: { type: 'string' },
-          priority: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
-          status: { type: 'string' },
-          created_at: { type: 'string', format: 'date-time' },
-          assigned_to: { type: 'string' }
+          'data.attributes.id': { type: 'string' },
+          'data.attributes.subject': { type: 'string' },
+          'data.attributes.priority': { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
+          'data.attributes.status_id': { type: 'string' },
+          'data.attributes.customer_id': { type: 'string' },
+          'data.attributes.created_at': { type: 'string', format: 'date-time' },
+          'data.attributes.assign_to': { type: 'string' },
+          'data.attributes.group_id': { type: 'string' },
+          'data.attributes.type_id': { type: 'string' }
         }
       },
-      availableFields: ['ticket_id', 'customer_id', 'subject', 'priority', 'status', 'created_at', 'assigned_to']
+      availableFields: ['id', 'subject', 'priority', 'status_id', 'customer_id', 'created_at', 'assign_to', 'group_id', 'type_id', 'action', 'source', 'reporter', 'reporter_type', 'task_id', 'closed', 'updated_at']
     },
     {
       triggerKey: 'ticket_status_changed',
