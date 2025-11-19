@@ -4398,3 +4398,196 @@ export type InsertXeroSyncStatus = z.infer<typeof insertXeroSyncStatusSchema>;
 
 export type XeroSyncLog = typeof xeroSyncLogs.$inferSelect;
 export type InsertXeroSyncLog = z.infer<typeof insertXeroSyncLogSchema>;
+
+// ========================================
+// VAPI VOICE AI INTEGRATION
+// ========================================
+
+// Vapi Call Status Enum
+export const vapiCallStatusEnum = pgEnum('vapi_call_status', ['queued', 'ringing', 'in_progress', 'forwarding', 'ended']);
+
+// Vapi Call End Reason Enum
+export const vapiEndReasonEnum = pgEnum('vapi_end_reason', ['assistant_ended', 'assistant_forwarded', 'customer_ended', 'customer_did_not_answer', 'error', 'exceeded_max_duration', 'silence_timeout']);
+
+// Vapi Calls - Track all voice AI interactions
+export const vapiCalls = pgTable("vapi_calls", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  
+  // Vapi identifiers
+  vapiCallId: varchar("vapi_call_id", { length: 255 }).notNull().unique(),
+  assistantId: varchar("assistant_id", { length: 255 }),
+  phoneNumberId: varchar("phone_number_id", { length: 255 }),
+  
+  // Call details
+  customerPhoneNumber: varchar("customer_phone_number", { length: 50 }),
+  customerName: varchar("customer_name", { length: 255 }),
+  customerId: integer("customer_id"), // Link to Splynx customer if identified
+  
+  // Call status and timeline
+  status: vapiCallStatusEnum("status").default("queued").notNull(),
+  startedAt: timestamp("started_at"),
+  endedAt: timestamp("ended_at"),
+  durationSeconds: integer("duration_seconds"),
+  
+  // Call outcome
+  endReason: vapiEndReasonEnum("end_reason"),
+  wasAutonomous: boolean("was_autonomous").default(false), // True if no human intervention needed
+  wasForwarded: boolean("was_forwarded").default(false),
+  forwardedTo: varchar("forwarded_to", { length: 100 }), // 'business_team', 'technical_support', etc.
+  
+  // Call analysis
+  transcript: text("transcript"),
+  summary: text("summary"),
+  customerIntent: varchar("customer_intent", { length: 100 }), // 'sales', 'support', 'billing', 'transfer'
+  sentimentScore: decimal("sentiment_score", { precision: 3, scale: 2 }), // -1.00 to 1.00
+  
+  // SMS verification tracking (for support calls)
+  smsCodeSent: boolean("sms_code_sent").default(false),
+  smsCodeVerified: boolean("sms_code_verified").default(false),
+  smsVerificationAttempts: integer("sms_verification_attempts").default(0),
+  
+  // Actions taken
+  ticketCreated: boolean("ticket_created").default(false),
+  ticketId: varchar("ticket_id", { length: 100 }), // Splynx ticket ID
+  demoScheduled: boolean("demo_scheduled").default(false),
+  demoScheduledFor: timestamp("demo_scheduled_for"),
+  callbackScheduled: boolean("callback_scheduled").default(false),
+  callbackScheduledFor: timestamp("callback_scheduled_for"),
+  
+  // Work items created
+  workItemIds: jsonb("work_item_ids").default([]).$type<number[]>(),
+  
+  // Knowledge base usage
+  knowledgeFilesUsed: jsonb("knowledge_files_used").default([]).$type<string[]>(),
+  knowledgeGaps: jsonb("knowledge_gaps").default([]).$type<string[]>(), // Questions assistant couldn't answer
+  
+  // Metrics for KR tracking
+  costCents: integer("cost_cents"), // Cost in cents (Vapi billing)
+  
+  // Raw Vapi data
+  rawCallData: jsonb("raw_call_data"), // Full Vapi webhook payload
+  
+  // Audit
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_vapi_calls_org").on(table.organizationId),
+  index("idx_vapi_calls_vapi_id").on(table.vapiCallId),
+  index("idx_vapi_calls_status").on(table.status),
+  index("idx_vapi_calls_customer").on(table.customerId),
+  index("idx_vapi_calls_started").on(table.startedAt.desc()),
+  index("idx_vapi_calls_intent").on(table.customerIntent),
+  index("idx_vapi_calls_autonomous").on(table.wasAutonomous),
+]);
+
+// Vapi Assistants - Configuration for each AI assistant
+export const vapiAssistants = pgTable("vapi_assistants", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  
+  // Vapi identifiers
+  vapiAssistantId: varchar("vapi_assistant_id", { length: 255 }).unique(),
+  
+  // Assistant details
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  role: varchar("role", { length: 100 }).notNull(), // 'triage', 'sales', 'support'
+  
+  // Configuration
+  systemPrompt: text("system_prompt").notNull(),
+  voice: varchar("voice", { length: 100 }).default("jennifer"), // Vapi voice ID
+  firstMessage: text("first_message"),
+  
+  // Tools and capabilities
+  enabledTools: jsonb("enabled_tools").default([]).$type<string[]>(), // Tool names
+  knowledgeFileIds: jsonb("knowledge_file_ids").default([]).$type<string[]>(), // Vapi file IDs
+  
+  // Handoff configuration
+  canHandoffTo: jsonb("can_handoff_to").default([]).$type<string[]>(), // Other assistant IDs
+  
+  // Performance tracking
+  totalCalls: integer("total_calls").default(0),
+  autonomousCallsCount: integer("autonomous_calls_count").default(0),
+  averageDurationSeconds: integer("average_duration_seconds"),
+  averageSentiment: decimal("average_sentiment", { precision: 3, scale: 2 }),
+  
+  // A/B testing
+  isActive: boolean("is_active").default(true),
+  variantGroup: varchar("variant_group", { length: 100 }), // For A/B testing groups
+  
+  // Audit
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_vapi_assistants_org").on(table.organizationId),
+  index("idx_vapi_assistants_role").on(table.role),
+  index("idx_vapi_assistants_active").on(table.isActive),
+]);
+
+// Vapi Knowledge Files - Track knowledge base files uploaded to Vapi
+export const vapiKnowledgeFiles = pgTable("vapi_knowledge_files", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  
+  // Vapi identifiers
+  vapiFileId: varchar("vapi_file_id", { length: 255 }).notNull().unique(),
+  
+  // File details
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  fileType: varchar("file_type", { length: 50 }), // 'pdf', 'txt', 'docx'
+  fileSize: integer("file_size"), // Bytes
+  
+  // Content tracking
+  category: varchar("category", { length: 100 }), // 'packages', 'troubleshooting', 'billing', 'policies'
+  description: text("description"),
+  
+  // Usage metrics
+  timesUsed: integer("times_used").default(0),
+  lastUsedAt: timestamp("last_used_at"),
+  
+  // Link to internal KB
+  knowledgeDocumentId: integer("knowledge_document_id").references(() => knowledgeDocuments.id),
+  
+  // Status
+  isActive: boolean("is_active").default(true),
+  
+  // Audit
+  uploadedBy: integer("uploaded_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_vapi_knowledge_org").on(table.organizationId),
+  index("idx_vapi_knowledge_category").on(table.category),
+  index("idx_vapi_knowledge_active").on(table.isActive),
+]);
+
+// Insert schemas
+export const insertVapiCallSchema = createInsertSchema(vapiCalls).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertVapiAssistantSchema = createInsertSchema(vapiAssistants).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertVapiKnowledgeFileSchema = createInsertSchema(vapiKnowledgeFiles).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Types
+export type VapiCall = typeof vapiCalls.$inferSelect;
+export type InsertVapiCall = z.infer<typeof insertVapiCallSchema>;
+
+export type VapiAssistant = typeof vapiAssistants.$inferSelect;
+export type InsertVapiAssistant = z.infer<typeof insertVapiAssistantSchema>;
+
+export type VapiKnowledgeFile = typeof vapiKnowledgeFiles.$inferSelect;
+export type InsertVapiKnowledgeFile = z.infer<typeof insertVapiKnowledgeFileSchema>;

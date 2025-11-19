@@ -9,6 +9,9 @@ import {
   keyResults,
   keyResultTasks,
   profitCenters,
+  vapiCalls,
+  vapiAssistants,
+  vapiKnowledgeFiles,
 } from '../../../shared/schema.js';
 
 /**
@@ -92,4 +95,7 @@ export const TABLE_REGISTRY: Record<string, any> = {
   'key_results': keyResults,
   'key_result_tasks': keyResultTasks,
   'profit_centers': profitCenters,
+  'vapi_calls': vapiCalls,
+  'vapi_assistants': vapiAssistants,
+  'vapi_knowledge_files': vapiKnowledgeFiles,
 };
