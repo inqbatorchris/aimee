@@ -13,17 +13,9 @@ export async function seedVapiAssistants() {
     return;
   }
 
-  // Check if assistants already exist
-  const existing = await db
-    .select()
-    .from(vapiAssistants)
-    .where(eq(vapiAssistants.organizationId, org.id))
-    .limit(1);
-
-  if (existing.length > 0) {
-    console.log('✅ Vapi assistants already exist. Skipping seed.');
-    return;
-  }
+  // Delete existing assistants to ensure clean slate (idempotent seed)
+  const deleted = await db.delete(vapiAssistants).where(eq(vapiAssistants.organizationId, org.id));
+  console.log(`🗑️  Deleted ${deleted.rowCount || 0} existing assistants for idempotent seed`);
 
   const assistantsData = [
     {
