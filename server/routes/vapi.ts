@@ -55,6 +55,11 @@ async function getSplynxService(organizationId: number): Promise<SplynxService |
 router.get('/api/vapi/assistants', async (req: Request, res: Response) => {
   try {
     const organizationId = parseInt(req.query.organizationId as string);
+    
+    if (isNaN(organizationId)) {
+      return res.status(400).json({ error: 'Valid organizationId is required' });
+    }
+    
     const role = req.query.role as string | undefined;
 
     const assistants = await storage.getVapiAssistants(organizationId, role);
@@ -93,6 +98,11 @@ router.patch('/api/vapi/assistants/:id', async (req: Request, res: Response) => 
 router.get('/api/vapi/calls', async (req: Request, res: Response) => {
   try {
     const organizationId = parseInt(req.query.organizationId as string);
+    
+    if (isNaN(organizationId)) {
+      return res.status(400).json({ error: 'Valid organizationId is required' });
+    }
+    
     const filters = {
       status: req.query.status as string | undefined,
       customerIntent: req.query.customerIntent as string | undefined,
@@ -133,6 +143,11 @@ router.get('/api/vapi/calls/:id', async (req: Request, res: Response) => {
 router.get('/api/vapi/metrics', async (req: Request, res: Response) => {
   try {
     const organizationId = parseInt(req.query.organizationId as string);
+    
+    if (isNaN(organizationId)) {
+      return res.status(400).json({ error: 'Valid organizationId is required' });
+    }
+    
     const startDate = req.query.startDate ? new Date(req.query.startDate as string) : undefined;
     const endDate = req.query.endDate ? new Date(req.query.endDate as string) : undefined;
 
@@ -149,6 +164,11 @@ router.get('/api/vapi/metrics', async (req: Request, res: Response) => {
 router.get('/api/vapi/metrics/trend', async (req: Request, res: Response) => {
   try {
     const organizationId = parseInt(req.query.organizationId as string);
+    
+    if (isNaN(organizationId)) {
+      return res.status(400).json({ error: 'Valid organizationId is required' });
+    }
+    
     const days = req.query.days ? parseInt(req.query.days as string) : 30;
 
     const calculator = new VapiMetricsCalculator(organizationId);
