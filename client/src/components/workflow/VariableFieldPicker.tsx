@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { Sparkles, Hash, User, Mail, Tags, Calendar, MapPin, FileText } from 'lucide-react';
 
@@ -16,6 +17,8 @@ interface VariableFieldPickerProps {
   placeholder?: string;
   className?: string;
   availableFields?: FieldOption[];
+  multiline?: boolean;
+  rows?: number;
 }
 
 const DEFAULT_FIELDS: FieldOption[] = [
@@ -35,7 +38,9 @@ export function VariableFieldPicker({
   onChange, 
   placeholder = "e.g., {{currentItem.id}}", 
   className = "",
-  availableFields = DEFAULT_FIELDS 
+  availableFields = DEFAULT_FIELDS,
+  multiline = false,
+  rows = 3
 }: VariableFieldPickerProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -68,14 +73,25 @@ export function VariableFieldPicker({
 
   return (
     <div className={`relative ${className}`} ref={dropdownRef}>
-      <div className="flex gap-1">
-        <Input
-          value={value}
-          onChange={(e) => onChange(e.target.value)}
-          placeholder={placeholder}
-          className="flex-1 text-sm"
-          data-testid="input-variable-field"
-        />
+      <div className="flex gap-1 items-start">
+        {multiline ? (
+          <Textarea
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            className="flex-1 text-sm"
+            rows={rows}
+            data-testid="textarea-variable-field"
+          />
+        ) : (
+          <Input
+            value={value}
+            onChange={(e) => onChange(e.target.value)}
+            placeholder={placeholder}
+            className="flex-1 text-sm"
+            data-testid="input-variable-field"
+          />
+        )}
         <Button
           type="button"
           size="sm"
