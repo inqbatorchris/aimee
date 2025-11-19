@@ -4,6 +4,7 @@ import { authenticateToken } from '../auth';
 import { z } from 'zod';
 import crypto from 'crypto';
 import { GeocodingService } from '../services/geocoding.js';
+import { SplynxService } from '../services/integrations/splynxService.js';
 
 const router = Router();
 
