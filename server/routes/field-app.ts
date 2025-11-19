@@ -204,16 +204,29 @@ router.post('/download', authenticateToken, async (req: any, res) => {
     const organizationId = req.user?.organizationId;
     const userId = req.user?.id;
     
-    const { workItemIds, includeTemplates, includeAttachments } = req.body;
+    const { workItemIds, includeTemplates, includeAttachments, offset, limit } = req.body;
 
     if (!workItemIds || !Array.isArray(workItemIds)) {
       return res.status(400).json({ error: 'workItemIds array is required' });
     }
 
-    // Fetch all work items and filter by IDs
+    // Apply chunking if offset/limit provided (backward compatible)
+    const totalRequested = workItemIds.length;
+    const chunkOffset = offset !== undefined ? offset : 0;
+    const chunkLimit = limit !== undefined ? limit : totalRequested;
+    const chunkedIds = workItemIds.slice(chunkOffset, chunkOffset + chunkLimit);
+    
+    console.log('[Download] Chunked request:', {
+      totalRequested,
+      offset: chunkOffset,
+      limit: chunkLimit,
+      chunkSize: chunkedIds.length
+    });
+
+    // Fetch all work items and filter by chunked IDs
     const allWorkItems = await storage.getWorkItems(organizationId);
     const workItems = allWorkItems.filter((item: any) => 
-      workItemIds.includes(item.id)
+      chunkedIds.includes(item.id)
     );
 
     // Collect unique template IDs
@@ -272,10 +285,25 @@ router.post('/download', authenticateToken, async (req: any, res) => {
       }
     }
 
+    // Return batch metadata for chunked downloads
+    const hasMore = (chunkOffset + chunkLimit) < totalRequested;
+    const currentBatch = Math.floor(chunkOffset / chunkLimit) + 1;
+    const totalBatches = Math.ceil(totalRequested / chunkLimit);
+    
     res.json({
       workItems,
       templates,
-      executionStates
+      executionStates,
+      // Batch metadata (only present if chunking is used)
+      metadata: {
+        totalRequested,
+        currentBatch,
+        totalBatches,
+        offset: chunkOffset,
+        limit: chunkLimit,
+        returned: workItems.length,
+        hasMore
+      }
     });
   } catch (error) {
     console.error('Error downloading items:', error);
