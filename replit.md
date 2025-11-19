@@ -70,3 +70,46 @@ Side Panels (canonical): Use Sheet from shadcn/ui for all slide-out detail/edit 
 -   **multer**: File uploads.
 -   **cors**: Cross-Origin Resource Sharing.
 -   **TipTap**: Rich text editing.
+
+## Production Deployment
+
+### Deployment Tools & Documentation
+-   **Production Deployment Plan**: `PRODUCTION_DEPLOYMENT_PLAN.md` - Comprehensive guide covering all critical database tables, integration credentials, environment variables, and synchronization requirements for production deployment.
+-   **Data Export Script**: `server/scripts/export-production-data.ts` - Automated tool to export critical production data including organizations, users (human + agent), integrations (with encrypted credentials), agent workflows, menu system, pages, knowledge base, and AI assistant configuration.
+
+### Critical Database Tables for Production
+1. **Organizations** - Core tenant data (must migrate first)
+2. **Users** - Including agent users that represent automation workflows
+3. **Integrations** - External platform connections with encrypted credentials (Splynx, Xero, OpenAI)
+4. **Agent Workflows** - All automation logic and workflow definitions
+5. **Agent Workflow Schedules** - Cron schedules for automated workflows
+6. **Menu System** - Navigation sections and items
+7. **Pages** - Dynamic page configurations
+8. **Knowledge Base** - Documentation and help articles
+9. **AI Assistant Config** - AI system configuration and enabled functions
+
+### Security Requirements for Production
+-   **ENCRYPTION_KEY**: Must be identical in development and production for credential decryption to work. Integration credentials are encrypted using this key and stored in the `integrations.credentialsEncrypted` field.
+-   **JWT & Session Secrets**: Production-specific JWT_SECRET and SESSION_SECRET required.
+-   **Environment Variables**: Database connection (auto-configured by Replit), API keys for external services.
+
+### Data Export Usage
+Run the export script to generate JSON and SQL files for production import:
+```bash
+npx tsx server/scripts/export-production-data.ts [organizationId]
+```
+Generates:
+- `production-export/production-data-{orgId}.json` - Complete data export
+- `production-export/production-import-{orgId}.sql` - SQL import script
+- `production-export/export-summary-{orgId}.txt` - Human-readable summary
+
+### Deployment Validation Checklist
+After production deployment:
+- [ ] All integrations show "Connected" status
+- [ ] Test workflow executes successfully
+- [ ] Agent users exist and are active
+- [ ] Menu navigation loads correctly
+- [ ] Knowledge base articles visible
+- [ ] AI assistant responds correctly
+- [ ] Splynx task creation works end-to-end
+- [ ] Encrypted credentials decrypt properly
