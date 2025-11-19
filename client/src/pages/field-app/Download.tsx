@@ -174,8 +174,9 @@ export default function Download({ session, onComplete }: DownloadProps) {
       for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
         const offset = batchIndex * CHUNK_SIZE;
         const currentBatch = batchIndex + 1;
+        const batchProgress = Math.round((batchIndex / totalBatches) * 100);
         
-        setBatchStatus(`Batch ${currentBatch} of ${totalBatches}`);
+        setBatchStatus(`Batch ${currentBatch} of ${totalBatches}: ${batchProgress}%`);
         console.log(`[Download] Processing batch ${currentBatch}/${totalBatches}`);
         
         // Download this batch from server
@@ -275,8 +276,23 @@ export default function Download({ session, onComplete }: DownloadProps) {
                       }
                       
                       // Convert base64 to blob (sequential)
-                      const photoResponse = await fetch(dataUrl);
-                      const blob = await photoResponse.blob();
+                      // Handle both data URLs and plain base64 strings
+                      let blob: Blob;
+                      if (dataUrl.startsWith('data:')) {
+                        // Data URL format - use fetch
+                        const photoResponse = await fetch(dataUrl);
+                        blob = await photoResponse.blob();
+                      } else {
+                        // Plain base64 string - convert directly
+                        const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+                        const byteCharacters = atob(base64Data);
+                        const byteNumbers = new Array(byteCharacters.length);
+                        for (let i = 0; i < byteCharacters.length; i++) {
+                          byteNumbers[i] = byteCharacters.charCodeAt(i);
+                        }
+                        const byteArray = new Uint8Array(byteNumbers);
+                        blob = new Blob([byteArray], { type: 'image/jpeg' });
+                      }
                       
                       // Save immediately, then release from memory
                       const photoId = await fieldDB.savePhoto(
