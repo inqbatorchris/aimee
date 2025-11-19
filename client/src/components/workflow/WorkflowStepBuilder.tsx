@@ -1540,28 +1540,31 @@ export default function WorkflowStepBuilder({
           <div className="space-y-4">
             <div>
               <Label>Title</Label>
-              <Input
-                placeholder="e.g., Follow up with {{currentItem.name}}"
+              <VariableFieldPicker
                 value={step.config.title || ''}
-                onChange={(e) => updateStep(step.id, {
-                  config: { ...step.config, title: e.target.value }
+                onChange={(value) => updateStep(step.id, {
+                  config: { ...step.config, title: value }
                 })}
+                placeholder="e.g., Follow up with {{currentItem.name}}"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Use <code>{`{{variable}}`}</code> for dynamic values
+                Click to insert variables from previous steps
               </p>
             </div>
             
             <div>
               <Label>Description (Optional)</Label>
-              <Textarea
-                placeholder="e.g., Customer ID: {{currentItem.id}}"
+              <VariableFieldPicker
                 value={step.config.description || ''}
-                onChange={(e) => updateStep(step.id, {
-                  config: { ...step.config, description: e.target.value }
+                onChange={(value) => updateStep(step.id, {
+                  config: { ...step.config, description: value }
                 })}
-                rows={3}
+                placeholder="e.g., Customer ID: {{currentItem.id}}"
+                multiline
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                Click to insert variables from previous steps
+              </p>
             </div>
 
             <div>
