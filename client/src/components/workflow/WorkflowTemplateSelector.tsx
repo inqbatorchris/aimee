@@ -47,7 +47,7 @@ export function WorkflowTemplateSelector({
             <div className="p-2 text-sm text-muted-foreground">No templates available</div>
           ) : (
             templates.map((template: any) => (
-              <SelectItem key={template.id} value={template.id} data-testid={`option-template-${template.id}`}>
+              <SelectItem key={template.id} value={template.id.toString()} data-testid={`option-template-${template.id}`}>
                 {template.name}
               </SelectItem>
             ))
