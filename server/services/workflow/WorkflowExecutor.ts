@@ -2,7 +2,8 @@ import { db } from '../../db';
 import { eq, and, or, sql, count, sum, avg, min, max, ilike, isNull, isNotNull, gt, lt, gte, lte, inArray, notInArray, ne } from 'drizzle-orm';
 import { agentWorkflows, agentWorkflowRuns, integrations, keyResults, objectives, activityLogs, users, addressRecords, workItems, fieldTasks, ragStatusRecords, tariffRecords } from '@shared/schema';
 import { ActionHandlers } from './ActionHandlers';
-import { CleanDatabaseStorage } from '../../storage';
+import { storage } from '../../storage';
+import { SplynxService } from '../integrations/splynxService';
 import crypto from 'crypto';
 
 // Table registry for data source queries
@@ -294,8 +295,17 @@ export class WorkflowExecutor {
         case 'data_source_query':
           return await this.executeDataSourceQuery(step, context);
         
+        case 'splynx_query':
+          return await this.executeSplynxQuery(step, context);
+        
         case 'wait':
           return await this.executeWait(step, context);
+        
+        case 'for_each':
+          return await this.executeForEach(step, context);
+        
+        case 'create_work_item':
+          return await this.executeCreateWorkItem(step, context);
         
         default:
           throw new Error(`Unknown step type: ${step.type}`);
@@ -532,13 +542,18 @@ export class WorkflowExecutor {
       
       console.log(`[WorkflowExecutor]   🔐 Credentials decrypted`);
       console.log(`[WorkflowExecutor]   🎬 Executing action: ${action}`);
-      console.log(`[WorkflowExecutor]   📝 Parameters:`, JSON.stringify(parameters, null, 2));
+      console.log(`[WorkflowExecutor]   📝 Original parameters:`, JSON.stringify(parameters, null, 2));
       
-      // Execute integration-specific action
+      // Process template variables in parameters recursively
+      const processedParameters = this.processParametersRecursively(parameters, context);
+      
+      console.log(`[WorkflowExecutor]   ✨ Processed parameters:`, JSON.stringify(processedParameters, null, 2));
+      
+      // Execute integration-specific action with processed parameters
       const result = await this.actionHandlers.executeIntegrationAction(
         integration.platformType,
         action,
-        parameters,
+        processedParameters,
         credentials,
         context
       );
@@ -623,10 +638,25 @@ export class WorkflowExecutor {
 
   private async executeStrategyUpdate(step: any, context: any): Promise<StepExecutionResult> {
     try {
-      const { type, targetId, updateType = 'set_value', value } = step.config || {};
+      const { type, targetId, targetIdVariable, updateType = 'set_value', value } = step.config || {};
       
-      if (!type || !targetId) {
-        throw new Error('Strategy update requires type and targetId');
+      if (!type) {
+        throw new Error('Strategy update requires type');
+      }
+      
+      // Process targetId - it might be a variable reference or a hard-coded value
+      let processedTargetId = targetId;
+      if (targetIdVariable && context[targetIdVariable]) {
+        processedTargetId = context[targetIdVariable];
+        console.log(`[WorkflowExecutor]   🔄 Target ID from variable: ${targetIdVariable} → ${processedTargetId}`);
+      } else if (typeof targetId === 'string' && targetId.match(/^\{(\w+)\}$/)) {
+        const varName = targetId.replace(/[{}]/g, '');
+        processedTargetId = context[varName];
+        console.log(`[WorkflowExecutor]   🔄 Target ID from variable: {${varName}} → ${processedTargetId}`);
+      }
+      
+      if (!processedTargetId) {
+        throw new Error(`Strategy update requires targetId or targetIdVariable. Available context: ${Object.keys(context).join(', ')}`);
       }
       
       // Process value - it might be a variable reference
@@ -636,21 +666,21 @@ export class WorkflowExecutor {
         // Check both context[varName] and context[value] for flexibility
         processedValue = context[varName] || context[value] || value;
         
-        console.log(`[WorkflowExecutor]   🔄 Variable substitution: ${value} → ${JSON.stringify(processedValue)}`);
+        console.log(`[WorkflowExecutor]   🔄 Value variable substitution: ${value} → ${JSON.stringify(processedValue)}`);
       }
       
-      console.log(`[WorkflowExecutor] Updating ${type} ${targetId} with value:`, processedValue, `(updateType: ${updateType})`);
+      console.log(`[WorkflowExecutor] Updating ${type} ${processedTargetId} with value:`, processedValue, `(updateType: ${updateType})`);
       
       if (type === 'key_result') {
         // Get the key result details before updating (for activity log)
         const [kr] = await db
           .select()
           .from(keyResults)
-          .where(eq(keyResults.id, targetId))
+          .where(eq(keyResults.id, parseInt(processedTargetId)))
           .limit(1);
         
         if (!kr) {
-          throw new Error(`Key Result ${targetId} not found`);
+          throw new Error(`Key Result ${processedTargetId} not found`);
         }
         
         const oldValue = kr.currentValue;
@@ -664,7 +694,7 @@ export class WorkflowExecutor {
               currentValue: String(processedValue),
               updatedAt: new Date()
             })
-            .where(eq(keyResults.id, targetId));
+            .where(eq(keyResults.id, parseInt(processedTargetId)));
         } else if (updateType === 'increment') {
           const currentVal = parseFloat(kr.currentValue || '0');
           const incrementBy = parseFloat(processedValue || '0');
@@ -675,7 +705,7 @@ export class WorkflowExecutor {
               currentValue: String(newValue),
               updatedAt: new Date()
             })
-            .where(eq(keyResults.id, targetId));
+            .where(eq(keyResults.id, parseInt(processedTargetId)));
         } else if (updateType === 'percentage') {
           if (kr.targetValue) {
             const targetVal = parseFloat(kr.targetValue || '100');
@@ -687,7 +717,7 @@ export class WorkflowExecutor {
                 currentValue: String(newValue),
                 updatedAt: new Date()
               })
-              .where(eq(keyResults.id, targetId));
+              .where(eq(keyResults.id, parseInt(processedTargetId)));
           }
         }
         
@@ -865,7 +895,6 @@ export class WorkflowExecutor {
       console.log(`[WorkflowExecutor]   Query Config:`, JSON.stringify(queryConfig, null, 2));
       
       // Validate table access (organization isolation)
-      const storage = new CleanDatabaseStorage();
       const orgId = parseInt(context.organizationId);
       const dataTable = await storage.getDataTableByName(orgId, sourceTable);
       
@@ -883,8 +912,8 @@ export class WorkflowExecutor {
       
       console.log(`[WorkflowExecutor]   ✓ Table schema found in registry`);
       
-      // Execute generic query using the table schema
-      const result = await this.executeGenericQuery(tableSchema, orgId, queryConfig);
+      // Execute generic query using the table schema (pass context for variable interpolation)
+      const result = await this.executeGenericQuery(tableSchema, orgId, queryConfig, context);
       
       console.log(`[WorkflowExecutor]   📈 Query result: ${result}`);
       
@@ -930,7 +959,124 @@ export class WorkflowExecutor {
     }
   }
 
-  private async executeGenericQuery(tableSchema: any, organizationId: number, queryConfig: any): Promise<string | number | null> {
+  private async executeSplynxQuery(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      const { entity, mode = 'count', filters = [], dateRange, limit, resultVariable, updateKeyResult } = step.config || {};
+      
+      if (!entity) {
+        throw new Error('Splynx query requires entity type');
+      }
+      
+      console.log(`[WorkflowExecutor] 🔍 Executing Splynx query`);
+      console.log(`[WorkflowExecutor]   Entity: ${entity}`);
+      console.log(`[WorkflowExecutor]   Mode: ${mode}`);
+      console.log(`[WorkflowExecutor]   Filters: ${filters.length}`);
+      
+      // Get Splynx integration credentials
+      const orgId = parseInt(context.organizationId);
+      const [splynxIntegration] = await db
+        .select()
+        .from(integrations)
+        .where(
+          and(
+            eq(integrations.organizationId, orgId),
+            eq(integrations.platformType, 'splynx')
+          )
+        )
+        .limit(1);
+      
+      if (!splynxIntegration || !splynxIntegration.credentialsEncrypted) {
+        throw new Error('Splynx integration not configured for this organization');
+      }
+      
+      // Decrypt credentials
+      const credentials = this.decryptCredentials(splynxIntegration.credentialsEncrypted);
+      const { baseUrl, authHeader } = credentials;
+      
+      if (!baseUrl || !authHeader) {
+        throw new Error('Splynx credentials incomplete');
+      }
+      
+      console.log(`[WorkflowExecutor]   ✓ Splynx credentials loaded and validated`);
+      
+      // Process filters to replace context variables
+      const processedFilters = filters.map((filter: any) => ({
+        ...filter,
+        value: this.processDynamicValue(filter.value, context),
+      }));
+      
+      // Create Splynx service and execute query
+      const splynxService = new SplynxService({ baseUrl, authHeader });
+      
+      // Only use incremental mode (sinceDate) for scheduled runs, not manual executions
+      const isScheduledRun = context.triggerSource && context.triggerSource.toLowerCase().includes('schedule');
+      const useSinceDate = isScheduledRun && context.lastSuccessfulRunAt 
+        ? new Date(context.lastSuccessfulRunAt) 
+        : undefined;
+      
+      if (useSinceDate) {
+        console.log(`[WorkflowExecutor]   📅 Incremental mode enabled (scheduled run since ${useSinceDate.toISOString()})`);
+      } else {
+        console.log(`[WorkflowExecutor]   📋 Full query mode (manual run or first execution)`);
+      }
+      
+      const queryResult = await splynxService.queryEntities({
+        entity,
+        mode,
+        filters: processedFilters,
+        dateRange,
+        limit,
+        sinceDate: useSinceDate,
+      });
+      
+      console.log(`[WorkflowExecutor]   📊 Query result:`, JSON.stringify(queryResult, null, 2));
+      
+      // Extract the appropriate value based on mode
+      const resultValue = mode === 'count' ? queryResult.count : queryResult.records;
+      
+      // Store result in context
+      if (resultVariable) {
+        context[resultVariable] = resultValue;
+        console.log(`[WorkflowExecutor]   💾 Result stored in context as: ${resultVariable}`);
+      }
+      
+      // Optionally update key result
+      if (updateKeyResult && mode === 'count') {
+        const { keyResultId, updateType = 'set_value' } = updateKeyResult;
+        
+        console.log(`[WorkflowExecutor]   🎯 Updating Key Result ${keyResultId} with value: ${queryResult.count}`);
+        
+        await this.executeStrategyUpdate({
+          config: {
+            type: 'key_result',
+            targetId: keyResultId,
+            updateType: updateType,
+            value: queryResult.count,
+          }
+        }, context);
+      }
+      
+      return {
+        success: true,
+        output: {
+          entity,
+          mode,
+          count: queryResult.count,
+          records: mode === 'list' ? queryResult.records?.length || 0 : undefined,
+          filterCount: filters.length,
+        },
+      };
+    } catch (error: any) {
+      console.error(`[WorkflowExecutor] ❌ Splynx query failed: ${error.message}`);
+      return {
+        success: false,
+        error: error.message,
+        stack: error.stack,
+      };
+    }
+  }
+
+  private async executeGenericQuery(tableSchema: any, organizationId: number, queryConfig: any, context: any = {}): Promise<string | number | null> {
     const { filters = [], aggregation = 'count', aggregationField, limit = 1000 } = queryConfig;
     
     console.log(`[WorkflowExecutor]   🔍 Building generic query with ${filters.length} filters`);
@@ -947,8 +1093,8 @@ export class WorkflowExecutor {
     for (const filter of filters) {
       const { field, operator, value } = filter;
       
-      // Process dynamic date placeholders
-      const processedValue = this.processDynamicValue(value);
+      // Process dynamic date placeholders AND context variables
+      const processedValue = this.processDynamicValue(value, context);
       
       console.log(`[WorkflowExecutor]     Filter: ${field} ${operator} ${JSON.stringify(value)}${value !== processedValue ? ` → ${JSON.stringify(processedValue)}` : ''}`);
       
@@ -1065,13 +1211,14 @@ export class WorkflowExecutor {
     return 0;
   }
 
-  private processDynamicValue(value: any): any {
-    // Process dynamic date placeholders
+  private processDynamicValue(value: any, context: any = {}): any {
+    // Process dynamic date placeholders AND context variables
     if (typeof value === 'string' && value.startsWith('{') && value.endsWith('}')) {
       const placeholder = value.slice(1, -1); // Remove { }
       
       const now = new Date();
       
+      // First check if it's a date placeholder
       switch (placeholder) {
         case 'currentMonthStart': {
           // First day of current month at midnight
@@ -1100,7 +1247,28 @@ export class WorkflowExecutor {
           return isoDate;
         }
         default:
-          // Unknown placeholder, return as-is
+          // Check if it's a context variable
+          if (context.hasOwnProperty(placeholder)) {
+            console.log(`[WorkflowExecutor]   🔄 Context variable: {${placeholder}} → ${JSON.stringify(context[placeholder])}`);
+            return context[placeholder];
+          }
+          // Check for nested properties (e.g., {webhookData.objectiveId})
+          if (placeholder.includes('.')) {
+            const parts = placeholder.split('.');
+            let nestedValue = context;
+            for (const part of parts) {
+              if (nestedValue && typeof nestedValue === 'object' && part in nestedValue) {
+                nestedValue = nestedValue[part];
+              } else {
+                console.log(`[WorkflowExecutor]   ⚠️  Context variable not found: {${placeholder}}`);
+                return value; // Return original if not found
+              }
+            }
+            console.log(`[WorkflowExecutor]   🔄 Context variable: {${placeholder}} → ${JSON.stringify(nestedValue)}`);
+            return nestedValue;
+          }
+          // Unknown placeholder and not in context, return as-is
+          console.log(`[WorkflowExecutor]   ⚠️  Unknown placeholder: {${placeholder}}`);
           return value;
       }
     }
@@ -1231,6 +1399,35 @@ export class WorkflowExecutor {
     });
   }
 
+  private processParametersRecursively(params: any, context: any): any {
+    // Handle null/undefined
+    if (params === null || params === undefined) {
+      return params;
+    }
+    
+    // Handle strings - apply template substitution
+    if (typeof params === 'string') {
+      return this.processTemplate(params, context);
+    }
+    
+    // Handle arrays - recursively process each element
+    if (Array.isArray(params)) {
+      return params.map(item => this.processParametersRecursively(item, context));
+    }
+    
+    // Handle objects - recursively process each property
+    if (typeof params === 'object') {
+      const processed: any = {};
+      for (const [key, value] of Object.entries(params)) {
+        processed[key] = this.processParametersRecursively(value, context);
+      }
+      return processed;
+    }
+    
+    // Return primitive values as-is (numbers, booleans, etc.)
+    return params;
+  }
+
   private getNestedValue(obj: any, path: string): any {
     return path.split('.').reduce((current, key) => current?.[key], obj);
   }
@@ -1266,6 +1463,144 @@ export class WorkflowExecutor {
         return fieldValue !== undefined && fieldValue !== null;
       default:
         return false;
+    }
+  }
+
+  private async executeForEach(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      const { sourceVariable, childSteps = [] } = step.config || {};
+      
+      if (!sourceVariable) {
+        throw new Error('sourceVariable is required for for_each step');
+      }
+      
+      console.log(`[WorkflowExecutor]   🔁 For Each: iterating over {${sourceVariable}}`);
+      
+      // Get the array from context
+      const items = context[sourceVariable];
+      
+      if (!Array.isArray(items)) {
+        throw new Error(`Variable {${sourceVariable}} is not an array. Found: ${typeof items}`);
+      }
+      
+      console.log(`[WorkflowExecutor]   📊 Found ${items.length} items to process`);
+      
+      const results = [];
+      let successCount = 0;
+      let errorCount = 0;
+      
+      // Execute child steps for each item
+      for (let i = 0; i < items.length; i++) {
+        const currentItem = items[i];
+        console.log(`[WorkflowExecutor]   🔄 Processing item ${i + 1}/${items.length}`);
+        
+        // Create scoped context with currentItem
+        const scopedContext = {
+          ...context,
+          currentItem,
+          currentIndex: i,
+        };
+        
+        // Execute all child steps for this item
+        for (const childStep of childSteps) {
+          try {
+            const result = await this.executeStep(childStep, scopedContext);
+            if (!result.success) {
+              console.warn(`[WorkflowExecutor]   ⚠️ Child step failed for item ${i + 1}: ${result.error}`);
+              errorCount++;
+            } else {
+              successCount++;
+            }
+            results.push({ itemIndex: i, step: childStep.name, result });
+          } catch (error: any) {
+            console.error(`[WorkflowExecutor]   ❌ Error executing child step for item ${i + 1}:`, error.message);
+            errorCount++;
+            results.push({ itemIndex: i, step: childStep.name, error: error.message });
+          }
+        }
+      }
+      
+      console.log(`[WorkflowExecutor]   ✅ For Each complete: ${successCount} successful, ${errorCount} errors`);
+      
+      return {
+        success: true,
+        output: {
+          itemsProcessed: items.length,
+          successCount,
+          errorCount,
+          results,
+        },
+      };
+    } catch (error: any) {
+      console.error(`[WorkflowExecutor]   ❌ For Each failed: ${error.message}`);
+      return {
+        success: false,
+        error: error.message,
+        stack: error.stack,
+      };
+    }
+  }
+
+  private async executeCreateWorkItem(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      const { title, description, assigneeId, dueDate, status = 'Planning', externalReference } = step.config || {};
+      
+      if (!title) {
+        throw new Error('title is required for create_work_item step');
+      }
+      
+      console.log(`[WorkflowExecutor]   📝 Creating work item: ${title}`);
+      
+      // Process template strings in title and description
+      const processedTitle = this.processTemplate(title, context);
+      const processedDescription = description ? this.processTemplate(description, context) : undefined;
+      const processedExternalRef = externalReference ? this.processTemplate(externalReference, context) : undefined;
+      
+      // Calculate due date if it's a relative date like "+7 days"
+      let processedDueDate = dueDate;
+      if (dueDate && dueDate.startsWith('+')) {
+        const days = parseInt(dueDate.replace('+', '').replace('days', '').trim());
+        const date = new Date();
+        date.setDate(date.getDate() + days);
+        processedDueDate = date.toISOString().split('T')[0];
+      } else if (dueDate) {
+        processedDueDate = this.processTemplate(dueDate, context);
+      }
+      
+      // Get organization ID from context
+      const organizationId = context.organizationId;
+      if (!organizationId) {
+        throw new Error('organizationId not found in context');
+      }
+      
+      // Create the work item
+      const workItem = await storage.createWorkItem({
+        organizationId,
+        title: processedTitle,
+        description: processedDescription || '',
+        status: status as any,
+        assignedTo: assigneeId || null,
+        dueDate: processedDueDate || null,
+        workflowMetadata: processedExternalRef ? { externalReference: processedExternalRef } : null,
+        createdBy: context.userId || null,
+      });
+      
+      console.log(`[WorkflowExecutor]   ✅ Work item created: ID ${workItem.id}`);
+      
+      return {
+        success: true,
+        output: {
+          workItemId: workItem.id,
+          title: processedTitle,
+        },
+      };
+    } catch (error: any) {
+      console.error(`[WorkflowExecutor]   ❌ Create work item failed: ${error.message}`);
+      return {
+        success: false,
+        error: error.message,
+        stack: error.stack,
+      };
     }
   }
 

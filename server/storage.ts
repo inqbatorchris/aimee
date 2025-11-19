@@ -2625,6 +2625,10 @@ export class CleanDatabaseStorage implements ICleanStorage {
       { tableName: 'rag_status_records', label: 'RAG Status Records', description: 'Red/Amber/Green status tracking' },
       { tableName: 'tariff_records', label: 'Tariff Records', description: 'Service tariff and pricing data' },
       { tableName: 'financial_transactions', label: 'Financial Transactions', description: 'Xero financial transactions with profit center categorization' },
+      { tableName: 'objectives', label: 'Objectives', description: 'Strategic objectives and company goals' },
+      { tableName: 'key_results', label: 'Key Results', description: 'Measurable key results tracking objective progress' },
+      { tableName: 'key_result_tasks', label: 'Key Result Tasks', description: 'Actionable tasks supporting key results' },
+      { tableName: 'profit_centers', label: 'Profit Centers', description: 'Business segments for financial tracking' },
     ];
 
     console.log(`[Storage] Seeding data tables for organization ${organizationId}...`);

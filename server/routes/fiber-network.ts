@@ -1,10 +1,88 @@
 import { Router } from 'express';
 import { db } from '../db';
-import { fiberNetworkNodes, fiberNetworkActivityLogs, workItems } from '../../shared/schema';
+import { fiberNetworkNodes, fiberNetworkActivityLogs, workItems, insertFiberNetworkNodeSchema } from '../../shared/schema';
 import { eq, and, sql, inArray } from 'drizzle-orm';
 import { authenticateToken } from '../auth';
+import { z } from 'zod';
 
 const router = Router();
+
+// Validation schema for creating fiber network node (from client)
+// Client shouldn't send organizationId, createdBy, or updatedBy
+const createNodeSchema = insertFiberNetworkNodeSchema.omit({
+  organizationId: true,
+  createdBy: true,
+  updatedBy: true
+}).extend({
+  latitude: z.number().min(-90).max(90),
+  longitude: z.number().min(-180).max(180)
+});
+
+// Create a new fiber network node
+router.post('/nodes', authenticateToken, async (req: any, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    
+    // Validate user ID
+    if (!req.user.id || isNaN(req.user.id)) {
+      console.error('Invalid user ID:', req.user);
+      return res.status(400).json({ error: 'Invalid user authentication' });
+    }
+    
+    // Validate request body with Zod (without organizationId)
+    const validation = createNodeSchema.safeParse(req.body);
+    if (!validation.success) {
+      console.error('Validation failed for fiber node creation:', validation.error.format());
+      return res.status(400).json({ 
+        error: 'Validation failed', 
+        details: validation.error.format() 
+      });
+    }
+    
+    // Add organizationId to the validated data
+    const data = {
+      ...validation.data,
+      organizationId,
+      createdBy: req.user.id,
+      updatedBy: req.user.id
+    };
+    
+    // Create the fiber network node with numeric coordinates
+    // Use spread to include all fields from data
+    const result = await db
+      .insert(fiberNetworkNodes)
+      .values(data as any) // Type assertion to bypass TypeScript issue
+      .returning();
+    
+    const newNode = result[0];
+    
+    // Log the creation
+    await db.insert(fiberNetworkActivityLogs).values({
+      organizationId,
+      userId: req.user.id,
+      userName: req.user.fullName || req.user.email,
+      actionType: 'create',
+      entityType: 'fiber_node',
+      entityId: newNode.id,
+      changes: {
+        added: { 
+          name: data.name, 
+          nodeType: data.nodeType, 
+          network: data.network, 
+          status: data.status, 
+          latitude: data.latitude, 
+          longitude: data.longitude 
+        }
+      },
+      ipAddress: req.ip
+    });
+    
+    res.status(201).json({ node: newNode });
+  } catch (error) {
+    console.error('Error creating fiber network node:', error);
+    res.status(500).json({ error: 'Failed to create fiber network node' });
+  }
+});
 
 // Get all fiber network nodes for an organization
 router.get('/nodes', authenticateToken, async (req: any, res) => {
@@ -218,6 +296,68 @@ router.patch('/nodes/:id', authenticateToken, async (req: any, res) => {
   }
 });
 
+// Delete a fiber network node
+router.delete('/nodes/:id', authenticateToken, async (req: any, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    const nodeId = parseInt(req.params.id);
+    
+    // Validate user ID
+    if (!req.user.id || isNaN(req.user.id)) {
+      console.error('Invalid user ID:', req.user);
+      return res.status(400).json({ error: 'Invalid user authentication' });
+    }
+    
+    // Check if node exists and belongs to this organization
+    const existingNode = await db
+      .select()
+      .from(fiberNetworkNodes)
+      .where(
+        and(
+          eq(fiberNetworkNodes.id, nodeId),
+          eq(fiberNetworkNodes.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+    
+    if (existingNode.length === 0) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+    
+    // Delete the node
+    const result = await db
+      .delete(fiberNetworkNodes)
+      .where(
+        and(
+          eq(fiberNetworkNodes.id, nodeId),
+          eq(fiberNetworkNodes.organizationId, organizationId)
+        )
+      )
+      .returning();
+    
+    // Log the deletion
+    await db.insert(fiberNetworkActivityLogs).values({
+      organizationId,
+      userId: req.user.id,
+      userName: req.user.fullName || req.user.email,
+      actionType: 'delete',
+      entityType: 'fiber_node',
+      entityId: nodeId,
+      changes: { deleted: existingNode[0] },
+      ipAddress: req.ip
+    });
+    
+    res.json({ 
+      success: true, 
+      message: 'Node deleted successfully',
+      deletedNode: result[0] 
+    });
+  } catch (error) {
+    console.error('Error deleting fiber network node:', error);
+    res.status(500).json({ error: 'Failed to delete fiber network node' });
+  }
+});
+
 // Get activity logs for a node
 router.get('/nodes/:id/activity', authenticateToken, async (req: any, res) => {
   try {
@@ -311,6 +451,18 @@ router.post('/nodes/from-workflow', authenticateToken, async (req: any, res) => 
   } catch (error) {
     console.error('Error creating fiber network node from workflow:', error);
     res.status(500).json({ error: 'Failed to create chamber record' });
+  }
+});
+
+// Get available networks list for field app
+router.get('/networks', authenticateToken, async (req: any, res) => {
+  try {
+    // Return standard list of networks
+    const networks = ['CCNet', 'FibreLtd', 'S&MFibre'];
+    res.json({ networks });
+  } catch (error) {
+    console.error('Error fetching networks:', error);
+    res.status(500).json({ error: 'Failed to fetch networks' });
   }
 });
 

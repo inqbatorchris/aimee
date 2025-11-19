@@ -11,9 +11,11 @@ import Download from './Download';
 import WorkList from './WorkList';
 import WorkDetail from './WorkDetail';
 import Sync from './Sync';
+import CreateFiberNode from './CreateFiberNode';
+import OfflineNodes from './OfflineNodes';
 import { Button } from '@/components/ui/button';
 import { Switch as ToggleSwitch } from '@/components/ui/switch';
-import { Home, Download as DownloadIcon, RefreshCw, User, WifiOff, Wifi } from 'lucide-react';
+import { Home, Download as DownloadIcon, RefreshCw, User, WifiOff, Wifi, MapPin } from 'lucide-react';
 
 export default function FieldApp() {
   const [location, setLocation] = useLocation();
@@ -248,6 +250,16 @@ export default function FieldApp() {
               </div>
             )}
           </Route>
+          
+          {/* Create Fiber Node */}
+          <Route path="/field-app/create-fiber-node">
+            {() => <CreateFiberNode onComplete={() => setLocation('/field-app')} />}
+          </Route>
+          
+          {/* Offline Nodes */}
+          <Route path="/field-app/offline-nodes">
+            {() => <OfflineNodes />}
+          </Route>
         </Switch>
       </main>
       {/* Bottom Navigation - with safe area inset for iOS home indicator in PWA mode */}
@@ -274,6 +286,17 @@ export default function FieldApp() {
           >
             <DownloadIcon className="h-5 w-5" />
             <span className="text-xs">Download</span>
+          </button>
+          
+          <button
+            onClick={() => setLocation('/field-app/create-fiber-node')}
+            className={`flex-1 py-3 flex flex-col items-center gap-1 transition-colors ${
+              location === '/field-app/create-fiber-node' ? 'text-emerald-400' : 'text-zinc-400'
+            }`}
+            data-testid="button-nav-add-node"
+          >
+            <MapPin className="h-5 w-5" />
+            <span className="text-xs">Add Node</span>
           </button>
           
           <button

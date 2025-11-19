@@ -8,7 +8,7 @@ import { z } from 'zod';
 import { storage } from '../storage';
 import { authenticateToken } from '../auth';
 import { db } from '../db';
-import { workItems, workItemWorkflowExecutions, workItemWorkflowExecutionSteps } from '@shared/schema';
+import { workItems, workItemWorkflowExecutions, workItemWorkflowExecutionSteps, fiberNetworkNodes, fiberNetworkActivityLogs } from '@shared/schema';
 import { and, eq, inArray, asc } from 'drizzle-orm';
 import multer from 'multer';
 import path from 'path';
@@ -73,6 +73,10 @@ router.get('/available-items', authenticateToken, async (req: any, res) => {
       return res.status(400).json({ error: 'Organization not found' });
     }
 
+    // Get user's teams (users can belong to multiple teams)
+    const userTeams = await storage.getUserTeams(userId);
+    const userTeamIds = userTeams.map((t: any) => t.id);
+
     // Get all work items for the organization
     const allWorkItems = await storage.getWorkItems(organizationId);
     
@@ -80,6 +84,7 @@ router.get('/available-items', authenticateToken, async (req: any, res) => {
     if (allWorkItems.length > 0) {
       console.log('[Field App] Sample work item:', JSON.stringify(allWorkItems[0], null, 2));
       console.log('[Field App] First item keys:', Object.keys(allWorkItems[0]));
+      console.log('[Field App] User info:', { userId, userTeamIds });
     }
     
     // Apply filters
@@ -101,10 +106,17 @@ router.get('/available-items', authenticateToken, async (req: any, res) => {
     // Filter work items based on criteria - with detailed logging
     let step1 = allWorkItems.filter((item: any) => {
       const matchesAssignment = filters.assignedTo.some((assignmentType: string) => {
-        if (assignmentType === 'me') return item.assignedTo === userId;
+        if (assignmentType === 'me') {
+          // "My Work" = assigned directly to me ONLY (not team assignments)
+          return item.assignedTo === userId;
+        }
         if (assignmentType === 'team') {
-          // "My Team" means all work items in the organization
-          // No user-specific filtering - just return all items
+          // "My Team" = assigned to any of my teams OR assigned to me
+          return (item.teamId && userTeamIds.includes(item.teamId)) || 
+                 item.assignedTo === userId;
+        }
+        if (assignmentType === 'all') {
+          // "All Work" = everything in the organization
           return true;
         }
         return false;
@@ -509,6 +521,134 @@ router.post('/sync', authenticateToken, async (req: any, res) => {
             results.push({ type: 'workflowStep', id: update.entityId, success: true });
             break;
 
+          case 'fiberNetworkNode':
+            // Create fiber network node from field app
+            const nodeData = update.data;
+            
+            console.log('[Sync] Processing fiber network node creation:', { 
+              id: nodeData.id,
+              name: nodeData.name,
+              nodeType: nodeData.nodeType,
+              workItemId: nodeData.workItemId,
+              latitude: nodeData.latitude,
+              longitude: nodeData.longitude
+            });
+            
+            // Validate node data
+            if (!nodeData.name || nodeData.latitude == null || nodeData.longitude == null) {
+              console.warn('[Sync] Invalid fiber node data:', nodeData);
+              conflicts.push({
+                entityId: update.entityId,
+                type: update.type,
+                error: 'Missing required fields: name, latitude, longitude'
+              });
+              break;
+            }
+            
+            // Create the fiber network node with numeric coordinates
+            const nodeResult = await db
+              .insert(fiberNetworkNodes)
+              .values({
+                organizationId,
+                name: nodeData.name,
+                nodeType: nodeData.nodeType || 'chamber',
+                network: nodeData.network || 'FibreLtd',
+                status: nodeData.status || 'planned',
+                latitude: nodeData.latitude,
+                longitude: nodeData.longitude,
+                what3words: nodeData.what3words || null,
+                address: nodeData.address || null,
+                notes: nodeData.notes || null,
+                photos: nodeData.photos || [],
+                fiberDetails: nodeData.fiberDetails || {},
+                createdBy: userId,
+                updatedBy: userId
+              })
+              .returning();
+            
+            const newNode = nodeResult[0];
+            
+            console.log('[Sync] Fiber network node created:', {
+              id: newNode.id,
+              name: newNode.name,
+              latitude: newNode.latitude,
+              longitude: newNode.longitude
+            });
+            
+            // Log the creation in fiber network activity logs
+            await db.insert(fiberNetworkActivityLogs).values({
+              organizationId,
+              userId,
+              userName: req.user.fullName || req.user.email || 'Field User',
+              actionType: 'create',
+              entityType: 'fiber_node',
+              entityId: newNode.id,
+              changes: {
+                added: { 
+                  name: nodeData.name, 
+                  nodeType: nodeData.nodeType, 
+                  network: nodeData.network, 
+                  status: nodeData.status,
+                  latitude: nodeData.latitude,
+                  longitude: nodeData.longitude
+                }
+              },
+              ipAddress: req.ip || 'field-app'
+            });
+            
+            // Automatically create sign-off work item (7 days due)
+            const dueDate = new Date();
+            dueDate.setDate(dueDate.getDate() + 7);
+            
+            const workItemTitle = `New node sign off: ${nodeData.name}`;
+            const workItemDescription = `Sign-off required for fiber network node:\n\n` +
+              `Node: ${nodeData.name}\n` +
+              `Type: ${nodeData.nodeType}\n` +
+              `Network: ${nodeData.network}\n` +
+              `Location: ${nodeData.latitude}, ${nodeData.longitude}\n` +
+              `Address: ${nodeData.address || 'Not provided'}\n` +
+              `Created: ${new Date().toLocaleString()}`;
+            
+            const newWorkItem = await storage.createWorkItem({
+              title: workItemTitle,
+              description: workItemDescription,
+              status: 'Planning',
+              teamId: 16,
+              dueDate: dueDate.toISOString(),
+              organizationId,
+              workflowTemplateId: 'fiber-node-signoff-v1',
+              workflowMetadata: {
+                fiberNodeId: newNode.id,
+                fiberNodeName: nodeData.name,
+                nodeLocation: {
+                  latitude: nodeData.latitude,
+                  longitude: nodeData.longitude,
+                  address: nodeData.address
+                },
+                createdInField: true
+              }
+            });
+            
+            // Initialize the workflow execution record
+            try {
+              await db.insert(workItemWorkflowExecutions).values({
+                organizationId,
+                workItemId: newWorkItem.id,
+                workflowTemplateId: 'fiber-node-signoff-v1',
+                status: 'not_started',
+                executionData: {},
+                createdAt: new Date(),
+                updatedAt: new Date()
+              });
+              console.log('[Sync] Auto-created sign-off work item with initialized workflow for fiber node:', newNode.id);
+            } catch (workflowError) {
+              console.warn('[Sync] Failed to initialize workflow for sign-off work item (template may not exist):', workflowError);
+              console.log('[Sync] Auto-created sign-off work item (workflow not initialized) for fiber node:', newNode.id);
+            }
+            
+            results.push({ type: 'fiberNetworkNode', id: update.entityId, success: true, serverId: newNode.id });
+            break;
+
           default:
             console.warn(`Unknown update type: ${update.type}`);
         }
@@ -758,7 +898,8 @@ router.post('/upload-photo', authenticateToken, upload.single('file'), async (re
                 actionType: 'file_upload',
                 entityType: 'work_item',
                 entityId: parseInt(workItemId),
-                details: {
+                description: `Photo uploaded from field app: ${file.filename}`,
+                metadata: {
                   action: 'photo_uploaded',
                   fileName: file.filename,
                   fileSize: file.size,
