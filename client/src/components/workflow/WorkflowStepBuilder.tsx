@@ -19,7 +19,7 @@ import { DataInspectorPanel } from './DataInspectorPanel';
 
 interface WorkflowStep {
   id: string;
-  type: 'integration_action' | 'strategy_update' | 'log_event' | 'notification' | 'data_source_query' | 'data_transformation' | 'splynx_query' | 'for_each' | 'create_work_item';
+  type: 'integration_action' | 'strategy_update' | 'log_event' | 'notification' | 'data_source_query' | 'data_transformation' | 'splynx_query' | 'for_each' | 'create_work_item' | 'splynx_data_display';
   name: string;
   config?: any;
 }
@@ -385,6 +385,12 @@ const STEP_TYPES = {
     icon: AlertCircle,
     color: 'bg-purple-500',
     description: 'Send a notification'
+  },
+  splynx_data_display: {
+    label: 'Splynx Data Display',
+    icon: Eye,
+    color: 'bg-pink-500',
+    description: 'Display live Splynx ticket or task data'
   }
 };
 
@@ -1598,6 +1604,48 @@ export default function WorkflowStepBuilder({
             </div>
 
             <div>
+              <Label>Workflow Template (Optional)</Label>
+              <Input
+                placeholder="Template ID to attach to created work item"
+                value={step.config.templateId || ''}
+                onChange={(e) => updateStep(step.id, {
+                  config: { ...step.config, templateId: e.target.value }
+                })}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Attach a workflow template to the created work item
+              </p>
+            </div>
+
+            <div>
+              <Label>Splynx Ticket ID (Optional)</Label>
+              <Input
+                placeholder="e.g., {{trigger.ticket_id}}"
+                value={step.config.splynxTicketId || ''}
+                onChange={(e) => updateStep(step.id, {
+                  config: { ...step.config, splynxTicketId: e.target.value }
+                })}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Link to Splynx ticket (for status syncing)
+              </p>
+            </div>
+
+            <div>
+              <Label>Splynx Task ID (Optional)</Label>
+              <Input
+                placeholder="e.g., {{trigger.task_id}}"
+                value={step.config.splynxTaskId || ''}
+                onChange={(e) => updateStep(step.id, {
+                  config: { ...step.config, splynxTaskId: e.target.value }
+                })}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Link to Splynx task (for status syncing)
+              </p>
+            </div>
+
+            <div>
               <Label>External Reference (Optional)</Label>
               <Input
                 placeholder="e.g., splynx_customer_{{currentItem.id}}"
@@ -1608,6 +1656,99 @@ export default function WorkflowStepBuilder({
               />
               <p className="text-xs text-muted-foreground mt-1">
                 Link to external system record
+              </p>
+            </div>
+          </div>
+        );
+
+      case 'splynx_data_display':
+        return (
+          <div className="space-y-4">
+            <div className="bg-blue-50 dark:bg-blue-950 p-3 rounded-md border border-blue-200 dark:border-blue-800">
+              <p className="text-sm text-blue-900 dark:text-blue-100">
+                This step displays live Splynx ticket or task data in a workflow execution.
+              </p>
+            </div>
+            
+            <div>
+              <Label>Entity Type</Label>
+              <Select
+                value={step.config.entityType || 'ticket'}
+                onValueChange={(value) => updateStep(step.id, {
+                  config: { ...step.config, entityType: value }
+                })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ticket">Support Ticket</SelectItem>
+                  <SelectItem value="task">Scheduling Task</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div>
+              <Label>Entity ID Source</Label>
+              <Select
+                value={step.config.idSource || 'workflowMetadata'}
+                onValueChange={(value) => updateStep(step.id, {
+                  config: { ...step.config, idSource: value }
+                })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="workflowMetadata">From Workflow Metadata</SelectItem>
+                  <SelectItem value="fixed">Fixed ID</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {step.config.idSource === 'workflowMetadata' && (
+              <div>
+                <Label>Metadata Field</Label>
+                <Input
+                  placeholder="e.g., splynx_ticket_id"
+                  value={step.config.metadataField || ''}
+                  onChange={(e) => updateStep(step.id, {
+                    config: { ...step.config, metadataField: e.target.value }
+                  })}
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Field name in workflowMetadata containing the entity ID
+                </p>
+              </div>
+            )}
+
+            {step.config.idSource === 'fixed' && (
+              <div>
+                <Label>Fixed Entity ID</Label>
+                <Input
+                  placeholder="e.g., 12345"
+                  value={step.config.fixedId || ''}
+                  onChange={(e) => updateStep(step.id, {
+                    config: { ...step.config, fixedId: e.target.value }
+                  })}
+                />
+              </div>
+            )}
+
+            <div>
+              <Label>Display Fields (comma-separated)</Label>
+              <Input
+                placeholder="e.g., status, priority, customer_id, assigned_to"
+                value={(step.config.displayFields || []).join(', ')}
+                onChange={(e) => updateStep(step.id, {
+                  config: { 
+                    ...step.config, 
+                    displayFields: e.target.value.split(',').map(f => f.trim()).filter(Boolean)
+                  }
+                })}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Which fields from the {step.config.entityType || 'ticket'} to display
               </p>
             </div>
           </div>

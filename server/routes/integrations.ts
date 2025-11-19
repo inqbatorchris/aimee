@@ -155,6 +155,38 @@ router.get('/:platformType', async (req, res) => {
   }
 });
 
+// Get all integration triggers (for webhook configuration)
+router.get('/integration-triggers', async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated or missing organization' });
+    }
+
+    const organizationId = user.organizationId;
+    
+    // Get all integrations for this org
+    const integrations = await storage.getIntegrations(organizationId);
+    
+    // Get triggers for all integrations
+    const allTriggers = [];
+    for (const integration of integrations) {
+      const triggers = await storage.getIntegrationTriggers(integration.id);
+      const enrichedTriggers = triggers.map(trigger => ({
+        ...trigger,
+        integrationName: integration.name,
+        integrationType: integration.platformType,
+      }));
+      allTriggers.push(...enrichedTriggers);
+    }
+    
+    res.json(allTriggers);
+  } catch (error: any) {
+    console.error('Error fetching integration triggers:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Create or update integration
 router.post('/', async (req, res) => {
   console.log('POST /api/integrations - Request body:', JSON.stringify(req.body, null, 2));
@@ -1564,6 +1596,76 @@ router.get('/splynx/projects', async (req, res) => {
   } catch (error: any) {
     console.error('Error fetching Splynx projects:', error);
     res.status(500).json({ error: 'Failed to fetch Splynx projects', details: error.message });
+  }
+});
+
+// Get live Splynx ticket or task data (for workflow steps)
+router.get('/splynx/entity/:entityType/:entityId', async (req, res) => {
+  try {
+    if (!req.user?.organizationId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { entityType, entityId } = req.params;
+    const integrationId = req.query.integrationId;
+
+    if (!integrationId || typeof integrationId !== 'string') {
+      return res.status(400).json({ error: 'integrationId query parameter is required' });
+    }
+
+    if (entityType !== 'ticket' && entityType !== 'task') {
+      return res.status(400).json({ error: 'entityType must be either "ticket" or "task"' });
+    }
+
+    // Get specific Splynx integration by ID
+    const [splynxIntegration] = await db
+      .select()
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.id, parseInt(integrationId)),
+          eq(integrations.organizationId, req.user.organizationId),
+          eq(integrations.platformType, 'splynx')
+        )
+      )
+      .limit(1);
+
+    if (!splynxIntegration) {
+      return res.status(404).json({ error: 'Splynx integration not found' });
+    }
+
+    if (!splynxIntegration.credentialsEncrypted) {
+      return res.status(400).json({ error: 'Splynx credentials not configured' });
+    }
+
+    // Decrypt credentials
+    const credentials = JSON.parse(decrypt(splynxIntegration.credentialsEncrypted));
+    const { baseUrl, authHeader } = credentials;
+
+    if (!baseUrl || !authHeader) {
+      return res.status(400).json({ error: 'Splynx credentials incomplete' });
+    }
+
+    // Create Splynx service and fetch entity data
+    const splynxService = new SplynxService({ baseUrl, authHeader });
+    
+    let entityData;
+    let messages = [];
+
+    if (entityType === 'ticket') {
+      entityData = await splynxService.getTicketDetails(entityId);
+      messages = await splynxService.getTicketMessages(entityId);
+    } else {
+      entityData = await splynxService.getTaskDetails(entityId);
+    }
+
+    res.json({ 
+      entityData,
+      messages: entityType === 'ticket' ? messages : undefined,
+    });
+  } catch (error: any) {
+    console.error(`Error fetching Splynx ${req.params.entityType} data:`, error);
+    res.status(500).json({ error: `Failed to fetch ${req.params.entityType} data`, details: error.message });
   }
 });
 

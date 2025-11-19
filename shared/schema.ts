@@ -2559,7 +2559,7 @@ export const workflowStepSchema = z.object({
   title: z.string().optional(),
   label: z.string().optional(),
   description: z.string().optional(),
-  type: z.enum(['checklist', 'form', 'photo', 'signature', 'measurement', 'notes', 'checkbox', 'text_input', 'file_upload', 'approval', 'kb_link', 'comment', 'geolocation', 'fiber_network_node']),
+  type: z.enum(['checklist', 'form', 'photo', 'signature', 'measurement', 'notes', 'checkbox', 'text_input', 'file_upload', 'approval', 'kb_link', 'comment', 'geolocation', 'fiber_network_node', 'splynx_data_display']),
   required: z.boolean().default(false),
   order: z.number(),
   config: z.any().optional(),
@@ -2579,7 +2579,15 @@ export const workflowStepSchema = z.object({
     minPhotos: z.number().default(1),
     maxPhotos: z.number().default(10),
     required: z.boolean().default(false)
-  }).optional()
+  }).optional(),
+  splynxConfig: z.object({
+    entityType: z.enum(['ticket', 'task']),
+    idSource: z.enum(['workflowMetadata', 'fixed']),
+    fixedId: z.string().optional(),
+    metadataField: z.string().optional(),
+    displayFields: z.array(z.string()),
+    refreshOnOpen: z.boolean().default(true),
+  }).optional(),
 }).refine(
   (data) => data.title || data.label,
   { message: "Step must have either a title or label" }

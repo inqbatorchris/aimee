@@ -10,8 +10,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, Save, Play, Settings, Bot } from 'lucide-react';
+import { ArrowLeft, Save, Play, Settings, Bot, Copy, Clock, Zap } from 'lucide-react';
 import WorkflowStepBuilder from '@/components/workflow/WorkflowStepBuilder';
+import { WebhookEventLog } from '@/components/webhooks/WebhookEventLog';
 import type { Integration, AgentWorkflow, KeyResult, Objective, User } from '@shared/schema';
 
 interface WorkflowStep {
@@ -46,6 +47,9 @@ export default function AgentWorkflowEdit() {
   const [enabled, setEnabled] = useState(false);
   const [frequency, setFrequency] = useState('daily');
   const [workflowSteps, setWorkflowSteps] = useState<WorkflowStep[]>([]);
+  const [selectedTriggerId, setSelectedTriggerId] = useState<number | null>(null);
+  const [showEventLog, setShowEventLog] = useState(false);
+  const [webhookEndpoint, setWebhookEndpoint] = useState('');
 
   // Fetch workflow details
   const { data: workflow, isLoading } = useQuery<AgentWorkflow>({
@@ -73,6 +77,12 @@ export default function AgentWorkflowEdit() {
     queryKey: ['/api/strategy/objectives'],
   });
 
+  // Fetch available triggers when webhook is selected
+  const { data: availableTriggers = [] } = useQuery<any[]>({
+    queryKey: ['/api/integrations/integration-triggers'],
+    enabled: triggerType === 'webhook',
+  });
+
   // Load workflow data when fetched
   useEffect(() => {
     if (workflow) {
@@ -84,12 +94,27 @@ export default function AgentWorkflowEdit() {
       
       const triggerConfig = (workflow.triggerConfig as any) || {};
       setFrequency(triggerConfig.frequency || 'daily');
+      if (triggerConfig.triggerId) {
+        setSelectedTriggerId(triggerConfig.triggerId);
+      }
       
       // Parse workflow definition
       const definition = workflow.workflowDefinition || [];
       setWorkflowSteps(Array.isArray(definition) ? definition : []);
     }
   }, [workflow]);
+
+  // Generate webhook endpoint URL
+  useEffect(() => {
+    if (workflow && selectedTriggerId && availableTriggers.length > 0) {
+      const trigger = availableTriggers.find((t: any) => t.id === selectedTriggerId);
+      if (trigger) {
+        const baseUrl = window.location.origin;
+        const endpoint = `${baseUrl}/api/webhooks/${trigger.integrationType}/${workflow.organizationId}/${trigger.triggerKey}`;
+        setWebhookEndpoint(endpoint);
+      }
+    }
+  }, [workflow, selectedTriggerId, availableTriggers]);
 
   // Update workflow mutation
   const updateMutation = useMutation({
@@ -143,6 +168,8 @@ export default function AgentWorkflowEdit() {
 
     if (triggerType === 'schedule') {
       triggerConfig.frequency = frequency;
+    } else if (triggerType === 'webhook' && selectedTriggerId) {
+      triggerConfig.triggerId = selectedTriggerId;
     }
 
     updateMutation.mutate({
@@ -363,14 +390,82 @@ export default function AgentWorkflowEdit() {
                 )}
 
                 {triggerType === 'webhook' && (
-                  <div>
-                    <Label>Webhook URL</Label>
-                    <div className="mt-1 p-2 bg-muted rounded text-xs font-mono break-all">
-                      {window.location.origin}/api/webhooks/workflow/{id}
+                  <div className="space-y-3 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Zap className="h-4 w-4 text-blue-600" />
+                      <Label className="font-semibold">Webhook Configuration</Label>
                     </div>
-                    <p className="text-sm text-muted-foreground mt-1">
-                      POST to this URL to trigger the workflow
-                    </p>
+                    
+                    <div>
+                      <Label className="text-xs text-muted-foreground">Webhook Trigger</Label>
+                      <Select
+                        value={selectedTriggerId?.toString() || ''}
+                        onValueChange={(value) => setSelectedTriggerId(parseInt(value))}
+                      >
+                        <SelectTrigger data-testid="select-webhook-trigger">
+                          <SelectValue placeholder="Select a trigger event" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {availableTriggers.map((trigger: any) => (
+                            <SelectItem key={trigger.id} value={trigger.id.toString()}>
+                              <div className="flex flex-col">
+                                <span className="font-medium">{trigger.name}</span>
+                                <span className="text-xs text-muted-foreground">
+                                  {trigger.integrationName} • {trigger.triggerKey}
+                                </span>
+                              </div>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Choose from {availableTriggers.length} available webhook events
+                      </p>
+                    </div>
+                    
+                    {webhookEndpoint && (
+                      <div>
+                        <Label className="text-xs text-muted-foreground">Webhook Endpoint</Label>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Input
+                            value={webhookEndpoint}
+                            readOnly
+                            className="font-mono text-xs bg-white dark:bg-gray-800"
+                            data-testid="input-webhook-endpoint"
+                          />
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              navigator.clipboard.writeText(webhookEndpoint);
+                              toast({
+                                title: 'Copied!',
+                                description: 'Webhook endpoint URL copied to clipboard',
+                              });
+                            }}
+                            data-testid="button-copy-webhook"
+                          >
+                            <Copy className="h-4 w-4" />
+                          </Button>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Send POST requests to this endpoint to trigger the workflow
+                        </p>
+                      </div>
+                    )}
+                    
+                    <div className="pt-3 border-t border-gray-200">
+                      <Button
+                        variant="link"
+                        size="sm"
+                        className="p-0 h-auto text-blue-600"
+                        onClick={() => setShowEventLog(true)}
+                        data-testid="link-view-events"
+                      >
+                        <Clock className="h-3 w-3 mr-1" />
+                        View Recent Webhook Events
+                      </Button>
+                    </div>
                   </div>
                 )}
               </CardContent>
@@ -399,6 +494,16 @@ export default function AgentWorkflowEdit() {
           </div>
         </div>
       </div>
+
+      {/* Webhook Event Log Dialog */}
+      {showEventLog && workflow && (
+        <WebhookEventLog
+          open={showEventLog}
+          onClose={() => setShowEventLog(false)}
+          organizationId={workflow.organizationId}
+          workflowId={workflow.id}
+        />
+      )}
     </div>
   );
 }
