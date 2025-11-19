@@ -207,6 +207,7 @@ export default function WorkflowTemplateStepBuilder({ steps, onChange }: Workflo
 
   // Group step types by category
   const fieldAppTypes = STEP_TYPES.filter(t => t.category === 'field');
+  const integrationTypes = STEP_TYPES.filter(t => t.category === 'integration');
   const legacyTypes = STEP_TYPES.filter(t => t.category === 'legacy');
 
   return (
@@ -245,6 +246,32 @@ export default function WorkflowTemplateStepBuilder({ steps, onChange }: Workflo
                 })}
               </div>
             </div>
+
+            {integrationTypes.length > 0 && (
+              <div>
+                <h4 className="font-medium mb-3">Integration Step Types</h4>
+                <div className="grid grid-cols-2 gap-2">
+                  {integrationTypes.map(stepType => {
+                    const Icon = stepType.icon;
+                    return (
+                      <Button
+                        key={stepType.value}
+                        variant="outline"
+                        className="h-auto py-3 justify-start"
+                        onClick={() => handleAddStep(stepType.value as WorkflowTemplateStep['type'])}
+                        data-testid={`button-add-${stepType.value}`}
+                      >
+                        <Icon className="h-5 w-5 mr-2 shrink-0" />
+                        <div className="text-left">
+                          <div className="font-medium">{stepType.label}</div>
+                          <div className="text-xs text-gray-500">{stepType.description}</div>
+                        </div>
+                      </Button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <div>
               <h4 className="font-medium mb-3 text-sm text-muted-foreground">Legacy Step Types</h4>
