@@ -419,10 +419,9 @@ export default function AgentWorkflowEdit() {
                         </SelectContent>
                       </Select>
                       <p className="text-xs text-muted-foreground mt-1">
-                        Choose from {availableTriggers.length} available webhook events
+                        This defines what type of data this workflow expects to receive. When external systems send webhooks to your endpoint, this selection tells aimee.works how to process and route the incoming data.
                       </p>
-                    </div>
-                    
+                    </div>                    
                     {webhookEndpoint && (
                       <div>
                         <Label className="text-xs text-muted-foreground">Webhook Endpoint</Label>
