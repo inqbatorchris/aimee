@@ -2052,6 +2052,28 @@ export default function FiberNetwork() {
                   </div>
 
                   <div>
+                    <Label>Node Type</Label>
+                    <Select
+                      value={selectedNode.nodeType}
+                      onValueChange={(value) => {
+                        setSelectedNode({ ...selectedNode, nodeType: value });
+                        handleNodeUpdate({ nodeType: value });
+                      }}
+                    >
+                      <SelectTrigger data-testid="select-node-type">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {nodeTypes.map((type) => (
+                          <SelectItem key={type.value} value={type.value}>
+                            {type.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div>
                     <Label>Status</Label>
                     <Select
                       value={selectedNode.status}
