@@ -78,6 +78,7 @@ import {
   searchKeyResultTasks,
 } from '@/lib/workItems.api';
 import { WorkflowExecutionPanel } from '@/components/work-items/WorkflowExecutionPanel';
+import { SplynxWorkItemDataDisplay } from '@/components/work-items/SplynxWorkItemDataDisplay';
 
 interface WorkItemPanelProps {
   isOpen: boolean;
@@ -1302,6 +1303,9 @@ export default function WorkItemPanel({
             {/* Workflow Tab */}
             {currentWorkItem?.workflowTemplateId && workItemId && (
               <TabsContent value="workflow" className="flex-1 overflow-y-auto m-0 p-6" data-testid="work-item-workflow-tab">
+                {/* Splynx Data Display - shows if work item is linked to a Splynx ticket/task */}
+                <SplynxWorkItemDataDisplay workItemId={workItemId} />
+                
                 <WorkflowExecutionPanel
                   key={`workflow-${workItemId}`}
                   workItemId={workItemId}
