@@ -17,7 +17,7 @@ import type { Integration, AgentWorkflow, KeyResult, Objective, User } from '@sh
 
 interface WorkflowStep {
   id: string;
-  type: 'integration_action' | 'strategy_update' | 'log_event' | 'notification';
+  type: 'integration_action' | 'strategy_update' | 'log_event' | 'notification' | 'data_source_query' | 'data_transformation' | 'splynx_query' | 'for_each' | 'create_work_item';
   name: string;
   config?: any;
 }
