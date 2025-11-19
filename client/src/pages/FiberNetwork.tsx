@@ -2604,14 +2604,20 @@ export default function FiberNetwork() {
                   onValueChange={(value) => setNewNodeData({ ...newNodeData, nodeType: value })}
                 >
                   <SelectTrigger data-testid="select-node-type">
-                    <SelectValue />
+                    <SelectValue placeholder="Select node type..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="chamber">Chamber</SelectItem>
-                    <SelectItem value="cabinet">Cabinet</SelectItem>
-                    <SelectItem value="pole">Pole</SelectItem>
-                    <SelectItem value="splice_closure">Splice Closure</SelectItem>
-                    <SelectItem value="customer_premise">Customer Premise</SelectItem>
+                    {nodeTypes.length === 0 ? (
+                      <div className="px-2 py-3 text-sm text-gray-500 text-center">
+                        No node types available
+                      </div>
+                    ) : (
+                      nodeTypes.map((type: any) => (
+                        <SelectItem key={type.id} value={type.value}>
+                          {type.label}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </div>
