@@ -5,6 +5,7 @@
 
 import { useState, useEffect } from 'react';
 import { useLocation } from 'wouter';
+import { useQuery } from '@tanstack/react-query';
 import { fieldDB } from '@/lib/field-app/db';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -40,7 +41,7 @@ export default function CreateFiberNode({ onComplete }: CreateFiberNodeProps) {
   
   // Form state
   const [name, setName] = useState('');
-  const [nodeType, setNodeType] = useState('chamber');
+  const [nodeType, setNodeType] = useState('');
   const [network, setNetwork] = useState('');
   const [status, setStatus] = useState('planned');
   const [what3words, setWhat3words] = useState('');
@@ -54,6 +55,12 @@ export default function CreateFiberNode({ onComplete }: CreateFiberNodeProps) {
   const [gpsError, setGpsError] = useState<string | null>(null);
   const [networks, setNetworks] = useState<string[]>([]);
   const [session, setSession] = useState<any>(null);
+
+  // Fetch node types from API
+  const { data: nodeTypes = [] } = useQuery({
+    queryKey: ['/api/fiber-network/node-types'],
+    enabled: !!session?.token,
+  });
 
   // Helper function to generate auto-name
   const generateNodeName = (type: string, networkName: string, userEmail: string) => {
@@ -94,18 +101,7 @@ export default function CreateFiberNode({ onComplete }: CreateFiberNodeProps) {
           const data = await response.json();
           setNetworks(data.networks || []);
           if (data.networks && data.networks.length > 0) {
-            const defaultNetwork = data.networks[0];
-            setNetwork(defaultNetwork);
-            
-            // Generate initial name
-            if (savedSession?.email) {
-              const autoName = generateNodeName(
-                nodeType, 
-                defaultNetwork, 
-                savedSession.email
-              );
-              setName(autoName);
-            }
+            setNetwork(data.networks[0]);
           }
         }
         
@@ -125,6 +121,13 @@ export default function CreateFiberNode({ onComplete }: CreateFiberNodeProps) {
       Object.values(photoUrls).forEach(url => URL.revokeObjectURL(url));
     };
   }, []);
+
+  // Set default node type when nodeTypes are loaded
+  useEffect(() => {
+    if (nodeTypes.length > 0 && !nodeType) {
+      setNodeType(nodeTypes[0].value);
+    }
+  }, [nodeTypes]);
 
   // Auto-regenerate name when node type or network changes
   useEffect(() => {
@@ -347,9 +350,15 @@ export default function CreateFiberNode({ onComplete }: CreateFiberNodeProps) {
             className="w-full bg-zinc-800 border border-zinc-700 rounded-md px-3 py-2 text-white mt-1"
             data-testid="select-node-type"
           >
-            <option value="chamber">Chamber</option>
-            <option value="cabinet">Cabinet</option>
-            <option value="splice">Splice</option>
+            {nodeTypes.length === 0 ? (
+              <option value="">No node types available</option>
+            ) : (
+              nodeTypes.map((type: any) => (
+                <option key={type.id} value={type.value}>
+                  {type.label}
+                </option>
+              ))
+            )}
           </select>
         </div>
 
