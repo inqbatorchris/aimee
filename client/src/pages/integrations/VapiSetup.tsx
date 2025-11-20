@@ -257,6 +257,19 @@ export default function VapiSetup() {
 
         {/* Setup Tab */}
         <TabsContent value="setup" className="space-y-4">
+          {/* How to Get API Key Instructions */}
+          <Alert className="mb-4">
+            <AlertDescription>
+              <strong>How to get your API key:</strong>
+              <ol className="list-decimal ml-4 mt-2 space-y-1 text-sm">
+                <li>Go to <a href="https://dashboard.vapi.ai" target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">dashboard.vapi.ai</a></li>
+                <li>Click on your account menu → <strong>API Keys</strong></li>
+                <li>Copy your <strong>Private Key</strong> (click the copy icon)</li>
+                <li>Paste it below and save</li>
+              </ol>
+            </AlertDescription>
+          </Alert>
+
           {/* Configuration Card */}
           <Card>
             <CardHeader>
@@ -285,14 +298,15 @@ export default function VapiSetup() {
                         <FormDescription>
                           Get your API key from{' '}
                           <a
-                            href="https://dashboard.vapi.ai"
+                            href="https://dashboard.vapi.ai/org/api-keys"
                             target="_blank"
                             rel="noopener noreferrer"
                             className="text-primary hover:underline inline-flex items-center gap-1"
                           >
-                            Vapi Dashboard
+                            Vapi Dashboard → API Keys
                             <ExternalLink className="h-3 w-3" />
                           </a>
+                          {' '}(copy your Private Key)
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
