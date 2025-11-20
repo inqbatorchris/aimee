@@ -1668,28 +1668,21 @@ router.get('/splynx/entity/:entityType/:entityId', async (req, res) => {
     let messages = [];
 
     if (entityType === 'ticket') {
-      entityData = await splynxService.getTicketDetails(entityId);
+      const ticketData = await splynxService.getTicketDetails(entityId);
       
       // Log ticket data structure for debugging
-      console.log(`[TICKET ${entityId}] entityData keys:`, Object.keys(entityData || {}));
-      console.log(`[TICKET ${entityId}] Full data:`, JSON.stringify(entityData, null, 2));
+      console.log(`[TICKET ${entityId}] Fetched ticket data:`, JSON.stringify(ticketData, null, 2));
       
-      // Try to get messages, but don't fail if endpoint doesn't exist
+      // CRITICAL FIX: Return the actual ticket data as entityData
+      entityData = ticketData;
+      
+      // Try to get comments (messages) using the correct Splynx endpoint
       try {
-        messages = await splynxService.getTicketMessages(entityId);
-      } catch (messagesError: any) {
-        console.log(`Could not fetch messages for ticket ${entityId}, using empty array:`, messagesError.message);
-        // Check if messages are included in ticket details (check multiple possible fields)
-        if (entityData) {
-          if (Array.isArray(entityData.messages)) {
-            messages = entityData.messages;
-          } else if (Array.isArray(entityData.message_history)) {
-            messages = entityData.message_history;
-          } else if (Array.isArray(entityData.comments)) {
-            messages = entityData.comments;
-          }
-        }
-        console.log(`[TICKET ${entityId}] Final messages count:`, messages.length);
+        messages = await splynxService.getTicketComments(entityId);
+        console.log(`[TICKET ${entityId}] Fetched ${messages.length} comments`);
+      } catch (commentsError: any) {
+        console.log(`Could not fetch comments for ticket ${entityId}:`, commentsError.message);
+        messages = [];
       }
     } else {
       entityData = await splynxService.getTaskDetails(entityId);
