@@ -5,7 +5,7 @@ import { VapiMetricsCalculator } from '../services/integrations/vapiMetricsCalcu
 import { SplynxService } from '../services/integrations/splynxService';
 import { db } from '../db';
 import { integrations } from '../../shared/schema';
-import { eq } from 'drizzle-orm';
+import { eq, and } from 'drizzle-orm';
 import crypto from 'crypto';
 
 const router = Router();
@@ -43,8 +43,10 @@ async function getVapiService(organizationId: number): Promise<VapiService | nul
   const [integration] = await db
     .select()
     .from(integrations)
-    .where(eq(integrations.organizationId, organizationId))
-    .where(eq(integrations.platformType, 'vapi'))
+    .where(and(
+      eq(integrations.organizationId, organizationId),
+      eq(integrations.platformType, 'vapi')
+    ))
     .limit(1);
 
   if (!integration || !integration.credentialsEncrypted) {
@@ -62,8 +64,10 @@ async function getSplynxService(organizationId: number): Promise<SplynxService |
   const [integration] = await db
     .select()
     .from(integrations)
-    .where(eq(integrations.organizationId, organizationId))
-    .where(eq(integrations.platformType, 'splynx'))
+    .where(and(
+      eq(integrations.organizationId, organizationId),
+      eq(integrations.platformType, 'splynx')
+    ))
     .limit(1);
 
   if (!integration || !integration.credentialsEncrypted) {
@@ -239,7 +243,7 @@ router.post('/api/vapi/tools/lookup_customer', async (req: Request, res: Respons
 
     // Search Splynx for customer by phone number
     // Note: This is a simplified implementation - adjust based on Splynx API
-    const customers = await splynxService.queryData({
+    const customers = await splynxService.queryEntities({
       entity: 'customers',
       mode: 'list',
       filters: [{ field: 'phone', operator: 'equals', value: phoneNumber }],
