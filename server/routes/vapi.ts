@@ -10,21 +10,49 @@ import crypto from 'crypto';
 
 const router = Router();
 
+// Decrypt function
+function decrypt(text: string): string {
+  if (!text) return '';
+  
+  try {
+    const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+    if (!ENCRYPTION_KEY) {
+      throw new Error('ENCRYPTION_KEY not set');
+    }
+    
+    const parts = text.split(':');
+    if (parts.length !== 2) {
+      throw new Error('Invalid encrypted data format');
+    }
+    
+    const iv = Buffer.from(parts[0], 'hex');
+    const encryptedText = parts[1];
+    const key = crypto.createHash('sha256').update(String(ENCRYPTION_KEY)).digest();
+    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+    let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch (error) {
+    console.error('Decryption failed:', error);
+    throw new Error('Failed to decrypt data');
+  }
+}
+
 // Helper function to get Vapi service instance
 async function getVapiService(organizationId: number): Promise<VapiService | null> {
   const [integration] = await db
     .select()
     .from(integrations)
     .where(eq(integrations.organizationId, organizationId))
+    .where(eq(integrations.platformType, 'vapi'))
     .limit(1);
 
-  if (!integration || !integration.credentials) {
+  if (!integration || !integration.credentialsEncrypted) {
     return null;
   }
 
-  const creds = typeof integration.credentials === 'string' 
-    ? JSON.parse(integration.credentials) 
-    : integration.credentials;
+  const decrypted = decrypt(integration.credentialsEncrypted);
+  const creds = JSON.parse(decrypted);
 
   return new VapiService({ apiKey: creds.apiKey });
 }
@@ -35,15 +63,15 @@ async function getSplynxService(organizationId: number): Promise<SplynxService |
     .select()
     .from(integrations)
     .where(eq(integrations.organizationId, organizationId))
+    .where(eq(integrations.platformType, 'splynx'))
     .limit(1);
 
-  if (!integration || !integration.credentials) {
+  if (!integration || !integration.credentialsEncrypted) {
     return null;
   }
 
-  const creds = typeof integration.credentials === 'string' 
-    ? JSON.parse(integration.credentials) 
-    : integration.credentials;
+  const decrypted = decrypt(integration.credentialsEncrypted);
+  const creds = JSON.parse(decrypted);
 
   return new SplynxService(creds);
 }
@@ -52,7 +80,7 @@ async function getSplynxService(organizationId: number): Promise<SplynxService |
 // VAPI ASSISTANT MANAGEMENT
 // ==========================================
 
-router.get('/api/vapi/assistants', async (req: Request, res: Response) => {
+router.get('/assistants', async (req: Request, res: Response) => {
   try {
     const organizationId = parseInt(req.query.organizationId as string);
     
@@ -74,7 +102,7 @@ router.get('/api/vapi/assistants', async (req: Request, res: Response) => {
   }
 });
 
-router.post('/api/vapi/assistants', async (req: Request, res: Response) => {
+router.post('/assistants', async (req: Request, res: Response) => {
   try {
     const assistant = await storage.createVapiAssistant(req.body);
     res.json(assistant);
@@ -84,7 +112,7 @@ router.post('/api/vapi/assistants', async (req: Request, res: Response) => {
   }
 });
 
-router.patch('/api/vapi/assistants/:id', async (req: Request, res: Response) => {
+router.patch('/assistants/:id', async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
     const assistant = await storage.updateVapiAssistant(id, req.body);
@@ -99,7 +127,7 @@ router.patch('/api/vapi/assistants/:id', async (req: Request, res: Response) => 
 // VAPI CALLS MANAGEMENT
 // ==========================================
 
-router.get('/api/vapi/calls', async (req: Request, res: Response) => {
+router.get('/calls', async (req: Request, res: Response) => {
   try {
     const organizationId = parseInt(req.query.organizationId as string);
     
@@ -123,7 +151,7 @@ router.get('/api/vapi/calls', async (req: Request, res: Response) => {
   }
 });
 
-router.get('/api/vapi/calls/:id', async (req: Request, res: Response) => {
+router.get('/calls/:id', async (req: Request, res: Response) => {
   try {
     const id = parseInt(req.params.id);
     const organizationId = parseInt(req.query.organizationId as string);
