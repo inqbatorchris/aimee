@@ -82,8 +82,11 @@ export function SplynxTicketViewer({
     // Overview and resolution modes don't require action
     if (mode === 'overview' || mode === 'resolution') return true;
     
-    // Unified mode: Always allow completion (user decides when done)
-    if (mode === 'unified') return true;
+    // Unified mode: Require user to send message or update status before completing
+    // This prevents auto-completion when the step is first loaded
+    if (mode === 'unified') {
+      return localActionCompleted;
+    }
     
     // Respond mode: Check if there are any non-customer messages
     if (mode === 'respond') {
