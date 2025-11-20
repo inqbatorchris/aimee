@@ -308,12 +308,50 @@ export default function VapiPerformanceDashboard() {
             />
           </div>
 
+          {/* Bulk Actions Toolbar */}
+          {selectedCalls.length > 0 && (
+            <div className="flex items-center justify-between gap-3 p-4 mb-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                  {selectedCalls.length} call{selectedCalls.length > 1 ? 's' : ''} selected
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button 
+                  onClick={() => setShowWorkItemDialog(true)}
+                  data-testid="button-create-work-items"
+                >
+                  Create Work Items
+                </Button>
+                <Button 
+                  variant="outline" 
+                  onClick={() => setSelectedCalls([])}
+                  data-testid="button-clear-selection"
+                >
+                  Clear Selection
+                </Button>
+              </div>
+            </div>
+          )}
+
           {callsLoading ? (
             <div className="h-64 flex items-center justify-center">
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
             </div>
           ) : paginatedCalls.length > 0 ? (
             <div className="space-y-2">
+              {/* Select All Row */}
+              <div className="flex items-center gap-3 p-3 border-b">
+                <Checkbox
+                  checked={selectedCalls.length === paginatedCalls.length && paginatedCalls.length > 0}
+                  onCheckedChange={handleSelectAll}
+                  data-testid="checkbox-select-all"
+                />
+                <span className="text-sm font-medium text-muted-foreground">
+                  Select All ({paginatedCalls.length})
+                </span>
+              </div>
+              
               {paginatedCalls.map((call: any) => {
                 const duration = call.endedAt 
                   ? Math.floor((new Date(call.endedAt).getTime() - new Date(call.createdAt).getTime()) / 1000)
@@ -326,13 +364,19 @@ export default function VapiPerformanceDashboard() {
                     open={isExpanded}
                     onOpenChange={(open) => setExpandedCallId(open ? call.id : null)}
                   >
-                    <div className="border rounded-lg">
+                    <div className={`border rounded-lg ${selectedCalls.includes(call.id) ? 'bg-blue-50 dark:bg-blue-900/10 border-blue-300 dark:border-blue-700' : ''}`}>
                       <CollapsibleTrigger asChild>
                         <div 
                           className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors cursor-pointer"
                           data-testid={`call-row-${call.id}`}
                         >
                           <div className="flex items-center gap-3 flex-1">
+                            <Checkbox
+                              checked={selectedCalls.includes(call.id)}
+                              onCheckedChange={(checked) => handleCallSelection(call.id, checked as boolean)}
+                              onClick={(e) => e.stopPropagation()}
+                              data-testid={`checkbox-call-${call.id}`}
+                            />
                             {isExpanded ? (
                               <ChevronDown className="h-5 w-5 text-muted-foreground" />
                             ) : (
@@ -599,6 +643,89 @@ export default function VapiPerformanceDashboard() {
           )}
         </CardContent>
       </Card>
+
+      {/* Work Item Creation Dialog */}
+      <Dialog open={showWorkItemDialog} onOpenChange={setShowWorkItemDialog}>
+        <DialogContent className="sm:max-w-[500px]" data-testid="dialog-create-work-item">
+          <DialogHeader>
+            <DialogTitle>
+              Create Work Item{selectedCalls.length > 1 ? 's' : ''}
+            </DialogTitle>
+            <DialogDescription>
+              Create work items for {selectedCalls.length} selected call{selectedCalls.length > 1 ? 's' : ''}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Workflow Template *</Label>
+              <Select value={selectedTemplate} onValueChange={setSelectedTemplate}>
+                <SelectTrigger data-testid="select-workflow-template">
+                  <SelectValue placeholder="Select a workflow template" />
+                </SelectTrigger>
+                <SelectContent>
+                  {templates?.map((template: any) => (
+                    <SelectItem key={template.id} value={String(template.id)}>
+                      {template.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div>
+              <Label>Assign To (Optional)</Label>
+              <Select value={workItemAssignee} onValueChange={setWorkItemAssignee}>
+                <SelectTrigger data-testid="select-assignee">
+                  <SelectValue placeholder="Unassigned" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="unassigned">Unassigned</SelectItem>
+                  {users?.map((user: any) => (
+                    <SelectItem key={user.id} value={String(user.id)}>
+                      {user.fullName || user.email}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            
+            <div>
+              <Label>Due Date (Optional)</Label>
+              <Input
+                type="date"
+                value={workItemDueDate}
+                onChange={(e) => setWorkItemDueDate(e.target.value)}
+                data-testid="input-due-date"
+              />
+            </div>
+            
+            {selectedCalls.length > 0 && (
+              <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-sm">
+                <p className="font-medium text-blue-900 dark:text-blue-100">
+                  Creating work items for {selectedCalls.length} call{selectedCalls.length > 1 ? 's' : ''}
+                </p>
+              </div>
+            )}
+          </div>
+          
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowWorkItemDialog(false)}
+              data-testid="button-cancel"
+            >
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleCreateWorkItems}
+              disabled={!selectedTemplate || isCreatingWorkItems}
+              data-testid="button-submit-work-items"
+            >
+              {isCreatingWorkItems ? 'Creating...' : `Create ${selectedCalls.length} Work Item${selectedCalls.length > 1 ? 's' : ''}`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
