@@ -1050,17 +1050,19 @@ export class SplynxService {
 
   async getTicketComments(ticketId: string): Promise<any[]> {
     try {
-      const url = this.buildUrl(`admin/support/tickets/comments?ticket_id=${ticketId}`);
+      // Use the correct Splynx endpoint for ticket messages
+      const url = this.buildUrl(`admin/support/ticket-messages?main_attributes[ticket_id_variable]=${ticketId}`);
       const response = await axios.get(url, {
         headers: {
           'Authorization': this.credentials.authHeader,
           'Content-Type': 'application/json',
         },
       });
+      console.log(`[MESSAGES] Fetched ${response.data?.length || 0} messages for ticket ${ticketId}`);
       return Array.isArray(response.data) ? response.data : [];
     } catch (error: any) {
-      console.error(`Failed to fetch ticket comments for ID ${ticketId}:`, error.message);
-      throw new Error(`Failed to fetch ticket comments: ${error.message}`);
+      console.error(`Failed to fetch ticket messages for ID ${ticketId}:`, error.message);
+      throw new Error(`Failed to fetch ticket messages: ${error.message}`);
     }
   }
 

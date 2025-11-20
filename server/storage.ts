@@ -289,6 +289,7 @@ export interface ICleanStorage {
   getWorkItems(organizationId: number): Promise<WorkItem[]>;
   getWorkItemsByCycle(checkInCycleId: number): Promise<WorkItem[]>;
   getWorkItem(id: number): Promise<WorkItem | undefined>;
+  getWorkItemBySplynxTicketId(organizationId: number, splynxTicketId: string): Promise<WorkItem | undefined>;
   createWorkItem(workItem: InsertWorkItem): Promise<WorkItem>;
   updateWorkItem(id: number, data: Partial<WorkItem>): Promise<WorkItem | undefined>;
   deleteWorkItem(id: number): Promise<boolean>;
@@ -1655,6 +1656,17 @@ export class CleanDatabaseStorage implements ICleanStorage {
       ))
       .limit(1);
     return user;
+  }
+
+  async getWorkItemBySplynxTicketId(organizationId: number, splynxTicketId: string): Promise<WorkItem | undefined> {
+    const [workItem] = await db.select()
+      .from(workItems)
+      .where(and(
+        eq(workItems.organizationId, organizationId),
+        sql`${workItems.workflowMetadata}->>'splynx_ticket_id' = ${splynxTicketId}`
+      ))
+      .limit(1);
+    return workItem;
   }
 
   async updateWorkItem(id: number, data: Partial<WorkItem>): Promise<WorkItem | undefined> {
