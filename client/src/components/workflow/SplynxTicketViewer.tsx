@@ -239,10 +239,12 @@ export function SplynxTicketViewer({
 
   const statusOptions = [
     { value: '1', label: 'New' },
-    { value: '2', label: 'Work in Progress' },
-    { value: '3', label: 'Waiting on Customer' },
-    { value: '4', label: 'Resolved' },
-    { value: '5', label: 'Closed' },
+    { value: '2', label: 'Work in progress' },
+    { value: '3', label: 'Resolved' },
+    { value: '4', label: 'Waiting on customer' },
+    { value: '5', label: 'Waiting on agent' },
+    { value: '6', label: 'Site Visit Required' },
+    { value: '7', label: 'Monitoring' },
   ];
 
   // Get base URL from decrypted credentials and strip /api/2.0 for UI links
