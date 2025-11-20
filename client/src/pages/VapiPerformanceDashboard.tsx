@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
-import { PhoneCall, Clock, CheckCircle2, ChevronDown, ChevronRight, Copy, Filter } from 'lucide-react';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { PhoneCall, Clock, CheckCircle2, ChevronDown, ChevronRight, Copy, Filter, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
@@ -21,9 +22,9 @@ export default function VapiPerformanceDashboard() {
   const { toast } = useToast();
 
   const [expandedCallId, setExpandedCallId] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
-  const [successFilter, setSuccessFilter] = useState<string>('all');
-  const [reviewStatusFilter, setReviewStatusFilter] = useState<string>('all');
+  const [selectedStatuses, setSelectedStatuses] = useState<string[]>(['ended', 'in-progress', 'queued']);
+  const [selectedSuccessFilters, setSelectedSuccessFilters] = useState<string[]>(['success', 'failed']);
+  const [selectedReviewStatuses, setSelectedReviewStatuses] = useState<string[]>(['New', 'Review needed', 'Pass', 'Fail']);
   const [searchPhone, setSearchPhone] = useState('');
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
@@ -226,12 +227,41 @@ export default function VapiPerformanceDashboard() {
     }
   };
 
+  // Toggle filter selection
+  const toggleStatusFilter = (status: string) => {
+    setSelectedStatuses(prev => 
+      prev.includes(status) ? prev.filter(s => s !== status) : [...prev, status]
+    );
+  };
+
+  const toggleSuccessFilter = (filter: string) => {
+    setSelectedSuccessFilters(prev => 
+      prev.includes(filter) ? prev.filter(f => f !== filter) : [...prev, filter]
+    );
+  };
+
+  const toggleReviewStatus = (status: string) => {
+    setSelectedReviewStatuses(prev => 
+      prev.includes(status) ? prev.filter(s => s !== status) : [...prev, status]
+    );
+  };
+
   // Filter calls
   const filteredCalls = Array.isArray(calls) ? calls.filter((call: any) => {
-    if (statusFilter !== 'all' && call.status !== statusFilter) return false;
-    if (successFilter === 'success' && !wasTicketCreated(call)) return false;
-    if (successFilter === 'failed' && wasTicketCreated(call)) return false;
-    if (reviewStatusFilter !== 'all' && getCallStatus(call.id) !== reviewStatusFilter) return false;
+    // Status filter
+    if (!selectedStatuses.includes(call.status)) return false;
+    
+    // Success filter
+    const isSuccess = wasTicketCreated(call);
+    const passesSuccessFilter = 
+      (selectedSuccessFilters.includes('success') && isSuccess) ||
+      (selectedSuccessFilters.includes('failed') && !isSuccess);
+    if (!passesSuccessFilter) return false;
+    
+    // Review status filter
+    if (!selectedReviewStatuses.includes(getCallStatus(call.id))) return false;
+    
+    // Phone search
     if (searchPhone && !call.customer?.number?.includes(searchPhone)) return false;
     
     // Date filter
@@ -287,61 +317,148 @@ export default function VapiPerformanceDashboard() {
         </CardHeader>
         <CardContent>
           {/* Filters */}
-          <div className="flex gap-4 mb-6 flex-wrap">
-            <div className="flex items-center gap-2">
-              <Filter className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm font-medium">Filters:</span>
+          <div className="space-y-4 mb-6">
+            <div className="flex gap-3 flex-wrap items-center">
+              <div className="flex items-center gap-2">
+                <Filter className="h-4 w-4 text-muted-foreground" />
+                <span className="text-sm font-medium">Filters:</span>
+              </div>
+
+              {/* Call Status Filter */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8">
+                    Call Status ({selectedStatuses.length})
+                    <ChevronDown className="ml-2 h-4 w-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[200px] p-3">
+                  <div className="space-y-2">
+                    <div className="font-medium text-sm mb-2">Call Status</div>
+                    {['ended', 'in-progress', 'queued'].map(status => (
+                      <div key={status} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`status-${status}`}
+                          checked={selectedStatuses.includes(status)}
+                          onCheckedChange={() => toggleStatusFilter(status)}
+                        />
+                        <label htmlFor={`status-${status}`} className="text-sm cursor-pointer capitalize">
+                          {status}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              {/* Success Filter */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8">
+                    Result ({selectedSuccessFilters.length})
+                    <ChevronDown className="ml-2 h-4 w-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[200px] p-3">
+                  <div className="space-y-2">
+                    <div className="font-medium text-sm mb-2">Call Result</div>
+                    {[
+                      { value: 'success', label: 'Success (Ticket Created)' },
+                      { value: 'failed', label: 'Failed (No Ticket)' }
+                    ].map(item => (
+                      <div key={item.value} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`success-${item.value}`}
+                          checked={selectedSuccessFilters.includes(item.value)}
+                          onCheckedChange={() => toggleSuccessFilter(item.value)}
+                        />
+                        <label htmlFor={`success-${item.value}`} className="text-sm cursor-pointer">
+                          {item.label}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              {/* Review Status Filter */}
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8">
+                    Review Status ({selectedReviewStatuses.length})
+                    <ChevronDown className="ml-2 h-4 w-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[200px] p-3">
+                  <div className="space-y-2">
+                    <div className="font-medium text-sm mb-2">Review Status</div>
+                    {['New', 'Review needed', 'Pass', 'Fail'].map(status => (
+                      <div key={status} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`review-${status}`}
+                          checked={selectedReviewStatuses.includes(status)}
+                          onCheckedChange={() => toggleReviewStatus(status)}
+                        />
+                        <label htmlFor={`review-${status}`} className="text-sm cursor-pointer">
+                          {status}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+
+              {/* Date Filter */}
+              <Select value={dateFilter} onValueChange={setDateFilter}>
+                <SelectTrigger className="w-[140px] h-8">
+                  <SelectValue placeholder="Date Range" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Time</SelectItem>
+                  <SelectItem value="today">Today</SelectItem>
+                  <SelectItem value="week">Last 7 Days</SelectItem>
+                  <SelectItem value="month">Last 30 Days</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Input
+                placeholder="Search phone number..."
+                value={searchPhone}
+                onChange={(e) => setSearchPhone(e.target.value)}
+                className="w-[200px] h-8"
+              />
             </div>
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
-              <SelectTrigger className="w-[150px]">
-                <SelectValue placeholder="Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="ended">Ended</SelectItem>
-                <SelectItem value="in-progress">In Progress</SelectItem>
-                <SelectItem value="queued">Queued</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={successFilter} onValueChange={setSuccessFilter}>
-              <SelectTrigger className="w-[150px]">
-                <SelectValue placeholder="Success" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Results</SelectItem>
-                <SelectItem value="success">Success</SelectItem>
-                <SelectItem value="failed">Failed</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={reviewStatusFilter} onValueChange={setReviewStatusFilter}>
-              <SelectTrigger className="w-[150px]">
-                <SelectValue placeholder="Review Status" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Review Status</SelectItem>
-                <SelectItem value="New">New</SelectItem>
-                <SelectItem value="Review needed">Review needed</SelectItem>
-                <SelectItem value="Pass">Pass</SelectItem>
-                <SelectItem value="Fail">Fail</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={dateFilter} onValueChange={setDateFilter}>
-              <SelectTrigger className="w-[150px]">
-                <SelectValue placeholder="Date Range" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Time</SelectItem>
-                <SelectItem value="today">Today</SelectItem>
-                <SelectItem value="week">Last 7 Days</SelectItem>
-                <SelectItem value="month">Last 30 Days</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input
-              placeholder="Search phone number..."
-              value={searchPhone}
-              onChange={(e) => setSearchPhone(e.target.value)}
-              className="w-[200px]"
-            />
+
+            {/* Active Filters Display */}
+            <div className="flex gap-2 flex-wrap">
+              {selectedStatuses.length < 3 && selectedStatuses.map(status => (
+                <Badge key={status} variant="secondary" className="gap-1">
+                  Status: {status}
+                  <X 
+                    className="h-3 w-3 cursor-pointer" 
+                    onClick={() => toggleStatusFilter(status)}
+                  />
+                </Badge>
+              ))}
+              {selectedSuccessFilters.length < 2 && selectedSuccessFilters.map(filter => (
+                <Badge key={filter} variant="secondary" className="gap-1">
+                  {filter === 'success' ? 'Has Ticket' : 'No Ticket'}
+                  <X 
+                    className="h-3 w-3 cursor-pointer" 
+                    onClick={() => toggleSuccessFilter(filter)}
+                  />
+                </Badge>
+              ))}
+              {selectedReviewStatuses.length < 4 && selectedReviewStatuses.map(status => (
+                <Badge key={status} variant="secondary" className="gap-1">
+                  Review: {status}
+                  <X 
+                    className="h-3 w-3 cursor-pointer" 
+                    onClick={() => toggleReviewStatus(status)}
+                  />
+                </Badge>
+              ))}
+            </div>
           </div>
 
           {/* Bulk Actions Toolbar */}
