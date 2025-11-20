@@ -55,11 +55,33 @@ export default function VapiPerformanceDashboard() {
     });
   };
 
+  // Check if a ticket was successfully created in the call
+  const wasTicketCreated = (call: any): boolean => {
+    if (!call.messages) return false;
+    
+    // Find tool_call_result messages for createTicket
+    const ticketResults = call.messages.filter(
+      (msg: any) => msg.role === 'tool_call_result' && msg.name === 'createTicket'
+    );
+    
+    if (ticketResults.length === 0) return false;
+    
+    // Check if any result contains a successful ticket ID
+    return ticketResults.some((result: any) => {
+      try {
+        const parsed = typeof result.result === 'string' ? JSON.parse(result.result) : result.result;
+        return parsed?.success === true && parsed?.ticketId;
+      } catch {
+        return false;
+      }
+    });
+  };
+
   // Filter calls
   const filteredCalls = Array.isArray(calls) ? calls.filter((call: any) => {
     if (statusFilter !== 'all' && call.status !== statusFilter) return false;
-    if (successFilter === 'success' && call.analysis?.successEvaluation !== 'true') return false;
-    if (successFilter === 'failed' && call.analysis?.successEvaluation !== 'false') return false;
+    if (successFilter === 'success' && !wasTicketCreated(call)) return false;
+    if (successFilter === 'failed' && wasTicketCreated(call)) return false;
     if (searchPhone && !call.customer?.number?.includes(searchPhone)) return false;
     
     // Date filter
@@ -205,8 +227,8 @@ export default function VapiPerformanceDashboard() {
                                   {duration > 0 ? formatDuration(duration) : 'In progress'}
                                 </span>
                                 {call.cost && <span>{formatCost(call.cost)}</span>}
-                                {call.analysis?.successEvaluation === 'true' && (
-                                  <Badge variant="outline" className="text-green-600">✓ Success</Badge>
+                                {wasTicketCreated(call) && (
+                                  <Badge variant="outline" className="text-green-600">✓ Ticket Created</Badge>
                                 )}
                               </div>
                             </div>
@@ -276,14 +298,12 @@ export default function VapiPerformanceDashboard() {
                                         <p className="mt-1">{expandedCall.analysis.summary}</p>
                                       </div>
                                     )}
-                                    {expandedCall.analysis?.successEvaluation && (
-                                      <div>
-                                        <span className="text-muted-foreground">Success:</span>
-                                        <Badge className={expandedCall.analysis.successEvaluation === 'true' ? 'bg-green-100 text-green-800 ml-2' : 'bg-red-100 text-red-800 ml-2'}>
-                                          {expandedCall.analysis.successEvaluation === 'true' ? '✓ Call objective achieved' : '✗ Call objective not met'}
-                                        </Badge>
-                                      </div>
-                                    )}
+                                    <div>
+                                      <span className="text-muted-foreground">Ticket Status:</span>
+                                      <Badge className={wasTicketCreated(expandedCall) ? 'bg-green-100 text-green-800 ml-2' : 'bg-red-100 text-red-800 ml-2'}>
+                                        {wasTicketCreated(expandedCall) ? '✓ Ticket captured' : '✗ No ticket created'}
+                                      </Badge>
+                                    </div>
                                   </div>
                                 </div>
                               )}
@@ -313,19 +333,51 @@ export default function VapiPerformanceDashboard() {
                                                     {Math.floor(toolCallMsg.secondsFromStart)}s into call
                                                   </span>
                                                 </div>
-                                                {call.function.name === 'createTicket' && (
-                                                  <div className="text-sm space-y-1">
-                                                    <div><span className="text-muted-foreground">Subject:</span> {args.subject}</div>
-                                                    <div><span className="text-muted-foreground">Priority:</span> {args.priority}</div>
-                                                    <div><span className="text-muted-foreground">Customer ID:</span> {args.customer_id}</div>
-                                                    {args.message?.message && (
-                                                      <div className="mt-2 pt-2 border-t">
-                                                        <span className="text-muted-foreground">Details:</span>
-                                                        <pre className="mt-1 text-xs whitespace-pre-wrap">{args.message.message}</pre>
-                                                      </div>
-                                                    )}
-                                                  </div>
-                                                )}
+                                                {call.function.name === 'createTicket' && (() => {
+                                                  // Find the result for this specific tool call
+                                                  const result = expandedCall.messages?.find(
+                                                    (msg: any) => msg.role === 'tool_call_result' && 
+                                                    msg.name === 'createTicket' && 
+                                                    msg.toolCallId === call.id
+                                                  );
+                                                  
+                                                  let parsedResult = null;
+                                                  try {
+                                                    parsedResult = result ? (typeof result.result === 'string' ? JSON.parse(result.result) : result.result) : null;
+                                                  } catch {}
+                                                  
+                                                  return (
+                                                    <div className="text-sm space-y-1">
+                                                      <div><span className="text-muted-foreground">Subject:</span> {args.subject}</div>
+                                                      <div><span className="text-muted-foreground">Priority:</span> {args.priority}</div>
+                                                      <div><span className="text-muted-foreground">Customer ID:</span> {args.customer_id}</div>
+                                                      {args.message?.message && (
+                                                        <div className="mt-2 pt-2 border-t">
+                                                          <span className="text-muted-foreground">Details:</span>
+                                                          <pre className="mt-1 text-xs whitespace-pre-wrap">{args.message.message}</pre>
+                                                        </div>
+                                                      )}
+                                                      {result && (
+                                                        <div className="mt-2 pt-2 border-t">
+                                                          <span className="text-muted-foreground">Result:</span>
+                                                          {parsedResult?.success ? (
+                                                            <div className="mt-1 flex items-center gap-2">
+                                                              <Badge className="bg-green-100 text-green-800">✓ Success</Badge>
+                                                              {parsedResult.ticketId && (
+                                                                <span className="text-xs">Ticket ID: <span className="font-mono font-semibold">{parsedResult.ticketId}</span></span>
+                                                              )}
+                                                            </div>
+                                                          ) : (
+                                                            <div className="mt-1">
+                                                              <Badge className="bg-red-100 text-red-800">✗ Failed</Badge>
+                                                              <pre className="mt-1 text-xs text-red-600">{result.result}</pre>
+                                                            </div>
+                                                          )}
+                                                        </div>
+                                                      )}
+                                                    </div>
+                                                  );
+                                                })()}
                                                 {call.function.name !== 'createTicket' && (
                                                   <details className="text-xs">
                                                     <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
