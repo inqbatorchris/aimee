@@ -321,27 +321,35 @@ export function SplynxTicketViewer({
             {messages.length === 0 ? (
               <p className="text-xs text-muted-foreground text-center py-3">No messages yet</p>
             ) : (
-              messages.map((msg: any, idx: number) => (
-                <div 
-                  key={idx} 
-                  className={`p-2 rounded text-xs ${
-                    msg.type === 'internal' 
-                      ? 'bg-yellow-50 dark:bg-yellow-950/50 border border-yellow-200 dark:border-yellow-900' 
-                      : 'bg-background border'
-                  }`}
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-medium text-xs">{msg.author || 'User'}</span>
-                    <span className="text-[10px] text-muted-foreground">
-                      {msg.created_at ? format(new Date(msg.created_at), 'MMM d, h:mm a') : ''}
-                    </span>
-                  </div>
+              messages.map((msg: any, idx: number) => {
+                const isHidden = msg.hide_for_customer === '1' || msg.hide_for_customer === 1;
+                return (
                   <div 
-                    className="text-xs prose prose-xs dark:prose-invert max-w-none leading-relaxed"
-                    dangerouslySetInnerHTML={{ __html: renderMessageHTML(msg.message || msg.text) }}
-                  />
-                </div>
-              ))
+                    key={idx} 
+                    className={`p-2 rounded text-xs ${
+                      isHidden
+                        ? 'bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-900' 
+                        : 'bg-background border'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-xs">{msg.author_type === 'admin' ? 'Agent' : msg.author_type === 'customer' ? 'Customer' : 'User'}</span>
+                        {isHidden && (
+                          <Badge variant="outline" className="text-[10px] px-1 py-0 bg-amber-100 dark:bg-amber-900 border-amber-300">Private</Badge>
+                        )}
+                      </div>
+                      <span className="text-[10px] text-muted-foreground">
+                        {msg.date && msg.time ? format(new Date(`${msg.date} ${msg.time}`), 'MMM d, h:mm a') : ''}
+                      </span>
+                    </div>
+                    <div 
+                      className="text-xs prose prose-xs dark:prose-invert max-w-none leading-relaxed"
+                      dangerouslySetInnerHTML={{ __html: renderMessageHTML(msg.rawMessage || msg.message) }}
+                    />
+                  </div>
+                );
+              })
             )}
           </div>
         </div>
@@ -356,7 +364,7 @@ export function SplynxTicketViewer({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="false">Public</SelectItem>
-                <SelectItem value="true">Internal</SelectItem>
+                <SelectItem value="true">Private</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -472,32 +480,35 @@ export function SplynxTicketViewer({
                 {messages.length === 0 ? (
                   <p className="text-sm text-muted-foreground text-center py-4">No messages yet</p>
                 ) : (
-                  messages.map((msg: any, idx: number) => (
-                    <div 
-                      key={idx} 
-                      className={`p-3 rounded-md ${
-                        msg.type === 'internal' 
-                          ? 'bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800' 
-                          : 'bg-background'
-                      } border`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-medium">{msg.author || 'User'}</span>
-                        <div className="flex items-center gap-2">
-                          {msg.type === 'internal' && (
-                            <Badge variant="outline" className="text-xs">Internal</Badge>
-                          )}
+                  messages.map((msg: any, idx: number) => {
+                    const isHidden = msg.hide_for_customer === '1' || msg.hide_for_customer === 1;
+                    return (
+                      <div 
+                        key={idx} 
+                        className={`p-3 rounded-md ${
+                          isHidden
+                            ? 'bg-amber-50 dark:bg-amber-950 border-amber-300 dark:border-amber-800' 
+                            : 'bg-background'
+                        } border`}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-2">
+                            <span className="text-sm font-medium">{msg.author_type === 'admin' ? 'Agent' : msg.author_type === 'customer' ? 'Customer' : 'User'}</span>
+                            {isHidden && (
+                              <Badge variant="outline" className="text-xs bg-amber-100 dark:bg-amber-900 border-amber-300">Private</Badge>
+                            )}
+                          </div>
                           <span className="text-xs text-muted-foreground">
-                            {msg.created_at ? format(new Date(msg.created_at), 'PPp') : ''}
+                            {msg.date && msg.time ? format(new Date(`${msg.date} ${msg.time}`), 'PPp') : ''}
                           </span>
                         </div>
+                        <div 
+                          className="text-sm prose prose-sm dark:prose-invert max-w-none"
+                          dangerouslySetInnerHTML={{ __html: renderMessageHTML(msg.rawMessage || msg.message) }}
+                        />
                       </div>
-                      <div 
-                        className="text-sm prose prose-sm dark:prose-invert max-w-none"
-                        dangerouslySetInnerHTML={{ __html: renderMessageHTML(msg.message || msg.text) }}
-                      />
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -514,7 +525,7 @@ export function SplynxTicketViewer({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="false">Public</SelectItem>
-                    <SelectItem value="true">Internal</SelectItem>
+                    <SelectItem value="true">Private</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
