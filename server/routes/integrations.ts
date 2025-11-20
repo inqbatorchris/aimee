@@ -10,6 +10,7 @@ import { IntegrationCatalogImporter } from '../services/integrations/Integration
 import { DatabaseService } from '../services/integrations/databaseService';
 import { SplynxLabelService } from '../services/integrations/SplynxLabelService';
 import { SplynxService } from '../services/integrations/splynxService';
+import { VapiService } from '../services/integrations/vapiService';
 import { db } from '../db';
 import { eq, and } from 'drizzle-orm';
 
@@ -627,6 +628,46 @@ router.post('/:platformType/test', async (req, res) => {
         } catch (error: any) {
           testError = error.message;
           connectionStatus = 'error';
+        }
+        break;
+
+      case 'vapi':
+        // Test Vapi connection
+        console.log('[VAPI TEST] Starting Vapi connection test...');
+        
+        try {
+          const apiKey = credentials.apiKey;
+          
+          console.log('[VAPI TEST] API key present:', !!apiKey);
+          
+          if (!apiKey) {
+            throw new Error('Missing API key');
+          }
+
+          // Create Vapi service instance and test by listing calls
+          const vapiService = new VapiService({ apiKey });
+          
+          console.log('[VAPI TEST] Attempting to list calls...');
+          const calls = await vapiService.listCalls({ limit: 1 });
+          
+          console.log('[VAPI TEST] Connection successful, calls retrieved:', calls?.length || 0);
+          
+          connectionStatus = 'connected';
+          testResult = { 
+            message: 'Successfully connected to Vapi',
+            callsAvailable: Array.isArray(calls) ? calls.length : 0
+          };
+        } catch (error: any) {
+          console.error('[VAPI TEST] Error occurred:', {
+            message: error.message,
+            response: error.response?.data
+          });
+          
+          testError = error.message;
+          connectionStatus = 'error';
+          testResult = {
+            error: testError
+          };
         }
         break;
 
