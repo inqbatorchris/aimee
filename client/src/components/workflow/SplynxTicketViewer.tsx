@@ -10,8 +10,22 @@ import { useState, useMemo, useEffect } from 'react';
 import { format } from 'date-fns';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+import DOMPurify from 'dompurify';
 
 type ViewMode = 'overview' | 'respond' | 'status' | 'resolution' | 'unified';
+
+// Helper function to sanitize and render HTML from Splynx messages
+function renderMessageHTML(html: string) {
+  if (!html) return '';
+  
+  // Sanitize HTML to prevent XSS attacks
+  const sanitized = DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: ['p', 'br', 'div', 'ul', 'li', 'strong', 'em', 'b', 'i', 'u', 'a'],
+    ALLOWED_ATTR: ['href', 'target']
+  });
+  
+  return sanitized;
+}
 
 interface SplynxTicketViewerProps {
   workItemId: number;
@@ -319,7 +333,10 @@ export function SplynxTicketViewer({
                       {msg.created_at ? format(new Date(msg.created_at), 'MMM d, h:mm a') : ''}
                     </span>
                   </div>
-                  <p className="text-xs whitespace-pre-wrap leading-relaxed">{msg.message || msg.text}</p>
+                  <div 
+                    className="text-xs prose prose-xs dark:prose-invert max-w-none leading-relaxed"
+                    dangerouslySetInnerHTML={{ __html: renderMessageHTML(msg.message || msg.text) }}
+                  />
                 </div>
               ))
             )}
@@ -472,7 +489,10 @@ export function SplynxTicketViewer({
                           </span>
                         </div>
                       </div>
-                      <p className="text-sm whitespace-pre-wrap">{msg.message || msg.text}</p>
+                      <div 
+                        className="text-sm prose prose-sm dark:prose-invert max-w-none"
+                        dangerouslySetInnerHTML={{ __html: renderMessageHTML(msg.message || msg.text) }}
+                      />
                     </div>
                   ))
                 )}
