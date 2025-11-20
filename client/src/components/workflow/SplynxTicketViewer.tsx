@@ -5,13 +5,13 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Ticket, MessageSquare, Clock, User, AlertCircle, Loader2, Send } from 'lucide-react';
+import { Ticket, MessageSquare, Clock, User, AlertCircle, Loader2, Send, ExternalLink, CheckCircle } from 'lucide-react';
 import { useState, useMemo, useEffect } from 'react';
 import { format } from 'date-fns';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 
-type ViewMode = 'overview' | 'respond' | 'status' | 'resolution';
+type ViewMode = 'overview' | 'respond' | 'status' | 'resolution' | 'unified';
 
 interface SplynxTicketViewerProps {
   workItemId: number;
@@ -38,7 +38,7 @@ export function SplynxTicketViewer({
   const [selectedStatus, setSelectedStatus] = useState<string>('');
   const [localActionCompleted, setLocalActionCompleted] = useState(false);
 
-  const { data: integrations, isLoading: isLoadingIntegrations } = useQuery({
+  const { data: integrations, isLoading: isLoadingIntegrations } = useQuery<any[]>({
     queryKey: ['/api/integrations'],
     enabled: !!organizationId,
   });
@@ -46,7 +46,7 @@ export function SplynxTicketViewer({
   const splynxIntegration = integrations?.find((int: any) => int.platformType === 'splynx');
   const integrationId = splynxIntegration?.id;
 
-  const { data: ticketData, isLoading, error, refetch } = useQuery({
+  const { data: ticketData, isLoading, error, refetch } = useQuery<any>({
     queryKey: [`/api/integrations/splynx/entity/ticket/${ticketId}`, integrationId],
     enabled: !!integrationId,
     refetchInterval: 30000,
@@ -65,6 +65,9 @@ export function SplynxTicketViewer({
     
     // Overview and resolution modes don't require action
     if (mode === 'overview' || mode === 'resolution') return true;
+    
+    // Unified mode: Always allow completion (user decides when done)
+    if (mode === 'unified') return true;
     
     // Respond mode: Check if there are any non-customer messages
     if (mode === 'respond') {
@@ -221,6 +224,172 @@ export function SplynxTicketViewer({
     { value: '5', label: 'Closed' },
   ];
 
+  const splynxBaseUrl = splynxIntegration?.credentials?.baseUrl || '';
+  const customerUrl = ticket?.customer_id ? `${splynxBaseUrl}/customers/view/${ticket.customer_id}` : null;
+  const ticketUrl = `${splynxBaseUrl}/support/tickets/view/${ticketId}`;
+
+  // UNIFIED MODE - All-in-one ticket processing view
+  if (mode === 'unified') {
+    return (
+      <div className="space-y-3" data-testid="splynx-ticket-viewer-unified">
+        {/* Compact Header */}
+        <div className="flex items-start justify-between gap-2">
+          <div className="flex-1 min-w-0">
+            <h3 className="font-semibold text-sm truncate">{ticket?.subject || 'Support Ticket'}</h3>
+            <p className="text-xs text-muted-foreground">Ticket #{ticketId}</p>
+          </div>
+          <div className="flex flex-col gap-1 items-end">
+            <Badge className={`${priorityColors[ticket?.priority?.toLowerCase()]} text-xs px-2 py-0`}>
+              {ticket?.priority || 'Normal'}
+            </Badge>
+            <Badge variant="outline" className="text-xs px-2 py-0">
+              {statusOptions.find(s => s.value === String(ticket?.status_id))?.label || 'Unknown'}
+            </Badge>
+          </div>
+        </div>
+
+        {/* Quick Links Row */}
+        <div className="flex gap-2">
+          {customerUrl && (
+            <Button
+              variant="outline"
+              size="sm"
+              asChild
+              className="flex-1 h-8 text-xs"
+            >
+              <a href={customerUrl} target="_blank" rel="noopener noreferrer" data-testid="link-customer">
+                <User className="h-3 w-3 mr-1" />
+                Customer #{ticket?.customer_id}
+                <ExternalLink className="h-3 w-3 ml-1" />
+              </a>
+            </Button>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            asChild
+            className="flex-1 h-8 text-xs"
+          >
+            <a href={ticketUrl} target="_blank" rel="noopener noreferrer" data-testid="link-ticket">
+              <Ticket className="h-3 w-3 mr-1" />
+              Open in Splynx
+              <ExternalLink className="h-3 w-3 ml-1" />
+            </a>
+          </Button>
+        </div>
+
+        <Separator />
+
+        {/* Messages - Compact scrollable view */}
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-xs font-medium">
+            <MessageSquare className="h-3 w-3" />
+            Messages ({messages.length})
+          </div>
+          <div className="max-h-48 overflow-y-auto space-y-2 border rounded-md p-2 bg-muted/20">
+            {messages.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-3">No messages yet</p>
+            ) : (
+              messages.map((msg: any, idx: number) => (
+                <div 
+                  key={idx} 
+                  className={`p-2 rounded text-xs ${
+                    msg.type === 'internal' 
+                      ? 'bg-yellow-50 dark:bg-yellow-950/50 border border-yellow-200 dark:border-yellow-900' 
+                      : 'bg-background border'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-medium text-xs">{msg.author || 'User'}</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {msg.created_at ? format(new Date(msg.created_at), 'MMM d, h:mm a') : ''}
+                    </span>
+                  </div>
+                  <p className="text-xs whitespace-pre-wrap leading-relaxed">{msg.message || msg.text}</p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Quick Reply */}
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-xs font-medium">Quick Reply</label>
+            <Select value={isInternal ? 'true' : 'false'} onValueChange={(v) => setIsInternal(v === 'true')}>
+              <SelectTrigger className="w-24 h-7 text-xs" data-testid="select-message-type">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="false">Public</SelectItem>
+                <SelectItem value="true">Internal</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <Textarea
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            placeholder="Type your response..."
+            className="min-h-20 text-sm"
+            data-testid="textarea-ticket-message"
+          />
+          <Button 
+            onClick={handleSendMessage} 
+            disabled={sendMessageMutation.isPending || !message.trim()}
+            size="sm"
+            className="w-full h-9"
+            data-testid="button-send-message"
+          >
+            {sendMessageMutation.isPending ? (
+              <>
+                <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                Sending...
+              </>
+            ) : (
+              <>
+                <Send className="h-3 w-3 mr-2" />
+                Send Reply
+              </>
+            )}
+          </Button>
+        </div>
+
+        {/* Status Update */}
+        <div className="space-y-2">
+          <label className="text-xs font-medium">Update Status</label>
+          <div className="flex gap-2">
+            <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+              <SelectTrigger className="flex-1 h-9 text-sm" data-testid="select-ticket-status">
+                <SelectValue placeholder="Change status..." />
+              </SelectTrigger>
+              <SelectContent>
+                {statusOptions.map((option) => (
+                  <SelectItem key={option.value} value={option.value}>
+                    {option.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
+              onClick={handleUpdateStatus}
+              disabled={updateStatusMutation.isPending || !selectedStatus}
+              size="sm"
+              className="h-9 px-3"
+              data-testid="button-update-status"
+            >
+              {updateStatusMutation.isPending ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <CheckCircle className="h-3 w-3" />
+              )}
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ORIGINAL MODE VIEWS (overview, respond, status, resolution)
   return (
     <div className="space-y-4" data-testid="splynx-ticket-viewer">
       <Card>
