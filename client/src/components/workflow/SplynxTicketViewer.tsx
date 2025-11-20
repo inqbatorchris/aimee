@@ -208,6 +208,11 @@ export function SplynxTicketViewer({
 
   const ticket = ticketData?.entityData;
   const messages = ticketData?.messages || [];
+  
+  // DEBUG: Log what we're receiving
+  console.log('[SplynxTicketViewer] ticketData:', ticketData);
+  console.log('[SplynxTicketViewer] messages:', messages);
+  console.log('[SplynxTicketViewer] messages.length:', messages.length);
 
   const priorityColors: Record<string, string> = {
     low: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200',
