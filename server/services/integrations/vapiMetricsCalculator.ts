@@ -1,5 +1,5 @@
 import { db } from '../../db';
-import { vapiCalls } from '../../../shared/schema';
+import { vapiCalls, keyResults, objectives } from '@shared/schema';
 import { and, eq, gte, lte, sql, count as drizzleCount } from 'drizzle-orm';
 
 export interface VapiMetrics {
@@ -202,5 +202,84 @@ export class VapiMetricsCalculator {
     }
 
     return trends.reverse(); // Return oldest to newest
+  }
+}
+
+/**
+ * Calculate and update Key Results after a call completes
+ * This function is called from the webhook handler
+ */
+export async function calculateMetricsForCall(organizationId: number, vapiCallId: string): Promise<void> {
+  console.log(`📊 Updating metrics for call ${vapiCallId}`);
+  
+  try {
+    // Get the Vapi objective
+    const [vapiObjective] = await db
+      .select()
+      .from(objectives)
+      .where(and(
+        eq(objectives.organizationId, organizationId),
+        eq(objectives.title, 'Autonomous Voice Support System')
+      ))
+      .limit(1);
+    
+    if (!vapiObjective) {
+      console.log('⚠️ Vapi objective not found for organization', organizationId);
+      return;
+    }
+    
+    // Get all Key Results for this objective
+    const krs = await db
+      .select()
+      .from(keyResults)
+      .where(eq(keyResults.objectiveId, vapiObjective.id));
+    
+    if (krs.length === 0) {
+      console.log('⚠️ No Key Results found for Vapi objective');
+      return;
+    }
+    
+    // Calculate current month metrics
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+    
+    const calculator = new VapiMetricsCalculator(organizationId);
+    const metrics = await calculator.calculateAllMetrics(startOfMonth, endOfMonth);
+    
+    // Update each Key Result
+    for (const kr of krs) {
+      let newActual: number | null = null;
+      
+      if (kr.title.includes('Autonomous Resolution Rate')) {
+        newActual = metrics.autonomousResolutionRate;
+      } else if (kr.title.includes('Average Call Duration')) {
+        newActual = metrics.averageCallDuration;
+      } else if (kr.title.includes('Demo Conversion Rate')) {
+        newActual = metrics.demoConversionRate;
+      } else if (kr.title.includes('SMS Verification Success')) {
+        newActual = metrics.smsVerificationSuccessRate;
+      } else if (kr.title.includes('Support Tickets Created')) {
+        newActual = metrics.ticketsCreatedCount;
+      } else if (kr.title.includes('Knowledge Base Coverage')) {
+        newActual = metrics.knowledgeBaseCoverage;
+      }
+      
+      if (newActual !== null) {
+        // Update Key Result
+        await db.update(keyResults)
+          .set({
+            actualValue: newActual,
+            updatedAt: new Date(),
+          })
+          .where(eq(keyResults.id, kr.id));
+        
+        console.log(`✅ Updated KR "${kr.title}": ${newActual}`);
+      }
+    }
+    
+    console.log('✅ All Key Results updated successfully');
+  } catch (error) {
+    console.error('❌ Error updating metrics:', error);
   }
 }

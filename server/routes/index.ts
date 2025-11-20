@@ -63,6 +63,8 @@ import dataExplorerRoutes from './data-explorer.js';
 console.log('✅ Data explorer routes loaded:', typeof dataExplorerRoutes);
 import vapiRoutes from './vapi.js';
 console.log('✅ Vapi routes loaded:', typeof vapiRoutes);
+import vapiWebhooksRoutes from './vapiWebhooks.js';
+console.log('✅ Vapi webhooks routes loaded:', typeof vapiWebhooksRoutes);
 
 const router = Router();
 console.log('🔥 Express Router created');
@@ -126,6 +128,8 @@ console.log('🔗 Mounting data-explorer routes');
 router.use('/data-explorer', dataExplorerRoutes);
 console.log('🔗 Mounting vapi routes');
 router.use('/vapi', vapiRoutes);
+console.log('🔗 Mounting vapi-webhooks routes');
+router.use('/', vapiWebhooksRoutes); // Mount at root for /vapi/webhook endpoint
 
 // Direct feature routes
 router.use('/', coreFeatureRoutes);
