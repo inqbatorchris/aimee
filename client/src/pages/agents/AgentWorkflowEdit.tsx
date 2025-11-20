@@ -81,6 +81,7 @@ export default function AgentWorkflowEdit() {
   const { data: availableTriggers = [] } = useQuery<any[]>({
     queryKey: ['/api/integrations/integration-triggers'],
     enabled: triggerType === 'webhook',
+    staleTime: 0, // Always refetch to ensure fresh data
   });
 
   // Load workflow data when fetched
@@ -324,6 +325,8 @@ export default function AgentWorkflowEdit() {
                   integrations={integrations}
                   keyResults={keyResults}
                   objectives={objectives}
+                  triggerType={triggerType}
+                  selectedTrigger={availableTriggers.find((t: any) => t.id === selectedTriggerId)}
                 />
               </CardContent>
             </Card>

@@ -15,6 +15,7 @@ import { PhotoCaptureDialog } from './PhotoCaptureDialog';
 import { PhotoViewerDialog } from './PhotoViewerDialog';
 import { useAuth } from '@/contexts/AuthContext';
 import { useAutoSave } from '@/hooks/useAutoSave';
+import { SplynxTicketViewer } from '@/components/workflow/SplynxTicketViewer';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -933,6 +934,33 @@ export function WorkflowExecutionPanel({ workItemId }: WorkflowExecutionPanelPro
                         ✓ Document opened on {new Date((step.evidence as any).viewedAt).toLocaleString()}
                       </p>
                     )}
+                  </div>
+                )}
+
+                {/* Splynx Ticket Viewer for splynx_ticket step types */}
+                {(step.evidence as any)?.stepType === 'splynx_ticket' && workItem?.workflowMetadata?.splynx_ticket_id && (
+                  <div className="mt-3">
+                    <SplynxTicketViewer
+                      workItemId={workItemId}
+                      ticketId={workItem.workflowMetadata.splynx_ticket_id}
+                      organizationId={workItem.organizationId}
+                      mode={(step.evidence as any)?.config?.mode || 'overview'}
+                      onMessageSent={() => {}}
+                      onStatusChanged={() => {}}
+                      onModeCompleted={() => {
+                        if (step.status !== 'completed') {
+                          updateStepMutation.mutateAsync({
+                            stepId: step.id,
+                            status: 'completed',
+                            notes: stepNotes[step.id],
+                            evidence: {
+                              ...step.evidence,
+                              completedAt: new Date().toISOString()
+                            }
+                          });
+                        }
+                      }}
+                    />
                   </div>
                 )}
 

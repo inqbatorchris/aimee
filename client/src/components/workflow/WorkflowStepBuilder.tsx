@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database, Calculator, Loader2, Eye, Cloud, Repeat, ClipboardList } from 'lucide-react';
+import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database, Calculator, Loader2, Eye, Cloud, Repeat, ClipboardList, FileText, Hash, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -31,6 +31,8 @@ interface WorkflowStepBuilderProps {
   integrations?: Integration[];
   keyResults?: KeyResult[];
   objectives?: Objective[];
+  triggerType?: string;
+  selectedTrigger?: any;
 }
 
 interface EmailTemplate {
@@ -394,12 +396,34 @@ export default function WorkflowStepBuilder({
   onChange, 
   integrations = [], 
   keyResults = [],
-  objectives = []
+  objectives = [],
+  triggerType = 'manual',
+  selectedTrigger
 }: WorkflowStepBuilderProps) {
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
   const [splynxProjects, setSplynxProjects] = useState<Array<{ id: number; title: string }>>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [projectsError, setProjectsError] = useState<string | null>(null);
+
+  // Generate available fields based on trigger type
+  const getAvailableFields = () => {
+    if (triggerType === 'webhook' && selectedTrigger?.availableFields) {
+      // Use trigger-specific fields from the webhook definition
+      return selectedTrigger.availableFields.map((field: string) => ({
+        name: field,
+        type: 'string',
+        icon: FileText,
+        description: `From webhook: ${field}`
+      }));
+    }
+    
+    // Default fields for non-webhook triggers
+    return [
+      { name: 'id', type: 'number', icon: Hash, description: 'Item ID' },
+      { name: 'name', type: 'string', icon: User, description: 'Item name' },
+      { name: 'status', type: 'string', icon: FileText, description: 'Status' },
+    ];
+  };
   const [cachedIntegrationId, setCachedIntegrationId] = useState<number | null>(null);
 
   // Auto-fix any strategy_update steps missing the required 'type' field
@@ -1540,28 +1564,47 @@ export default function WorkflowStepBuilder({
           <div className="space-y-4">
             <div>
               <Label>Title</Label>
-              <Input
-                placeholder="e.g., Follow up with {{currentItem.name}}"
+              <VariableFieldPicker
                 value={step.config.title || ''}
-                onChange={(e) => updateStep(step.id, {
-                  config: { ...step.config, title: e.target.value }
+                onChange={(value) => updateStep(step.id, {
+                  config: { ...step.config, title: value }
                 })}
+                placeholder={triggerType === 'webhook' && selectedTrigger 
+                  ? `e.g., Ticket: {{trigger.subject}}`
+                  : "e.g., Follow up with {{currentItem.name}}"
+                }
+                availableFields={getAvailableFields()}
+                variablePrefix={triggerType === 'webhook' ? 'trigger' : 'currentItem'}
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Use <code>{`{{variable}}`}</code> for dynamic values
+                {triggerType === 'webhook' && selectedTrigger 
+                  ? `Click to insert fields from the ${selectedTrigger.name} webhook`
+                  : 'Click to insert variables from previous steps'
+                }
               </p>
             </div>
             
             <div>
               <Label>Description (Optional)</Label>
-              <Textarea
-                placeholder="e.g., Customer ID: {{currentItem.id}}"
+              <VariableFieldPicker
                 value={step.config.description || ''}
-                onChange={(e) => updateStep(step.id, {
-                  config: { ...step.config, description: e.target.value }
+                onChange={(value) => updateStep(step.id, {
+                  config: { ...step.config, description: value }
                 })}
-                rows={3}
+                placeholder={triggerType === 'webhook' && selectedTrigger
+                  ? `e.g., Priority: {{trigger.priority}}, Status: {{trigger.status}}`
+                  : "e.g., Customer ID: {{currentItem.id}}"
+                }
+                multiline
+                availableFields={getAvailableFields()}
+                variablePrefix={triggerType === 'webhook' ? 'trigger' : 'currentItem'}
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                {triggerType === 'webhook' && selectedTrigger 
+                  ? `Click to insert fields from the ${selectedTrigger.name} webhook`
+                  : 'Click to insert variables from previous steps'
+                }
+              </p>
             </div>
 
             <div>

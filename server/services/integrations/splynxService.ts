@@ -1048,6 +1048,26 @@ export class SplynxService {
     }
   }
 
+  async getTicketComments(ticketId: string): Promise<any[]> {
+    try {
+      // FIXED: Use correct parameter name - ticket_id not ticket_id_variable
+      const url = this.buildUrl(`admin/support/ticket-messages?main_attributes[ticket_id]=${ticketId}`);
+      console.log(`[MESSAGES] Fetching messages from: ${url}`);
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+      console.log(`[MESSAGES] ✅ Success! Fetched ${response.data?.length || 0} messages for ticket ${ticketId}`);
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error: any) {
+      console.error(`[MESSAGES ERROR] Failed for ticket ${ticketId}:`, error.message);
+      console.error(`[MESSAGES ERROR] Status:`, error.response?.status);
+      throw new Error(`Failed to fetch ticket messages: ${error.message}`);
+    }
+  }
+
   async getTaskDetails(taskId: string): Promise<any> {
     try {
       const url = this.buildUrl(`admin/scheduling/tasks/${taskId}`);
@@ -1085,20 +1105,23 @@ export class SplynxService {
 
   async addTicketMessage(ticketId: string, message: string, isInternal: boolean = false): Promise<any> {
     try {
-      const url = this.buildUrl(`admin/support/tickets/${ticketId}/messages`);
+      const url = this.buildUrl(`admin/support/ticket-messages`);
       const response = await axios.post(url, {
+        ticket_id: ticketId,
         message,
-        type: isInternal ? 'internal' : 'public',
+        hide_for_customer: isInternal ? '1' : '0',
       }, {
         headers: {
           'Authorization': this.credentials.authHeader,
           'Content-Type': 'application/json',
         },
       });
-      console.log(`Successfully added message to ticket ${ticketId}`);
+      console.log(`Successfully added message to ticket ${ticketId} (hide_for_customer: ${isInternal ? '1' : '0'})`);
       return response.data;
     } catch (error: any) {
       console.error(`Failed to add message to ticket ${ticketId}:`, error.message);
+      console.error(`[DEBUG] Request URL:`, url);
+      console.error(`[DEBUG] Request payload:`, { ticket_id: ticketId, message, hide_for_customer: isInternal ? '1' : '0' });
       throw new Error(`Failed to add ticket message: ${error.message}`);
     }
   }
