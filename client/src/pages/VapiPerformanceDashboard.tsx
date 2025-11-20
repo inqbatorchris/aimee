@@ -288,6 +288,64 @@ export default function VapiPerformanceDashboard() {
                                 </div>
                               )}
 
+                              {/* Actions Taken (Tool Calls) */}
+                              {(() => {
+                                const toolCalls = expandedCall.messages?.filter((msg: any) => msg.role === 'tool_calls') || [];
+                                if (toolCalls.length === 0) return null;
+                                
+                                return (
+                                  <div className="border rounded-lg p-4">
+                                    <h4 className="font-semibold mb-3 flex items-center gap-2">
+                                      ⚙️ Actions Taken
+                                    </h4>
+                                    <div className="space-y-3">
+                                      {toolCalls.map((toolCallMsg: any, idx: number) => (
+                                        <div key={idx} className="bg-muted/30 rounded p-3">
+                                          {toolCallMsg.toolCalls?.map((call: any, callIdx: number) => {
+                                            const args = JSON.parse(call.function.arguments);
+                                            return (
+                                              <div key={callIdx} className="space-y-2">
+                                                <div className="flex items-center gap-2">
+                                                  <Badge variant="outline" className="font-mono">
+                                                    {call.function.name}
+                                                  </Badge>
+                                                  <span className="text-xs text-muted-foreground">
+                                                    {Math.floor(toolCallMsg.secondsFromStart)}s into call
+                                                  </span>
+                                                </div>
+                                                {call.function.name === 'createTicket' && (
+                                                  <div className="text-sm space-y-1">
+                                                    <div><span className="text-muted-foreground">Subject:</span> {args.subject}</div>
+                                                    <div><span className="text-muted-foreground">Priority:</span> {args.priority}</div>
+                                                    <div><span className="text-muted-foreground">Customer ID:</span> {args.customer_id}</div>
+                                                    {args.message?.message && (
+                                                      <div className="mt-2 pt-2 border-t">
+                                                        <span className="text-muted-foreground">Details:</span>
+                                                        <pre className="mt-1 text-xs whitespace-pre-wrap">{args.message.message}</pre>
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                )}
+                                                {call.function.name !== 'createTicket' && (
+                                                  <details className="text-xs">
+                                                    <summary className="cursor-pointer text-muted-foreground hover:text-foreground">
+                                                      View arguments
+                                                    </summary>
+                                                    <pre className="mt-2 p-2 bg-background rounded overflow-x-auto">
+                                                      {JSON.stringify(args, null, 2)}
+                                                    </pre>
+                                                  </details>
+                                                )}
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                );
+                              })()}
+
                               {/* Transcript */}
                               {expandedCall.transcript && (
                                 <div className="border rounded-lg p-4">
@@ -305,7 +363,7 @@ export default function VapiPerformanceDashboard() {
                                       Copy
                                     </Button>
                                   </div>
-                                  <div className="bg-muted/30 rounded p-4 max-h-96 overflow-y-auto font-mono text-sm whitespace-pre-wrap">
+                                  <div className="bg-muted/30 rounded p-4 overflow-y-auto font-mono text-sm whitespace-pre-wrap">
                                     {expandedCall.transcript}
                                   </div>
                                 </div>
