@@ -98,6 +98,7 @@ const GoogleMapsSetup = lazy(() => import("@/pages/integrations/GoogleMapsSetup"
 const AirtableSetup = lazy(() => import("@/pages/integrations/AirtableSetup"));
 const XeroSetup = lazy(() => import("@/pages/integrations/XeroSetup"));
 const XeroCallback = lazy(() => import("@/pages/integrations/XeroCallback"));
+const VapiSetup = lazy(() => import("@/pages/integrations/VapiSetup"));
 const WebhookManager = lazy(() => import("@/pages/integrations/WebhookManager"));
 const AirtableTableView = lazy(() => import("@/pages/data/AirtableTableView"));
 const Integrations = lazy(() => import("@/pages/Integrations"));
@@ -106,6 +107,7 @@ const Transactions = lazy(() => import("@/pages/finance/Transactions"));
 const ProfitCenters = lazy(() => import("@/pages/finance/ProfitCenters"));
 const ChartOfAccounts = lazy(() => import("@/pages/finance/ChartOfAccounts"));
 const OkrAnalysis = lazy(() => import("@/pages/finance/OkrAnalysis"));
+const VapiPerformanceDashboard = lazy(() => import("@/pages/VapiPerformanceDashboard"));
 
 // Agent & Workflow Pages
 const AgentBuilder = lazy(() => import("@/pages/AgentBuilder"));
@@ -586,12 +588,14 @@ function AppContent() {
               <Route path="/integrations/xero/setup" component={XeroSetup} />
               <Route path="/integrations/xero/callback" component={XeroCallback} />
               <Route path="/integrations/xero" component={XeroSetup} />
+              <Route path="/integrations/vapi/setup" component={VapiSetup} />
               <Route path="/integrations/webhooks" component={WebhookManager} />
               <Route path="/finance" component={FinanceDashboard} />
               <Route path="/finance/transactions" component={Transactions} />
               <Route path="/finance/profit-centers" component={ProfitCenters} />
               <Route path="/finance/chart-of-accounts" component={ChartOfAccounts} />
               <Route path="/finance/okr-analysis" component={OkrAnalysis} />
+              <Route path="/vapi/performance" component={VapiPerformanceDashboard} />
               <Route path="/integrations/microsoft/setup" component={() => <ComingSoon featureName="Microsoft Outlook Integration" description="Sync your email and calendar with Microsoft Outlook" />} />
               <Route path="/integrations/firebase/setup" component={() => <ComingSoon featureName="Firebase Integration" description="Connect to Google's Firebase platform for app development" />} />
               <Route path="/integrations/openai/setup" component={() => <ComingSoon featureName="OpenAI Integration" description="Integrate AI models for intelligent automation" />} />
