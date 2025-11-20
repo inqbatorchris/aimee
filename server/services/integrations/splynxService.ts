@@ -1060,6 +1060,12 @@ export class SplynxService {
         },
       });
       console.log(`[MESSAGES] ✅ Success! Fetched ${response.data?.length || 0} messages for ticket ${ticketId}`);
+      
+      // DEBUG: Log the first message's structure to identify hidden message fields
+      if (response.data && response.data.length > 0) {
+        console.log(`[MESSAGES DEBUG] First message structure:`, JSON.stringify(response.data[0], null, 2));
+      }
+      
       return Array.isArray(response.data) ? response.data : [];
     } catch (error: any) {
       console.error(`[MESSAGES ERROR] Failed for ticket ${ticketId}:`, error.message);
