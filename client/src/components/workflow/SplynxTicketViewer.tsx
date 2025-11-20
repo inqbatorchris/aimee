@@ -224,9 +224,23 @@ export function SplynxTicketViewer({
     { value: '5', label: 'Closed' },
   ];
 
+  // Get base URL from decrypted credentials
   const splynxBaseUrl = splynxIntegration?.credentials?.baseUrl || '';
-  const customerUrl = ticket?.customer_id ? `${splynxBaseUrl}/customers/view/${ticket.customer_id}` : null;
-  const ticketUrl = `${splynxBaseUrl}/support/tickets/view/${ticketId}`;
+  const customerUrl = ticket?.customer_id ? `${splynxBaseUrl}/admin/customers/view/${ticket.customer_id}` : null;
+  const ticketUrl = `${splynxBaseUrl}/admin/tickets/t${ticketId}`;
+  
+  // Get current status label
+  const currentStatusLabel = statusOptions.find(s => s.value === String(ticket?.status_id))?.label || `Status ${ticket?.status_id || 'Unknown'}`;
+  
+  // Get priority with proper fallback
+  const priorityLabel = ticket?.priority ? String(ticket.priority).charAt(0).toUpperCase() + String(ticket.priority).slice(1) : 'Normal';
+  
+  // Debug logging for messages
+  if (ticketData && !messages.length) {
+    console.log('Ticket data structure:', JSON.stringify(ticketData, null, 2));
+    console.log('Messages array:', messages);
+    console.log('Entity data:', ticket);
+  }
 
   // UNIFIED MODE - All-in-one ticket processing view
   if (mode === 'unified') {
@@ -240,10 +254,10 @@ export function SplynxTicketViewer({
           </div>
           <div className="flex flex-col gap-1 items-end">
             <Badge className={`${priorityColors[ticket?.priority?.toLowerCase()]} text-xs px-2 py-0`}>
-              {ticket?.priority || 'Normal'}
+              Priority: {priorityLabel}
             </Badge>
             <Badge variant="outline" className="text-xs px-2 py-0">
-              {statusOptions.find(s => s.value === String(ticket?.status_id))?.label || 'Unknown'}
+              {currentStatusLabel}
             </Badge>
           </div>
         </div>
