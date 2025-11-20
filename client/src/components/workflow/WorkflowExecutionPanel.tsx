@@ -9,6 +9,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient, apiRequest } from '@/lib/queryClient';
+import { useAuth } from '@/hooks/useAuth';
+import { SplynxTicketViewer } from './SplynxTicketViewer';
 import { 
   Camera, 
   CheckCircle, 
@@ -18,14 +20,15 @@ import {
   PlayCircle,
   Loader2,
   MapPin,
-  Navigation
+  Navigation,
+  Ticket
 } from 'lucide-react';
 
 interface WorkflowStep {
   id: string;
   name: string;
   description?: string;
-  type: 'inspection' | 'photo' | 'signature' | 'form' | 'geolocation' | 'notes' | 'checklist';
+  type: 'inspection' | 'photo' | 'signature' | 'form' | 'geolocation' | 'notes' | 'checklist' | 'splynx_ticket';
   order: number;
   required: boolean;
   config?: {
@@ -43,6 +46,9 @@ interface WorkflowStep {
       name: string;
       checked?: boolean;
     }>;
+    mode?: string;
+    fetchMessages?: boolean;
+    showStatus?: boolean;
   };
 }
 
@@ -73,6 +79,7 @@ export default function WorkflowExecutionPanel({
   onComplete 
 }: WorkflowExecutionPanelProps) {
   const { toast } = useToast();
+  const { user } = useAuth();
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [stepsData, setStepsData] = useState<Record<string, StepData>>({});
   const [executionId, setExecutionId] = useState<number | null>(null);
@@ -215,6 +222,8 @@ export default function WorkflowExecutionPanel({
         return <PenTool className="h-5 w-5" />;
       case 'form':
         return <FileText className="h-5 w-5" />;
+      case 'splynx_ticket':
+        return <Ticket className="h-5 w-5" />;
       default:
         return <Circle className="h-5 w-5" />;
     }
@@ -293,8 +302,10 @@ export default function WorkflowExecutionPanel({
 
           <StepInput
             step={currentStep}
+            workItemId={workItemId}
             onComplete={handleCompleteStep}
             isPending={updateExecutionMutation.isPending || completeExecutionMutation.isPending}
+            organizationId={user?.organizationId}
           />
 
           {/* Progress indicator */}
@@ -322,14 +333,30 @@ export default function WorkflowExecutionPanel({
 
 interface StepInputProps {
   step: WorkflowStep;
+  workItemId: number;
   onComplete: (data: any) => void;
   isPending: boolean;
+  organizationId?: number;
 }
 
-function StepInput({ step, onComplete, isPending }: StepInputProps) {
+function StepInput({ step, workItemId, onComplete, isPending, organizationId }: StepInputProps) {
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [notes, setNotes] = useState('');
   const [checklistState, setChecklistState] = useState<Record<string, boolean>>({});
+  const [modeActionCompleted, setModeActionCompleted] = useState(false);
+
+  const { data: workItem } = useQuery({
+    queryKey: [`/api/work-items/${workItemId}`],
+    enabled: step.type === 'splynx_ticket',
+  });
+
+  // Extract ticket ID for dependency tracking
+  const currentTicketId = workItem?.splynxTicketId;
+
+  // Reset completion state when step or ticket changes
+  useEffect(() => {
+    setModeActionCompleted(false);
+  }, [step.id, currentTicketId]);
 
   const handleSubmit = () => {
     if (step.type === 'inspection') {
@@ -344,8 +371,72 @@ function StepInput({ step, onComplete, isPending }: StepInputProps) {
       onComplete({ photos: [], notes });
     } else if (step.type === 'signature') {
       onComplete({ signature: '', notes });
+    } else if (step.type === 'splynx_ticket') {
+      onComplete({ viewed: true, notes: 'Ticket viewed and interacted with' });
     }
   };
+
+  if (step.type === 'splynx_ticket' && workItem) {
+    const ticketId = workItem.workflowMetadata?.splynx_ticket_id;
+    
+    if (!ticketId) {
+      return (
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">No Splynx ticket linked to this work item.</p>
+          <Button 
+            onClick={handleSubmit} 
+            className="w-full"
+            disabled={isPending}
+            data-testid="button-complete-step"
+          >
+            Complete Step
+          </Button>
+        </div>
+      );
+    }
+
+    if (!organizationId) {
+      return (
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">Loading user information...</p>
+        </div>
+      );
+    }
+
+    const mode = step.config?.mode || 'overview';
+    const requireAction = (mode === 'respond' || mode === 'status') && !modeActionCompleted;
+
+    return (
+      <div className="space-y-4">
+        <SplynxTicketViewer
+          workItemId={workItemId}
+          ticketId={ticketId}
+          organizationId={organizationId}
+          mode={mode}
+          onMessageSent={() => {}}
+          onStatusChanged={() => {}}
+          onModeCompleted={() => setModeActionCompleted(true)}
+        />
+        <Button 
+          onClick={handleSubmit} 
+          className="w-full"
+          disabled={isPending || requireAction}
+          data-testid="button-complete-step"
+        >
+          {isPending ? (
+            <>
+              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              Saving...
+            </>
+          ) : requireAction ? (
+            mode === 'respond' ? 'Send a message to complete' : 'Update status to complete'
+          ) : (
+            'Complete Step'
+          )}
+        </Button>
+      </div>
+    );
+  }
 
   if (step.type === 'inspection') {
     const hasChecklistItems = step.config?.checklistItems && step.config.checklistItems.length > 0;

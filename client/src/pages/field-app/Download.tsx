@@ -54,6 +54,7 @@ export default function Download({ session, onComplete }: DownloadProps) {
   const [showFilters, setShowFilters] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
+  const [batchStatus, setBatchStatus] = useState('');
 
   useEffect(() => {
     fetchAvailableTemplates();
@@ -155,160 +156,213 @@ export default function Download({ session, onComplete }: DownloadProps) {
     setDownloading(true);
     setError('');
     setProgress(0);
+    setBatchStatus('');
+
+    // Configuration
+    const CHUNK_SIZE = 5; // Download 5 items at a time
+    const allIds = Array.from(selectedIds);
+    const totalItems = allIds.length;
+    const totalBatches = Math.ceil(totalItems / CHUNK_SIZE);
+    
+    console.log('[Download] Starting chunked download:', { totalItems, totalBatches, CHUNK_SIZE });
 
     try {
-      // Download selected items with templates
-      const response = await fetch('/api/field-app/download', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          workItemIds: Array.from(selectedIds),
-          includeTemplates: true,
-          includeAttachments: true
-        })
-      });
+      // Track successfully downloaded items for error recovery
+      const downloadedItemIds: number[] = [];
+      
+      // Process each batch sequentially
+      for (let batchIndex = 0; batchIndex < totalBatches; batchIndex++) {
+        const offset = batchIndex * CHUNK_SIZE;
+        const currentBatch = batchIndex + 1;
+        const batchProgress = Math.round((batchIndex / totalBatches) * 100);
+        
+        setBatchStatus(`Batch ${currentBatch} of ${totalBatches}: ${batchProgress}%`);
+        console.log(`[Download] Processing batch ${currentBatch}/${totalBatches}`);
+        
+        // Download this batch from server
+        const response = await fetch('/api/field-app/download', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${session.token}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            workItemIds: allIds,
+            includeTemplates: true,
+            includeAttachments: true,
+            offset,
+            limit: CHUNK_SIZE
+          })
+        });
 
-      if (!response.ok) throw new Error('Download failed');
-      
-      const data = await response.json();
-      
-      // Save to IndexedDB
-      setProgress(30);
-      
-      // Save work items
-      if (data.workItems?.length > 0) {
-        await fieldDB.saveWorkItems(data.workItems);
-        setProgress(50);
-      }
-      
-      // Save templates
-      if (data.templates?.length > 0) {
-        await fieldDB.saveTemplates(data.templates);
-        setProgress(70);
-      }
-      
-      // Save execution states if any
-      if (data.executionStates?.length > 0) {
-        for (const executionState of data.executionStates) {
-          // Transform server format to field app format
-          const { workItemId, execution, steps } = executionState;
-          
-          // Get the work item to find the template ID (MUST be before the loop)
-          const workItem = data.workItems.find((item: any) => item.id === workItemId);
-          if (!workItem || !workItem.workflowTemplateId) {
-            console.warn(`No workflow template found for work item ${workItemId}`);
-            continue;
-          }
-          
-          // Build stepData from the steps array
-          const stepData: Record<string, any> = {};
-          const completedSteps: string[] = [];
-          
-          if (steps && Array.isArray(steps)) {
-            for (const step of steps) {
-              // Need to get the template to find the step ID from the step index
-              const template = data.templates.find((t: any) => t.id === workItem.workflowTemplateId);
-              const templateStep = template?.steps?.[step.stepIndex];
-              const stepId = templateStep?.id || `step_${step.stepIndex}`;
-              
-              // Convert photos from evidence (base64/URLs) to blobs in IndexedDB
-              const photoIds: string[] = [];
-              if (step.evidence?.photos && Array.isArray(step.evidence.photos)) {
-                for (const photo of step.evidence.photos) {
-                  try {
-                    // Photo might be a string (base64) or object with url/data property
-                    let dataUrl: string;
-                    let fileName: string = `photo_${Date.now()}.jpg`;
-                    let uploadedAt: Date | undefined;
-                    let uploadedBy: number | undefined;
-                    
-                    if (typeof photo === 'string') {
-                      dataUrl = photo;
-                    } else if (typeof photo === 'object') {
-                      // Extract photo data
-                      if (photo.data) {
-                        dataUrl = photo.data;
-                      } else if (photo.url && photo.url.startsWith('data:')) {
-                        dataUrl = photo.url;
+        if (!response.ok) {
+          throw new Error(`Batch ${currentBatch} download failed`);
+        }
+        
+        const data = await response.json();
+        console.log(`[Download] Batch ${currentBatch} received:`, {
+          workItems: data.workItems?.length || 0,
+          templates: data.templates?.length || 0,
+          executionStates: data.executionStates?.length || 0,
+          metadata: data.metadata
+        });
+        
+        // Calculate batch progress (each batch is 1/totalBatches of total progress)
+        const batchBaseProgress = (batchIndex / totalBatches) * 100;
+        const batchProgressIncrement = (1 / totalBatches) * 100;
+        
+        // Save work items
+        if (data.workItems?.length > 0) {
+          await fieldDB.saveWorkItems(data.workItems);
+          downloadedItemIds.push(...data.workItems.map((i: any) => i.id));
+          setProgress(batchBaseProgress + batchProgressIncrement * 0.3);
+        }
+        
+        // Save templates (only once per unique template)
+        if (data.templates?.length > 0) {
+          await fieldDB.saveTemplates(data.templates);
+          setProgress(batchBaseProgress + batchProgressIncrement * 0.5);
+        }
+        
+        // Process execution states with SEQUENTIAL photo processing (Task 3)
+        if (data.executionStates?.length > 0) {
+          for (const executionState of data.executionStates) {
+            const { workItemId, execution, steps } = executionState;
+            
+            const workItem = data.workItems.find((item: any) => item.id === workItemId);
+            if (!workItem || !workItem.workflowTemplateId) {
+              console.warn(`No workflow template found for work item ${workItemId}`);
+              continue;
+            }
+            
+            const stepData: Record<string, any> = {};
+            const completedSteps: string[] = [];
+            
+            if (steps && Array.isArray(steps)) {
+              // Process steps sequentially to avoid memory overflow
+              for (const step of steps) {
+                const template = data.templates.find((t: any) => t.id === workItem.workflowTemplateId);
+                const templateStep = template?.steps?.[step.stepIndex];
+                const stepId = templateStep?.id || `step_${step.stepIndex}`;
+                
+                // SEQUENTIAL photo processing (one at a time)
+                const photoIds: string[] = [];
+                if (step.evidence?.photos && Array.isArray(step.evidence.photos)) {
+                  for (const photo of step.evidence.photos) {
+                    try {
+                      let dataUrl: string;
+                      let fileName: string = `photo_${Date.now()}.jpg`;
+                      let uploadedAt: Date | undefined;
+                      let uploadedBy: number | undefined;
+                      
+                      if (typeof photo === 'string') {
+                        dataUrl = photo;
+                      } else if (typeof photo === 'object') {
+                        if (photo.data) {
+                          dataUrl = photo.data;
+                        } else if (photo.url && photo.url.startsWith('data:')) {
+                          dataUrl = photo.url;
+                        } else {
+                          console.warn('Skipping non-base64 photo:', photo);
+                          continue;
+                        }
+                        
+                        if (photo.fileName) fileName = photo.fileName;
+                        if (photo.uploadedAt) uploadedAt = new Date(photo.uploadedAt);
+                        if (photo.uploadedBy) uploadedBy = photo.uploadedBy;
                       } else {
-                        // Skip non-base64 photos (external URLs)
-                        console.warn('Skipping non-base64 photo:', photo);
+                        console.warn('Unknown photo format:', photo);
                         continue;
                       }
                       
-                      // Extract metadata if available
-                      if (photo.fileName) fileName = photo.fileName;
-                      if (photo.uploadedAt) uploadedAt = new Date(photo.uploadedAt);
-                      if (photo.uploadedBy) uploadedBy = photo.uploadedBy;
-                    } else {
-                      console.warn('Unknown photo format:', photo);
-                      continue;
+                      // Convert base64 to blob (sequential)
+                      // Handle both data URLs and plain base64 strings
+                      let blob: Blob;
+                      if (dataUrl.startsWith('data:')) {
+                        // Data URL format - use fetch
+                        const photoResponse = await fetch(dataUrl);
+                        blob = await photoResponse.blob();
+                      } else {
+                        // Plain base64 string - convert directly
+                        const base64Data = dataUrl.replace(/^data:image\/\w+;base64,/, '');
+                        const byteCharacters = atob(base64Data);
+                        const byteNumbers = new Array(byteCharacters.length);
+                        for (let i = 0; i < byteCharacters.length; i++) {
+                          byteNumbers[i] = byteCharacters.charCodeAt(i);
+                        }
+                        const byteArray = new Uint8Array(byteNumbers);
+                        blob = new Blob([byteArray], { type: 'image/jpeg' });
+                      }
+                      
+                      // Save immediately, then release from memory
+                      const photoId = await fieldDB.savePhoto(
+                        workItemId,
+                        blob,
+                        fileName,
+                        stepId,
+                        uploadedAt,
+                        uploadedBy,
+                        true
+                      );
+                      
+                      photoIds.push(photoId);
+                      
+                      // Small delay to allow garbage collection (Task 5)
+                      await new Promise(resolve => setTimeout(resolve, 10));
+                      
+                    } catch (err) {
+                      console.error('Failed to convert photo to blob:', err);
                     }
-                    
-                    // Convert base64 to blob
-                    const response = await fetch(dataUrl);
-                    const blob = await response.blob();
-                    
-                    // Save blob to IndexedDB with full metadata
-                    // skipSyncQueue=true because these photos are already on the server
-                    const photoId = await fieldDB.savePhoto(
-                      workItemId,
-                      blob,
-                      fileName,
-                      stepId,
-                      uploadedAt,
-                      uploadedBy,
-                      true  // skipSyncQueue - don't re-upload photos we just downloaded
-                    );
-                    
-                    photoIds.push(photoId);
-                  } catch (err) {
-                    console.error('Failed to convert photo to blob:', err);
                   }
                 }
-              }
-              
-              // Store step data including evidence, notes, status
-              stepData[stepId] = {
-                id: step.id,
-                stepIndex: step.stepIndex,
-                title: step.stepTitle,
-                description: step.stepDescription,
-                status: step.status,
-                notes: step.notes,
-                evidence: step.evidence || {},
-                completedAt: step.completedAt,
-                completedBy: step.completedBy,
-                // Include checklist state and converted photo IDs
-                checklist: step.evidence?.checklistState || {},
-                photos: photoIds
-              };
-              
-              // Track completed steps
-              if (step.status === 'completed') {
-                completedSteps.push(stepId);
+                
+                stepData[stepId] = {
+                  id: step.id,
+                  stepIndex: step.stepIndex,
+                  title: step.stepTitle,
+                  description: step.stepDescription,
+                  status: step.status,
+                  notes: step.notes,
+                  evidence: step.evidence || {},
+                  completedAt: step.completedAt,
+                  completedBy: step.completedBy,
+                  checklist: step.evidence?.checklistState || {},
+                  photos: photoIds
+                };
+                
+                if (step.status === 'completed') {
+                  completedSteps.push(stepId);
+                }
               }
             }
+            
+            await fieldDB.saveWorkflowExecution({
+              workItemId,
+              templateId: workItem.workflowTemplateId,
+              currentStepId: execution?.currentStepId,
+              completedSteps,
+              stepData,
+              startedAt: execution?.startedAt ? new Date(execution.startedAt) : new Date(),
+              completedAt: execution?.completedAt ? new Date(execution.completedAt) : undefined
+            });
           }
-          
-          // Save the transformed execution
-          await fieldDB.saveWorkflowExecution({
-            workItemId,
-            templateId: workItem.workflowTemplateId,
-            currentStepId: execution?.currentStepId,
-            completedSteps,
-            stepData,
-            startedAt: execution?.startedAt ? new Date(execution.startedAt) : new Date(),
-            completedAt: execution?.completedAt ? new Date(execution.completedAt) : undefined
-          });
         }
-        setProgress(90);
+        
+        // Mark batch complete
+        setProgress(batchBaseProgress + batchProgressIncrement);
+        console.log(`[Download] Batch ${currentBatch} complete`);
+        
+        // Memory cleanup between batches (Task 5)
+        // Allow garbage collection before next batch
+        if (batchIndex < totalBatches - 1) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
       }
       
       setProgress(100);
+      setBatchStatus('Download complete!');
+      
+      console.log('[Download] All batches complete:', { total: downloadedItemIds.length });
       
       // Success - navigate to work list
       setTimeout(() => {
@@ -316,8 +370,9 @@ export default function Download({ session, onComplete }: DownloadProps) {
       }, 500);
       
     } catch (err: any) {
+      // Error recovery (Task 6) - show which batch failed
       setError(err.message || 'Failed to download work items');
-      console.error(err);
+      console.error('[Download] Error:', err);
     } finally {
       setDownloading(false);
     }
@@ -692,9 +747,16 @@ export default function Download({ session, onComplete }: DownloadProps) {
                   style={{ width: `${progress}%` }}
                 />
               </div>
-              <p className="text-xs text-zinc-400 mt-2 text-center">
-                Downloading... {progress}%
-              </p>
+              <div className="mt-2 text-center">
+                {batchStatus && (
+                  <p className="text-sm text-emerald-400 font-medium">
+                    {batchStatus}
+                  </p>
+                )}
+                <p className="text-xs text-zinc-400 mt-1">
+                  {Math.round(progress)}% complete
+                </p>
+              </div>
             </div>
           )}
           

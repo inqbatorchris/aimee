@@ -20,6 +20,7 @@ interface ExecutionContext {
   userId?: number;
   webhookData?: any;
   manualData?: any;
+  trigger?: any;  // Flattened webhook payload for easy variable access
 }
 
 interface StepExecutionResult {
@@ -1395,7 +1396,12 @@ export class WorkflowExecutor {
     
     // Replace {{variable}} with context values
     return template.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, (match, path) => {
-      return this.getNestedValue(context, path) || match;
+      const value = this.getNestedValue(context, path);
+      if (value === undefined || value === null) {
+        console.warn(`[WorkflowExecutor] Template variable ${match} not found in context. Available keys:`, Object.keys(context));
+        return match;
+      }
+      return value;
     });
   }
 
@@ -1543,7 +1549,19 @@ export class WorkflowExecutor {
 
   private async executeCreateWorkItem(step: any, context: any): Promise<StepExecutionResult> {
     try {
-      const { title, description, assigneeId, dueDate, status = 'Planning', externalReference, templateId, splynxTicketId, splynxTaskId } = step.config || {};
+      const { 
+        title, 
+        description, 
+        assigneeId, 
+        dueDate, 
+        status = 'Planning', 
+        externalReference, 
+        templateId, 
+        splynxTicketId, 
+        splynxTaskId,
+        teamId,
+        splynxAssignedTo 
+      } = step.config || {};
       
       if (!title) {
         throw new Error('title is required for create_work_item step');
@@ -1560,21 +1578,54 @@ export class WorkflowExecutor {
       const processedSplynxTicketId = splynxTicketId ? this.processTemplate(splynxTicketId, context) : undefined;
       const processedSplynxTaskId = splynxTaskId ? this.processTemplate(splynxTaskId, context) : undefined;
       
-      // Calculate due date if it's a relative date like "+7 days"
+      // Get organization ID from context
+      const organizationId = context.organizationId;
+      if (!organizationId) {
+        throw new Error('organizationId not found in context');
+      }
+      
+      // Check for existing work item if this is a Splynx ticket (duplicate prevention)
+      let existingWorkItem: any = null;
+      if (processedSplynxTicketId) {
+        existingWorkItem = await storage.getWorkItemBySplynxTicketId(parseInt(organizationId), processedSplynxTicketId);
+        if (existingWorkItem) {
+          console.log(`[WorkflowExecutor]   🔄 Found existing work item for Splynx ticket ${processedSplynxTicketId}: ID ${existingWorkItem.id}`);
+        }
+      }
+      
+      // Process Splynx assigned_to ID and try to match with platform users
+      let finalAssigneeId = assigneeId || null;
+      if (splynxAssignedTo) {
+        const processedSplynxAssignedTo = this.processTemplate(splynxAssignedTo, context);
+        const splynxAdminId = parseInt(processedSplynxAssignedTo);
+        if (!isNaN(splynxAdminId)) {
+          // Query for user with matching splynxAdminId
+          const matchingUser = await storage.getUserBySplynxAdminId(parseInt(organizationId), splynxAdminId);
+          if (matchingUser) {
+            finalAssigneeId = matchingUser.id;
+            console.log(`[WorkflowExecutor]   👤 Matched Splynx admin ID ${splynxAdminId} to user: ${matchingUser.fullName || matchingUser.email}`);
+          } else {
+            console.log(`[WorkflowExecutor]   ⚠️ No user found with Splynx admin ID: ${splynxAdminId}`);
+          }
+        }
+      }
+      
+      // Calculate due date - special handling for support tickets
       let processedDueDate = dueDate;
-      if (dueDate && dueDate.startsWith('+')) {
+      const isSupportTicket = templateId === 'splynx-support-ticket';
+      
+      if (isSupportTicket && !dueDate) {
+        // Support tickets default to same-day due date
+        const today = new Date();
+        processedDueDate = today.toISOString().split('T')[0];
+        console.log(`[WorkflowExecutor]   📅 Support ticket - setting same-day due date: ${processedDueDate}`);
+      } else if (dueDate && dueDate.startsWith('+')) {
         const days = parseInt(dueDate.replace('+', '').replace('days', '').trim());
         const date = new Date();
         date.setDate(date.getDate() + days);
         processedDueDate = date.toISOString().split('T')[0];
       } else if (dueDate) {
         processedDueDate = this.processTemplate(dueDate, context);
-      }
-      
-      // Get organization ID from context
-      const organizationId = context.organizationId;
-      if (!organizationId) {
-        throw new Error('organizationId not found in context');
       }
       
       // Build workflowMetadata with Splynx linking
@@ -1591,29 +1642,48 @@ export class WorkflowExecutor {
         console.log(`[WorkflowExecutor]   🔗 Linking to Splynx task: ${processedSplynxTaskId}`);
       }
       
-      // Create the work item
-      const workItem = await storage.createWorkItem({
-        organizationId,
-        title: processedTitle,
-        description: processedDescription || '',
-        status: status as any,
-        assignedTo: assigneeId || null,
-        dueDate: processedDueDate || null,
-        workflowMetadata: Object.keys(workflowMetadata).length > 0 ? workflowMetadata : null,
-        workflowTemplateId: templateId || null,
-        createdBy: context.userId || null,
-      });
+      let workItem: any;
       
-      if (templateId) {
-        console.log(`[WorkflowExecutor]   📋 Attached workflow template: ${templateId}`);
+      // If existing work item found, update it instead of creating a new one
+      if (existingWorkItem) {
+        console.log(`[WorkflowExecutor]   ✏️ Updating existing work item instead of creating duplicate`);
+        workItem = await storage.updateWorkItem(existingWorkItem.id, {
+          title: processedTitle,
+          description: processedDescription || existingWorkItem.description,
+          status: status as any,
+          assignedTo: finalAssigneeId,
+          teamId: teamId || existingWorkItem.teamId,
+          dueDate: processedDueDate || existingWorkItem.dueDate,
+          workflowMetadata: Object.keys(workflowMetadata).length > 0 ? workflowMetadata : existingWorkItem.workflowMetadata,
+        });
+        console.log(`[WorkflowExecutor]   ✅ Work item updated: ID ${workItem.id}`);
+      } else {
+        // Create the work item
+        workItem = await storage.createWorkItem({
+          organizationId,
+          title: processedTitle,
+          description: processedDescription || '',
+          status: status as any,
+          assignedTo: finalAssigneeId,
+          teamId: teamId || null,
+          dueDate: processedDueDate || null,
+          workflowMetadata: Object.keys(workflowMetadata).length > 0 ? workflowMetadata : null,
+          workflowTemplateId: templateId || null,
+          createdBy: context.userId || null,
+        });
+        
+        if (templateId) {
+          console.log(`[WorkflowExecutor]   📋 Attached workflow template: ${templateId}`);
+        }
+        console.log(`[WorkflowExecutor]   ✅ Work item created: ID ${workItem.id}`);
       }
-      console.log(`[WorkflowExecutor]   ✅ Work item created: ID ${workItem.id}`);
       
       return {
         success: true,
         output: {
           workItemId: workItem.id,
           title: processedTitle,
+          updated: !!existingWorkItem,
         },
       };
     } catch (error: any) {

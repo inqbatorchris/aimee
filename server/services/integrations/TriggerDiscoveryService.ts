@@ -82,16 +82,18 @@ export class TriggerDiscoveryService {
       payloadSchema: {
         type: 'object',
         properties: {
-          ticket_id: { type: 'string' },
-          customer_id: { type: 'string' },
-          subject: { type: 'string' },
-          priority: { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
-          status: { type: 'string' },
-          created_at: { type: 'string', format: 'date-time' },
-          assigned_to: { type: 'string' }
+          'data.attributes.id': { type: 'string' },
+          'data.attributes.subject': { type: 'string' },
+          'data.attributes.priority': { type: 'string', enum: ['low', 'medium', 'high', 'critical'] },
+          'data.attributes.status_id': { type: 'string' },
+          'data.attributes.customer_id': { type: 'string' },
+          'data.attributes.created_at': { type: 'string', format: 'date-time' },
+          'data.attributes.assign_to': { type: 'string' },
+          'data.attributes.group_id': { type: 'string' },
+          'data.attributes.type_id': { type: 'string' }
         }
       },
-      availableFields: ['ticket_id', 'customer_id', 'subject', 'priority', 'status', 'created_at', 'assigned_to']
+      availableFields: ['id', 'subject', 'priority', 'status_id', 'customer_id', 'created_at', 'assign_to', 'group_id', 'type_id', 'action', 'source', 'reporter', 'reporter_type', 'task_id', 'closed', 'updated_at']
     },
     {
       triggerKey: 'ticket_status_changed',
@@ -299,6 +301,31 @@ export class TriggerDiscoveryService {
     return storage.getAllTriggersForOrganization(organizationId);
   }
 
+  /**
+   * Get metadata for a specific trigger
+   */
+  public getTriggerMetadata(platformType: string, triggerKey: string): TriggerDefinition | null {
+    let triggers: TriggerDefinition[] = [];
+    
+    // Get the appropriate trigger set based on platform type
+    switch (platformType.toLowerCase()) {
+      case 'splynx':
+        triggers = TriggerDiscoveryService.splynxTriggers;
+        break;
+      case 'xero':
+        triggers = this.getXeroTriggers();
+        break;
+      case 'airtable':
+        triggers = this.getAirtableTriggers();
+        break;
+      default:
+        return null;
+    }
+    
+    // Find and return the matching trigger
+    return triggers.find(t => t.triggerKey === triggerKey) || null;
+  }
+
   // Placeholder for other integrations
   private getXeroTriggers(): TriggerDefinition[] {
     return [
@@ -319,6 +346,20 @@ export class TriggerDiscoveryService {
         eventType: 'webhook',
         payloadSchema: {},
         availableFields: ['payment_id', 'invoice_id', 'amount', 'date']
+      }
+    ];
+  }
+
+  private getAirtableTriggers(): TriggerDefinition[] {
+    return [
+      {
+        triggerKey: 'record_created',
+        name: 'Record Created',
+        description: 'Triggered when a new record is created in Airtable',
+        category: 'data',
+        eventType: 'webhook',
+        payloadSchema: {},
+        availableFields: ['record_id', 'table_name', 'fields']
       }
     ];
   }

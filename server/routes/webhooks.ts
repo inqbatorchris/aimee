@@ -4,17 +4,16 @@ import { storage } from '../storage';
 import { WorkflowExecutor } from '../services/workflow/WorkflowExecutor';
 import crypto from 'crypto';
 import { raw } from 'express';
+import { authenticateToken } from '../auth';
 
 const router = express.Router();
-
-// Middleware to parse raw body for signature verification
-router.use(raw({ type: 'application/json' }));
 
 /**
  * Unified webhook endpoint - accepts all webhooks with routing info in payload
  * Route: POST /api/webhooks
+ * IMPORTANT: Uses raw body parser for signature verification
  */
-router.post('/', async (req: Request, res: Response) => {
+router.post('/', raw({ type: 'application/json' }), async (req: Request, res: Response) => {
   const startTime = Date.now();
   console.log(`[WEBHOOK] Unified webhook received`);
   
@@ -113,8 +112,9 @@ router.get('/', (req: Request, res: Response) => {
 /**
  * Enhanced Splynx webhook endpoint with security and logging
  * Route: POST /api/webhooks/splynx/:organizationId/:triggerKey
+ * IMPORTANT: Uses raw body parser for signature verification
  */
-router.post('/splynx/:organizationId/:triggerKey', async (req: Request, res: Response) => {
+router.post('/splynx/:organizationId/:triggerKey', raw({ type: 'application/json' }), async (req: Request, res: Response) => {
   const startTime = Date.now();
   console.log(`[WEBHOOK] Splynx webhook received: ${req.params.organizationId}/${req.params.triggerKey}`);
   
@@ -303,29 +303,49 @@ async function handleWebhookRequest(req: any, res: Response, integrationType: st
       return res.status(404).json({ error: 'Trigger not found' });
     }
 
+    // Parse the payload first to check for ping requests
+    let payload: any;
+    try {
+      if (Buffer.isBuffer(req.body)) {
+        const bodyString = req.body.toString();
+        const contentType = req.get('Content-Type') || '';
+        
+        if (contentType.includes('application/x-www-form-urlencoded')) {
+          // Parse form-urlencoded data
+          const params = new URLSearchParams(bodyString);
+          payload = {};
+          params.forEach((value, key) => {
+            payload[key] = value;
+          });
+        } else {
+          // Parse JSON
+          payload = JSON.parse(bodyString);
+        }
+      } else {
+        payload = req.body;
+      }
+    } catch (error) {
+      console.error(`[WEBHOOK] Failed to parse webhook payload:`, error);
+      return res.status(400).json({ error: 'Invalid payload format' });
+    }
+
+    // Handle Splynx ping requests immediately (before signature verification)
+    if (payload.type === 'ping') {
+      console.log(`[WEBHOOK] Ping request received for ${triggerKey}`);
+      return res.status(200).send('ok');
+    }
+
     // Verify webhook signature if secret is configured
     let verified = false;
     if (trigger.webhookSecret) {
       verified = await verifyWebhookSignature(req, trigger.webhookSecret);
       if (!verified) {
         console.log(`[WEBHOOK] Signature verification failed for ${triggerKey}`);
+        return res.status(401).json({ error: 'Invalid signature' });
       }
     } else {
       console.log(`[WEBHOOK] No webhook secret configured for trigger ${triggerKey}, skipping verification`);
       verified = true; // If no secret is configured, consider it verified
-    }
-
-    // Parse the payload
-    let payload: any;
-    try {
-      if (Buffer.isBuffer(req.body)) {
-        payload = JSON.parse(req.body.toString());
-      } else {
-        payload = req.body;
-      }
-    } catch (error) {
-      console.error(`[WEBHOOK] Failed to parse webhook payload:`, error);
-      return res.status(400).json({ error: 'Invalid JSON payload' });
     }
 
     // Extract request metadata
@@ -403,7 +423,20 @@ async function handleWebhookRequest(req: any, res: Response, integrationType: st
             }]
           });
 
-          await executor.executeWorkflow(workflow, {
+          // Convert workflowDefinition to configuration.steps format for executor
+          const workflowWithConfig = {
+            ...workflow,
+            configuration: {
+              steps: workflow.workflowDefinition || []
+            }
+          };
+
+          // Flatten Splynx payload for easier variable access
+          const flattenedTrigger = integrationType === 'splynx' && payload.data?.attributes
+            ? { ...payload.data, ...payload.data.attributes, _raw: payload }
+            : payload;
+
+          await executor.executeWorkflow(workflowWithConfig, {
             triggerSource: 'webhook',
             organizationId: integration.organizationId.toString(),
             webhookData: {
@@ -411,7 +444,10 @@ async function handleWebhookRequest(req: any, res: Response, integrationType: st
               event: triggerKey,
               data: payload,
               eventId: webhookEvent.id
-            }
+            },
+            // Add trigger alias for template variables like {{trigger.subject}}
+            // Flattened for Splynx so {{trigger.subject}} works instead of {{trigger.data.attributes.subject}}
+            trigger: flattenedTrigger
           });
 
           await storage.updateWorkflowRun(runResult.id, {
@@ -476,7 +512,9 @@ async function handleWebhookRequest(req: any, res: Response, integrationType: st
 }
 
 /**
- * Verify webhook signature using HMAC SHA-256
+ * Verify webhook signature using HMAC SHA-1 (Splynx standard)
+ * Splynx generates signatures using: HMAC-SHA1(secret, raw_request_body)
+ * and sends them in the X-Splynx-Signature header
  */
 async function verifyWebhookSignature(req: any, secret: string): Promise<boolean> {
   try {
@@ -489,24 +527,31 @@ async function verifyWebhookSignature(req: any, secret: string): Promise<boolean
 
     const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(JSON.stringify(req.body));
     
+    // Splynx uses SHA1 (not SHA256!)
     const expectedSignature = crypto
-      .createHmac('sha256', secret)
+      .createHmac('sha1', secret)
       .update(rawBody)
       .digest('hex');
 
     let receivedSignature = signature;
-    if (signature.startsWith('sha256=')) {
+    // Handle different signature formats
+    if (signature.startsWith('sha1=')) {
+      receivedSignature = signature.slice(5);
+    } else if (signature.startsWith('sha256=')) {
       receivedSignature = signature.slice(7);
     } else if (signature.startsWith('Bearer ')) {
       receivedSignature = signature.slice(7);
     }
 
+    // Timing-safe comparison to prevent timing attacks
     const isValid = crypto.timingSafeEqual(
       Buffer.from(expectedSignature, 'hex'),
       Buffer.from(receivedSignature, 'hex')
     );
 
     console.log(`[WEBHOOK] Signature verification: ${isValid ? 'PASSED' : 'FAILED'}`);
+    console.log(`[WEBHOOK] Expected (SHA1): ${expectedSignature.substring(0, 16)}...`);
+    console.log(`[WEBHOOK] Received: ${receivedSignature.substring(0, 16)}...`);
     return isValid;
 
   } catch (error) {
@@ -614,15 +659,25 @@ router.post('/integration/:integrationId/:triggerKey', async (req: Request, res:
         });
         const runId = runResult.id;
 
+        // Convert workflowDefinition to configuration.steps format for executor
+        const workflowWithConfig = {
+          ...workflow,
+          configuration: {
+            steps: workflow.workflowDefinition || []
+          }
+        };
+
         // Execute the workflow with the event data as context
-        await executor.executeWorkflow(workflow, {
+        await executor.executeWorkflow(workflowWithConfig, {
           triggerSource: 'integration_event',
           organizationId: integration.organizationId.toString(),
           webhookData: {
             integration: integration.platformType,
             event: triggerKey,
             data: eventData
-          }
+          },
+          // Add trigger alias for template variables like {{trigger.xxx}}
+          trigger: eventData
         });
 
         // Mark run as completed
@@ -709,12 +764,23 @@ router.post('/integration/:integrationId/:triggerKey', async (req: Request, res:
 
 /**
  * Get webhook events for organization (for debugging/monitoring)
+ * SECURITY: Enforces authentication and organization ownership
  */
-router.get('/events/:organizationId', async (req, res) => {
+router.get('/events/:organizationId', authenticateToken, async (req, res) => {
   try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
     const orgId = parseInt(req.params.organizationId);
     if (isNaN(orgId)) {
       return res.status(400).json({ error: 'Invalid organization ID' });
+    }
+
+    // CRITICAL: Verify the user can only access their own organization's events
+    if (orgId !== user.organizationId) {
+      return res.status(403).json({ error: 'Access denied' });
     }
 
     const limit = parseInt(req.query.limit as string) || 50;
@@ -734,6 +800,148 @@ router.get('/events/:organizationId', async (req, res) => {
   } catch (error) {
     console.error('Error fetching webhook events:', error);
     res.status(500).json({ error: 'Failed to fetch webhook events' });
+  }
+});
+
+/**
+ * Get webhook event details by ID
+ * SECURITY: Verifies organization ownership before returning data
+ */
+router.get('/events/detail/:eventId', authenticateToken, async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const eventId = parseInt(req.params.eventId);
+    if (isNaN(eventId)) {
+      return res.status(400).json({ error: 'Invalid event ID' });
+    }
+
+    const event = await storage.getWebhookEvent(eventId);
+    if (!event) {
+      return res.status(404).json({ error: 'Event not found' });
+    }
+
+    // CRITICAL: Verify the event belongs to the user's organization
+    if (event.organizationId !== user.organizationId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    res.json(event);
+
+  } catch (error) {
+    console.error('Error fetching webhook event:', error);
+    res.status(500).json({ error: 'Failed to fetch webhook event' });
+  }
+});
+
+/**
+ * Test webhook signature verification
+ * POST /api/webhooks/test-signature
+ * Body: { payload: string, secret: string, signature: string }
+ * SECURITY: Requires authentication to prevent adversarial probing
+ */
+router.post('/test-signature', authenticateToken, async (req, res) => {
+  try {
+    const { payload, secret, signature } = req.body;
+
+    if (!payload || !secret || !signature) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: payload, secret, signature' 
+      });
+    }
+
+    // Calculate expected signature using SHA1 (Splynx standard)
+    const expectedSignature = crypto
+      .createHmac('sha1', secret)
+      .update(payload)
+      .digest('hex');
+
+    // Clean up received signature (remove prefixes)
+    let cleanSignature = signature;
+    if (signature.startsWith('sha1=')) {
+      cleanSignature = signature.slice(5);
+    }
+
+    const isValid = crypto.timingSafeEqual(
+      Buffer.from(expectedSignature, 'hex'),
+      Buffer.from(cleanSignature, 'hex')
+    );
+
+    res.json({
+      valid: isValid,
+      expectedSignature,
+      receivedSignature: cleanSignature,
+      algorithm: 'HMAC-SHA1'
+    });
+
+  } catch (error: any) {
+    console.error('Error testing signature:', error);
+    res.status(500).json({ 
+      error: 'Failed to test signature',
+      message: error.message 
+    });
+  }
+});
+
+/**
+ * Update webhook secret for a trigger
+ * PATCH /api/webhooks/triggers/:triggerId/secret
+ * Body: { secret: string }
+ * SECURITY: Requires authentication and verifies organization ownership
+ */
+router.patch('/triggers/:triggerId/secret', authenticateToken, async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const triggerId = parseInt(req.params.triggerId);
+    if (isNaN(triggerId)) {
+      return res.status(400).json({ error: 'Invalid trigger ID' });
+    }
+
+    const { secret } = req.body;
+    if (!secret || typeof secret !== 'string') {
+      return res.status(400).json({ error: 'Secret is required and must be a string' });
+    }
+
+    // SECURITY: Get trigger by ID first (without cross-tenant access)
+    const trigger = await storage.getIntegrationTrigger(triggerId);
+    
+    if (!trigger) {
+      return res.status(404).json({ error: 'Trigger not found' });
+    }
+
+    // CRITICAL: Get integration and verify it belongs to the user's organization
+    const integration = await storage.getIntegrationById(trigger.integrationId);
+    if (!integration) {
+      return res.status(404).json({ error: 'Integration not found' });
+    }
+    
+    if (integration.organizationId !== user.organizationId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Update the webhook secret
+    const updated = await storage.updateIntegrationTrigger(triggerId, {
+      webhookSecret: secret
+    });
+
+    res.json({
+      success: true,
+      trigger: updated
+    });
+
+  } catch (error: any) {
+    console.error('Error updating webhook secret:', error);
+    res.status(500).json({ 
+      error: 'Failed to update webhook secret',
+      message: error.message 
+    });
   }
 });
 

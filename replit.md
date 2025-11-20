@@ -3,6 +3,26 @@
 ## Overview
 Aimee.works is a Strategy Operating System (Strategy OS) designed to integrate strategic planning with operational execution. It utilizes OKR-based strategy management and AI-powered automation agents to achieve measurable outcomes and automate repetitive tasks. The platform's core principle is "Connect Strategy → Work → Measurement" through governed AI agents under human oversight. It supports enterprise-grade multi-tenancy and self-hosting, aiming to enhance efficiency and strategic alignment through AI integration in daily operations.
 
+## Recent Changes
+
+### November 2025 - Field App Chunked Download System
+**Problem Solved**: Field app downloads were failing when downloading large numbers of work items or items with many high-resolution photos due to mobile browser memory limitations.
+
+**Solution Implemented**: 
+- **Batched Downloads**: Server endpoint now supports chunking via optional `offset`/`limit` parameters (backward compatible)
+- **Sequential Processing**: Photos are converted one-at-a-time instead of in parallel to prevent memory spikes
+- **Memory Management**: Automatic cleanup delays between batches (10ms per photo, 100ms between batches) to allow garbage collection
+- **Progress Tracking**: Real-time batch progress display ("Batch 2 of 5: 40%")
+- **Error Handling**: Detailed error messages showing which batch failed, with downloaded data preserved
+
+**Technical Details**:
+- Chunk size: 5 work items per batch
+- Files modified: `server/routes/field-app.ts`, `client/src/pages/field-app/Download.tsx`
+- All existing functionality preserved (filters, templates, execution states, photos)
+- No breaking changes to API
+
+**Impact**: Field workers can now reliably download 50+ work items with multiple photos each on mobile devices without crashes or memory issues.
+
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 UI Development Approach: UI-first implementation with fully functional interface before backend integration. All UI components should be navigable and visually complete.
@@ -39,7 +59,7 @@ Side Panels (canonical): Use Sheet from shadcn/ui for all slide-out detail/edit 
 -   **AI Agent Workflows (Automation)**: Autonomous AI-driven automation with manual, webhook, and scheduled triggers. Includes Splynx integration for querying entities, creating tasks, and email campaign deployment. Features `for_each` loops for iterating over query results and creating dynamic work items or tasks, with UI support for variable selection and data inspection.
 -   **Offline Sync System**: Manual synchronization using IndexedDB for data persistence, sync queue management, and conflict resolution.
 -   **AI Assistant Action Approval System**: Implements an action approval workflow for AI write operations using OpenAI's function calling with a custom approval layer.
--   **Field App PWA**: A dedicated offline-first Progressive Web App at `/field-app` for field workers, featuring selective work item download, offline workflow execution, photo capture, and manual sync. Includes functionality for offline fiber network node creation with GPS, photo requirements, and automatic sign-off work item generation.
+-   **Field App PWA**: A dedicated offline-first Progressive Web App at `/field-app` for field workers, featuring selective work item download, offline workflow execution, photo capture, and manual sync. Includes functionality for offline fiber network node creation with GPS, photo requirements, and automatic sign-off work item generation. **Chunked Download System** (Nov 2025): Implements batched downloads (5 items per batch) with sequential photo processing to prevent memory overflow on mobile devices. Supports downloading large datasets with many high-resolution photos without crashes, includes batch-level progress tracking ("Batch 2 of 5"), and graceful error handling with detailed failure reporting.
 -   **Fiber Network Node Type Management**: Dynamic, organization-scoped node type system allowing administrators to add, remove, and manage fiber network node types (Chamber, Cabinet, Pole, Splice Closure, Customer Premise, plus custom types). Node types automatically sync between desktop and mobile field app, with full CRUD operations in desktop Settings and dropdown selection during node creation/editing.
 -   **Xero Finance Integration**: Connects strategy execution to financial outcomes via OAuth 2.0, automatic transaction synchronization, AI-powered categorization, profit center tracking, and stakeholder-specific dashboards. Financial transactions are available as a queryable data source in Agent Builder workflows with aggregation support.
 
