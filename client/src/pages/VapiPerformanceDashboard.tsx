@@ -1,20 +1,43 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { PhoneCall, Bot, Clock, CheckCircle2, XCircle, AlertCircle, Phone } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { PhoneCall, Bot, Clock, CheckCircle2, ChevronDown, ChevronRight, Copy, Phone, Filter } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useToast } from '@/hooks/use-toast';
+import { apiRequest } from '@/lib/queryClient';
 
 export default function VapiPerformanceDashboard() {
   const { user } = useAuth();
   const organizationId = user?.organizationId || 4;
+  const { toast } = useToast();
+
+  const [expandedCallId, setExpandedCallId] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [successFilter, setSuccessFilter] = useState<string>('all');
+  const [searchPhone, setSearchPhone] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 100;
 
   const { data: assistants, isLoading: assistantsLoading } = useQuery({
     queryKey: ['/api/vapi/assistants', { organizationId }],
   });
 
   const { data: calls, isLoading: callsLoading } = useQuery({
-    queryKey: ['/api/vapi/calls', { organizationId, limit: 100 }],
+    queryKey: ['/api/vapi/calls', { organizationId, limit: 1000 }],
+  });
+
+  const { data: expandedCall, isLoading: expandedLoading } = useQuery({
+    queryKey: ['/api/vapi/calls', expandedCallId, { organizationId }],
+    enabled: !!expandedCallId,
+    queryFn: async () => {
+      const response = await apiRequest(`/api/vapi/calls/${expandedCallId}?organizationId=${organizationId}`);
+      return response.json();
+    },
   });
 
   const formatDuration = (seconds: number) => {
@@ -26,6 +49,30 @@ export default function VapiPerformanceDashboard() {
   const formatCost = (cost: number) => {
     return `$${cost.toFixed(4)}`;
   };
+
+  const copyTranscript = (transcript: string) => {
+    navigator.clipboard.writeText(transcript);
+    toast({
+      title: 'Copied!',
+      description: 'Transcript copied to clipboard',
+    });
+  };
+
+  // Filter calls
+  const filteredCalls = Array.isArray(calls) ? calls.filter((call: any) => {
+    if (statusFilter !== 'all' && call.status !== statusFilter) return false;
+    if (successFilter === 'success' && call.analysis?.successEvaluation !== 'true') return false;
+    if (successFilter === 'failed' && call.analysis?.successEvaluation !== 'false') return false;
+    if (searchPhone && !call.customer?.number?.includes(searchPhone)) return false;
+    return true;
+  }) : [];
+
+  // Pagination
+  const totalPages = Math.ceil(filteredCalls.length / itemsPerPage);
+  const paginatedCalls = filteredCalls.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   if (assistantsLoading) {
     return (
@@ -138,73 +185,245 @@ export default function VapiPerformanceDashboard() {
         </Card>
       </div>
 
-      <Tabs defaultValue="calls" className="space-y-4">
-        <TabsList>
-          <TabsTrigger value="calls">Recent Calls</TabsTrigger>
-        </TabsList>
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent Call Activity</CardTitle>
+          <CardDescription>
+            Latest voice AI interactions from your Vapi account
+            {filteredCalls.length > 0 && ` (${filteredCalls.length} calls)`}
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {/* Filters */}
+          <div className="flex gap-4 mb-6 flex-wrap">
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-muted-foreground" />
+              <span className="text-sm font-medium">Filters:</span>
+            </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[150px]">
+                <SelectValue placeholder="Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Status</SelectItem>
+                <SelectItem value="ended">Ended</SelectItem>
+                <SelectItem value="in-progress">In Progress</SelectItem>
+                <SelectItem value="queued">Queued</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={successFilter} onValueChange={setSuccessFilter}>
+              <SelectTrigger className="w-[150px]">
+                <SelectValue placeholder="Success" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Results</SelectItem>
+                <SelectItem value="success">Success</SelectItem>
+                <SelectItem value="failed">Failed</SelectItem>
+              </SelectContent>
+            </Select>
+            <Input
+              placeholder="Search phone number..."
+              value={searchPhone}
+              onChange={(e) => setSearchPhone(e.target.value)}
+              className="w-[200px]"
+            />
+          </div>
 
-        <TabsContent value="calls" className="space-y-4">
-          <Card>
-            <CardHeader>
-              <CardTitle>Recent Call Activity</CardTitle>
-              <CardDescription>Latest voice AI interactions from your Vapi account</CardDescription>
-            </CardHeader>
-            <CardContent>
-              {callsLoading ? (
-                <div className="h-64 flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-                </div>
-              ) : Array.isArray(calls) && calls.length > 0 ? (
-                <div className="space-y-2">
-                  {calls.map((call: any) => (
-                    <div 
-                      key={call.id} 
-                      className="flex items-center justify-between p-4 border rounded-lg hover:bg-muted/50 transition-colors"
-                      data-testid={`call-row-${call.id}`}
-                    >
-                      <div className="flex items-center gap-3 flex-1">
-                        <div className={`h-2 w-2 rounded-full ${
-                          call.status === 'ended' ? 'bg-green-500' : 
-                          call.status === 'in-progress' ? 'bg-yellow-500' : 
-                          'bg-gray-400'
-                        }`} />
-                        <div className="flex-1">
-                          <div className="font-medium">
-                            {call.customer?.number || call.phoneNumber?.number || 'Unknown Number'}
-                          </div>
-                          <div className="text-sm text-muted-foreground flex items-center gap-3">
-                            <span className="flex items-center gap-1">
-                              <Clock className="h-3 w-3" />
-                              {call.endedAt ? formatDuration(Math.floor((new Date(call.endedAt).getTime() - new Date(call.createdAt).getTime()) / 1000)) : 'In progress'}
-                            </span>
-                            {call.cost && (
-                              <span>{formatCost(call.cost)}</span>
+          {callsLoading ? (
+            <div className="h-64 flex items-center justify-center">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : paginatedCalls.length > 0 ? (
+            <div className="space-y-2">
+              {paginatedCalls.map((call: any) => {
+                const duration = call.endedAt 
+                  ? Math.floor((new Date(call.endedAt).getTime() - new Date(call.createdAt).getTime()) / 1000)
+                  : 0;
+                const isExpanded = expandedCallId === call.id;
+
+                return (
+                  <Collapsible
+                    key={call.id}
+                    open={isExpanded}
+                    onOpenChange={(open) => setExpandedCallId(open ? call.id : null)}
+                  >
+                    <div className="border rounded-lg">
+                      <CollapsibleTrigger asChild>
+                        <div 
+                          className="flex items-center justify-between p-4 hover:bg-muted/50 transition-colors cursor-pointer"
+                          data-testid={`call-row-${call.id}`}
+                        >
+                          <div className="flex items-center gap-3 flex-1">
+                            {isExpanded ? (
+                              <ChevronDown className="h-5 w-5 text-muted-foreground" />
+                            ) : (
+                              <ChevronRight className="h-5 w-5 text-muted-foreground" />
                             )}
+                            <div className={`h-2 w-2 rounded-full ${
+                              call.status === 'ended' ? 'bg-green-500' : 
+                              call.status === 'in-progress' ? 'bg-yellow-500' : 
+                              'bg-gray-400'
+                            }`} />
+                            <div className="flex-1">
+                              <div className="font-medium">
+                                {call.customer?.number || call.phoneNumber?.number || 'Unknown Number'}
+                              </div>
+                              <div className="text-sm text-muted-foreground flex items-center gap-3">
+                                <span className="flex items-center gap-1">
+                                  <Clock className="h-3 w-3" />
+                                  {duration > 0 ? formatDuration(duration) : 'In progress'}
+                                </span>
+                                {call.cost && <span>{formatCost(call.cost)}</span>}
+                                {call.analysis?.successEvaluation === 'true' && (
+                                  <Badge variant="outline" className="text-green-600">✓ Success</Badge>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <Badge variant={call.status === 'ended' ? 'default' : 'secondary'}>
+                              {call.status}
+                            </Badge>
+                            <div className="text-xs text-muted-foreground mt-1">
+                              {new Date(call.createdAt).toLocaleString()}
+                            </div>
                           </div>
                         </div>
-                      </div>
-                      <div className="text-right">
-                        <Badge variant={call.status === 'ended' ? 'default' : 'secondary'}>
-                          {call.status}
-                        </Badge>
-                        <div className="text-xs text-muted-foreground mt-1">
-                          {new Date(call.createdAt).toLocaleString()}
+                      </CollapsibleTrigger>
+
+                      <CollapsibleContent>
+                        <div className="p-4 pt-0 space-y-4">
+                          {expandedLoading && isExpanded ? (
+                            <div className="flex items-center justify-center py-8">
+                              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary"></div>
+                            </div>
+                          ) : expandedCall && isExpanded ? (
+                            <>
+                              {/* Call Metadata */}
+                              <div className="border rounded-lg p-4">
+                                <h4 className="font-semibold mb-3 flex items-center gap-2">
+                                  📊 Call Metadata
+                                </h4>
+                                <div className="grid grid-cols-2 gap-3 text-sm">
+                                  <div>
+                                    <span className="text-muted-foreground">Call ID:</span>
+                                    <div className="font-mono text-xs">{expandedCall.id}</div>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Type:</span>
+                                    <div>{expandedCall.type || 'Unknown'}</div>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Duration:</span>
+                                    <div>{duration > 0 ? `${formatDuration(duration)} (${duration}s)` : 'N/A'}</div>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Cost:</span>
+                                    <div>{expandedCall.cost ? formatCost(expandedCall.cost) : 'N/A'}</div>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Messages:</span>
+                                    <div>{expandedCall.messages?.length || 0} exchanges</div>
+                                  </div>
+                                  <div>
+                                    <span className="text-muted-foreground">Started:</span>
+                                    <div>{new Date(expandedCall.createdAt).toLocaleString()}</div>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {/* AI Analysis */}
+                              {expandedCall.analysis && (
+                                <div className="border rounded-lg p-4">
+                                  <h4 className="font-semibold mb-3 flex items-center gap-2">
+                                    🤖 AI Analysis
+                                  </h4>
+                                  <div className="space-y-2 text-sm">
+                                    {expandedCall.summary && (
+                                      <div>
+                                        <span className="text-muted-foreground">Summary:</span>
+                                        <p className="mt-1">{expandedCall.summary}</p>
+                                      </div>
+                                    )}
+                                    {expandedCall.analysis.successEvaluation && (
+                                      <div>
+                                        <span className="text-muted-foreground">Success:</span>
+                                        <Badge className={expandedCall.analysis.successEvaluation === 'true' ? 'bg-green-100 text-green-800 ml-2' : 'bg-red-100 text-red-800 ml-2'}>
+                                          {expandedCall.analysis.successEvaluation === 'true' ? '✓ Call objective achieved' : '✗ Call objective not met'}
+                                        </Badge>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Transcript */}
+                              {expandedCall.transcript && (
+                                <div className="border rounded-lg p-4">
+                                  <div className="flex items-center justify-between mb-3">
+                                    <h4 className="font-semibold flex items-center gap-2">
+                                      💬 Full Transcript
+                                    </h4>
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      onClick={() => copyTranscript(expandedCall.transcript)}
+                                      data-testid="copy-transcript"
+                                    >
+                                      <Copy className="h-4 w-4 mr-2" />
+                                      Copy
+                                    </Button>
+                                  </div>
+                                  <div className="bg-muted/30 rounded p-4 max-h-96 overflow-y-auto font-mono text-sm whitespace-pre-wrap">
+                                    {expandedCall.transcript}
+                                  </div>
+                                </div>
+                              )}
+                            </>
+                          ) : null}
                         </div>
-                      </div>
+                      </CollapsibleContent>
                     </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="text-center py-12 text-muted-foreground">
-                  <PhoneCall className="h-12 w-12 mx-auto mb-4 opacity-20" />
-                  <p>No call data available yet</p>
-                  <p className="text-sm mt-2">Calls will appear here once your Vapi assistants start receiving calls</p>
+                  </Collapsible>
+                );
+              })}
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="flex items-center justify-between pt-4">
+                  <div className="text-sm text-muted-foreground">
+                    Page {currentPage} of {totalPages} ({filteredCalls.length} total calls)
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                    >
+                      Previous
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                    >
+                      Next
+                    </Button>
+                  </div>
                 </div>
               )}
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            </div>
+          ) : (
+            <div className="text-center py-12 text-muted-foreground">
+              <PhoneCall className="h-12 w-12 mx-auto mb-4 opacity-20" />
+              <p>No call data available yet</p>
+              <p className="text-sm mt-2">Calls will appear here once your Vapi assistants start receiving calls</p>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
