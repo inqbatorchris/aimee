@@ -5,7 +5,7 @@ import { VapiMetricsCalculator } from '../services/integrations/vapiMetricsCalcu
 import { SplynxService } from '../services/integrations/splynxService';
 import { db } from '../db';
 import { integrations } from '../../shared/schema';
-import { eq, and } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import crypto from 'crypto';
 
 const router = Router();
@@ -43,10 +43,8 @@ async function getVapiService(organizationId: number): Promise<VapiService | nul
   const [integration] = await db
     .select()
     .from(integrations)
-    .where(and(
-      eq(integrations.organizationId, organizationId),
-      eq(integrations.platformType, 'vapi')
-    ))
+    .where(eq(integrations.organizationId, organizationId))
+    .where(eq(integrations.platformType, 'vapi'))
     .limit(1);
 
   if (!integration || !integration.credentialsEncrypted) {
@@ -64,10 +62,8 @@ async function getSplynxService(organizationId: number): Promise<SplynxService |
   const [integration] = await db
     .select()
     .from(integrations)
-    .where(and(
-      eq(integrations.organizationId, organizationId),
-      eq(integrations.platformType, 'splynx')
-    ))
+    .where(eq(integrations.organizationId, organizationId))
+    .where(eq(integrations.platformType, 'splynx'))
     .limit(1);
 
   if (!integration || !integration.credentialsEncrypted) {
