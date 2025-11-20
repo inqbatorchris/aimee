@@ -95,24 +95,24 @@ export default function VapiSetup() {
         // Update existing integration
         return await apiRequest(`/api/integrations`, {
           method: 'POST',
-          body: JSON.stringify({
+          body: {
             platformType: 'vapi',
             name: 'Vapi Voice AI',
             credentials: { apiKey: data.apiKey },
             connectionStatus: 'active',
-          }),
+          },
         });
       } else {
         // Create new integration
         return await apiRequest('/api/integrations', {
           method: 'POST',
-          body: JSON.stringify({
+          body: {
             platformType: 'vapi',
             name: 'Vapi Voice AI',
             credentials: { apiKey: data.apiKey },
             connectionStatus: 'active',
             isEnabled: true,
-          }),
+          },
         });
       }
     },
