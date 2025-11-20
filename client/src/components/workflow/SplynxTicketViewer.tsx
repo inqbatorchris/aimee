@@ -60,10 +60,11 @@ export function SplynxTicketViewer({
     queryFn: async () => {
       if (!integrationId) throw new Error('No Splynx integration found');
       console.log('[SplynxTicketViewer] Fetching ticket data:', { ticketId, integrationId });
-      const result = await apiRequest(
+      const response = await apiRequest(
         `/api/integrations/splynx/entity/ticket/${ticketId}?integrationId=${integrationId}`,
         { method: 'GET' }
       );
+      const result = await response.json(); // CRITICAL FIX: Parse JSON from Response
       console.log('[SplynxTicketViewer] API response:', result);
       return result;
     },
