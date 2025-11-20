@@ -1048,6 +1048,22 @@ export class SplynxService {
     }
   }
 
+  async getTicketComments(ticketId: string): Promise<any[]> {
+    try {
+      const url = this.buildUrl(`admin/support/tickets/comments?ticket_id=${ticketId}`);
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error: any) {
+      console.error(`Failed to fetch ticket comments for ID ${ticketId}:`, error.message);
+      throw new Error(`Failed to fetch ticket comments: ${error.message}`);
+    }
+  }
+
   async getTaskDetails(taskId: string): Promise<any> {
     try {
       const url = this.buildUrl(`admin/scheduling/tasks/${taskId}`);
