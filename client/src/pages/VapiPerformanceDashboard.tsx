@@ -23,10 +23,17 @@ export default function VapiPerformanceDashboard() {
   const [expandedCallId, setExpandedCallId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [successFilter, setSuccessFilter] = useState<string>('all');
+  const [reviewStatusFilter, setReviewStatusFilter] = useState<string>('all');
   const [searchPhone, setSearchPhone] = useState('');
   const [dateFilter, setDateFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 100;
+
+  // Local status tracking (stored in localStorage)
+  const [callStatuses, setCallStatuses] = useState<Record<string, string>>(() => {
+    const stored = localStorage.getItem('vapi_call_statuses');
+    return stored ? JSON.parse(stored) : {};
+  });
 
   // Bulk work item creation state
   const [selectedCalls, setSelectedCalls] = useState<string[]>([]);
@@ -76,6 +83,22 @@ export default function VapiPerformanceDashboard() {
       title: 'Copied!',
       description: 'Transcript copied to clipboard',
     });
+  };
+
+  // Update call status and persist to localStorage
+  const updateCallStatus = (callId: string, status: string) => {
+    const newStatuses = { ...callStatuses, [callId]: status };
+    setCallStatuses(newStatuses);
+    localStorage.setItem('vapi_call_statuses', JSON.stringify(newStatuses));
+    toast({
+      title: 'Status Updated',
+      description: `Call marked as "${status}"`,
+    });
+  };
+
+  // Get call status (defaults to "New" if not set)
+  const getCallStatus = (callId: string): string => {
+    return callStatuses[callId] || 'New';
   };
 
   // Check if a ticket was successfully created in the call
@@ -130,7 +153,7 @@ export default function VapiPerformanceDashboard() {
       return;
     }
     
-    const template = templates?.find((t: any) => t.id === parseInt(selectedTemplate));
+    const template = templates?.find((t: any) => String(t.id) === String(selectedTemplate));
     if (!template) {
       toast({
         title: 'Template Not Found',
@@ -208,6 +231,7 @@ export default function VapiPerformanceDashboard() {
     if (statusFilter !== 'all' && call.status !== statusFilter) return false;
     if (successFilter === 'success' && !wasTicketCreated(call)) return false;
     if (successFilter === 'failed' && wasTicketCreated(call)) return false;
+    if (reviewStatusFilter !== 'all' && getCallStatus(call.id) !== reviewStatusFilter) return false;
     if (searchPhone && !call.customer?.number?.includes(searchPhone)) return false;
     
     // Date filter
@@ -287,6 +311,18 @@ export default function VapiPerformanceDashboard() {
                 <SelectItem value="all">All Results</SelectItem>
                 <SelectItem value="success">Success</SelectItem>
                 <SelectItem value="failed">Failed</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={reviewStatusFilter} onValueChange={setReviewStatusFilter}>
+              <SelectTrigger className="w-[150px]">
+                <SelectValue placeholder="Review Status" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Review Status</SelectItem>
+                <SelectItem value="New">New</SelectItem>
+                <SelectItem value="Review needed">Review needed</SelectItem>
+                <SelectItem value="Pass">Pass</SelectItem>
+                <SelectItem value="Fail">Fail</SelectItem>
               </SelectContent>
             </Select>
             <Select value={dateFilter} onValueChange={setDateFilter}>
@@ -400,7 +436,7 @@ export default function VapiPerformanceDashboard() {
                               </div>
                             </div>
                           </div>
-                          <div className="text-right">
+                          <div className="text-right space-y-2">
                             <div className="flex items-center justify-end gap-2">
                               <Badge variant={call.status === 'ended' ? 'default' : 'secondary'}>
                                 {call.status}
@@ -415,7 +451,35 @@ export default function VapiPerformanceDashboard() {
                                 </Badge>
                               )}
                             </div>
-                            <div className="text-xs text-muted-foreground mt-1">
+                            <div className="flex items-center justify-end gap-2">
+                              <Select 
+                                value={getCallStatus(call.id)} 
+                                onValueChange={(value) => updateCallStatus(call.id, value)}
+                              >
+                                <SelectTrigger 
+                                  className="w-[140px] h-7 text-xs"
+                                  onClick={(e) => e.stopPropagation()}
+                                  data-testid={`select-status-${call.id}`}
+                                >
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="New">
+                                    <span className="text-gray-600">🆕 New</span>
+                                  </SelectItem>
+                                  <SelectItem value="Review needed">
+                                    <span className="text-yellow-600">⚠️ Review needed</span>
+                                  </SelectItem>
+                                  <SelectItem value="Pass">
+                                    <span className="text-green-600">✅ Pass</span>
+                                  </SelectItem>
+                                  <SelectItem value="Fail">
+                                    <span className="text-red-600">❌ Fail</span>
+                                  </SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="text-xs text-muted-foreground">
                               {new Date(call.createdAt).toLocaleString()}
                             </div>
                           </div>
