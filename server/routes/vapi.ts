@@ -153,14 +153,20 @@ router.get('/calls', async (req: Request, res: Response) => {
 
 router.get('/calls/:id', async (req: Request, res: Response) => {
   try {
-    const id = parseInt(req.params.id);
+    const callId = req.params.id; // Vapi call IDs are strings, not integers
     const organizationId = parseInt(req.query.organizationId as string);
     
-    const call = await storage.getVapiCall(id, organizationId);
-    if (!call) {
-      return res.status(404).json({ error: 'Call not found' });
+    if (isNaN(organizationId)) {
+      return res.status(400).json({ error: 'Valid organizationId is required' });
     }
     
+    // Fetch full call details from Vapi API
+    const vapiService = await getVapiService(organizationId);
+    if (!vapiService) {
+      return res.status(400).json({ error: 'Vapi integration not configured for this organization' });
+    }
+
+    const call = await vapiService.getCall(callId);
     res.json(call);
   } catch (error: any) {
     console.error('Error fetching Vapi call:', error);
