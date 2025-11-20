@@ -45,6 +45,13 @@ export function SplynxTicketViewer({
 
   const splynxIntegration = integrations?.find((int: any) => int.platformType === 'splynx');
   const integrationId = splynxIntegration?.id;
+  
+  console.log('[SplynxTicketViewer] Integration setup:', { 
+    integrations, 
+    splynxIntegration, 
+    integrationId,
+    ticketId 
+  });
 
   const { data: ticketData, isLoading, error, refetch } = useQuery<any>({
     queryKey: [`/api/integrations/splynx/entity/ticket/${ticketId}`, integrationId],
@@ -52,10 +59,13 @@ export function SplynxTicketViewer({
     refetchInterval: 30000,
     queryFn: async () => {
       if (!integrationId) throw new Error('No Splynx integration found');
-      return await apiRequest(
+      console.log('[SplynxTicketViewer] Fetching ticket data:', { ticketId, integrationId });
+      const result = await apiRequest(
         `/api/integrations/splynx/entity/ticket/${ticketId}?integrationId=${integrationId}`,
         { method: 'GET' }
       );
+      console.log('[SplynxTicketViewer] API response:', result);
+      return result;
     },
   });
 
@@ -210,6 +220,7 @@ export function SplynxTicketViewer({
   const messages = ticketData?.messages || [];
   
   // DEBUG: Log what we're receiving
+  console.log('[SplynxTicketViewer] Query state:', { isLoading, error, ticketData });
   console.log('[SplynxTicketViewer] ticketData:', ticketData);
   console.log('[SplynxTicketViewer] messages:', messages);
   console.log('[SplynxTicketViewer] messages.length:', messages.length);
