@@ -1670,15 +1670,26 @@ router.get('/splynx/entity/:entityType/:entityId', async (req, res) => {
     if (entityType === 'ticket') {
       entityData = await splynxService.getTicketDetails(entityId);
       
+      // Log ticket data structure for debugging
+      console.log(`[TICKET ${entityId}] entityData keys:`, Object.keys(entityData || {}));
+      console.log(`[TICKET ${entityId}] Full data:`, JSON.stringify(entityData, null, 2));
+      
       // Try to get messages, but don't fail if endpoint doesn't exist
       try {
         messages = await splynxService.getTicketMessages(entityId);
       } catch (messagesError: any) {
         console.log(`Could not fetch messages for ticket ${entityId}, using empty array:`, messagesError.message);
-        // Check if messages are included in ticket details
-        if (entityData && Array.isArray(entityData.messages)) {
-          messages = entityData.messages;
+        // Check if messages are included in ticket details (check multiple possible fields)
+        if (entityData) {
+          if (Array.isArray(entityData.messages)) {
+            messages = entityData.messages;
+          } else if (Array.isArray(entityData.message_history)) {
+            messages = entityData.message_history;
+          } else if (Array.isArray(entityData.comments)) {
+            messages = entityData.comments;
+          }
         }
+        console.log(`[TICKET ${entityId}] Final messages count:`, messages.length);
       }
     } else {
       entityData = await splynxService.getTaskDetails(entityId);
