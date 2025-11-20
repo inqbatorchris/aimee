@@ -201,7 +201,7 @@ async function handleStatusUpdate(message: any, res: Response) {
         assistantId: call.assistantId,
         status: call.status,
         customerPhoneNumber: call.customer?.number,
-        journeyType: 'unknown', // Will be updated when intent is determined
+        customerIntent: 'unknown', // Will be updated when intent is determined
         rawCallData: call,
       });
     }
@@ -231,15 +231,18 @@ async function handleEndOfCallReport(message: any, res: Response) {
     const organizationId = await getOrganizationFromCall(call);
     const durationSeconds = calculateDuration(call.startedAt, call.endedAt);
     const transcript = extractTranscript(call.messages || []);
-    const toolsCalled = extractToolsCalls(call.messages || []);
+    const toolsUsed = extractToolsCalls(call.messages || []);
     
     // Analyze call for metrics
     const analysis = {
-      wasAutonomous: !toolsCalled.includes('transfer_to_human'),
+      wasAutonomous: !toolsUsed.includes('transfer_to_human') && !toolsUsed.includes('transfer_to_business'),
+      wasForwarded: toolsUsed.includes('transfer_to_human') || toolsUsed.includes('transfer_to_business'),
       customerIntent: extractIntent(call.messages || []),
-      journeyType: determineJourneyType(call),
       knowledgeFilesUsed: call.artifact?.knowledgeFilesUsed || [],
       knowledgeGaps: [], // TODO: Extract questions assistant couldn't answer
+      smsCodeSent: toolsUsed.includes('send_sms_verification'),
+      ticketCreated: toolsUsed.includes('create_support_ticket'),
+      demoScheduled: toolsUsed.includes('schedule_demo'),
     };
 
     // Update or create call record
@@ -252,16 +255,18 @@ async function handleEndOfCallReport(message: any, res: Response) {
       // Update existing call
       await db.update(vapiCalls)
         .set({
-          status: 'completed',
+          status: 'ended',
           endedAt: new Date(call.endedAt),
           durationSeconds,
           transcript,
-          toolsCalled,
           wasAutonomous: analysis.wasAutonomous,
+          wasForwarded: analysis.wasForwarded,
           customerIntent: analysis.customerIntent,
-          journeyType: analysis.journeyType,
           knowledgeFilesUsed: analysis.knowledgeFilesUsed,
           knowledgeGaps: analysis.knowledgeGaps,
+          smsCodeSent: analysis.smsCodeSent,
+          ticketCreated: analysis.ticketCreated,
+          demoScheduled: analysis.demoScheduled,
           costCents: call.cost ? Math.round(call.cost * 100) : null,
           rawCallData: call,
           updatedAt: new Date(),
@@ -273,18 +278,20 @@ async function handleEndOfCallReport(message: any, res: Response) {
         organizationId,
         vapiCallId: call.id,
         assistantId: call.assistantId,
-        status: 'completed',
+        status: 'ended',
         customerPhoneNumber: call.customer?.number,
         startedAt: new Date(call.startedAt),
         endedAt: new Date(call.endedAt),
         durationSeconds,
         transcript,
-        toolsCalled,
         wasAutonomous: analysis.wasAutonomous,
+        wasForwarded: analysis.wasForwarded,
         customerIntent: analysis.customerIntent,
-        journeyType: analysis.journeyType,
         knowledgeFilesUsed: analysis.knowledgeFilesUsed,
         knowledgeGaps: analysis.knowledgeGaps,
+        smsCodeSent: analysis.smsCodeSent,
+        ticketCreated: analysis.ticketCreated,
+        demoScheduled: analysis.demoScheduled,
         costCents: call.cost ? Math.round(call.cost * 100) : null,
         rawCallData: call,
       });

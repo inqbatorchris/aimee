@@ -269,7 +269,7 @@ export async function calculateMetricsForCall(organizationId: number, vapiCallId
         // Update Key Result
         await db.update(keyResults)
           .set({
-            actualValue: newActual,
+            currentValue: newActual.toString(),
             updatedAt: new Date(),
           })
           .where(eq(keyResults.id, kr.id));

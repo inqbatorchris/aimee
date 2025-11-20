@@ -97,18 +97,13 @@ export async function lookupCustomer(params: CustomerLookupParams, callContext: 
     
     switch (searchBy) {
       case 'phone':
-        // TODO: Add phone number field to users table
-        // For now, search by email containing the phone
-        customerQuery = db.select({
-          id: users.id,
-          name: users.fullName,
-          email: users.email,
-          role: users.role,
-          organizationId: users.organizationId,
-        })
-        .from(users)
-        .where(eq(users.isActive, true))
-        .limit(1);
+        // Phone lookup not yet implemented - users table doesn't have phone field
+        // Return not found to avoid incorrect matches
+        return {
+          found: false,
+          message: `Phone lookup not yet implemented. Please search by email or account ID instead.`,
+          notImplemented: true,
+        };
         break;
         
       case 'email':
@@ -243,15 +238,16 @@ export async function createSupportTicket(params: CreateTicketParams, callContex
       title,
       description,
       status: 'Planning',
-      priority: priority === 'urgent' ? 'high' : priority,
-      source: 'voice_ai',
-      sourceMetadata: {
+      workflowSource: 'vapi_voice_ai',
+      workflowMetadata: {
         vapiCallId: callContext.callId,
         customerPhoneNumber: callContext.customerPhoneNumber,
         category,
+        priority,
         createdBy: 'vapi_assistant',
       },
-      assigneeId: null, // Will be assigned by support team
+      workItemType: 'voice_support_ticket',
+      assignedTo: null, // Will be assigned by support team
     }).returning();
     
     return {
@@ -308,18 +304,19 @@ Interest: ${productInterest || 'General inquiry'}
 This demo was scheduled via voice AI assistant.
       `.trim(),
       status: 'Planning',
-      priority: 'medium',
-      source: 'voice_ai',
-      sourceMetadata: {
+      workflowSource: 'vapi_voice_ai',
+      workflowMetadata: {
         vapiCallId: callContext.callId,
         demoType: 'sales',
+        customerName,
         customerPhone,
         customerEmail,
         requestedDate,
         requestedTime,
         productInterest,
       },
-      assigneeId: null, // Will be assigned to sales team
+      workItemType: 'voice_demo_appointment',
+      assignedTo: null, // Will be assigned to sales team
     }).returning();
     
     // Generate confirmation message
