@@ -28,7 +28,7 @@ const createWorkItemSchema = z.object({
   teamId: z.number().optional().nullable(),
   workflowTemplateId: z.string().optional(),
   workItemType: z.string().optional(),
-  workflowSource: z.enum(['template', 'manual', 'system', 'splynx', 'airtable']).optional(),
+  workflowSource: z.enum(['template', 'manual', 'system', 'splynx', 'airtable', 'vapi_voice_ai']).optional(),
   workflowMetadata: z.any().optional(),
 });
 
@@ -46,7 +46,7 @@ const updateWorkItemSchema = z.object({
   teamId: z.number().nullable().optional(),
   workflowTemplateId: z.string().nullable().optional(),
   workItemType: z.string().nullable().optional(),
-  workflowSource: z.enum(['template', 'manual', 'system', 'splynx', 'airtable']).nullable().optional(),
+  workflowSource: z.enum(['template', 'manual', 'system', 'splynx', 'airtable', 'vapi_voice_ai']).nullable().optional(),
   workflowMetadata: z.any().optional(),
 });
 
@@ -61,7 +61,7 @@ const bulkUpdateSchema = z.object({
     teamId: z.union([z.number(), z.null()]).optional(),
     workflowTemplateId: z.string().nullable().optional(),
     workItemType: z.string().nullable().optional(),
-    workflowSource: z.enum(['template', 'manual', 'system', 'splynx', 'airtable']).nullable().optional(),
+    workflowSource: z.enum(['template', 'manual', 'system', 'splynx', 'airtable', 'vapi_voice_ai']).nullable().optional(),
     workflowMetadata: z.any().optional(),
   })
 });

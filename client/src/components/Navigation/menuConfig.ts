@@ -23,7 +23,8 @@ import {
   Database,
   Zap,
   Code,
-  Package
+  Package,
+  PhoneCall
 } from 'lucide-react';
 
 export interface MenuItem {
@@ -78,6 +79,22 @@ export const menuStructure: MenuItem[] = [
         href: '/strategy/work-items', 
         icon: BarChart3, 
         type: 'item' 
+      }
+    ]
+  },
+  {
+    id: 'voice-ai',
+    name: 'Voice AI',
+    icon: PhoneCall,
+    type: 'section',
+    items: [
+      { 
+        id: 'vapi-performance',
+        name: 'Performance Dashboard', 
+        href: '/vapi/performance', 
+        icon: BarChart3, 
+        type: 'item',
+        isNew: true
       }
     ]
   },

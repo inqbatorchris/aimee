@@ -863,6 +863,201 @@ export class IntegrationCatalogImporter {
   }
   
   /**
+   * Import complete catalog of triggers and actions for Vapi integration
+   */
+  async importVapiCatalog(integrationId: number): Promise<{
+    triggersImported: number;
+    actionsImported: number;
+  }> {
+    console.log(`[IntegrationCatalogImporter] Importing Vapi catalog for integration ${integrationId}...`);
+
+    // Define Vapi triggers (webhook events)
+    const vapiTriggers: InsertIntegrationTrigger[] = [
+      {
+        integrationId,
+        triggerKey: 'call_started',
+        name: 'Call Started',
+        description: 'Triggered when a voice AI call is initiated',
+        category: 'Calls',
+        eventType: 'webhook',
+        resourceType: 'call',
+        parameterSchema: {},
+        responseSchema: {
+          type: 'object',
+          properties: {
+            callId: { type: 'string' },
+            assistantId: { type: 'string' },
+            phoneNumber: { type: 'string' },
+            status: { type: 'string' }
+          }
+        },
+        samplePayload: {
+          callId: 'call-123',
+          assistantId: 'asst-456',
+          phoneNumber: '+1234567890',
+          status: 'started'
+        },
+        docsUrl: 'https://docs.vapi.ai/webhooks',
+        isActive: true,
+        isConfigured: false
+      },
+      {
+        integrationId,
+        triggerKey: 'call_ended',
+        name: 'Call Ended',
+        description: 'Triggered when a voice AI call completes',
+        category: 'Calls',
+        eventType: 'webhook',
+        resourceType: 'call',
+        responseSchema: {
+          type: 'object',
+          properties: {
+            callId: { type: 'string' },
+            duration: { type: 'number' },
+            wasAutonomous: { type: 'boolean' },
+            transcript: { type: 'string' }
+          }
+        },
+        docsUrl: 'https://docs.vapi.ai/webhooks',
+        isActive: true,
+        isConfigured: false
+      },
+      {
+        integrationId,
+        triggerKey: 'end_of_call_report',
+        name: 'End of Call Report',
+        description: 'Triggered when comprehensive call analysis is ready',
+        category: 'Calls',
+        eventType: 'webhook',
+        resourceType: 'call',
+        docsUrl: 'https://docs.vapi.ai/webhooks',
+        isActive: true,
+        isConfigured: false
+      },
+      {
+        integrationId,
+        triggerKey: 'transcript_available',
+        name: 'Transcript Available',
+        description: 'Triggered when call transcript is ready',
+        category: 'Calls',
+        eventType: 'webhook',
+        resourceType: 'call',
+        docsUrl: 'https://docs.vapi.ai/webhooks',
+        isActive: true,
+        isConfigured: false
+      }
+    ];
+
+    // Define Vapi actions
+    const vapiActions: InsertIntegrationAction[] = [
+      {
+        integrationId,
+        actionKey: 'create_assistant',
+        name: 'Create Voice Assistant',
+        description: 'Create a new voice AI assistant with custom configuration',
+        category: 'Assistants',
+        httpMethod: 'POST',
+        endpoint: '/assistant',
+        parameterSchema: {
+          type: 'object',
+          required: ['name', 'modelProvider', 'voiceProvider'],
+          properties: {
+            name: { type: 'string', description: 'Assistant name' },
+            systemPrompt: { type: 'string', description: 'System instructions' },
+            modelProvider: { type: 'string', description: 'AI model provider (openai, anthropic)' },
+            voiceProvider: { type: 'string', description: 'Voice provider (elevenlabs, playht)' }
+          }
+        },
+        requiredFields: ['name', 'modelProvider', 'voiceProvider'],
+        optionalFields: ['systemPrompt'],
+        docsUrl: 'https://docs.vapi.ai/api-reference/assistants/create',
+        resourceType: 'assistant',
+        idempotent: false,
+        isActive: true
+      },
+      {
+        integrationId,
+        actionKey: 'make_call',
+        name: 'Make Outbound Call',
+        description: 'Initiate an outbound voice AI call',
+        category: 'Calls',
+        httpMethod: 'POST',
+        endpoint: '/call/phone',
+        parameterSchema: {
+          type: 'object',
+          required: ['phoneNumber', 'assistantId'],
+          properties: {
+            phoneNumber: { type: 'string', description: 'Customer phone number' },
+            assistantId: { type: 'string', description: 'Assistant to use for call' }
+          }
+        },
+        requiredFields: ['phoneNumber', 'assistantId'],
+        optionalFields: [],
+        docsUrl: 'https://docs.vapi.ai/api-reference/calls/create',
+        resourceType: 'call',
+        idempotent: false,
+        isActive: true
+      },
+      {
+        integrationId,
+        actionKey: 'get_call',
+        name: 'Get Call Details',
+        description: 'Retrieve details for a specific call',
+        category: 'Calls',
+        httpMethod: 'GET',
+        endpoint: '/call/{callId}',
+        parameterSchema: {
+          type: 'object',
+          required: ['callId'],
+          properties: {
+            callId: { type: 'string', description: 'Call ID' }
+          }
+        },
+        requiredFields: ['callId'],
+        optionalFields: [],
+        docsUrl: 'https://docs.vapi.ai/api-reference/calls/get',
+        resourceType: 'call',
+        idempotent: true,
+        isActive: true
+      },
+      {
+        integrationId,
+        actionKey: 'upload_knowledge_file',
+        name: 'Upload Knowledge Base File',
+        description: 'Upload a file to the voice AI knowledge base',
+        category: 'Knowledge Base',
+        httpMethod: 'POST',
+        endpoint: '/file',
+        parameterSchema: {
+          type: 'object',
+          required: ['fileName', 'fileContent'],
+          properties: {
+            fileName: { type: 'string', description: 'File name' },
+            fileContent: { type: 'string', description: 'File content (base64 or text)' }
+          }
+        },
+        requiredFields: ['fileName', 'fileContent'],
+        optionalFields: [],
+        docsUrl: 'https://docs.vapi.ai/api-reference/files/upload',
+        resourceType: 'file',
+        idempotent: false,
+        isActive: true
+      }
+    ];
+
+    // Upsert triggers and actions
+    const importedTriggers = await this.storage.upsertIntegrationTriggers(integrationId, vapiTriggers);
+    const importedActions = await this.storage.upsertIntegrationActions(integrationId, vapiActions);
+
+    console.log(`[IntegrationCatalogImporter] ✓ Vapi catalog import complete: ${importedTriggers.length} triggers, ${importedActions.length} actions`);
+
+    return {
+      triggersImported: importedTriggers.length,
+      actionsImported: importedActions.length
+    };
+  }
+
+  /**
    * Import catalog for any integration based on platform type
    */
   async importCatalog(integration: Integration): Promise<{
@@ -875,6 +1070,8 @@ export class IntegrationCatalogImporter {
       case 'pxc':
         const result = await this.importPXCCatalog(integration.id);
         return { triggersImported: 0, actionsImported: result.actionsImported };
+      case 'vapi':
+        return this.importVapiCatalog(integration.id);
       // Add more platform types here as needed
       default:
         console.log(`[IntegrationCatalogImporter] No catalog importer for platform: ${integration.platformType}`);

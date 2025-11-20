@@ -203,6 +203,15 @@ import {
   type InsertTariffRecord,
   type AddressSyncLog,
   type InsertAddressSyncLog,
+  vapiCalls,
+  vapiAssistants,
+  vapiKnowledgeFiles,
+  type VapiCall,
+  type InsertVapiCall,
+  type VapiAssistant,
+  type InsertVapiAssistant,
+  type VapiKnowledgeFile,
+  type InsertVapiKnowledgeFile,
 } from "../shared/schema";
 
 export interface ICleanStorage {
@@ -4695,6 +4704,155 @@ export class CleanDatabaseStorage implements ICleanStorage {
         .returning();
       return created;
     }
+  }
+
+  // ==========================================
+  // VAPI VOICE AI METHODS
+  // ==========================================
+
+  async createVapiCall(call: InsertVapiCall): Promise<VapiCall> {
+    const [created] = await db.insert(vapiCalls)
+      .values(call)
+      .returning();
+    return created;
+  }
+
+  async getVapiCall(id: number, organizationId: number): Promise<VapiCall | undefined> {
+    const [call] = await db.select()
+      .from(vapiCalls)
+      .where(and(
+        eq(vapiCalls.id, id),
+        eq(vapiCalls.organizationId, organizationId)
+      ))
+      .limit(1);
+    return call;
+  }
+
+  async getVapiCallByVapiId(vapiCallId: string, organizationId: number): Promise<VapiCall | undefined> {
+    const [call] = await db.select()
+      .from(vapiCalls)
+      .where(and(
+        eq(vapiCalls.vapiCallId, vapiCallId),
+        eq(vapiCalls.organizationId, organizationId)
+      ))
+      .limit(1);
+    return call;
+  }
+
+  async updateVapiCall(id: number, data: Partial<VapiCall>): Promise<VapiCall | undefined> {
+    const [updated] = await db.update(vapiCalls)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(vapiCalls.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getVapiCalls(organizationId: number, filters?: {
+    status?: string;
+    customerIntent?: string;
+    startDate?: Date;
+    endDate?: Date;
+    limit?: number;
+  }): Promise<VapiCall[]> {
+    const conditions = [eq(vapiCalls.organizationId, organizationId)];
+    
+    if (filters?.status) {
+      conditions.push(eq(vapiCalls.status, filters.status as any));
+    }
+    if (filters?.customerIntent) {
+      conditions.push(eq(vapiCalls.customerIntent, filters.customerIntent));
+    }
+    if (filters?.startDate) {
+      conditions.push(gte(vapiCalls.startedAt, filters.startDate));
+    }
+    if (filters?.endDate) {
+      conditions.push(lte(vapiCalls.startedAt, filters.endDate));
+    }
+
+    return await db.select()
+      .from(vapiCalls)
+      .where(and(...conditions))
+      .orderBy(desc(vapiCalls.startedAt))
+      .limit(filters?.limit || 100);
+  }
+
+  async createVapiAssistant(assistant: InsertVapiAssistant): Promise<VapiAssistant> {
+    const [created] = await db.insert(vapiAssistants)
+      .values(assistant)
+      .returning();
+    return created;
+  }
+
+  async getVapiAssistant(id: number, organizationId: number): Promise<VapiAssistant | undefined> {
+    const [assistant] = await db.select()
+      .from(vapiAssistants)
+      .where(and(
+        eq(vapiAssistants.id, id),
+        eq(vapiAssistants.organizationId, organizationId)
+      ))
+      .limit(1);
+    return assistant;
+  }
+
+  async updateVapiAssistant(id: number, data: Partial<VapiAssistant>): Promise<VapiAssistant | undefined> {
+    const [updated] = await db.update(vapiAssistants)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(vapiAssistants.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getVapiAssistants(organizationId: number, role?: string): Promise<VapiAssistant[]> {
+    const conditions = [eq(vapiAssistants.organizationId, organizationId)];
+    if (role) {
+      conditions.push(eq(vapiAssistants.role, role));
+    }
+
+    return await db.select()
+      .from(vapiAssistants)
+      .where(and(...conditions))
+      .orderBy(asc(vapiAssistants.name));
+  }
+
+  async createVapiKnowledgeFile(file: InsertVapiKnowledgeFile): Promise<VapiKnowledgeFile> {
+    const [created] = await db.insert(vapiKnowledgeFiles)
+      .values(file)
+      .returning();
+    return created;
+  }
+
+  async getVapiKnowledgeFile(id: number, organizationId: number): Promise<VapiKnowledgeFile | undefined> {
+    const [file] = await db.select()
+      .from(vapiKnowledgeFiles)
+      .where(and(
+        eq(vapiKnowledgeFiles.id, id),
+        eq(vapiKnowledgeFiles.organizationId, organizationId)
+      ))
+      .limit(1);
+    return file;
+  }
+
+  async updateVapiKnowledgeFile(id: number, data: Partial<VapiKnowledgeFile>): Promise<VapiKnowledgeFile | undefined> {
+    const [updated] = await db.update(vapiKnowledgeFiles)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(vapiKnowledgeFiles.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getVapiKnowledgeFiles(organizationId: number, category?: string): Promise<VapiKnowledgeFile[]> {
+    const conditions = [
+      eq(vapiKnowledgeFiles.organizationId, organizationId),
+      eq(vapiKnowledgeFiles.isActive, true)
+    ];
+    if (category) {
+      conditions.push(eq(vapiKnowledgeFiles.category, category));
+    }
+
+    return await db.select()
+      .from(vapiKnowledgeFiles)
+      .where(and(...conditions))
+      .orderBy(desc(vapiKnowledgeFiles.createdAt));
   }
 }
 
