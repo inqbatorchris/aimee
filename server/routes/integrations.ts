@@ -1759,4 +1759,64 @@ router.post('/splynx/entity/ticket/:ticketId/message', async (req, res) => {
   }
 });
 
+router.patch('/splynx/entity/ticket/:ticketId/status', async (req, res) => {
+  try {
+    if (!req.user?.organizationId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { ticketId } = req.params;
+    const { integrationId, statusId } = req.body;
+
+    if (!integrationId) {
+      return res.status(400).json({ error: 'integrationId is required' });
+    }
+
+    if (!statusId) {
+      return res.status(400).json({ error: 'statusId is required' });
+    }
+
+    // Get specific Splynx integration by ID
+    const [splynxIntegration] = await db
+      .select()
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.id, parseInt(integrationId)),
+          eq(integrations.organizationId, req.user.organizationId),
+          eq(integrations.platformType, 'splynx')
+        )
+      )
+      .limit(1);
+
+    if (!splynxIntegration) {
+      return res.status(404).json({ error: 'Splynx integration not found' });
+    }
+
+    if (!splynxIntegration.credentialsEncrypted) {
+      return res.status(400).json({ error: 'Splynx credentials not configured' });
+    }
+
+    // Decrypt credentials
+    const credentials = JSON.parse(decrypt(splynxIntegration.credentialsEncrypted));
+    const { baseUrl, authHeader } = credentials;
+
+    if (!baseUrl || !authHeader) {
+      return res.status(400).json({ error: 'Splynx credentials incomplete' });
+    }
+
+    // Create Splynx service and update ticket status
+    const splynxService = new SplynxService({ baseUrl, authHeader });
+    const result = await splynxService.updateTicketStatus(ticketId, statusId);
+
+    res.json({ 
+      success: true,
+      result
+    });
+  } catch (error: any) {
+    console.error(`Error updating Splynx ticket status:`, error);
+    res.status(500).json({ error: 'Failed to update ticket status', details: error.message });
+  }
+});
+
 export default router;
