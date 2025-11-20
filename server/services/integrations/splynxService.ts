@@ -1105,8 +1105,9 @@ export class SplynxService {
 
   async addTicketMessage(ticketId: string, message: string, isInternal: boolean = false): Promise<any> {
     try {
-      const url = this.buildUrl(`admin/support/tickets/${ticketId}/messages`);
+      const url = this.buildUrl(`admin/support/ticket-messages`);
       const response = await axios.post(url, {
+        ticket_id: ticketId,
         message,
         hide_for_customer: isInternal ? '1' : '0',
       }, {
@@ -1119,6 +1120,8 @@ export class SplynxService {
       return response.data;
     } catch (error: any) {
       console.error(`Failed to add message to ticket ${ticketId}:`, error.message);
+      console.error(`[DEBUG] Request URL:`, url);
+      console.error(`[DEBUG] Request payload:`, { ticket_id: ticketId, message, hide_for_customer: isInternal ? '1' : '0' });
       throw new Error(`Failed to add ticket message: ${error.message}`);
     }
   }
