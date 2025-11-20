@@ -142,7 +142,7 @@ router.get('/calls', async (req: Request, res: Response) => {
     }
 
     const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
-    const calls = await vapiService.listCalls(limit);
+    const calls = await vapiService.listCalls({ limit });
     
     res.json(calls);
   } catch (error: any) {

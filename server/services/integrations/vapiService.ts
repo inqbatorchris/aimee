@@ -173,7 +173,11 @@ export class VapiService {
     try {
       const response = await axios.get(
         `${this.baseUrl}/call/${callId}`,
-        { headers: this.getHeaders() }
+        { 
+          headers: this.getHeaders(),
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity
+        }
       );
       return response.data;
     } catch (error: any) {
@@ -199,7 +203,9 @@ export class VapiService {
         `${this.baseUrl}/call`,
         { 
           headers: this.getHeaders(),
-          params
+          params,
+          maxContentLength: Infinity,
+          maxBodyLength: Infinity
         }
       );
       return response.data;
