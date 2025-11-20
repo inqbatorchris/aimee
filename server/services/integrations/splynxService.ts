@@ -1060,12 +1060,6 @@ export class SplynxService {
         },
       });
       console.log(`[MESSAGES] ✅ Success! Fetched ${response.data?.length || 0} messages for ticket ${ticketId}`);
-      
-      // DEBUG: Log the first message's structure to identify hidden message fields
-      if (response.data && response.data.length > 0) {
-        console.log(`[MESSAGES DEBUG] First message structure:`, JSON.stringify(response.data[0], null, 2));
-      }
-      
       return Array.isArray(response.data) ? response.data : [];
     } catch (error: any) {
       console.error(`[MESSAGES ERROR] Failed for ticket ${ticketId}:`, error.message);
@@ -1114,14 +1108,14 @@ export class SplynxService {
       const url = this.buildUrl(`admin/support/tickets/${ticketId}/messages`);
       const response = await axios.post(url, {
         message,
-        type: isInternal ? 'admin' : 'customer',
+        hide_for_customer: isInternal ? '1' : '0',
       }, {
         headers: {
           'Authorization': this.credentials.authHeader,
           'Content-Type': 'application/json',
         },
       });
-      console.log(`Successfully added message to ticket ${ticketId}`);
+      console.log(`Successfully added message to ticket ${ticketId} (hide_for_customer: ${isInternal ? '1' : '0'})`);
       return response.data;
     } catch (error: any) {
       console.error(`Failed to add message to ticket ${ticketId}:`, error.message);
