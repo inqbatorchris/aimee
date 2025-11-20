@@ -343,11 +343,20 @@ function StepInput({ step, workItemId, onComplete, isPending, organizationId }: 
   const [formData, setFormData] = useState<Record<string, any>>({});
   const [notes, setNotes] = useState('');
   const [checklistState, setChecklistState] = useState<Record<string, boolean>>({});
+  const [modeActionCompleted, setModeActionCompleted] = useState(false);
 
   const { data: workItem } = useQuery({
     queryKey: [`/api/work-items/${workItemId}`],
     enabled: step.type === 'splynx_ticket',
   });
+
+  // Extract ticket ID for dependency tracking
+  const currentTicketId = workItem?.splynxTicketId;
+
+  // Reset completion state when step or ticket changes
+  useEffect(() => {
+    setModeActionCompleted(false);
+  }, [step.id, currentTicketId]);
 
   const handleSubmit = () => {
     if (step.type === 'inspection') {
@@ -394,19 +403,24 @@ function StepInput({ step, workItemId, onComplete, isPending, organizationId }: 
       );
     }
 
+    const mode = step.config?.mode || 'overview';
+    const requireAction = (mode === 'respond' || mode === 'status') && !modeActionCompleted;
+
     return (
       <div className="space-y-4">
         <SplynxTicketViewer
           workItemId={workItemId}
           ticketId={ticketId}
           organizationId={organizationId}
+          mode={mode}
           onMessageSent={() => {}}
           onStatusChanged={() => {}}
+          onModeCompleted={() => setModeActionCompleted(true)}
         />
         <Button 
           onClick={handleSubmit} 
           className="w-full"
-          disabled={isPending}
+          disabled={isPending || requireAction}
           data-testid="button-complete-step"
         >
           {isPending ? (
@@ -414,8 +428,10 @@ function StepInput({ step, workItemId, onComplete, isPending, organizationId }: 
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
               Saving...
             </>
+          ) : requireAction ? (
+            mode === 'respond' ? 'Send a message to complete' : 'Update status to complete'
           ) : (
-            'Mark as Viewed'
+            'Complete Step'
           )}
         </Button>
       </div>

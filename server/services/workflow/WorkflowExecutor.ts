@@ -1544,7 +1544,19 @@ export class WorkflowExecutor {
 
   private async executeCreateWorkItem(step: any, context: any): Promise<StepExecutionResult> {
     try {
-      const { title, description, assigneeId, dueDate, status = 'Planning', externalReference, templateId, splynxTicketId, splynxTaskId } = step.config || {};
+      const { 
+        title, 
+        description, 
+        assigneeId, 
+        dueDate, 
+        status = 'Planning', 
+        externalReference, 
+        templateId, 
+        splynxTicketId, 
+        splynxTaskId,
+        teamId,
+        splynxAssignedTo 
+      } = step.config || {};
       
       if (!title) {
         throw new Error('title is required for create_work_item step');
@@ -1561,9 +1573,33 @@ export class WorkflowExecutor {
       const processedSplynxTicketId = splynxTicketId ? this.processTemplate(splynxTicketId, context) : undefined;
       const processedSplynxTaskId = splynxTaskId ? this.processTemplate(splynxTaskId, context) : undefined;
       
-      // Calculate due date if it's a relative date like "+7 days"
+      // Process Splynx assigned_to ID and try to match with platform users
+      let finalAssigneeId = assigneeId || null;
+      if (splynxAssignedTo) {
+        const processedSplynxAssignedTo = this.processTemplate(splynxAssignedTo, context);
+        const splynxAdminId = parseInt(processedSplynxAssignedTo);
+        if (!isNaN(splynxAdminId)) {
+          // Query for user with matching splynxAdminId
+          const matchingUser = await storage.getUserBySplynxAdminId(parseInt(context.organizationId), splynxAdminId);
+          if (matchingUser) {
+            finalAssigneeId = matchingUser.id;
+            console.log(`[WorkflowExecutor]   👤 Matched Splynx admin ID ${splynxAdminId} to user: ${matchingUser.fullName || matchingUser.email}`);
+          } else {
+            console.log(`[WorkflowExecutor]   ⚠️ No user found with Splynx admin ID: ${splynxAdminId}`);
+          }
+        }
+      }
+      
+      // Calculate due date - special handling for support tickets
       let processedDueDate = dueDate;
-      if (dueDate && dueDate.startsWith('+')) {
+      const isSupportTicket = templateId === 'splynx-support-ticket';
+      
+      if (isSupportTicket && !dueDate) {
+        // Support tickets default to same-day due date
+        const today = new Date();
+        processedDueDate = today.toISOString().split('T')[0];
+        console.log(`[WorkflowExecutor]   📅 Support ticket - setting same-day due date: ${processedDueDate}`);
+      } else if (dueDate && dueDate.startsWith('+')) {
         const days = parseInt(dueDate.replace('+', '').replace('days', '').trim());
         const date = new Date();
         date.setDate(date.getDate() + days);
@@ -1598,7 +1634,8 @@ export class WorkflowExecutor {
         title: processedTitle,
         description: processedDescription || '',
         status: status as any,
-        assignedTo: assigneeId || null,
+        assignedTo: finalAssigneeId,
+        teamId: teamId || null,
         dueDate: processedDueDate || null,
         workflowMetadata: Object.keys(workflowMetadata).length > 0 ? workflowMetadata : null,
         workflowTemplateId: templateId || null,

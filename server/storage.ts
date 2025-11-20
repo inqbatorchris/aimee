@@ -1629,7 +1629,32 @@ export class CleanDatabaseStorage implements ICleanStorage {
 
   async createWorkItem(workItem: InsertWorkItem): Promise<WorkItem> {
     const [created] = await db.insert(workItems).values(workItem).returning();
+    
+    // Log work item creation activity
+    if (created) {
+      await this.logActivity({
+        organizationId: created.organizationId,
+        userId: created.createdBy || undefined,
+        actionType: 'creation' as const,
+        entityType: 'work_item',
+        entityId: created.id,
+        description: `Work item "${created.title}" was created`,
+        metadata: { status: created.status, dueDate: created.dueDate, teamId: created.teamId }
+      });
+    }
+    
     return created;
+  }
+
+  async getUserBySplynxAdminId(organizationId: number, splynxAdminId: number): Promise<User | undefined> {
+    const [user] = await db.select()
+      .from(users)
+      .where(and(
+        eq(users.organizationId, organizationId),
+        eq(users.splynxAdminId, splynxAdminId)
+      ))
+      .limit(1);
+    return user;
   }
 
   async updateWorkItem(id: number, data: Partial<WorkItem>): Promise<WorkItem | undefined> {

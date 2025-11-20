@@ -6,29 +6,37 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
 import { Ticket, MessageSquare, Clock, User, AlertCircle, Loader2, Send } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { format } from 'date-fns';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+
+type ViewMode = 'overview' | 'respond' | 'status' | 'resolution';
 
 interface SplynxTicketViewerProps {
   workItemId: number;
   ticketId: string;
   organizationId?: number;
+  mode?: ViewMode;
   onMessageSent?: () => void;
   onStatusChanged?: () => void;
+  onModeCompleted?: () => void;
 }
 
 export function SplynxTicketViewer({
   workItemId,
   ticketId,
   organizationId,
+  mode = 'overview',
   onMessageSent,
-  onStatusChanged
+  onStatusChanged,
+  onModeCompleted
 }: SplynxTicketViewerProps) {
   const { toast } = useToast();
   const [message, setMessage] = useState('');
   const [isInternal, setIsInternal] = useState(false);
+  const [selectedStatus, setSelectedStatus] = useState<string>('');
+  const [localActionCompleted, setLocalActionCompleted] = useState(false);
 
   const { data: integrations, isLoading: isLoadingIntegrations } = useQuery({
     queryKey: ['/api/integrations'],
@@ -51,6 +59,39 @@ export function SplynxTicketViewer({
     },
   });
 
+  // Derive completion state from actual ticket data
+  const isModeCompleted = useMemo(() => {
+    if (!ticketData?.entityData) return false;
+    
+    // Overview and resolution modes don't require action
+    if (mode === 'overview' || mode === 'resolution') return true;
+    
+    // Respond mode: Check if there are any non-customer messages
+    if (mode === 'respond') {
+      const hasAgentMessages = ticketData.messages?.some((msg: any) => msg.type !== 'customer');
+      return localActionCompleted || hasAgentMessages;
+    }
+    
+    // Status mode: Require explicit status change in this session
+    if (mode === 'status') {
+      return localActionCompleted;
+    }
+    
+    return false;
+  }, [ticketData, mode, localActionCompleted]);
+
+  // Reset local action state when ticket changes
+  useEffect(() => {
+    setLocalActionCompleted(false);
+  }, [ticketId]);
+
+  // Notify parent when completion state changes
+  useEffect(() => {
+    if (isModeCompleted) {
+      onModeCompleted?.();
+    }
+  }, [isModeCompleted, onModeCompleted]);
+
   const sendMessageMutation = useMutation({
     mutationFn: async ({ message, isInternal }: { message: string; isInternal: boolean }) => {
       if (!integrationId) throw new Error('No Splynx integration found');
@@ -67,6 +108,9 @@ export function SplynxTicketViewer({
       setMessage('');
       refetch();
       onMessageSent?.();
+      if (mode === 'respond') {
+        setLocalActionCompleted(true);
+      }
       toast({
         title: 'Message sent',
         description: 'Your message has been posted to the ticket.',
@@ -81,9 +125,45 @@ export function SplynxTicketViewer({
     },
   });
 
+  const updateStatusMutation = useMutation({
+    mutationFn: async ({ statusId }: { statusId: string }) => {
+      if (!integrationId) throw new Error('No Splynx integration found');
+      return await apiRequest(`/api/integrations/splynx/entity/ticket/${ticketId}/status`, {
+        method: 'PATCH',
+        body: {
+          integrationId,
+          statusId: parseInt(statusId)
+        }
+      });
+    },
+    onSuccess: () => {
+      refetch();
+      onStatusChanged?.();
+      if (mode === 'status') {
+        setLocalActionCompleted(true);
+      }
+      toast({
+        title: 'Status updated',
+        description: 'Ticket status has been changed.',
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Error updating status',
+        description: error.message || 'Failed to update status',
+        variant: 'destructive',
+      });
+    },
+  });
+
   const handleSendMessage = async () => {
     if (!message.trim()) return;
     sendMessageMutation.mutate({ message: message.trim(), isInternal });
+  };
+
+  const handleUpdateStatus = async () => {
+    if (!selectedStatus) return;
+    updateStatusMutation.mutate({ statusId: selectedStatus });
   };
 
   if (isLoadingIntegrations || isLoading) {
@@ -133,6 +213,14 @@ export function SplynxTicketViewer({
     critical: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200',
   };
 
+  const statusOptions = [
+    { value: '1', label: 'New' },
+    { value: '2', label: 'Work in Progress' },
+    { value: '3', label: 'Waiting on Customer' },
+    { value: '4', label: 'Resolved' },
+    { value: '5', label: 'Closed' },
+  ];
+
   return (
     <div className="space-y-4" data-testid="splynx-ticket-viewer">
       <Card>
@@ -169,43 +257,49 @@ export function SplynxTicketViewer({
 
           <Separator />
 
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 text-sm font-medium">
-              <MessageSquare className="h-4 w-4" />
-              Messages ({messages.length})
-            </div>
-            
-            <div className="space-y-3 max-h-96 overflow-y-auto border rounded-md p-3 bg-muted/20">
-              {messages.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">No messages yet</p>
-              ) : (
-                messages.map((msg: any, idx: number) => (
-                  <div 
-                    key={idx} 
-                    className={`p-3 rounded-md ${
-                      msg.type === 'internal' 
-                        ? 'bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800' 
-                        : 'bg-background'
-                    } border`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm font-medium">{msg.author || 'User'}</span>
-                      <div className="flex items-center gap-2">
-                        {msg.type === 'internal' && (
-                          <Badge variant="outline" className="text-xs">Internal</Badge>
-                        )}
-                        <span className="text-xs text-muted-foreground">
-                          {msg.created_at ? format(new Date(msg.created_at), 'PPp') : ''}
-                        </span>
+          {/* Message History - Show in all modes */}
+          {(mode === 'overview' || mode === 'respond') && (
+            <div className="space-y-3">
+              <div className="flex items-center gap-2 text-sm font-medium">
+                <MessageSquare className="h-4 w-4" />
+                Messages ({messages.length})
+              </div>
+              
+              <div className="space-y-3 max-h-96 overflow-y-auto border rounded-md p-3 bg-muted/20">
+                {messages.length === 0 ? (
+                  <p className="text-sm text-muted-foreground text-center py-4">No messages yet</p>
+                ) : (
+                  messages.map((msg: any, idx: number) => (
+                    <div 
+                      key={idx} 
+                      className={`p-3 rounded-md ${
+                        msg.type === 'internal' 
+                          ? 'bg-yellow-50 dark:bg-yellow-950 border-yellow-200 dark:border-yellow-800' 
+                          : 'bg-background'
+                      } border`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-sm font-medium">{msg.author || 'User'}</span>
+                        <div className="flex items-center gap-2">
+                          {msg.type === 'internal' && (
+                            <Badge variant="outline" className="text-xs">Internal</Badge>
+                          )}
+                          <span className="text-xs text-muted-foreground">
+                            {msg.created_at ? format(new Date(msg.created_at), 'PPp') : ''}
+                          </span>
+                        </div>
                       </div>
+                      <p className="text-sm whitespace-pre-wrap">{msg.message || msg.text}</p>
                     </div>
-                    <p className="text-sm whitespace-pre-wrap">{msg.message || msg.text}</p>
-                  </div>
-                ))
-              )}
+                  ))
+                )}
+              </div>
             </div>
+          )}
 
-            <div className="space-y-2 border rounded-md p-3">
+          {/* Message Input - Show only in respond mode */}
+          {mode === 'respond' && (
+            <div className="space-y-2 border rounded-md p-4 bg-primary/5">
               <div className="flex items-center gap-2">
                 <label className="text-sm font-medium">Add Response</label>
                 <Select value={isInternal ? 'true' : 'false'} onValueChange={(v) => setIsInternal(v === 'true')}>
@@ -222,8 +316,9 @@ export function SplynxTicketViewer({
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder="Type your message here..."
-                className="min-h-20"
+                className="min-h-32"
                 data-testid="textarea-ticket-message"
+                autoFocus
               />
               <Button 
                 onClick={handleSendMessage} 
@@ -245,7 +340,56 @@ export function SplynxTicketViewer({
                 )}
               </Button>
             </div>
-          </div>
+          )}
+
+          {/* Status Selector - Show only in status mode */}
+          {mode === 'status' && (
+            <div className="space-y-3 border rounded-md p-4 bg-primary/5">
+              <label className="text-sm font-medium">Update Ticket Status</label>
+              <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                <SelectTrigger data-testid="select-ticket-status">
+                  <SelectValue placeholder="Select new status..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {statusOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Button
+                onClick={handleUpdateStatus}
+                disabled={updateStatusMutation.isPending || !selectedStatus}
+                size="sm"
+                className="w-full"
+                data-testid="button-update-status"
+              >
+                {updateStatusMutation.isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    Updating...
+                  </>
+                ) : (
+                  'Update Status'
+                )}
+              </Button>
+            </div>
+          )}
+
+          {/* Resolution Summary - Show only in resolution mode */}
+          {mode === 'resolution' && (
+            <div className="space-y-3 border rounded-md p-4 bg-green-50 dark:bg-green-950">
+              <h3 className="text-sm font-medium text-green-900 dark:text-green-100">Ready to close this ticket</h3>
+              <p className="text-sm text-green-700 dark:text-green-300">
+                Review the ticket details and messages above. When you complete this step, the ticket will be marked as resolved.
+              </p>
+              <div className="flex items-center gap-2 text-sm text-green-700 dark:text-green-300">
+                <User className="h-4 w-4" />
+                <span>Assigned to: {ticket?.assign_to || 'Unassigned'}</span>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
     </div>
