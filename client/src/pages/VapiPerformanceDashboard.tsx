@@ -6,26 +6,23 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-import { PhoneCall, Bot, Clock, CheckCircle2, ChevronDown, ChevronRight, Copy, Phone, Filter } from 'lucide-react';
+import { PhoneCall, Clock, CheckCircle2, ChevronDown, ChevronRight, Copy, Filter } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 
 export default function VapiPerformanceDashboard() {
-  const { user } = useAuth();
-  const organizationId = user?.organizationId || 4;
+  const { currentUser } = useAuth();
+  const organizationId = currentUser?.organizationId || 4;
   const { toast } = useToast();
 
   const [expandedCallId, setExpandedCallId] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [successFilter, setSuccessFilter] = useState<string>('all');
   const [searchPhone, setSearchPhone] = useState('');
+  const [dateFilter, setDateFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 100;
-
-  const { data: assistants, isLoading: assistantsLoading } = useQuery({
-    queryKey: ['/api/vapi/assistants', { organizationId }],
-  });
 
   const { data: calls, isLoading: callsLoading } = useQuery({
     queryKey: ['/api/vapi/calls', { organizationId, limit: 1000 }],
@@ -64,6 +61,24 @@ export default function VapiPerformanceDashboard() {
     if (successFilter === 'success' && call.analysis?.successEvaluation !== 'true') return false;
     if (successFilter === 'failed' && call.analysis?.successEvaluation !== 'false') return false;
     if (searchPhone && !call.customer?.number?.includes(searchPhone)) return false;
+    
+    // Date filter
+    if (dateFilter !== 'all') {
+      const callDate = new Date(call.createdAt);
+      const now = new Date();
+      const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      
+      if (dateFilter === 'today' && callDate < dayStart) return false;
+      if (dateFilter === 'week') {
+        const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        if (callDate < weekAgo) return false;
+      }
+      if (dateFilter === 'month') {
+        const monthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        if (callDate < monthAgo) return false;
+      }
+    }
+    
     return true;
   }) : [];
 
@@ -73,17 +88,6 @@ export default function VapiPerformanceDashboard() {
     (currentPage - 1) * itemsPerPage,
     currentPage * itemsPerPage
   );
-
-  if (assistantsLoading) {
-    return (
-      <div className="flex items-center justify-center h-96">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-muted-foreground">Loading Vapi account data...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="container mx-auto p-6 space-y-6" data-testid="vapi-performance-dashboard">
@@ -99,90 +103,6 @@ export default function VapiPerformanceDashboard() {
           <CheckCircle2 className="h-4 w-4 mr-1" />
           Connected
         </Badge>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Bot className="h-5 w-5 text-violet-600" />
-              Connected Assistants
-            </CardTitle>
-            <CardDescription>Voice AI agents configured in your Vapi account</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {assistantsLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-              </div>
-            ) : Array.isArray(assistants) && assistants.length > 0 ? (
-              <div className="space-y-3">
-                {assistants.map((assistant: any) => (
-                  <div 
-                    key={assistant.id}
-                    className="p-3 border rounded-lg hover:bg-muted/50 transition-colors"
-                    data-testid={`assistant-${assistant.id}`}
-                  >
-                    <div className="flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="font-medium">{assistant.name || 'Unnamed Assistant'}</div>
-                        <div className="text-sm text-muted-foreground mt-1">
-                          Model: {assistant.model?.model || 'Unknown'}
-                        </div>
-                        {assistant.voice && (
-                          <div className="text-xs text-muted-foreground">
-                            Voice: {assistant.voice.provider}
-                          </div>
-                        )}
-                      </div>
-                      <Badge variant="outline">{assistant.type || 'Assistant'}</Badge>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                No assistants configured yet
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Phone className="h-5 w-5 text-blue-600" />
-              Call Statistics
-            </CardTitle>
-            <CardDescription>Overview of voice AI call activity</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {callsLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
-              </div>
-            ) : Array.isArray(calls) && calls.length > 0 ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="p-3 border rounded-lg">
-                    <div className="text-2xl font-bold">{calls.length}</div>
-                    <div className="text-sm text-muted-foreground">Total Calls</div>
-                  </div>
-                  <div className="p-3 border rounded-lg">
-                    <div className="text-2xl font-bold">
-                      {calls.filter((c: any) => c.status === 'ended').length}
-                    </div>
-                    <div className="text-sm text-muted-foreground">Completed</div>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-8 text-muted-foreground">
-                No call data available yet
-              </div>
-            )}
-          </CardContent>
-        </Card>
       </div>
 
       <Card>
@@ -219,6 +139,17 @@ export default function VapiPerformanceDashboard() {
                 <SelectItem value="all">All Results</SelectItem>
                 <SelectItem value="success">Success</SelectItem>
                 <SelectItem value="failed">Failed</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={dateFilter} onValueChange={setDateFilter}>
+              <SelectTrigger className="w-[150px]">
+                <SelectValue placeholder="Date Range" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Time</SelectItem>
+                <SelectItem value="today">Today</SelectItem>
+                <SelectItem value="week">Last 7 Days</SelectItem>
+                <SelectItem value="month">Last 30 Days</SelectItem>
               </SelectContent>
             </Select>
             <Input
@@ -339,13 +270,13 @@ export default function VapiPerformanceDashboard() {
                                     🤖 AI Analysis
                                   </h4>
                                   <div className="space-y-2 text-sm">
-                                    {expandedCall.summary && (
+                                    {expandedCall.analysis?.summary && (
                                       <div>
                                         <span className="text-muted-foreground">Summary:</span>
-                                        <p className="mt-1">{expandedCall.summary}</p>
+                                        <p className="mt-1">{expandedCall.analysis.summary}</p>
                                       </div>
                                     )}
-                                    {expandedCall.analysis.successEvaluation && (
+                                    {expandedCall.analysis?.successEvaluation && (
                                       <div>
                                         <span className="text-muted-foreground">Success:</span>
                                         <Badge className={expandedCall.analysis.successEvaluation === 'true' ? 'bg-green-100 text-green-800 ml-2' : 'bg-red-100 text-red-800 ml-2'}>
