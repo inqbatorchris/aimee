@@ -441,7 +441,7 @@ export function SplynxTicketViewer({
                 {ticket?.priority || 'Normal'}
               </Badge>
               <Badge variant="outline">
-                Status: {ticket?.status_id || 'Unknown'}
+                {currentStatusLabel}
               </Badge>
             </div>
           </div>
