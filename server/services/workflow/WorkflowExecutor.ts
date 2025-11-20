@@ -1396,7 +1396,12 @@ export class WorkflowExecutor {
     
     // Replace {{variable}} with context values
     return template.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, (match, path) => {
-      return this.getNestedValue(context, path) || match;
+      const value = this.getNestedValue(context, path);
+      if (value === undefined || value === null) {
+        console.warn(`[WorkflowExecutor] Template variable ${match} not found in context. Available keys:`, Object.keys(context));
+        return match;
+      }
+      return value;
     });
   }
 
