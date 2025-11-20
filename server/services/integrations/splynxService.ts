@@ -1105,8 +1105,9 @@ export class SplynxService {
 
   async addTicketMessage(ticketId: string, message: string, isInternal: boolean = false): Promise<any> {
     try {
-      const url = this.buildUrl(`admin/support/tickets/${ticketId}/messages`);
+      const url = this.buildUrl(`admin/support/ticket-messages`);
       const response = await axios.post(url, {
+        ticket_id: ticketId,
         message,
         type: isInternal ? 'internal' : 'public',
       }, {
