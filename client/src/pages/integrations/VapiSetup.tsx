@@ -93,11 +93,13 @@ export default function VapiSetup() {
     mutationFn: async (data: VapiSetupFormData) => {
       if (installation) {
         // Update existing integration
-        return await apiRequest(`/api/integrations/${installation.id}`, {
-          method: 'PATCH',
+        return await apiRequest(`/api/integrations`, {
+          method: 'POST',
           body: JSON.stringify({
-            credentialsEncrypted: JSON.stringify({ apiKey: data.apiKey }),
-            connectionStatus: 'pending',
+            platformType: 'vapi',
+            name: 'Vapi Voice AI',
+            credentials: { apiKey: data.apiKey },
+            connectionStatus: 'active',
           }),
         });
       } else {
@@ -105,11 +107,10 @@ export default function VapiSetup() {
         return await apiRequest('/api/integrations', {
           method: 'POST',
           body: JSON.stringify({
-            organizationId: 4, // Country Connect
             platformType: 'vapi',
             name: 'Vapi Voice AI',
-            credentialsEncrypted: JSON.stringify({ apiKey: data.apiKey }),
-            connectionStatus: 'pending',
+            credentials: { apiKey: data.apiKey },
+            connectionStatus: 'active',
             isEnabled: true,
           }),
         });
