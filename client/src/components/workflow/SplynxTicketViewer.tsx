@@ -37,6 +37,7 @@ export function SplynxTicketViewer({
   const [isInternal, setIsInternal] = useState(false);
   const [selectedStatus, setSelectedStatus] = useState<string>('');
   const [localActionCompleted, setLocalActionCompleted] = useState(false);
+  const [hasNotifiedCompletion, setHasNotifiedCompletion] = useState(false);
 
   const { data: integrations, isLoading: isLoadingIntegrations } = useQuery<any[]>({
     queryKey: ['/api/integrations'],
@@ -87,14 +88,16 @@ export function SplynxTicketViewer({
   // Reset local action state when ticket changes
   useEffect(() => {
     setLocalActionCompleted(false);
+    setHasNotifiedCompletion(false);
   }, [ticketId]);
 
-  // Notify parent when completion state changes
+  // Notify parent when completion state changes (ONCE)
   useEffect(() => {
-    if (isModeCompleted) {
+    if (isModeCompleted && !hasNotifiedCompletion) {
+      setHasNotifiedCompletion(true);
       onModeCompleted?.();
     }
-  }, [isModeCompleted, onModeCompleted]);
+  }, [isModeCompleted, hasNotifiedCompletion, onModeCompleted]);
 
   const sendMessageMutation = useMutation({
     mutationFn: async ({ message, isInternal }: { message: string; isInternal: boolean }) => {
