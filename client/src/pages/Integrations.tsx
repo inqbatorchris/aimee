@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import {
   Cable, Calculator, Mail, Database as DatabaseIcon, Bot, Settings,
-  CheckCircle, XCircle, AlertCircle, Plus, Workflow, RefreshCw, Info, Map
+  CheckCircle, XCircle, AlertCircle, Plus, Workflow, RefreshCw, Info, Map, Phone
 } from 'lucide-react';
 import type { Integration } from '@shared/schema';
 import { useToast } from '@/hooks/use-toast';
@@ -85,6 +85,13 @@ const INTEGRATION_CONFIG = {
     icon: DatabaseIcon,
     setupPath: '/integrations/airtable/setup',
     color: 'bg-yellow-500',
+  },
+  vapi: {
+    name: 'Vapi Voice AI',
+    description: 'Autonomous voice AI assistant for support and sales',
+    icon: Phone,
+    setupPath: '/integrations/vapi/setup',
+    color: 'bg-violet-500',
   },
 } as const;
 
