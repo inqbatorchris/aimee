@@ -1050,24 +1050,20 @@ export class SplynxService {
 
   async getTicketComments(ticketId: string): Promise<any[]> {
     try {
-      // Use the correct Splynx endpoint for ticket messages
-      const url = this.buildUrl(`admin/support/ticket-messages?main_attributes[ticket_id_variable]=${ticketId}`);
-      console.log(`[MESSAGES] Attempting to fetch messages from URL: ${url}`);
+      // FIXED: Use correct parameter name - ticket_id not ticket_id_variable
+      const url = this.buildUrl(`admin/support/ticket-messages?main_attributes[ticket_id]=${ticketId}`);
+      console.log(`[MESSAGES] Fetching messages from: ${url}`);
       const response = await axios.get(url, {
         headers: {
           'Authorization': this.credentials.authHeader,
           'Content-Type': 'application/json',
         },
       });
-      console.log(`[MESSAGES] Success! Fetched ${response.data?.length || 0} messages for ticket ${ticketId}`);
-      console.log(`[MESSAGES] Sample message data:`, JSON.stringify(response.data?.[0], null, 2));
+      console.log(`[MESSAGES] ✅ Success! Fetched ${response.data?.length || 0} messages for ticket ${ticketId}`);
       return Array.isArray(response.data) ? response.data : [];
     } catch (error: any) {
-      console.error(`[MESSAGES ERROR] Failed to fetch messages for ticket ${ticketId}`);
-      console.error(`[MESSAGES ERROR] URL attempted: ${url}`);
+      console.error(`[MESSAGES ERROR] Failed for ticket ${ticketId}:`, error.message);
       console.error(`[MESSAGES ERROR] Status:`, error.response?.status);
-      console.error(`[MESSAGES ERROR] Response data:`, JSON.stringify(error.response?.data, null, 2));
-      console.error(`[MESSAGES ERROR] Full error:`, error.message);
       throw new Error(`Failed to fetch ticket messages: ${error.message}`);
     }
   }
