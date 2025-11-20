@@ -4,12 +4,16 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
 import { PhoneCall, Clock, CheckCircle2, ChevronDown, ChevronRight, Copy, Filter } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
-import { apiRequest } from '@/lib/queryClient';
+import { apiRequest, queryClient } from '@/lib/queryClient';
+import { createWorkItem } from '@/lib/workItems.api';
 
 export default function VapiPerformanceDashboard() {
   const { currentUser } = useAuth();
@@ -24,8 +28,27 @@ export default function VapiPerformanceDashboard() {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 100;
 
+  // Bulk work item creation state
+  const [selectedCalls, setSelectedCalls] = useState<string[]>([]);
+  const [showWorkItemDialog, setShowWorkItemDialog] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState<string>('');
+  const [workItemAssignee, setWorkItemAssignee] = useState<string>('unassigned');
+  const [workItemTeam, setWorkItemTeam] = useState<string>('');
+  const [workItemDueDate, setWorkItemDueDate] = useState<string>('');
+  const [isCreatingWorkItems, setIsCreatingWorkItems] = useState(false);
+
   const { data: calls, isLoading: callsLoading } = useQuery({
     queryKey: ['/api/vapi/calls', { organizationId, limit: 1000 }],
+  });
+
+  // Fetch workflow templates
+  const { data: templates } = useQuery({
+    queryKey: ['/api/workflows/templates'],
+  });
+
+  // Fetch users for assignee dropdown
+  const { data: users } = useQuery({
+    queryKey: ['/api/users', { organizationId }],
   });
 
   const { data: expandedCall, isLoading: expandedLoading } = useQuery({
@@ -75,6 +98,109 @@ export default function VapiPerformanceDashboard() {
         return false;
       }
     });
+  };
+
+  // Handle select all checkbox
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      const allCallIds = paginatedCalls.map((call: any) => call.id);
+      setSelectedCalls(allCallIds);
+    } else {
+      setSelectedCalls([]);
+    }
+  };
+
+  // Handle individual call selection
+  const handleCallSelection = (callId: string, checked: boolean) => {
+    if (checked) {
+      setSelectedCalls([...selectedCalls, callId]);
+    } else {
+      setSelectedCalls(selectedCalls.filter(id => id !== callId));
+    }
+  };
+
+  // Handle creating work items from selected calls
+  const handleCreateWorkItems = async () => {
+    if (!selectedTemplate) {
+      toast({
+        title: 'Template Required',
+        description: 'Please select a workflow template',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    const template = templates?.find((t: any) => t.id === parseInt(selectedTemplate));
+    if (!template) {
+      toast({
+        title: 'Template Not Found',
+        description: 'Selected template could not be found',
+        variant: 'destructive',
+      });
+      return;
+    }
+    
+    const callsToProcess = Array.isArray(calls) ? calls.filter((call: any) => selectedCalls.includes(call.id)) : [];
+    
+    if (callsToProcess.length === 0) return;
+    
+    setIsCreatingWorkItems(true);
+    try {
+      const promises = callsToProcess.map((call: any) => {
+        const phoneNumber = call.customer?.number || call.phoneNumber?.number || 'Unknown';
+        const ticketCreated = wasTicketCreated(call);
+        const duration = call.endedAt 
+          ? Math.floor((new Date(call.endedAt).getTime() - new Date(call.createdAt).getTime()) / 1000)
+          : 0;
+        
+        return createWorkItem({
+          title: `${template.name} - Call from ${phoneNumber}`,
+          description: `Work item for Vapi call ${call.id}. ${ticketCreated ? 'Ticket was created successfully.' : 'No ticket was created - requires manual review.'}`,
+          status: 'Planning' as const,
+          assignedTo: workItemAssignee && workItemAssignee !== 'unassigned' ? parseInt(workItemAssignee) : undefined,
+          teamId: workItemTeam ? parseInt(workItemTeam) : undefined,
+          dueDate: workItemDueDate || undefined,
+          workflowTemplateId: template.id,
+          workflowSource: 'vapi_voice_ai',
+          workItemType: String(template.id),
+          workflowMetadata: {
+            templateName: template.name,
+            vapiCallId: call.id,
+            phoneNumber: phoneNumber,
+            callDuration: duration,
+            callCost: call.cost,
+            ticketCreated: ticketCreated,
+            callStatus: call.status,
+            callStartTime: call.createdAt,
+            callEndTime: call.endedAt,
+          },
+        });
+      });
+      
+      await Promise.all(promises);
+      
+      toast({
+        title: 'Success',
+        description: `${callsToProcess.length} work item${callsToProcess.length > 1 ? 's' : ''} created successfully`,
+      });
+      
+      setSelectedCalls([]);
+      setShowWorkItemDialog(false);
+      setSelectedTemplate('');
+      setWorkItemAssignee('unassigned');
+      setWorkItemTeam('');
+      setWorkItemDueDate('');
+      queryClient.invalidateQueries({ queryKey: ['/api/work-items'] });
+    } catch (error) {
+      console.error('Error creating work items:', error);
+      toast({
+        title: 'Error',
+        description: 'Failed to create work items',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsCreatingWorkItems(false);
+    }
   };
 
   // Filter calls
