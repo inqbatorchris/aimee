@@ -60,9 +60,13 @@ router.get('/api/vapi/assistants', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Valid organizationId is required' });
     }
     
-    const role = req.query.role as string | undefined;
+    // Fetch directly from Vapi API
+    const vapiService = await getVapiService(organizationId);
+    if (!vapiService) {
+      return res.status(400).json({ error: 'Vapi integration not configured for this organization' });
+    }
 
-    const assistants = await storage.getVapiAssistants(organizationId, role);
+    const assistants = await vapiService.listAssistants();
     res.json(assistants);
   } catch (error: any) {
     console.error('Error fetching Vapi assistants:', error);
@@ -103,15 +107,15 @@ router.get('/api/vapi/calls', async (req: Request, res: Response) => {
       return res.status(400).json({ error: 'Valid organizationId is required' });
     }
     
-    const filters = {
-      status: req.query.status as string | undefined,
-      customerIntent: req.query.customerIntent as string | undefined,
-      startDate: req.query.startDate ? new Date(req.query.startDate as string) : undefined,
-      endDate: req.query.endDate ? new Date(req.query.endDate as string) : undefined,
-      limit: req.query.limit ? parseInt(req.query.limit as string) : 100,
-    };
+    // Fetch directly from Vapi API
+    const vapiService = await getVapiService(organizationId);
+    if (!vapiService) {
+      return res.status(400).json({ error: 'Vapi integration not configured for this organization' });
+    }
 
-    const calls = await storage.getVapiCalls(organizationId, filters);
+    const limit = req.query.limit ? parseInt(req.query.limit as string) : 100;
+    const calls = await vapiService.listCalls(limit);
+    
     res.json(calls);
   } catch (error: any) {
     console.error('Error fetching Vapi calls:', error);
