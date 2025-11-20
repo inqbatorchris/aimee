@@ -252,7 +252,7 @@ export function SplynxTicketViewer({
   const splynxBaseUrl = rawBaseUrl.replace(/\/api\/2\.0\/?$/, ''); // Strip /api/2.0 from end
   
   // Build correct Splynx UI URLs
-  const customerUrl = ticket?.customer_id ? `${splynxBaseUrl}/admin/customers/view/${ticket.customer_id}` : null;
+  const customerUrl = ticket?.customer_id ? `${splynxBaseUrl}/admin/customers/view?id=${ticket.customer_id}` : null;
   const ticketUrl = `${splynxBaseUrl}/admin/tickets/opened--view?id=${ticketId}`;
   
   // Get current status label
