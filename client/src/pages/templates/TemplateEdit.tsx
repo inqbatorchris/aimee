@@ -67,12 +67,28 @@ export default function TemplateEdit() {
 
   const recentWorkItems = workItems;
 
+  // Normalize legacy step types to current schema
+  const normalizeLegacyStepTypes = (steps: any[]) => {
+    return steps.map(step => {
+      // Map legacy "inspection" type to "checklist"
+      if (step.type === 'inspection') {
+        return { ...step, type: 'checklist' };
+      }
+      // Map legacy "data_output" if it exists (not in current schema)
+      if (step.type === 'data_output') {
+        return { ...step, type: 'form' };
+      }
+      return step;
+    });
+  };
+
   // Load template data when fetched
   useEffect(() => {
     if (template) {
       setName(template.name);
       setDescription(template.description || '');
-      setSteps(template.steps || []);
+      // Normalize legacy step types when loading
+      setSteps(normalizeLegacyStepTypes(template.steps || []));
       setCompletionCallbacks(template.completionCallbacks || []);
     }
   }, [template]);
@@ -134,16 +150,27 @@ export default function TemplateEdit() {
   });
 
   const cleanStepsForSave = (steps: any[]) => {
-    // Remove UI-only fields from OCR extractions before saving
+    // Normalize legacy types and remove UI-only fields
     return steps.map(step => {
-      if (step.config?.photoAnalysisConfig?.extractions) {
-        return {
-          ...step,
+      let cleanedStep = { ...step };
+
+      // 1. Normalize legacy step types
+      if (cleanedStep.type === 'inspection') {
+        cleanedStep.type = 'checklist';
+      }
+      if (cleanedStep.type === 'data_output') {
+        cleanedStep.type = 'form';
+      }
+
+      // 2. Remove UI-only fields from OCR extractions
+      if (cleanedStep.config?.photoAnalysisConfig?.extractions) {
+        cleanedStep = {
+          ...cleanedStep,
           config: {
-            ...step.config,
+            ...cleanedStep.config,
             photoAnalysisConfig: {
-              ...step.config.photoAnalysisConfig,
-              extractions: step.config.photoAnalysisConfig.extractions.map((ext: any) => {
+              ...cleanedStep.config.photoAnalysisConfig,
+              extractions: cleanedStep.config.photoAnalysisConfig.extractions.map((ext: any) => {
                 // Remove UI-only fields (id, displayLabel) and keep only schema fields
                 const { id: _, displayLabel: __, ...schemaFields } = ext;
                 return schemaFields;
@@ -152,7 +179,8 @@ export default function TemplateEdit() {
           },
         };
       }
-      return step;
+
+      return cleanedStep;
     });
   };
 
