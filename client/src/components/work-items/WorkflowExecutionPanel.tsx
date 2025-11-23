@@ -675,32 +675,32 @@ export function WorkflowExecutionPanel({ workItemId }: WorkflowExecutionPanelPro
   }
 
   return (
-    <div className="space-y-6" data-testid="workflow-execution-panel">
-      {/* Progress Header */}
-      <div className="space-y-3">
+    <div className="space-y-3 md:space-y-6" data-testid="workflow-execution-panel">
+      {/* Progress Header - Compact on Mobile */}
+      <div className="space-y-1.5 md:space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+          <h3 className="text-sm md:text-lg font-semibold text-gray-900 dark:text-white">
             Workflow Progress
           </h3>
-          <span className="text-sm font-medium text-gray-600 dark:text-gray-400">
+          <span className="text-xs md:text-sm font-medium text-gray-600 dark:text-gray-400">
             {completedSteps} / {totalSteps} steps
           </span>
         </div>
-        <div className="space-y-2">
-          <Progress value={progressPercent} className="h-2" data-testid="workflow-progress-bar" />
-          <p className="text-sm text-gray-500 dark:text-gray-400">
+        <div className="space-y-1">
+          <Progress value={progressPercent} className="h-1.5 md:h-2" data-testid="workflow-progress-bar" />
+          <p className="text-xs md:text-sm text-gray-500 dark:text-gray-400">
             {progressPercent.toFixed(0)}% complete
           </p>
         </div>
       </div>
 
       {/* Steps List */}
-      <div className="space-y-3">
+      <div className="space-y-2 md:space-y-3">
         {steps.map((step) => (
           <div
             key={step.id}
             className={cn(
-              "border rounded-lg p-4 transition-all",
+              "border rounded-lg p-2.5 md:p-4 transition-all",
               step.status === 'completed'
                 ? "bg-green-50 dark:bg-green-950 border-green-200 dark:border-green-800"
                 : step.status === 'in_progress'
@@ -709,30 +709,31 @@ export function WorkflowExecutionPanel({ workItemId }: WorkflowExecutionPanelPro
             )}
             data-testid={`workflow-step-${step.stepIndex}`}
           >
-            <div className="flex items-start gap-3">
+            <div className="flex items-start gap-2 md:gap-3">
               <Checkbox
                 checked={step.status === 'completed'}
                 onCheckedChange={() => handleStepToggle(step.id, step.status)}
                 disabled={isOnline && updateStepMutation.isPending}
-                className="mt-1"
+                className="mt-0.5 md:mt-1"
                 data-testid={`step-${step.stepIndex}-checkbox`}
               />
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 md:gap-2">
                     {getStatusIcon(step.status)}
-                    <h4 className="font-medium text-gray-900 dark:text-white">
+                    <h4 className="font-medium text-sm md:text-base text-gray-900 dark:text-white">
                       {step.stepTitle}
                     </h4>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 md:gap-2 flex-shrink-0">
                     {getStatusBadge(step.status)}
                     {getSyncStatusBadge(step.id)}
                   </div>
                 </div>
 
-                {step.stepDescription && (
-                  <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">
+                {/* Hide step description on mobile for splynx_ticket steps */}
+                {step.stepDescription && (step.evidence as any)?.stepType !== 'splynx_ticket' && (
+                  <p className="mt-1 text-xs md:text-sm text-gray-600 dark:text-gray-400">
                     {step.stepDescription}
                   </p>
                 )}
