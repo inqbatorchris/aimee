@@ -1,6 +1,6 @@
 import { db } from '../../db';
 import { eq, and, gte, lte, sql } from 'drizzle-orm';
-import { keyResults, workItems, objectives, emailTemplates } from '@shared/schema';
+import { keyResults, workItems, objectives, emailTemplates, knowledgeDocuments, ticketDraftResponses, aiAgentConfigurations } from '@shared/schema';
 import { SplynxService } from '../integrations/splynxService';
 import { PXCService } from '../integrations/pxcService';
 import { EmailTemplateService } from '../emailTemplateService';
@@ -442,6 +442,9 @@ export class ActionHandlers {
           max_tokens: parameters.maxTokens || 200,
         }, apiKey);
       
+      case 'generate_draft':
+        return await this.generateTicketDraft(parameters, context, apiKey);
+      
       default:
         throw new Error(`Unsupported OpenAI action: ${action}`);
     }
@@ -543,6 +546,147 @@ export class ActionHandlers {
       default:
         return `Analyze the following data:\n\n${dataStr}\n\nProvide clear, actionable insights.`;
     }
+  }
+
+  /**
+   * Generate AI draft response for support ticket
+   */
+  private async generateTicketDraft(parameters: any, context: any, apiKey: string): Promise<any> {
+    const { workItemId, knowledgeDocIds, modelConfig } = parameters;
+    
+    if (!workItemId) {
+      throw new Error('workItemId is required for generate_draft action');
+    }
+
+    console.log(`[ActionHandlers] 🎫 Generating draft for work item: ${workItemId}`);
+    
+    // Fetch work item details
+    const [workItem] = await db
+      .select()
+      .from(workItems)
+      .where(eq(workItems.id, workItemId))
+      .limit(1);
+    
+    if (!workItem) {
+      throw new Error(`Work item ${workItemId} not found`);
+    }
+
+    console.log(`[ActionHandlers]   ✓ Work item loaded: "${workItem.title}"`);
+    
+    // Fetch knowledge base documents for context (with organization isolation)
+    let knowledgeContext = '';
+    if (knowledgeDocIds && knowledgeDocIds.length > 0) {
+      const kbDocs = await db
+        .select()
+        .from(knowledgeDocuments)
+        .where(
+          and(
+            sql`${knowledgeDocuments.id} = ANY(${knowledgeDocIds})`,
+            eq(knowledgeDocuments.organizationId, workItem.organizationId)
+          )
+        );
+      
+      if (kbDocs.length > 0) {
+        console.log(`[ActionHandlers]   📚 Loaded ${kbDocs.length} knowledge base documents`);
+        knowledgeContext = kbDocs
+          .map(doc => `### ${doc.title}\n\n${doc.content || doc.summary || ''}`)
+          .join('\n\n---\n\n');
+      } else if (knowledgeDocIds.length > 0) {
+        console.warn(`[ActionHandlers]   ⚠️  Requested ${knowledgeDocIds.length} KB documents but none belong to organization ${workItem.organizationId}`);
+      }
+    }
+    
+    // Build the prompt
+    const systemPrompt = modelConfig?.systemPrompt || 
+      'You are a helpful support agent assistant. Generate professional, clear, and empathetic responses to customer support tickets. Follow the guidelines and best practices provided in the knowledge base context.';
+    
+    const userPrompt = `
+Please generate a support response for the following ticket:
+
+**Ticket Title:** ${workItem.title}
+
+**Ticket Description:**
+${workItem.description || 'No additional details provided.'}
+
+${(workItem.workflowMetadata as any)?.customerInfo ? `
+**Customer Information:**
+${JSON.stringify((workItem.workflowMetadata as any).customerInfo, null, 2)}
+` : ''}
+
+${knowledgeContext ? `
+**Support Guidelines and Knowledge Base:**
+${knowledgeContext}
+` : ''}
+
+Generate a professional support response that:
+1. Acknowledges the customer's issue
+2. Provides clear troubleshooting steps or solutions
+3. Maintains a professional and empathetic tone
+4. Follows the guidelines from the knowledge base (if provided)
+5. Ends with an offer for further assistance
+
+Return only the response text, without any preamble or metadata.
+    `.trim();
+
+    console.log(`[ActionHandlers]   🤖 Calling OpenAI API...`);
+    
+    // Call OpenAI API
+    const aiResponse = await this.callOpenAI('completions', {
+      model: modelConfig?.model || 'gpt-4',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      temperature: modelConfig?.temperature || 0.7,
+      max_tokens: modelConfig?.maxTokens || 500,
+    }, apiKey);
+
+    if (!aiResponse.success) {
+      throw new Error('Failed to generate draft from OpenAI');
+    }
+
+    const draftText = aiResponse.response;
+    console.log(`[ActionHandlers]   ✓ Draft generated (${aiResponse.usage?.total_tokens || 0} tokens used)`);
+
+    // Store draft in database
+    const [savedDraft] = await db
+      .insert(ticketDraftResponses)
+      .values({
+        organizationId: workItem.organizationId,
+        workItemId: workItem.id,
+        originalDraft: draftText,
+        generationMetadata: {
+          knowledgeDocIds: knowledgeDocIds || [],
+          model: modelConfig?.model || 'gpt-4',
+          tokensUsed: aiResponse.usage?.total_tokens || 0,
+          temperature: modelConfig?.temperature || 0.7,
+          timestamp: new Date().toISOString(),
+        },
+        regenerationCount: 0,
+      })
+      .returning();
+
+    console.log(`[ActionHandlers]   💾 Draft saved to database (ID: ${savedDraft.id})`);
+
+    // Update work item metadata to link to draft
+    await db
+      .update(workItems)
+      .set({
+        workflowMetadata: {
+          ...(workItem.workflowMetadata || {}),
+          draftId: savedDraft.id,
+          draftGeneratedAt: new Date().toISOString(),
+        },
+      })
+      .where(eq(workItems.id, workItem.id));
+
+    return {
+      success: true,
+      draftId: savedDraft.id,
+      draftText: draftText,
+      tokensUsed: aiResponse.usage?.total_tokens || 0,
+      workItemId: workItem.id,
+    };
   }
 
   /**

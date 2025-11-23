@@ -1621,6 +1621,77 @@ export const agentWorkflowRuns = pgTable("agent_workflow_runs", {
   index("idx_workflow_runs_started").on(table.startedAt.desc()),
 ]);
 
+// AI Ticket Draft Responses - Stores AI-generated drafts for support tickets
+export const ticketDraftResponses = pgTable("ticket_draft_responses", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  workItemId: integer("work_item_id").references(() => workItems.id, { onDelete: "cascade" }).notNull(),
+  
+  // Draft content
+  originalDraft: text("original_draft").notNull(), // AI-generated draft
+  finalResponse: text("final_response"), // Human-edited response (null until sent)
+  
+  // Generation metadata
+  generationMetadata: jsonb("generation_metadata").default({}).notNull(), // { knowledgeDocIds, model, tokensUsed, temperature }
+  
+  // Edit tracking (calculated when response is sent)
+  editPercentage: decimal("edit_percentage", { precision: 5, scale: 2 }), // % of text that was changed
+  sectionsEdited: jsonb("sections_edited").default([]), // Which parts were edited
+  
+  // Status
+  sentAt: timestamp("sent_at"),
+  sentBy: integer("sent_by").references(() => users.id),
+  regenerationCount: integer("regeneration_count").default(0), // How many times draft was regenerated
+  
+  // Audit
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_ticket_drafts_org").on(table.organizationId),
+  index("idx_ticket_drafts_work_item").on(table.workItemId),
+  index("idx_ticket_drafts_sent_at").on(table.sentAt),
+  unique("unique_draft_per_work_item").on(table.workItemId), // One draft per work item
+]);
+
+// AI Agent Configurations - Links agent workflows to AI features
+export const aiAgentConfigurations = pgTable("ai_agent_configurations", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  agentWorkflowId: integer("agent_workflow_id").references(() => agentWorkflows.id, { onDelete: "cascade" }),
+  
+  // Feature identification
+  featureType: varchar("feature_type", { length: 50 }).notNull(), // 'ticket_drafting', future: 'email_drafting', etc.
+  isEnabled: boolean("is_enabled").default(false).notNull(),
+  
+  // Knowledge base configuration
+  knowledgeDocumentIds: jsonb("knowledge_document_ids").default([]).$type<number[]>(), // Which KB docs to use for context
+  
+  // AI model configuration
+  modelConfig: jsonb("model_config").default({
+    model: 'gpt-4',
+    temperature: 0.7,
+    maxTokens: 500,
+    systemPrompt: 'You are a helpful support agent assistant.'
+  }).notNull(),
+  
+  // Feature-specific settings
+  autoGenerateOnArrival: boolean("auto_generate_on_arrival").default(true), // Auto-generate vs manual
+  
+  // OKR tracking
+  linkedObjectiveId: integer("linked_objective_id").references(() => objectives.id),
+  linkedKeyResultIds: jsonb("linked_key_result_ids").default([]).$type<number[]>(),
+  
+  // Audit
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_ai_configs_org").on(table.organizationId),
+  index("idx_ai_configs_workflow").on(table.agentWorkflowId),
+  index("idx_ai_configs_objective").on(table.linkedObjectiveId),
+  unique("unique_ai_config_per_workflow").on(table.agentWorkflowId),
+]);
+
 // Integration triggers available from each integration
 export const integrationTriggers = pgTable("integration_triggers", {
   id: serial("id").primaryKey(),
@@ -1952,6 +2023,12 @@ export type InsertAgentWorkflowRun = typeof agentWorkflowRuns.$inferInsert;
 export type AgentWorkflowSchedule = typeof agentWorkflowSchedules.$inferSelect;
 export type InsertAgentWorkflowSchedule = typeof agentWorkflowSchedules.$inferInsert;
 
+export type TicketDraftResponse = typeof ticketDraftResponses.$inferSelect;
+export type InsertTicketDraftResponse = typeof ticketDraftResponses.$inferInsert;
+
+export type AiAgentConfiguration = typeof aiAgentConfigurations.$inferSelect;
+export type InsertAiAgentConfiguration = typeof aiAgentConfigurations.$inferInsert;
+
 export type IntegrationTrigger = typeof integrationTriggers.$inferSelect;
 export type InsertIntegrationTrigger = typeof integrationTriggers.$inferInsert;
 
@@ -2238,6 +2315,52 @@ export const insertWebhookEventSchema = createInsertSchema(webhookEvents).omit({
   errorMessage: z.string().optional(),
   workflowTriggered: z.boolean().default(false),
   workflowRunId: z.number().int().positive().optional(),
+});
+
+// Ticket Draft Response schema
+export const insertTicketDraftResponseSchema = createInsertSchema(ticketDraftResponses).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  organizationId: z.number().int().positive(),
+  workItemId: z.number().int().positive(),
+  originalDraft: z.string().min(1, "Draft content is required"),
+  finalResponse: z.string().optional(),
+  generationMetadata: z.record(z.any()).default({}),
+  editPercentage: z.number().optional(),
+  sectionsEdited: z.array(z.string()).default([]),
+  sentAt: z.date().optional(),
+  sentBy: z.number().int().positive().optional(),
+  regenerationCount: z.number().int().default(0),
+});
+
+// AI Agent Configuration schema
+export const insertAiAgentConfigurationSchema = createInsertSchema(aiAgentConfigurations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  organizationId: z.number().int().positive(),
+  agentWorkflowId: z.number().int().positive().optional(),
+  featureType: z.enum(['ticket_drafting']),
+  isEnabled: z.boolean().default(false),
+  knowledgeDocumentIds: z.array(z.number()).default([]),
+  modelConfig: z.object({
+    model: z.string().default('gpt-4'),
+    temperature: z.number().min(0).max(2).default(0.7),
+    maxTokens: z.number().int().positive().default(500),
+    systemPrompt: z.string().default('You are a helpful support agent assistant.'),
+  }).default({
+    model: 'gpt-4',
+    temperature: 0.7,
+    maxTokens: 500,
+    systemPrompt: 'You are a helpful support agent assistant.'
+  }),
+  autoGenerateOnArrival: z.boolean().default(true),
+  linkedObjectiveId: z.number().int().positive().optional(),
+  linkedKeyResultIds: z.array(z.number()).default([]),
+  createdBy: z.number().int().positive().optional(),
 });
 
 // Select schema (what gets returned from database)
