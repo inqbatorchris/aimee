@@ -517,7 +517,57 @@ router.post('/initialize-workflows', async (req, res) => {
       });
     }
 
-    const config = configs[0];
+    const agentConfig = configs[0];
+
+    // Validate that referenced resources exist
+    if (agentConfig.objectiveId) {
+      const objective = await db
+        .select()
+        .from(objectives)
+        .where(
+          and(
+            eq(objectives.id, agentConfig.objectiveId),
+            eq(objectives.organizationId, user.organizationId)
+          )
+        )
+        .limit(1);
+
+      if (!objective.length) {
+        return res.status(400).json({ error: 'Referenced objective not found. Please reconfigure.' });
+      }
+    }
+
+    if (agentConfig.keyResultIds && agentConfig.keyResultIds.length > 0) {
+      const keyResultsData = await db
+        .select()
+        .from(keyResults)
+        .where(
+          and(
+            inArray(keyResults.id, agentConfig.keyResultIds),
+            eq(keyResults.organizationId, user.organizationId)
+          )
+        );
+
+      if (keyResultsData.length !== agentConfig.keyResultIds.length) {
+        return res.status(400).json({ error: 'Some referenced key results not found. Please reconfigure.' });
+      }
+    }
+
+    if (agentConfig.knowledgeDocumentIds && agentConfig.knowledgeDocumentIds.length > 0) {
+      const kbDocs = await db
+        .select()
+        .from(knowledgeDocs)
+        .where(
+          and(
+            inArray(knowledgeDocs.id, agentConfig.knowledgeDocumentIds),
+            eq(knowledgeDocs.organizationId, user.organizationId)
+          )
+        );
+
+      if (kbDocs.length !== agentConfig.knowledgeDocumentIds.length) {
+        return res.status(400).json({ error: 'Some referenced knowledge documents not found. Please reconfigure.' });
+      }
+    }
 
     // Create Draft Generator Workflow Template
     const draftGeneratorId = `ai-draft-generator-${user.organizationId}`;
