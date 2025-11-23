@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -6,9 +6,10 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
-import { Loader2, ExternalLink, Calendar, User, MessageSquare, CheckCircle2 } from 'lucide-react';
+import { Loader2, ExternalLink, Calendar, User, MessageSquare, CheckCircle2, Sparkles, RefreshCw } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface SplynxTicketStepProps {
@@ -34,6 +35,24 @@ interface SplynxTicketData {
     admin_name: string;
     datetime: string;
   }>;
+}
+
+interface TicketDraftResponse {
+  id: number;
+  workItemId: number;
+  originalDraft: string;
+  finalResponse?: string;
+  editPercentage?: number;
+  sentAt?: string;
+  sentBy?: number;
+  regenerationCount: number;
+  generationMetadata: {
+    model?: string;
+    temperature?: number;
+    knowledgeDocumentsUsed?: number[];
+  };
+  createdAt: string;
+  updatedAt: string;
 }
 
 const STATUS_OPTIONS = [
@@ -65,12 +84,28 @@ export default function SplynxTicketStep({ workItemId, ticketId, taskId, onSave 
   const { toast } = useToast();
   const [response, setResponse] = useState('');
   const [newStatus, setNewStatus] = useState<string>('');
+  const [draftLoaded, setDraftLoaded] = useState(false);
 
   // Fetch ticket data
   const { data: ticketData, isLoading } = useQuery<SplynxTicketData>({
     queryKey: [`/api/integrations/splynx/entity/ticket/${ticketId}`],
     enabled: !!ticketId,
   });
+
+  // Fetch AI draft for this work item
+  const { data: aiDraft, isLoading: isDraftLoading, refetch: refetchDraft } = useQuery<TicketDraftResponse>({
+    queryKey: [`/api/ai-drafting/drafts/work-item/${workItemId}`],
+    enabled: !!workItemId,
+    retry: false,
+  });
+
+  // Pre-fill response with AI draft when it loads
+  useEffect(() => {
+    if (aiDraft && !draftLoaded && !aiDraft.sentAt) {
+      setResponse(aiDraft.originalDraft);
+      setDraftLoaded(true);
+    }
+  }, [aiDraft, draftLoaded]);
 
   // Update ticket mutation
   const updateTicketMutation = useMutation({
@@ -82,6 +117,14 @@ export default function SplynxTicketStep({ workItemId, ticketId, taskId, onSave 
           method: 'POST',
           body: { message: data.message }
         });
+
+        // Update AI draft record if one exists
+        if (aiDraft && !aiDraft.sentAt) {
+          await apiRequest(`/api/ai-drafting/drafts/${aiDraft.id}`, {
+            method: 'PATCH',
+            body: { finalResponse: data.message }
+          });
+        }
       }
       
       if (data.status) {
@@ -98,6 +141,11 @@ export default function SplynxTicketStep({ workItemId, ticketId, taskId, onSave 
       // Invalidate ticket data
       queryClient.invalidateQueries({ 
         queryKey: [`/api/integrations/splynx/entity/ticket/${ticketId}`] 
+      });
+      
+      // Invalidate draft data to get updated edit percentage
+      queryClient.invalidateQueries({
+        queryKey: [`/api/ai-drafting/drafts/work-item/${workItemId}`]
       });
       
       // Update WorkItem status to match ticket status if status was changed
@@ -279,21 +327,69 @@ export default function SplynxTicketStep({ workItemId, ticketId, taskId, onSave 
       {/* Response & Update - Compact */}
       <Card>
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Update Ticket</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-base">Update Ticket</CardTitle>
+            {aiDraft && !aiDraft.sentAt && (
+              <Badge variant="secondary" className="gap-1 text-xs">
+                <Sparkles className="h-3 w-3" />
+                AI Draft
+              </Badge>
+            )}
+          </div>
         </CardHeader>
         <CardContent className="space-y-3">
+          {/* AI Draft Info */}
+          {aiDraft && !aiDraft.sentAt && (
+            <Alert className="bg-blue-50 dark:bg-blue-950 border-blue-200 dark:border-blue-800">
+              <Sparkles className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+              <AlertDescription className="text-xs text-blue-900 dark:text-blue-100">
+                AI-generated response loaded. Review and edit before sending.
+                {aiDraft.generationMetadata?.model && (
+                  <span className="block mt-1 text-blue-700 dark:text-blue-300">
+                    Model: {aiDraft.generationMetadata.model}
+                  </span>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Response Input */}
           <div className="space-y-2">
-            <Label htmlFor="response" className="text-sm">Your Response</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="response" className="text-sm">Your Response</Label>
+              {aiDraft && !aiDraft.sentAt && response && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setResponse(aiDraft.originalDraft);
+                    toast({
+                      title: 'Draft Restored',
+                      description: 'Original AI draft has been restored',
+                    });
+                  }}
+                  className="h-7 px-2 text-xs"
+                  data-testid="button-restore-draft"
+                >
+                  <RefreshCw className="h-3 w-3 mr-1" />
+                  Restore Draft
+                </Button>
+              )}
+            </div>
             <Textarea
               id="response"
               placeholder="Type your response to the customer..."
               value={response}
               onChange={(e) => setResponse(e.target.value)}
-              rows={3}
+              rows={6}
               className="text-sm"
               data-testid="input-ticket-response"
             />
+            {aiDraft && aiDraft.sentAt && aiDraft.editPercentage !== undefined && (
+              <p className="text-xs text-muted-foreground">
+                Previous response was edited {aiDraft.editPercentage.toFixed(1)}% before sending
+              </p>
+            )}
           </div>
 
           {/* Status Update */}
