@@ -72,7 +72,6 @@ export function SplynxTicketViewer({
   const [localActionCompleted, setLocalActionCompleted] = useState(false);
   const [hasNotifiedCompletion, setHasNotifiedCompletion] = useState(false);
   const [draftLoaded, setDraftLoaded] = useState(false);
-  const [messagesExpanded, setMessagesExpanded] = useState(false);
 
   const { data: integrations, isLoading: isLoadingIntegrations } = useQuery<any[]>({
     queryKey: ['/api/integrations'],
@@ -334,87 +333,47 @@ export function SplynxTicketViewer({
           </div>
         </div>
 
-        {/* Messages - Collapsible on mobile, expanded by default on desktop */}
-        {messagesExpanded ? (
-          <div className="flex-1 overflow-y-auto py-3 space-y-2.5 min-h-0">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-medium">Messages ({messages.length})</span>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setMessagesExpanded(false)}
-                className="h-6 px-2 text-[10px] md:hidden"
-              >
-                Hide
-              </Button>
-            </div>
-            {messages.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-4">No messages yet</p>
-            ) : (
-              messages.map((msg: any, idx: number) => {
-                const isHidden = msg.hide_for_customer === '1' || msg.hide_for_customer === 1;
-                const isCustomer = msg.author_type === 'customer';
-                return (
-                  <div 
-                    key={idx} 
-                    className={`p-2.5 rounded-lg ${
-                      isHidden
-                        ? 'bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900' 
-                        : isCustomer
-                        ? 'bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900'
-                        : 'bg-muted/50 border'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1.5">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-xs">
-                          {msg.author_type === 'admin' ? 'Agent' : msg.author_type === 'customer' ? 'Customer' : 'User'}
-                        </span>
-                        {isHidden && (
-                          <Badge variant="outline" className="text-[10px] px-1 py-0 bg-amber-100 dark:bg-amber-900">Private</Badge>
-                        )}
-                      </div>
-                      <span className="text-[10px] text-muted-foreground">
-                        {msg.date && msg.time ? format(new Date(`${msg.date} ${msg.time}`), 'MMM d, h:mm a') : ''}
-                      </span>
-                    </div>
-                    <div 
-                      className="text-xs prose prose-xs dark:prose-invert max-w-none leading-relaxed"
-                      dangerouslySetInnerHTML={{ __html: renderMessageHTML(msg.rawMessage || msg.message) }}
-                    />
-                  </div>
-                );
-              })
-            )}
-          </div>
-        ) : (
-          <div className="py-2 border-b flex-shrink-0">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setMessagesExpanded(true)}
-              className="w-full h-8 text-xs"
-            >
-              <MessageSquare className="h-3 w-3 mr-2" />
-              View Messages ({messages.length})
-            </Button>
-            {messages.length > 0 && messages[messages.length - 1]?.author_type === 'customer' && (
-              <div className="mt-2 p-2 rounded bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] font-medium">Latest from Customer</span>
-                  <span className="text-[10px] text-muted-foreground">
-                    {messages[messages.length - 1].date && messages[messages.length - 1].time ? 
-                      format(new Date(`${messages[messages.length - 1].date} ${messages[messages.length - 1].time}`), 'MMM d, h:mm a') : ''}
-                  </span>
-                </div>
+        {/* Messages - Scrollable area */}
+        <div className="flex-1 overflow-y-auto py-3 space-y-2.5 min-h-0">
+          {messages.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-8">No messages yet</p>
+          ) : (
+            messages.map((msg: any, idx: number) => {
+              const isHidden = msg.hide_for_customer === '1' || msg.hide_for_customer === 1;
+              const isCustomer = msg.author_type === 'customer';
+              return (
                 <div 
-                  className="text-[10px] prose prose-xs dark:prose-invert max-w-none line-clamp-2"
-                  dangerouslySetInnerHTML={{ __html: renderMessageHTML(messages[messages.length - 1].rawMessage || messages[messages.length - 1].message) }}
-                />
-              </div>
-            )}
-          </div>
-        )}
+                  key={idx} 
+                  className={`p-2.5 rounded-lg ${
+                    isHidden
+                      ? 'bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900' 
+                      : isCustomer
+                      ? 'bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900'
+                      : 'bg-muted/50 border'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-xs">
+                        {msg.author_type === 'admin' ? 'Agent' : msg.author_type === 'customer' ? 'Customer' : 'User'}
+                      </span>
+                      {isHidden && (
+                        <Badge variant="outline" className="text-[10px] px-1 py-0 bg-amber-100 dark:bg-amber-900">Private</Badge>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-muted-foreground">
+                      {msg.date && msg.time ? format(new Date(`${msg.date} ${msg.time}`), 'MMM d, h:mm a') : ''}
+                    </span>
+                  </div>
+                  <div 
+                    className="text-xs prose prose-xs dark:prose-invert max-w-none leading-relaxed"
+                    dangerouslySetInnerHTML={{ __html: renderMessageHTML(msg.rawMessage || msg.message) }}
+                  />
+                </div>
+              );
+            })
+          )}
+        </div>
 
         {/* Quick Reply - Fixed bottom section */}
         <div className="border-t pt-3 space-y-2 flex-shrink-0">
