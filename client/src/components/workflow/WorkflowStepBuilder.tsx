@@ -1735,7 +1735,7 @@ export default function WorkflowStepBuilder({
                 variablePrefix="stepOutput"
               />
               <p className="text-xs text-muted-foreground mt-1">
-                Leave empty to automatically use the most recent work item created in a previous step. Or specify explicitly using {{"{{"}}stepNOutput.workItemId{{"}}"}}.
+                Leave empty to automatically use the most recent work item created in a previous step. Or specify explicitly using {'{{stepNOutput.workItemId}}'}.
               </p>
             </div>
           </div>
