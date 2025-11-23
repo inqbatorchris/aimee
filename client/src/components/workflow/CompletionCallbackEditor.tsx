@@ -14,6 +14,11 @@ export interface FieldMapping {
   targetField: string;
 }
 
+export interface DatabaseConfig {
+  targetTable: string;
+  recordIdSource: string;
+}
+
 export interface CompletionCallback {
   id: string;
   integrationName: string;
@@ -21,6 +26,7 @@ export interface CompletionCallback {
   webhookUrl?: string;
   webhookMethod?: string;
   fieldMappings: FieldMapping[];
+  databaseConfig?: DatabaseConfig;
 }
 
 interface CompletionCallbackEditorProps {
@@ -94,13 +100,26 @@ export default function CompletionCallbackEditor({
   };
 
   const handleUpdateCallback = (callbackId: string, updates: Partial<CompletionCallback>) => {
-    const updated = callbacks.map(cb => 
-      cb.id === callbackId ? { ...cb, ...updates } : cb
-    );
+    const updated = callbacks.map(cb => {
+      if (cb.id !== callbackId) return cb;
+      
+      // If action is being changed, replace the entire callback to prevent stale data
+      if (updates.action && updates.action !== cb.action) {
+        return updates as CompletionCallback;
+      }
+      
+      // Otherwise, merge updates
+      return { ...cb, ...updates };
+    });
     onChange(updated);
     
     if (editingCallback?.id === callbackId) {
-      setEditingCallback({ ...editingCallback, ...updates });
+      // If action changed, replace editing callback completely
+      if (updates.action && updates.action !== editingCallback.action) {
+        setEditingCallback(updates as CompletionCallback);
+      } else {
+        setEditingCallback({ ...editingCallback, ...updates });
+      }
     }
   };
 
@@ -262,9 +281,36 @@ export default function CompletionCallbackEditor({
                       <Label>Action</Label>
                       <Select
                         value={currentCallback.action}
-                        onValueChange={(value) => 
-                          handleUpdateCallback(currentCallback.id, { action: value })
-                        }
+                        onValueChange={(value) => {
+                          const callback = callbacks.find(cb => cb.id === currentCallback.id);
+                          if (!callback) return;
+
+                          // Completely reconstruct the callback to prevent stale data
+                          const baseCallback = {
+                            id: callback.id,
+                            integrationName: callback.integrationName,
+                            action: value,
+                            fieldMappings: callback.fieldMappings || [],
+                          };
+
+                          if (value === 'database_integration') {
+                            // Database integration: add databaseConfig, no webhookUrl
+                            handleUpdateCallback(currentCallback.id, {
+                              ...baseCallback,
+                              databaseConfig: {
+                                targetTable: 'addresses',
+                                recordIdSource: 'work_item_source',
+                              },
+                            });
+                          } else {
+                            // Webhook action: add webhookUrl/method, no databaseConfig
+                            handleUpdateCallback(currentCallback.id, {
+                              ...baseCallback,
+                              webhookUrl: callback.webhookUrl || '/api/fiber-network/nodes/from-workflow',
+                              webhookMethod: callback.webhookMethod || 'POST',
+                            });
+                          }
+                        }}
                       >
                         <SelectTrigger data-testid="select-action">
                           <SelectValue />
@@ -272,22 +318,81 @@ export default function CompletionCallbackEditor({
                         <SelectContent>
                           <SelectItem value="create-node">Create Node</SelectItem>
                           <SelectItem value="update-node">Update Node</SelectItem>
+                          <SelectItem value="database_integration">Database Integration (OCR)</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <Label>Webhook URL</Label>
-                    <Input
-                      value={currentCallback.webhookUrl || ''}
-                      onChange={(e) => 
-                        handleUpdateCallback(currentCallback.id, { webhookUrl: e.target.value })
-                      }
-                      placeholder="/api/fiber-network/nodes/from-workflow"
-                      data-testid="input-webhook-url"
-                    />
-                  </div>
+                  {currentCallback.action === 'database_integration' && currentCallback.databaseConfig && (
+                    <div className="space-y-4 p-4 bg-muted/50 border rounded-md">
+                      <div className="space-y-2">
+                        <Label>Target Table</Label>
+                        <Select
+                          value={currentCallback.databaseConfig.targetTable}
+                          onValueChange={(value) => 
+                            handleUpdateCallback(currentCallback.id, {
+                              databaseConfig: {
+                                ...currentCallback.databaseConfig!,
+                                targetTable: value,
+                              },
+                            })
+                          }
+                        >
+                          <SelectTrigger data-testid="select-target-table">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="addresses">Addresses (supported)</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          Only Addresses table is currently supported for dynamic fields
+                        </p>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label>Record ID Source</Label>
+                        <Select
+                          value={currentCallback.databaseConfig.recordIdSource}
+                          onValueChange={(value) => 
+                            handleUpdateCallback(currentCallback.id, {
+                              databaseConfig: {
+                                ...currentCallback.databaseConfig!,
+                                recordIdSource: value,
+                              },
+                            })
+                          }
+                        >
+                          <SelectTrigger data-testid="select-record-id-source">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="work_item_source">Work Item Source</SelectItem>
+                            <SelectItem value="workflow_metadata.addressId">Workflow Metadata - addressId</SelectItem>
+                            <SelectItem value="workflow_metadata.customerId">Workflow Metadata - customerId</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <p className="text-xs text-muted-foreground">
+                          How to find the target record to update
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {currentCallback.action !== 'database_integration' && (
+                    <div className="space-y-2">
+                      <Label>Webhook URL</Label>
+                      <Input
+                        value={currentCallback.webhookUrl || ''}
+                        onChange={(e) => 
+                          handleUpdateCallback(currentCallback.id, { webhookUrl: e.target.value })
+                        }
+                        placeholder="/api/fiber-network/nodes/from-workflow"
+                        data-testid="input-webhook-url"
+                      />
+                    </div>
+                  )}
                 </div>
 
                 {/* Field Mappings */}
