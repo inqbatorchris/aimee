@@ -78,6 +78,7 @@ import {
   searchKeyResultTasks,
 } from '@/lib/workItems.api';
 import { WorkflowExecutionPanel } from '@/components/work-items/WorkflowExecutionPanel';
+import { DraftResponsePanel } from '@/components/work-items/DraftResponsePanel';
 
 interface WorkItemPanelProps {
   isOpen: boolean;
@@ -854,6 +855,14 @@ export default function WorkItemPanel({
                       )}
                     </div>
                   </SelectItem>
+                  {formData.workItemType === 'support_ticket' && workItemId && (
+                    <SelectItem value="draft">
+                      <div className="flex items-center gap-2">
+                        <MessageSquare className="h-4 w-4" />
+                        Draft Response
+                      </div>
+                    </SelectItem>
+                  )}
                   {currentWorkItem?.workflowTemplateId && (
                     <SelectItem value="workflow">
                       <div className="flex items-center gap-2">
@@ -889,6 +898,12 @@ export default function WorkItemPanel({
                   </span>
                 )}
               </TabsTrigger>
+              {formData.workItemType === 'support_ticket' && workItemId && (
+                <TabsTrigger value="draft" className="gap-2" data-testid="tab-draft">
+                  <MessageSquare className="h-4 w-4" />
+                  Draft Response
+                </TabsTrigger>
+              )}
               {currentWorkItem?.workflowTemplateId && (
                 <TabsTrigger value="workflow" className="gap-2" data-testid="tab-workflow">
                   <GitBranch className="h-4 w-4" />
@@ -1298,6 +1313,16 @@ export default function WorkItemPanel({
                 </div>
               )}
             </TabsContent>
+
+            {/* Draft Response Tab */}
+            {formData.workItemType === 'support_ticket' && workItemId && (
+              <TabsContent value="draft" className="flex-1 overflow-y-auto m-0 p-6" data-testid="work-item-draft-tab">
+                <DraftResponsePanel
+                  workItemId={workItemId}
+                  workItemType={formData.workItemType}
+                />
+              </TabsContent>
+            )}
 
             {/* Workflow Tab */}
             {currentWorkItem?.workflowTemplateId && workItemId && (

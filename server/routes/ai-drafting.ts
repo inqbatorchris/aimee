@@ -6,11 +6,13 @@ import {
   aiAgentConfigurations,
   workItems,
   knowledgeDocuments,
+  workflowTemplates,
   insertTicketDraftResponseSchema,
   insertAiAgentConfigurationSchema
 } from '../../shared/schema';
 import { eq, and, desc, inArray } from 'drizzle-orm';
 import { z } from 'zod';
+import { calculateEditPercentage } from '../utils/text-comparison';
 
 const router = Router();
 
@@ -362,7 +364,7 @@ router.patch('/drafts/:id', async (req, res) => {
     }
 
     const draftId = parseInt(req.params.id);
-    const { finalResponse, sentBy } = req.body;
+    const { finalResponse } = req.body;
 
     if (!finalResponse) {
       return res.status(400).json({ error: 'Final response is required' });
@@ -386,23 +388,17 @@ router.patch('/drafts/:id', async (req, res) => {
 
     const draft = drafts[0];
 
-    // Calculate edit percentage (simple character-based comparison)
-    const originalLength = draft.originalDraft.length;
-    const finalLength = finalResponse.length;
-    const lengthDiff = Math.abs(originalLength - finalLength);
-    const editPercentage = (lengthDiff / originalLength) * 100;
-
-    // TODO: Implement more sophisticated text comparison (Levenshtein distance)
-    // For now, using simple length-based approximation
+    // Calculate edit percentage using Levenshtein distance-based comparison
+    const editPercentage = calculateEditPercentage(draft.originalDraft, finalResponse);
 
     // Update draft with final response
     const [updatedDraft] = await db
       .update(ticketDraftResponses)
       .set({
         finalResponse,
-        editPercentage: editPercentage.toFixed(2),
+        editPercentage,
         sentAt: new Date(),
-        sentBy: sentBy || user.id,
+        sentBy: user.id,
         updatedAt: new Date(),
       })
       .where(eq(ticketDraftResponses.id, draftId))
@@ -449,6 +445,143 @@ router.delete('/drafts/:id', async (req, res) => {
   } catch (error) {
     console.error('Error deleting draft:', error);
     res.status(500).json({ error: 'Failed to delete draft' });
+  }
+});
+
+// Initialize AI drafting workflows (draft generator + KPI calculator)
+router.post('/initialize-workflows', async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated or missing organization' });
+    }
+
+    // Get AI configuration to extract knowledge document IDs and objective/KR info
+    const configs = await db
+      .select()
+      .from(aiAgentConfigurations)
+      .where(eq(aiAgentConfigurations.organizationId, user.organizationId))
+      .limit(1);
+
+    if (!configs.length) {
+      return res.status(400).json({ 
+        error: 'No AI configuration found. Please complete the setup wizard first.' 
+      });
+    }
+
+    const config = configs[0];
+
+    // Create Draft Generator Workflow Template
+    const draftGeneratorId = `ai-draft-generator-${user.organizationId}`;
+    const draftGeneratorTemplate = {
+      id: draftGeneratorId,
+      organizationId: user.organizationId,
+      name: 'AI Ticket Draft Generator',
+      description: 'Automatically generates draft responses for support tickets using AI and knowledge base',
+      category: 'automation',
+      applicableTypes: ['support_ticket'],
+      steps: [
+        {
+          id: 'generate_draft',
+          type: 'action',
+          actionType: 'generate_draft',
+          label: 'Generate Draft Response',
+          description: 'Generate AI draft response using knowledge base',
+          config: {
+            knowledgeDocumentIds: config.knowledgeDocumentIds || [],
+          },
+          order: 1,
+        },
+      ],
+      version: 1,
+      isActive: true,
+      isSystemTemplate: false,
+      displayInMenu: false,
+    };
+
+    // Create KPI Calculator Workflow Template
+    const kpiCalculatorId = `ai-draft-kpi-calculator-${user.organizationId}`;
+    const kpiCalculatorTemplate = {
+      id: kpiCalculatorId,
+      organizationId: user.organizationId,
+      name: 'AI Drafting KPI Calculator',
+      description: 'Daily scheduled workflow to calculate AI drafting performance metrics',
+      category: 'analytics',
+      applicableTypes: ['scheduled_task'],
+      steps: [
+        {
+          id: 'calculate_metrics',
+          type: 'action',
+          actionType: 'calculate_ai_draft_metrics',
+          label: 'Calculate Draft Metrics',
+          description: 'Calculate acceptance rate, edit percentage, and time saved',
+          config: {
+            objectiveId: config.objectiveId,
+            keyResultIds: config.keyResultIds || [],
+          },
+          order: 1,
+        },
+      ],
+      version: 1,
+      isActive: true,
+      isSystemTemplate: false,
+      displayInMenu: false,
+    };
+
+    // Insert or update workflow templates within a transaction
+    const result = await db.transaction(async (tx) => {
+      const draftGeneratorResult = await tx
+        .insert(workflowTemplates)
+        .values(draftGeneratorTemplate)
+        .onConflictDoUpdate({
+          target: [workflowTemplates.organizationId, workflowTemplates.id],
+          set: {
+            name: draftGeneratorTemplate.name,
+            description: draftGeneratorTemplate.description,
+            category: draftGeneratorTemplate.category,
+            applicableTypes: draftGeneratorTemplate.applicableTypes,
+            steps: draftGeneratorTemplate.steps,
+            version: draftGeneratorTemplate.version,
+            isActive: draftGeneratorTemplate.isActive,
+            displayInMenu: draftGeneratorTemplate.displayInMenu,
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
+
+      const kpiCalculatorResult = await tx
+        .insert(workflowTemplates)
+        .values(kpiCalculatorTemplate)
+        .onConflictDoUpdate({
+          target: [workflowTemplates.organizationId, workflowTemplates.id],
+          set: {
+            name: kpiCalculatorTemplate.name,
+            description: kpiCalculatorTemplate.description,
+            category: kpiCalculatorTemplate.category,
+            applicableTypes: kpiCalculatorTemplate.applicableTypes,
+            steps: kpiCalculatorTemplate.steps,
+            version: kpiCalculatorTemplate.version,
+            isActive: kpiCalculatorTemplate.isActive,
+            displayInMenu: kpiCalculatorTemplate.displayInMenu,
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
+
+      return {
+        draftGenerator: draftGeneratorResult[0],
+        kpiCalculator: kpiCalculatorResult[0],
+      };
+    });
+
+    res.json({
+      success: true,
+      message: 'Workflows initialized successfully',
+      workflows: result,
+    });
+  } catch (error) {
+    console.error('Error initializing workflows:', error);
+    res.status(500).json({ error: 'Failed to initialize workflows' });
   }
 });
 
