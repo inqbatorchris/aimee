@@ -1,0 +1,283 @@
+import { db } from '../../../db';
+import { 
+  workItemWorkflowExecutionSteps,
+  workItemSources,
+  workflowStepExtractions,
+  customFieldDefinitions,
+} from '../../../../shared/schema';
+import { eq, and } from 'drizzle-orm';
+import { OCRService } from '../../ocr/OCRService';
+import { FieldManagerService } from '../../ocr/FieldManagerService';
+
+interface AnalyzeImageOCRParams {
+  stepId: number;
+  workItemId: number;
+  photoData: {
+    id: string;
+    url: string;
+    caption?: string;
+  };
+  photoAnalysisConfig: {
+    enabled: boolean;
+    extractions: Array<{
+      fieldId?: number;
+      targetTable?: string;
+      targetField?: string;
+      extractionPrompt: string;
+      autoCreateField?: boolean;
+      required?: boolean;
+      postProcess?: 'none' | 'uppercase' | 'lowercase' | 'trim';
+    }>;
+  };
+}
+
+/**
+ * Agent workflow action: Analyze image using OCR and extract structured data
+ * This action is triggered when a photo is uploaded to a workflow step with photoAnalysisConfig enabled
+ */
+export class AnalyzeImageOCRAction {
+  private ocrService: OCRService;
+  private fieldManager: FieldManagerService;
+
+  constructor() {
+    this.ocrService = new OCRService();
+    this.fieldManager = new FieldManagerService();
+  }
+
+  async execute(parameters: any, context: any): Promise<any> {
+    // OCR parameters come from context.manualData when triggered by photo upload
+    const ocrParams = context.manualData || parameters;
+    const { stepId, workItemId, photoData, photoAnalysisConfig } = ocrParams as AnalyzeImageOCRParams;
+    const organizationId = parseInt(context.organizationId);
+
+    console.log('[AnalyzeImageOCR] Starting OCR analysis');
+    console.log(`  Step ID: ${stepId}`);
+    console.log(`  Work Item ID: ${workItemId}`);
+    console.log(`  Photo URL: ${photoData.url}`);
+    console.log(`  Extractions: ${photoAnalysisConfig.extractions.length}`);
+
+    const startTime = Date.now();
+    const extractionResults: Record<string, any> = {};
+    const errors: string[] = [];
+
+    try {
+      // Get the workflow step to access metadata
+      const [step] = await db
+        .select()
+        .from(workItemWorkflowExecutionSteps)
+        .where(
+          and(
+            eq(workItemWorkflowExecutionSteps.id, stepId),
+            eq(workItemWorkflowExecutionSteps.organizationId, organizationId)
+          )
+        )
+        .limit(1);
+
+      if (!step) {
+        throw new Error(`Step ${stepId} not found`);
+      }
+
+      // Get work item source linkage to determine target record
+      const [workItemSource] = await db
+        .select()
+        .from(workItemSources)
+        .where(
+          and(
+            eq(workItemSources.workItemId, workItemId),
+            eq(workItemSources.organizationId, organizationId)
+          )
+        )
+        .limit(1);
+
+      if (!workItemSource) {
+        throw new Error(`Work item ${workItemId} has no source linkage`);
+      }
+
+      const sourceTable = workItemSource.sourceTable;
+      const sourceId = workItemSource.sourceId;
+
+      console.log(`[AnalyzeImageOCR] Source: ${sourceTable}#${sourceId}`);
+
+      // Process each extraction
+      for (const extraction of photoAnalysisConfig.extractions) {
+        try {
+          // Resolve field metadata
+          let targetTable = extraction.targetTable || sourceTable;
+          let targetField = extraction.targetField;
+          let displayLabel = targetField || 'Unknown Field';
+
+          // If fieldId is provided, look up the field definition
+          if (extraction.fieldId) {
+            const [fieldDef] = await db
+              .select()
+              .from(customFieldDefinitions)
+              .where(
+                and(
+                  eq(customFieldDefinitions.id, extraction.fieldId),
+                  eq(customFieldDefinitions.organizationId, organizationId)
+                )
+              )
+              .limit(1);
+
+            if (fieldDef) {
+              targetTable = fieldDef.tableName;
+              targetField = fieldDef.fieldName;
+              displayLabel = fieldDef.displayLabel;
+            }
+          }
+
+          if (!targetField) {
+            console.warn(`[AnalyzeImageOCR] Skipping extraction: no target field defined`);
+            continue;
+          }
+
+          console.log(`[AnalyzeImageOCR] Extracting "${displayLabel}" (${targetTable}.${targetField})`);
+
+          // Execute OCR extraction
+          const ocrResult = await this.ocrService.extractFromImage(
+            photoData.url,
+            extraction.extractionPrompt,
+            {
+              structuredOutput: false, // Extract as plain text for single fields
+              maxTokens: 300,
+              temperature: 0.1,
+            }
+          );
+
+          if (!ocrResult.success) {
+            errors.push(`Failed to extract ${displayLabel}: ${ocrResult.error}`);
+            console.error(`[AnalyzeImageOCR] Extraction failed: ${ocrResult.error}`);
+            continue;
+          }
+
+          let extractedValue = ocrResult.extractedText?.trim() || '';
+
+          // Apply post-processing
+          if (extraction.postProcess && extractedValue) {
+            switch (extraction.postProcess) {
+              case 'uppercase':
+                extractedValue = extractedValue.toUpperCase();
+                break;
+              case 'lowercase':
+                extractedValue = extractedValue.toLowerCase();
+                break;
+              case 'trim':
+                extractedValue = extractedValue.trim();
+                break;
+            }
+          }
+
+          console.log(`[AnalyzeImageOCR] Extracted value: "${extractedValue}" (confidence: ${ocrResult.confidence}%)`);
+
+          extractionResults[targetField] = {
+            value: extractedValue,
+            confidence: ocrResult.confidence,
+            field: displayLabel,
+            targetTable,
+          };
+
+          // Auto-create field definition if needed (BEFORE updating the record)
+          if (extraction.autoCreateField && !extraction.fieldId) {
+            try {
+              await this.fieldManager.createOrUpdateFieldDefinition({
+                organizationId,
+                tableName: targetTable,
+                fieldName: targetField,
+                displayLabel,
+                fieldType: 'text',
+                description: `Auto-created from OCR extraction`,
+                extractionPrompt: extraction.extractionPrompt,
+              });
+
+              console.log(`[AnalyzeImageOCR] Auto-created field definition: ${targetTable}.${targetField}`);
+            } catch (error) {
+              console.warn(`[AnalyzeImageOCR] Failed to auto-create field:`, error);
+            }
+          }
+
+          // Update the source record with extracted data
+          try {
+            const updated = await this.fieldManager.updateDynamicField({
+              organizationId,
+              tableName: targetTable,
+              recordId: sourceId,
+              fieldName: targetField,
+              value: extractedValue,
+            });
+
+            // If table is not supported, updateDynamicField returns null
+            if (updated) {
+              console.log(`[AnalyzeImageOCR] Updated ${targetTable}#${sourceId}.${targetField}`);
+            } else {
+              errors.push(`Table ${targetTable} not yet supported for dynamic field updates. Field definition created but record not updated.`);
+              console.warn(`[AnalyzeImageOCR] Table ${targetTable} not supported, field definition created but record not updated`);
+            }
+          } catch (error) {
+            errors.push(`Failed to update ${targetTable}.${targetField}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            console.error(`[AnalyzeImageOCR] Update failed:`, error);
+          }
+
+        } catch (error) {
+          const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+          errors.push(`Extraction error: ${errorMsg}`);
+          console.error(`[AnalyzeImageOCR] Extraction failed:`, error);
+        }
+      }
+
+      // Record extraction audit trail
+      const processingTime = Date.now() - startTime;
+      const overallConfidence = Object.values(extractionResults).length > 0
+        ? Math.round(
+            Object.values(extractionResults).reduce((sum: number, result: any) => sum + (result.confidence || 0), 0) /
+            Object.values(extractionResults).length
+          )
+        : 0;
+
+      const status = errors.length > 0 ? 'completed_with_errors' : 'completed';
+
+      await db.insert(workflowStepExtractions).values({
+        organizationId,
+        workItemId,
+        stepId,
+        extractedData: extractionResults,
+        confidence: overallConfidence,
+        status,
+        model: 'gpt-4o',
+        processingTimeMs: processingTime,
+        errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
+      });
+
+      console.log(`[AnalyzeImageOCR] Completed in ${processingTime}ms`);
+      console.log(`  Extractions: ${Object.keys(extractionResults).length}`);
+      console.log(`  Errors: ${errors.length}`);
+      console.log(`  Average confidence: ${overallConfidence}%`);
+
+      return {
+        success: true,
+        extractedData: extractionResults,
+        confidence: overallConfidence,
+        processingTimeMs: processingTime,
+        errors: errors.length > 0 ? errors : undefined,
+      };
+
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[AnalyzeImageOCR] Fatal error:', error);
+
+      // Record failed extraction
+      await db.insert(workflowStepExtractions).values({
+        organizationId,
+        workItemId,
+        stepId,
+        extractedData: {},
+        confidence: 0,
+        status: 'failed',
+        model: 'gpt-4o',
+        processingTimeMs: Date.now() - startTime,
+        errorMessage: errorMsg,
+      });
+
+      throw error;
+    }
+  }
+}

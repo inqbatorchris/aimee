@@ -120,10 +120,12 @@ export class FieldManagerService {
 
     const table = tableMap[tableName];
     if (!table) {
-      throw new Error(
-        `Table '${tableName}' not yet supported for dynamic field updates. ` +
-        `Supported tables: ${Object.keys(tableMap).join(', ')}`
+      const supportedTables = Object.keys(tableMap).join(', ');
+      console.warn(
+        `[FieldManagerService] Table '${tableName}' not yet supported for dynamic field updates. ` +
+        `Supported tables: ${supportedTables}`
       );
+      return null;
     }
 
     return table;
@@ -155,6 +157,15 @@ export class FieldManagerService {
     value: any
   ) {
     const table = this.getTableSchema(tableName);
+
+    // If table is not supported, log warning and return null
+    if (!table) {
+      console.warn(
+        `[FieldManagerService] Cannot update ${tableName}#${recordId}.${fieldName}: table not supported. ` +
+        `Skipping field update.`
+      );
+      return null;
+    }
 
     // Get current record
     const [record] = await db
@@ -214,6 +225,15 @@ export class FieldManagerService {
     fields: Record<string, any>
   ) {
     const table = this.getTableSchema(tableName);
+
+    // If table is not supported, log warning and return null
+    if (!table) {
+      console.warn(
+        `[FieldManagerService] Cannot batch update ${tableName}#${recordId}: table not supported. ` +
+        `Skipping field updates.`
+      );
+      return null;
+    }
 
     // Get current record
     const [record] = await db

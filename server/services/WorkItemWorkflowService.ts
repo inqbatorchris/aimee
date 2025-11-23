@@ -516,6 +516,109 @@ export class WorkItemWorkflowService {
       }
     }
 
+    // Handle database integration (for OCR and other use cases)
+    if (callback.action === 'database_integration' && callback.databaseConfig) {
+      const { targetTable, recordIdSource } = callback.databaseConfig;
+      
+      console.log(`[Callback] Database integration: updating ${targetTable}`);
+
+      try {
+        // Determine the target record ID
+        let targetRecordId: number | undefined;
+
+        if (recordIdSource === 'work_item_source') {
+          // Get from work_item_sources table (OCR use case)
+          const { workItemSources } = await import('@shared/schema');
+          const [source] = await db
+            .select()
+            .from(workItemSources)
+            .where(
+              and(
+                eq(workItemSources.workItemId, workItemId),
+                eq(workItemSources.organizationId, organizationId)
+              )
+            )
+            .limit(1);
+
+          if (source && source.sourceTable === targetTable) {
+            targetRecordId = source.sourceId;
+            console.log(`[Callback] Using work item source: ${targetTable}#${targetRecordId}`);
+          }
+        } else if (recordIdSource?.startsWith('workflow_metadata.')) {
+          // Get from workflow metadata (e.g., workflow_metadata.addressId)
+          const metadataKey = recordIdSource.replace('workflow_metadata.', '');
+          const [workItem] = await db
+            .select()
+            .from(workItems)
+            .where(eq(workItems.id, workItemId))
+            .limit(1);
+
+          if (workItem?.workflowMetadata) {
+            const metadata = workItem.workflowMetadata as any;
+            targetRecordId = metadata[metadataKey];
+            console.log(`[Callback] Using workflow metadata.${metadataKey}: ${targetRecordId}`);
+          }
+        }
+
+        if (!targetRecordId) {
+          throw new Error(`Could not determine target record ID from ${recordIdSource}`);
+        }
+
+        // Use FieldManagerService to update the record
+        const { FieldManagerService } = await import('./ocr/FieldManagerService');
+        const { customFieldDefinitions } = await import('@shared/schema');
+        const fieldManager = new FieldManagerService();
+
+        // Get allowed custom fields for this table to validate mappings
+        const allowedFields = await db
+          .select()
+          .from(customFieldDefinitions)
+          .where(
+            and(
+              eq(customFieldDefinitions.organizationId, organizationId),
+              eq(customFieldDefinitions.tableName, targetTable)
+            )
+          );
+
+        const allowedFieldNames = new Set(allowedFields.map(f => f.fieldName));
+        console.log(`[Callback] Allowed fields for ${targetTable}:`, Array.from(allowedFieldNames));
+
+        // Update each mapped field (only if allowed or no restrictions)
+        for (const [fieldName, value] of Object.entries(mappedData)) {
+          // Skip meta fields
+          if (['organizationId', 'workItemId', 'photos', 'notes'].includes(fieldName)) {
+            continue;
+          }
+
+          // Validate field is allowed (if custom fields are defined)
+          if (allowedFields.length > 0 && !allowedFieldNames.has(fieldName)) {
+            console.warn(`[Callback] Skipping ${fieldName}: not in allowed custom fields for ${targetTable}`);
+            continue;
+          }
+
+          await fieldManager.updateDynamicField({
+            organizationId,
+            tableName: targetTable,
+            recordId: targetRecordId,
+            fieldName,
+            value,
+          });
+
+          console.log(`[Callback] Updated ${targetTable}#${targetRecordId}.${fieldName} = ${value}`);
+        }
+
+        return { 
+          success: true, 
+          mappedData,
+          targetTable,
+          targetRecordId,
+        };
+      } catch (error) {
+        console.error('[Callback] Database integration error:', error);
+        throw error;
+      }
+    }
+
     // Execute webhook if URL is provided
     if (callback.webhookUrl) {
       const method = callback.webhookMethod || 'POST';
@@ -627,20 +730,25 @@ export class WorkItemWorkflowService {
       updateData.notes = notes;
     }
 
-    if (evidence !== undefined) {
-      // Get existing step to preserve template-defined evidence
-      const existingSteps = await db
-        .select()
-        .from(workItemWorkflowExecutionSteps)
-        .where(
-          and(
-            eq(workItemWorkflowExecutionSteps.id, stepId),
-            eq(workItemWorkflowExecutionSteps.organizationId, organizationId)
-          )
+    // Get existing step to detect photo analysis config
+    const existingSteps = await db
+      .select()
+      .from(workItemWorkflowExecutionSteps)
+      .where(
+        and(
+          eq(workItemWorkflowExecutionSteps.id, stepId),
+          eq(workItemWorkflowExecutionSteps.organizationId, organizationId)
         )
-        .limit(1);
-      
-      const existingEvidence = (existingSteps[0]?.evidence as any) || {};
+      )
+      .limit(1);
+
+    const existingStep = existingSteps[0];
+    if (!existingStep) {
+      throw new Error('Step not found');
+    }
+
+    if (evidence !== undefined) {
+      const existingEvidence = (existingStep.evidence as any) || {};
       
       // Merge evidence while preserving template-defined properties
       updateData.evidence = {
@@ -650,6 +758,7 @@ export class WorkItemWorkflowService {
         checklistItems: existingEvidence.checklistItems,
         formFields: existingEvidence.formFields,
         photoConfig: existingEvidence.photoConfig,
+        photoAnalysisConfig: existingEvidence.photoAnalysisConfig,
         stepType: existingEvidence.stepType,
         config: existingEvidence.config,
         required: existingEvidence.required
@@ -667,7 +776,97 @@ export class WorkItemWorkflowService {
       )
       .returning();
 
+    // Detect photo upload with OCR configuration
+    if (evidence?.photos && Array.isArray(evidence.photos)) {
+      const stepEvidence = (step[0].evidence as any) || {};
+      const photoAnalysisConfig = stepEvidence.photoAnalysisConfig;
+
+      // Check if OCR is enabled for this step
+      if (photoAnalysisConfig?.enabled && photoAnalysisConfig?.extractions) {
+        console.log(`[WorkItemWorkflowService] Photo OCR enabled for step ${stepId}`);
+        
+        // Trigger OCR processing for newly added photos
+        // This will be done via agent workflows (async processing)
+        try {
+          await this.triggerPhotoAnalysis(
+            step[0],
+            evidence.photos,
+            photoAnalysisConfig,
+            organizationId,
+            userId
+          );
+        } catch (error) {
+          console.error('[WorkItemWorkflowService] Failed to trigger photo analysis:', error);
+          // Don't fail the step update if OCR trigger fails
+        }
+      }
+    }
+
     return step[0];
+  }
+
+  /**
+   * Trigger photo analysis via agent workflow
+   * This is called when a photo is uploaded to a step with photoAnalysisConfig enabled
+   */
+  private async triggerPhotoAnalysis(
+    step: any,
+    photos: any[],
+    photoAnalysisConfig: any,
+    organizationId: number,
+    userId?: number
+  ) {
+    console.log(`[WorkItemWorkflowService] Triggering photo analysis for ${photos.length} photo(s)`);
+
+    // If a specific agent workflow is configured, trigger it
+    if (photoAnalysisConfig.agentWorkflowId) {
+      // Dynamic import to avoid circular dependency
+      const { WorkflowExecutor } = await import('./workflow/WorkflowExecutor');
+      const { agentWorkflows } = await import('../../shared/schema');
+
+      const executor = new WorkflowExecutor();
+
+      // Fetch the agent workflow
+      const [workflow] = await db
+        .select()
+        .from(agentWorkflows)
+        .where(
+          and(
+            eq(agentWorkflows.id, photoAnalysisConfig.agentWorkflowId),
+            eq(agentWorkflows.organizationId, organizationId)
+          )
+        )
+        .limit(1);
+
+      if (!workflow) {
+        console.error(`[WorkItemWorkflowService] Agent workflow ${photoAnalysisConfig.agentWorkflowId} not found`);
+        return;
+      }
+
+      // Execute workflow for each photo
+      for (const photo of photos) {
+        try {
+          await executor.executeWorkflow(workflow, {
+            organizationId: organizationId.toString(),
+            triggerSource: 'workflow_step_photo_added',
+            userId,
+            // Pass OCR-specific data via manualData (generic payload field)
+            manualData: {
+              stepId: step.id,
+              workItemId: step.workItemId,
+              photoData: photo,
+              photoAnalysisConfig,
+            },
+          });
+
+          console.log(`[WorkItemWorkflowService] Triggered agent workflow for photo: ${photo.url}`);
+        } catch (error) {
+          console.error(`[WorkItemWorkflowService] Failed to trigger workflow for photo ${photo.url}:`, error);
+        }
+      }
+    } else {
+      console.log('[WorkItemWorkflowService] No agent workflow configured, OCR will need manual trigger');
+    }
   }
 
   async addStepEvidence(
