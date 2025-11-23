@@ -94,19 +94,22 @@ async function createOCRTestData() {
               description: 'Write extracted router info to address record',
               databaseConfig: {
                 targetTable: 'addresses',
-                recordId: address.id.toString(),
+                recordIdSource: 'workflow_metadata.addressId',
                 fieldMappings: [
                   {
+                    sourceStepId: 'step-2',
                     sourceField: 'router_serial_number',
                     targetField: 'router_serial_number',
                     required: true
                   },
                   {
+                    sourceStepId: 'step-2',
                     sourceField: 'router_mac_address',
                     targetField: 'router_mac_address',
                     required: false
                   },
                   {
+                    sourceStepId: 'step-2',
                     sourceField: 'router_model',
                     targetField: 'router_model',
                     required: false
@@ -177,6 +180,9 @@ async function createOCRTestData() {
       sourceType: 'addresses',
       sourceRecordId: address.id.toString(),
       workflowTemplateId: templateId,
+      workflowMetadata: {
+        addressId: address.id
+      },
       workflowState: {
         templateId: templateId,
         currentStepIndex: 0,
