@@ -3580,6 +3580,9 @@ export const addressRecords = pgTable("address_records", {
   workItemCount: integer("work_item_count").default(0),
   lastWorkItemDate: timestamp("last_work_item_date"),
   
+  // OCR extracted data from workflow completions
+  extractedData: jsonb("extracted_data").default({}).$type<Record<string, any>>(),
+  
   // Sync metadata
   lastSyncedAt: timestamp("last_synced_at"),
   

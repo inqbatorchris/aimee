@@ -309,7 +309,6 @@ export default function Addresses() {
   const { data: addressDetailData, isLoading: isLoadingAddressDetail } = useQuery<{
     address: AddressRecord;
     extractedData: Record<string, any>;
-    customFieldDefinitions: any[];
   }>({
     queryKey: [`/api/addresses/${selectedAddress?.id}`],
     enabled: !!selectedAddress?.id,
@@ -321,7 +320,6 @@ export default function Addresses() {
   console.log('Loading state:', isLoadingAddressDetail);
   
   const extractedData = addressDetailData?.extractedData || {};
-  const customFieldDefinitions = addressDetailData?.customFieldDefinitions || [];
   
   // Poll for sync progress
   useEffect(() => {
@@ -1564,7 +1562,6 @@ export default function Addresses() {
                 {/* Extracted Fields from OCR */}
                 <ExtractedFieldsPanel 
                   extractedData={extractedData}
-                  customFieldDefinitions={customFieldDefinitions}
                   loading={isLoadingAddressDetail}
                 />
                 
