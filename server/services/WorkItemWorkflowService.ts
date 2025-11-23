@@ -1,5 +1,5 @@
 import { db } from '../db';
-import { workItems, workItemWorkflowExecutions, workItemWorkflowExecutionSteps, workflowTemplates, workItemSources } from '@shared/schema';
+import { workItems, workItemWorkflowExecutions, workItemWorkflowExecutionSteps, workflowTemplates, workItemSources, activityLogs } from '@shared/schema';
 import { eq, and } from 'drizzle-orm';
 
 export interface CreateWorkItemWithWorkflowData {
@@ -304,9 +304,100 @@ export class WorkItemWorkflowService {
           console.log(`[Workflow Completion] Updated fiber node ${fiberNodeId} with ${workflowPhotos.length} photos`);
         }
       }
+
+      // Log workflow completion activity
+      await this.logWorkflowCompletionActivity(execution[0], organizationId);
     }
 
     return execution[0];
+  }
+
+  /**
+   * Log workflow completion activity
+   */
+  private async logWorkflowCompletionActivity(
+    execution: any,
+    organizationId: number
+  ) {
+    try {
+      // Get work item
+      const [workItem] = await db
+        .select()
+        .from(workItems)
+        .where(eq(workItems.id, execution.workItemId))
+        .limit(1);
+
+      if (!workItem) return;
+
+      // Get template name
+      let templateName = 'Workflow';
+      if (execution.workflowTemplateId) {
+        const template = await this.getWorkflowTemplate(execution.workflowTemplateId, organizationId);
+        if (template) {
+          templateName = template.name || 'Workflow';
+        }
+      }
+
+      // Try to get source record linkage
+      let sourceTable = 'work_item';
+      let sourceId = execution.workItemId;
+      
+      try {
+        const [workItemSource] = await db
+          .select()
+          .from(workItemSources)
+          .where(
+            and(
+              eq(workItemSources.workItemId, execution.workItemId),
+              eq(workItemSources.organizationId, organizationId)
+            )
+          )
+          .limit(1);
+
+        if (workItemSource) {
+          sourceTable = workItemSource.sourceTable;
+          sourceId = workItemSource.sourceId;
+        } else {
+          // Fallback to metadata
+          const metadata = workItem.workflowMetadata as any;
+          if (metadata?.addressRecordId) {
+            sourceTable = 'address';
+            sourceId = metadata.addressRecordId;
+          } else if (metadata?.customerId) {
+            sourceTable = 'customer';
+            sourceId = metadata.customerId;
+          }
+        }
+      } catch (error) {
+        // Fallback
+      }
+
+      const description = `Workflow "${templateName}" completed successfully`;
+
+      // Create activity log
+      await db.insert(activityLogs).values({
+        organizationId,
+        userId: workItem.assignedTo || workItem.createdBy || null,
+        actionType: 'completion',
+        entityType: sourceTable,
+        entityId: sourceId,
+        description,
+        metadata: {
+          workItemId: execution.workItemId,
+          workItemTitle: workItem.title,
+          workflowTemplateId: execution.workflowTemplateId,
+          templateName,
+          executionId: execution.id,
+          startedAt: execution.startedAt,
+          completedAt: execution.completedAt,
+        },
+      });
+
+      console.log(`[Activity Log] Workflow completion logged: ${description}`);
+    } catch (error) {
+      console.error('[WorkItemWorkflowService] Failed to log workflow completion:', error);
+      // Don't throw - logging failure shouldn't break workflow completion
+    }
   }
 
   private async executeCompletionCallback(
@@ -903,34 +994,66 @@ export class WorkItemWorkflowService {
 
       if (!workItem) return;
 
-      // Get work item source linkage
-      const [workItemSource] = await db
-        .select()
-        .from(workItemSources)
-        .where(
-          and(
-            eq(workItemSources.workItemId, workItemId),
-            eq(workItemSources.organizationId, organizationId)
+      // Try to get work item source linkage (might not exist for legacy work items)
+      let sourceTable = 'work_item';
+      let sourceId = workItemId;
+      
+      try {
+        const [workItemSource] = await db
+          .select()
+          .from(workItemSources)
+          .where(
+            and(
+              eq(workItemSources.workItemId, workItemId),
+              eq(workItemSources.organizationId, organizationId)
+            )
           )
-        )
-        .limit(1);
+          .limit(1);
 
-      if (!workItemSource) return;
+        if (workItemSource) {
+          sourceTable = workItemSource.sourceTable;
+          sourceId = workItemSource.sourceId;
+        } else {
+          // Fallback to metadata
+          const metadata = workItem.workflowMetadata as any;
+          if (metadata?.addressRecordId) {
+            sourceTable = 'address';
+            sourceId = metadata.addressRecordId;
+          } else if (metadata?.customerId) {
+            sourceTable = 'customer';
+            sourceId = metadata.customerId;
+          }
+        }
+      } catch (error) {
+        // work_item_sources might not exist, use fallback
+        console.log('[WorkItemWorkflowService] Using fallback for source linkage');
+      }
 
       // Build activity description
       const extractionSummary = Object.entries(extractedData)
-        .map(([field, data]: [string, any]) => `${data.field || field}: ${data.value} (${data.confidence}%)`)
+        .map(([field, data]: [string, any]) => `${data.field || field}: "${data.value}" (${data.confidence}% confidence)`)
         .join(', ');
 
-      // Log to appropriate activity table based on source type
-      if (workItemSource.sourceTable === 'addresses') {
-        const { addresses } = await import('../../shared/schema.js');
-        
-        // For now, create a simple activity log (we'll enhance this in P0.3)
-        console.log(`[Activity Log] OCR extraction completed: ${extractionSummary}`);
-        
-        // TODO: P0.3 - Add proper activity logging to addresses activity table
-      }
+      const description = `OCR extracted data from workflow photo: ${extractionSummary}`;
+
+      // Create activity log
+      await db.insert(activityLogs).values({
+        organizationId,
+        userId: userId || null,
+        actionType: 'agent_action',
+        entityType: sourceTable,
+        entityId: sourceId,
+        description,
+        metadata: {
+          workItemId,
+          workItemTitle: workItem.title,
+          extractedFields: Object.keys(extractedData),
+          extractions: extractedData,
+          ocrProvider: 'openai',
+        },
+      });
+
+      console.log(`[Activity Log] OCR extraction logged: ${description}`);
     } catch (error) {
       console.error('[WorkItemWorkflowService] Failed to log OCR activity:', error);
       // Don't throw - logging failure shouldn't break OCR processing
@@ -948,8 +1071,64 @@ export class WorkItemWorkflowService {
     userId?: number
   ) {
     try {
-      console.log(`[Activity Log] OCR extraction failed for ${photoUrl}: ${errorMessage}`);
-      // TODO: P0.3 - Add proper activity logging for failures
+      // Get work item to find source linkage
+      const [workItem] = await db
+        .select()
+        .from(workItems)
+        .where(
+          and(
+            eq(workItems.id, workItemId),
+            eq(workItems.organizationId, organizationId)
+          )
+        )
+        .limit(1);
+
+      if (!workItem) return;
+
+      // Try to get source info
+      let sourceTable = 'work_item';
+      let sourceId = workItemId;
+      
+      try {
+        const [workItemSource] = await db
+          .select()
+          .from(workItemSources)
+          .where(
+            and(
+              eq(workItemSources.workItemId, workItemId),
+              eq(workItemSources.organizationId, organizationId)
+            )
+          )
+          .limit(1);
+
+        if (workItemSource) {
+          sourceTable = workItemSource.sourceTable;
+          sourceId = workItemSource.sourceId;
+        }
+      } catch (error) {
+        // Fallback
+      }
+
+      const description = `OCR extraction failed: ${errorMessage}`;
+
+      // Create activity log
+      await db.insert(activityLogs).values({
+        organizationId,
+        userId: userId || null,
+        actionType: 'agent_action',
+        entityType: sourceTable,
+        entityId: sourceId,
+        description,
+        metadata: {
+          workItemId,
+          workItemTitle: workItem.title,
+          photoUrl,
+          errorMessage,
+          failed: true,
+        },
+      });
+
+      console.log(`[Activity Log] OCR failure logged: ${description}`);
     } catch (error) {
       console.error('[WorkItemWorkflowService] Failed to log OCR failure:', error);
     }
