@@ -98,3 +98,8 @@ waitForPort = 5000
 
 [objectStorage]
 defaultBucketID = "replit-objstore-6734e6ae-f5bc-4b60-9949-32434051f7ed"
+
+[userenv]
+
+[userenv.development]
+MOCK_OCR = "true"
