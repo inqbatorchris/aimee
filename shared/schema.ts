@@ -1551,6 +1551,126 @@ export const customerGeocodingCache = pgTable("customer_geocoding_cache", {
   unique("unique_geocode_per_customer_address").on(table.organizationId, table.splynxCustomerId, table.addressHash),
 ]);
 
+// ========================================
+// OCR & DYNAMIC FIELD MANAGEMENT
+// ========================================
+
+// Custom field definitions - tracks dynamically created fields for OCR extraction
+export const customFieldDefinitions = pgTable("custom_field_definitions", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  
+  // Target table
+  tableName: varchar("table_name", { length: 100 }).notNull(), // 'addresses', 'customers', 'tickets', etc.
+  fieldName: varchar("field_name", { length: 100 }).notNull(), // 'router_serial_number', 'equipment_model', etc.
+  
+  // Field metadata
+  displayLabel: varchar("display_label", { length: 255 }).notNull(),
+  fieldType: varchar("field_type", { length: 50 }).default('text').notNull(), // 'text', 'number', 'date', 'json'
+  description: text("description"),
+  
+  // OCR configuration
+  extractionPrompt: text("extraction_prompt"), // If this field is populated via OCR
+  
+  // Audit
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_custom_fields_org").on(table.organizationId),
+  index("idx_custom_fields_table").on(table.tableName),
+  unique("unique_field_per_table").on(table.organizationId, table.tableName, table.fieldName),
+]);
+
+// Work item sources - explicit linkage between work items and their source records
+export const workItemSources = pgTable("work_item_sources", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  workItemId: integer("work_item_id").references(() => workItems.id, { onDelete: "cascade" }).notNull(),
+  
+  // Source record reference
+  sourceTable: varchar("source_table", { length: 100 }).notNull(), // 'addresses', 'customers', 'tickets', etc.
+  sourceId: integer("source_id").notNull(), // ID in the source table
+  
+  // Metadata
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_work_item_sources_org").on(table.organizationId),
+  index("idx_work_item_sources_work_item").on(table.workItemId),
+  index("idx_work_item_sources_source").on(table.sourceTable, table.sourceId),
+  unique("unique_work_item_source").on(table.workItemId),
+]);
+
+// Workflow step extractions - tracks OCR extraction history and results
+export const workflowStepExtractions = pgTable("workflow_step_extractions", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  workItemId: integer("work_item_id").references(() => workItems.id, { onDelete: "cascade" }).notNull(),
+  stepId: integer("step_id").references(() => workItemWorkflowExecutionSteps.id, { onDelete: "cascade" }).notNull(),
+  
+  // Extraction results
+  extractedData: jsonb("extracted_data").notNull().$type<Record<string, any>>(),
+  confidence: integer("confidence"), // 0-100
+  status: varchar("status", { length: 20 }).default('completed').notNull(), // 'completed', 'failed', 'low_confidence'
+  
+  // OCR metadata
+  model: varchar("model", { length: 100 }), // e.g., 'gpt-4o'
+  tokensUsed: integer("tokens_used"),
+  processingTimeMs: integer("processing_time_ms"),
+  errorMessage: text("error_message"),
+  
+  // Audit
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_step_extractions_org").on(table.organizationId),
+  index("idx_step_extractions_work_item").on(table.workItemId),
+  index("idx_step_extractions_step").on(table.stepId),
+  index("idx_step_extractions_status").on(table.status),
+]);
+
+// Addresses table - for managing installation addresses with extracted data
+export const addresses = pgTable("addresses", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  
+  // Address details
+  streetAddress: varchar("street_address", { length: 500 }),
+  city: varchar("city", { length: 100 }),
+  state: varchar("state", { length: 100 }),
+  postcode: varchar("postcode", { length: 20 }),
+  country: varchar("country", { length: 100 }).default('Australia'),
+  
+  // Geocoding
+  latitude: decimal("latitude", { precision: 10, scale: 7 }),
+  longitude: decimal("longitude", { precision: 11, scale: 8 }),
+  what3words: varchar("what3words", { length: 100 }),
+  
+  // Dynamic extracted fields (using JSONB for flexibility)
+  extractedData: jsonb("extracted_data").default({}).$type<Record<string, any>>(),
+  // Example: { router_serial_number: "ABC123", equipment_model: "TP-Link XYZ" }
+  
+  // External references
+  splynxCustomerId: integer("splynx_customer_id"),
+  externalId: varchar("external_id", { length: 100 }), // For linking to external systems
+  
+  // Status
+  isActive: boolean("is_active").default(true),
+  
+  // Audit
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_addresses_org").on(table.organizationId),
+  index("idx_addresses_customer").on(table.splynxCustomerId),
+  index("idx_addresses_postcode").on(table.postcode),
+  index("idx_addresses_active").on(table.isActive),
+]);
+
+// ========================================
+// AGENT WORKFLOWS FOR AUTOMATION
+// ========================================
+
 // Agent workflows for automation
 export const agentWorkflows = pgTable("agent_workflows", {
   id: serial("id").primaryKey(),
@@ -1559,7 +1679,7 @@ export const agentWorkflows = pgTable("agent_workflows", {
   // Workflow details
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
-  triggerType: varchar("trigger_type", { length: 50 }).notNull(), // 'schedule', 'webhook', 'integration_event', 'manual'
+  triggerType: varchar("trigger_type", { length: 50 }).notNull(), // 'schedule', 'webhook', 'integration_event', 'manual', 'workflow_step_photo_added'
   triggerConfig: jsonb("trigger_config").default({}).notNull(),
   workflowDefinition: jsonb("workflow_definition").default([]).notNull(), // Array of steps
   
@@ -2702,6 +2822,22 @@ export const workflowStepSchema = z.object({
     minPhotos: z.number().default(1),
     maxPhotos: z.number().default(10),
     required: z.boolean().default(false)
+  }).optional(),
+  photoAnalysisConfig: z.object({
+    enabled: z.boolean().default(false),
+    agentWorkflowId: z.number().optional(), // Optional specific agent workflow to trigger
+    extractions: z.array(z.object({
+      fieldId: z.number().optional(), // Link to customFieldDefinitions when pre-provisioned
+      targetTable: z.string().optional(), // Fallback when fieldId absent: 'addresses', 'customers', etc.
+      targetField: z.string().optional(), // Fallback when fieldId absent: field name to store value
+      extractionPrompt: z.string(), // What to extract (e.g., "Extract the router serial number")
+      autoCreateField: z.boolean().default(true), // Auto-create field if doesn't exist
+      required: z.boolean().default(false), // Is this extraction required for workflow completion?
+      postProcess: z.enum(['none', 'uppercase', 'lowercase', 'trim']).default('none').optional(), // Post-processing
+    }).refine(
+      (data) => data.fieldId !== undefined || (data.targetTable && data.targetField),
+      { message: "Each extraction must have either a fieldId or both targetTable and targetField" }
+    )).min(1), // At least one extraction must be defined
   }).optional(),
 }).refine(
   (data) => data.title || data.label,
@@ -4134,6 +4270,46 @@ export type InsertAIDocumentEmbedding = z.infer<typeof insertAIDocumentEmbedding
 
 export type AIChatPerformance = typeof aiChatPerformance.$inferSelect;
 export type InsertAIChatPerformance = z.infer<typeof insertAIChatPerformanceSchema>;
+
+// ========================================
+// OCR & DYNAMIC FIELD TYPES
+// ========================================
+
+// Insert schemas
+export const insertCustomFieldDefinitionSchema = createInsertSchema(customFieldDefinitions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertWorkItemSourceSchema = createInsertSchema(workItemSources).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertWorkflowStepExtractionSchema = createInsertSchema(workflowStepExtractions).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertAddressSchema = createInsertSchema(addresses).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Types
+export type CustomFieldDefinition = typeof customFieldDefinitions.$inferSelect;
+export type InsertCustomFieldDefinition = z.infer<typeof insertCustomFieldDefinitionSchema>;
+
+export type WorkItemSource = typeof workItemSources.$inferSelect;
+export type InsertWorkItemSource = z.infer<typeof insertWorkItemSourceSchema>;
+
+export type WorkflowStepExtraction = typeof workflowStepExtractions.$inferSelect;
+export type InsertWorkflowStepExtraction = z.infer<typeof insertWorkflowStepExtractionSchema>;
+
+export type Address = typeof addresses.$inferSelect;
+export type InsertAddress = z.infer<typeof insertAddressSchema>;
 
 // ========================================
 // CHAT ACTIVITY LOG TYPES
