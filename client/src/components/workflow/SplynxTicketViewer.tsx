@@ -5,7 +5,8 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Separator } from '@/components/ui/separator';
-import { Ticket, MessageSquare, Clock, User, AlertCircle, Loader2, Send, ExternalLink, CheckCircle } from 'lucide-react';
+import { Ticket, MessageSquare, Clock, User, AlertCircle, Loader2, Send, ExternalLink, CheckCircle, Sparkles, RefreshCw } from 'lucide-react';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useState, useMemo, useEffect } from 'react';
 import { format } from 'date-fns';
 import { apiRequest } from '@/lib/queryClient';
@@ -25,6 +26,24 @@ function renderMessageHTML(html: string) {
   });
   
   return sanitized;
+}
+
+interface TicketDraftResponse {
+  id: number;
+  workItemId: number;
+  originalDraft: string;
+  finalResponse?: string;
+  editPercentage?: number;
+  sentAt?: string;
+  sentBy?: number;
+  regenerationCount: number;
+  generationMetadata: {
+    model?: string;
+    temperature?: number;
+    knowledgeDocumentsUsed?: number[];
+  };
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface SplynxTicketViewerProps {
@@ -52,6 +71,7 @@ export function SplynxTicketViewer({
   const [selectedStatus, setSelectedStatus] = useState<string>('');
   const [localActionCompleted, setLocalActionCompleted] = useState(false);
   const [hasNotifiedCompletion, setHasNotifiedCompletion] = useState(false);
+  const [draftLoaded, setDraftLoaded] = useState(false);
 
   const { data: integrations, isLoading: isLoadingIntegrations } = useQuery<any[]>({
     queryKey: ['/api/integrations'],
@@ -74,6 +94,21 @@ export function SplynxTicketViewer({
       return await response.json(); // Parse JSON from Response object
     },
   });
+
+  // Fetch AI draft for this work item
+  const { data: aiDraft, refetch: refetchDraft } = useQuery<TicketDraftResponse>({
+    queryKey: [`/api/ai-drafting/drafts/work-item/${workItemId}`],
+    enabled: !!workItemId,
+    retry: false,
+  });
+
+  // Pre-fill response with AI draft when it loads (only once, only if not already sent)
+  useEffect(() => {
+    if (aiDraft && !draftLoaded && !aiDraft.sentAt) {
+      setMessage(aiDraft.originalDraft);
+      setDraftLoaded(true);
+    }
+  }, [aiDraft, draftLoaded]);
 
   // Derive completion state from actual ticket data
   const isModeCompleted = useMemo(() => {
@@ -119,6 +154,15 @@ export function SplynxTicketViewer({
   const sendMessageMutation = useMutation({
     mutationFn: async ({ message, isInternal }: { message: string; isInternal: boolean }) => {
       if (!integrationId) throw new Error('No Splynx integration found');
+      
+      // Update AI draft record if one exists and hasn't been sent yet
+      if (aiDraft && !aiDraft.sentAt) {
+        await apiRequest(`/api/ai-drafting/drafts/${aiDraft.id}`, {
+          method: 'PATCH',
+          body: { finalResponse: message }
+        });
+      }
+      
       return await apiRequest(`/api/integrations/splynx/entity/ticket/${ticketId}/message`, {
         method: 'POST',
         body: {
@@ -131,8 +175,9 @@ export function SplynxTicketViewer({
     onSuccess: () => {
       setMessage('');
       refetch();
+      refetchDraft();
       onMessageSent?.();
-      if (mode === 'respond') {
+      if (mode === 'respond' || mode === 'unified') {
         setLocalActionCompleted(true);
       }
       toast({
@@ -359,7 +404,15 @@ export function SplynxTicketViewer({
         {/* Quick Reply */}
         <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-medium">Quick Reply</label>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium">Quick Reply</label>
+              {aiDraft && !aiDraft.sentAt && (
+                <Badge variant="secondary" className="text-[10px] px-1.5 py-0 gap-1">
+                  <Sparkles className="h-2.5 w-2.5" />
+                  AI Draft
+                </Badge>
+              )}
+            </div>
             <Select value={isInternal ? 'true' : 'false'} onValueChange={(v) => setIsInternal(v === 'true')}>
               <SelectTrigger className="w-24 h-7 text-xs" data-testid="select-message-type">
                 <SelectValue />
@@ -370,6 +423,28 @@ export function SplynxTicketViewer({
               </SelectContent>
             </Select>
           </div>
+
+          {aiDraft && !aiDraft.sentAt && (
+            <Alert className="py-2 px-3 border-blue-200 bg-blue-50 dark:bg-blue-950/50">
+              <AlertDescription className="text-xs text-blue-800 dark:text-blue-200">
+                AI-generated response loaded. Review and edit before sending.
+                {aiDraft.generationMetadata?.model && (
+                  <span className="block text-[10px] text-blue-600 dark:text-blue-300 mt-0.5">
+                    Model: {aiDraft.generationMetadata.model}
+                  </span>
+                )}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {aiDraft && aiDraft.sentAt && aiDraft.editPercentage !== undefined && (
+            <Alert className="py-2 px-3 border-green-200 bg-green-50 dark:bg-green-950/50">
+              <AlertDescription className="text-xs text-green-800 dark:text-green-200">
+                Previous response was edited {Number(aiDraft.editPercentage).toFixed(1)}% before sending.
+              </AlertDescription>
+            </Alert>
+          )}
+
           <Textarea
             value={message}
             onChange={(e) => setMessage(e.target.value)}
@@ -377,6 +452,19 @@ export function SplynxTicketViewer({
             className="min-h-20 text-sm"
             data-testid="textarea-ticket-message"
           />
+
+          {aiDraft && !aiDraft.sentAt && message !== aiDraft.originalDraft && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setMessage(aiDraft.originalDraft)}
+              className="h-7 text-xs"
+              data-testid="button-restore-draft"
+            >
+              <RefreshCw className="h-3 w-3 mr-1" />
+              Restore Draft
+            </Button>
+          )}
           <Button 
             onClick={handleSendMessage} 
             disabled={sendMessageMutation.isPending || !message.trim()}
