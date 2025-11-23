@@ -55,7 +55,7 @@ export default function AITicketDraftingSetup() {
 
   // Fetch knowledge base documents
   const { data: kbDocuments = [] } = useQuery<any[]>({
-    queryKey: ['/api/knowledge-base'],
+    queryKey: ['/api/knowledge-base/documents'],
   });
 
   // Fetch objectives
@@ -84,13 +84,14 @@ export default function AITicketDraftingSetup() {
   // Populate form with existing config
   useEffect(() => {
     if (existingConfig && !form.formState.isDirty) {
+      const hasValidObjective = existingConfig.linkedObjectiveId && existingConfig.linkedObjectiveId > 0;
       form.reset({
         model: existingConfig.modelConfig?.model || 'gpt-4o-mini',
         temperature: existingConfig.modelConfig?.temperature || 0.7,
         maxTokens: existingConfig.modelConfig?.maxTokens || 1000,
         systemPromptDocIds: existingConfig.systemPromptDocumentIds || [],
         knowledgeDocIds: existingConfig.knowledgeDocumentIds || [],
-        objectiveId: existingConfig.linkedObjectiveId || 0,
+        objectiveId: hasValidObjective ? existingConfig.linkedObjectiveId : 0,
         keyResultIds: existingConfig.linkedKeyResultIds || [],
       });
     }
@@ -181,7 +182,7 @@ export default function AITicketDraftingSetup() {
         </div>
       </div>
 
-      {existingConfig && (
+      {existingConfig?.isEnabled && (
         <Alert className="mb-6">
           <CheckCircle className="h-4 w-4" />
           <AlertDescription>
