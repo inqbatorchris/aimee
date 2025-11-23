@@ -1664,14 +1664,14 @@ export const aiAgentConfigurations = pgTable("ai_agent_configurations", {
   isEnabled: boolean("is_enabled").default(false).notNull(),
   
   // Knowledge base configuration
+  systemPromptDocumentIds: jsonb("system_prompt_document_ids").default([]).$type<number[]>(), // KB docs to use as system prompt
   knowledgeDocumentIds: jsonb("knowledge_document_ids").default([]).$type<number[]>(), // Which KB docs to use for context
   
   // AI model configuration
   modelConfig: jsonb("model_config").default({
-    model: 'gpt-4',
+    model: 'gpt-4o-mini',
     temperature: 0.7,
-    maxTokens: 500,
-    systemPrompt: 'You are a helpful support agent assistant.'
+    maxTokens: 1000
   }).notNull(),
   
   // Feature-specific settings
