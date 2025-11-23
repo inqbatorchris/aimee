@@ -9,7 +9,7 @@ import {
 } from '@shared/schema';
 import { eq, and, or, gte, lte, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '../db';
-import { workItems, checkInCycles, checkInMeetings, users, keyResultTasks, teams, keyResults, objectives, knowledgeDocumentAttachments, knowledgeDocuments, workItemWorkflowExecutions, workItemWorkflowExecutionSteps } from '@shared/schema';
+import { workItems, checkInCycles, checkInMeetings, users, keyResultTasks, teams, keyResults, objectives, knowledgeDocumentAttachments, knowledgeDocuments, workItemWorkflowExecutions, workItemWorkflowExecutionSteps, workItemSources } from '@shared/schema';
 
 const router = Router();
 
@@ -599,15 +599,24 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
     });
     
     // If this work item is associated with an address, also log activity for the address
-    if (data.workflowMetadata?.addressRecordId) {
+    const metadata = data.workflowMetadata as any;
+    if (metadata?.addressRecordId) {
       await storage.logActivity({
         organizationId,
         userId,
-        actionType: 'work_item_added',
+        actionType: 'creation',
         entityType: 'address',
-        entityId: parseInt(data.workflowMetadata.addressRecordId),
+        entityId: parseInt(metadata.addressRecordId),
         description: `Work item "${data.title}" added to address`,
         metadata: { workItemId: workItem.id, title: data.title, status: data.status }
+      });
+      
+      // Create work_item_source record to link work item to address
+      await db.insert(workItemSources).values({
+        organizationId,
+        workItemId: workItem.id,
+        sourceTable: 'addresses',
+        sourceId: parseInt(metadata.addressRecordId)
       });
     }
     
@@ -792,13 +801,14 @@ router.patch('/:id', authenticateToken, async (req: Request, res: Response) => {
       });
       
       // If this work item is associated with an address, also log status change for the address
-      if (existing.workflowMetadata?.addressRecordId) {
+      const metadata = existing.workflowMetadata as any;
+      if (metadata?.addressRecordId) {
         await storage.logActivity({
           organizationId,
           userId,
-          actionType: 'work_item_status_changed',
+          actionType: 'status_change',
           entityType: 'address',
-          entityId: parseInt(existing.workflowMetadata.addressRecordId),
+          entityId: parseInt(metadata.addressRecordId),
           description: `Work item "${existing.title}" status changed to "${data.status}"`,
           metadata: { workItemId, oldStatus: existing.status, newStatus: data.status, workItemTitle: existing.title }
         });
