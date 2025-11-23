@@ -20,6 +20,61 @@ const router = Router();
 router.use(authenticateToken);
 
 // ========================================
+// MODEL MANAGEMENT ENDPOINTS  
+// ========================================
+
+// Get available OpenAI models
+router.get('/models', async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated or missing organization' });
+    }
+
+    // Define available models for ticket drafting (focusing on text generation models)
+    const availableModels = [
+      {
+        id: 'gpt-4o',
+        name: 'GPT-4o',
+        description: 'Most capable model, best for complex responses',
+        context_window: 128000,
+        maxTokens: 4096,
+        recommended: false
+      },
+      {
+        id: 'gpt-4o-mini',
+        name: 'GPT-4o-mini',
+        description: 'Fast and cost-effective, great for most support tickets',
+        context_window: 128000,
+        maxTokens: 16384,
+        recommended: true
+      },
+      {
+        id: 'gpt-4-turbo',
+        name: 'GPT-4 Turbo',
+        description: 'Previous generation flagship model',
+        context_window: 128000,
+        maxTokens: 4096,
+        recommended: false
+      },
+      {
+        id: 'gpt-3.5-turbo',
+        name: 'GPT-3.5 Turbo',
+        description: 'Budget-friendly option for simple responses',
+        context_window: 16385,
+        maxTokens: 4096,
+        recommended: false
+      }
+    ];
+
+    res.json({ models: availableModels });
+  } catch (error) {
+    console.error('Error fetching models:', error);
+    res.status(500).json({ error: 'Failed to fetch available models' });
+  }
+});
+
+// ========================================
 // AI AGENT CONFIGURATION ENDPOINTS
 // ========================================
 

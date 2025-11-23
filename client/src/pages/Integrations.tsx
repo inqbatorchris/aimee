@@ -8,7 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import {
   Cable, Calculator, Mail, Database as DatabaseIcon, Bot, Settings,
-  CheckCircle, XCircle, AlertCircle, Plus, Workflow, RefreshCw, Info, Map, Phone
+  CheckCircle, XCircle, AlertCircle, Plus, Workflow, RefreshCw, Info, Map, Phone,
+  MessageSquareText
 } from 'lucide-react';
 import type { Integration } from '@shared/schema';
 import { useToast } from '@/hooks/use-toast';
@@ -92,6 +93,13 @@ const INTEGRATION_CONFIG = {
     icon: Phone,
     setupPath: '/integrations/vapi/setup',
     color: 'bg-violet-500',
+  },
+  ai_ticket_drafting: {
+    name: 'AI Ticket Drafting',
+    description: 'Automatically generate draft responses for support tickets using AI and your knowledge base',
+    icon: MessageSquareText,
+    setupPath: '/integrations/ai-ticket-drafting/setup',
+    color: 'bg-emerald-500',
   },
 } as const;
 
