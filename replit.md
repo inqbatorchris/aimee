@@ -5,6 +5,24 @@ Aimee.works is a Strategy Operating System (Strategy OS) designed to integrate s
 
 ## Recent Changes
 
+### November 2025 - AI Ticket Drafting Integration
+**Feature**: Single-page configuration system for AI-powered support ticket response drafting.
+
+**Implementation**:
+- **Setup UI** at `/integrations/ai-ticket-drafting/setup` with model selection (GPT-4o, GPT-4o-mini, GPT-4-Turbo, GPT-3.5-Turbo)
+- **Dual KB Document Selectors**: Both system prompt and reference document selectors allow attaching ANY knowledge base document (no filtering)
+- **Performance Tracking**: Link to objectives and key results for analytics
+- **Backend API** at `/api/ai-drafting/*` with configuration management, model listing, and draft storage
+- **Database Tables**: `ai_agent_configurations` (stores config per organization) and `ticket_draft_responses` (stores generated drafts)
+- **Security**: Backend validates KB document ownership to prevent cross-organization access
+- **First-time Setup**: Returns default configuration when no config exists (no 404 errors)
+
+**Technical Details**:
+- Files: `client/src/pages/integrations/AITicketDraftingSetup.tsx`, `server/routes/ai-drafting.ts`
+- Configuration includes: model type, temperature (0-2), max tokens, system prompt docs, knowledge base docs, linked objective/key results
+- Validation requires: minimum 1 system prompt document, 1 objective, 1 key result
+- Accessible only via Integration Hub card (emerald color, MessageSquareText icon)
+
 ### November 2025 - Field App Chunked Download System
 **Problem Solved**: Field app downloads were failing when downloading large numbers of work items or items with many high-resolution photos due to mobile browser memory limitations.
 

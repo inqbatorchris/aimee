@@ -156,8 +156,6 @@ export default function AITicketDraftingSetup() {
   }
 
   const models = modelsData?.models || [];
-  const systemPromptDocs = kbDocuments.filter(doc => doc.title.toLowerCase().includes('system') || doc.title.toLowerCase().includes('prompt'));
-  const referenceDocs = kbDocuments.filter(doc => !systemPromptDocs.includes(doc));
 
   return (
     <div className="container mx-auto py-6 px-4 max-w-4xl">
@@ -298,10 +296,10 @@ export default function AITicketDraftingSetup() {
                       Documents that define the AI's behavior and response style
                     </FormDescription>
                     <div className="border rounded-md p-3 max-h-48 overflow-y-auto space-y-2">
-                      {systemPromptDocs.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">No system prompt documents found. Create documents with "system" or "prompt" in the title.</p>
+                      {kbDocuments.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No knowledge base documents found.</p>
                       ) : (
-                        systemPromptDocs.map((doc) => (
+                        kbDocuments.map((doc: any) => (
                           <FormField
                             key={doc.id}
                             control={form.control}
@@ -345,10 +343,10 @@ export default function AITicketDraftingSetup() {
                       Documents the AI can reference to provide accurate information
                     </FormDescription>
                     <div className="border rounded-md p-3 max-h-48 overflow-y-auto space-y-2">
-                      {referenceDocs.length === 0 ? (
-                        <p className="text-sm text-muted-foreground">No reference documents available</p>
+                      {kbDocuments.length === 0 ? (
+                        <p className="text-sm text-muted-foreground">No knowledge base documents found.</p>
                       ) : (
-                        referenceDocs.map((doc) => (
+                        kbDocuments.map((doc: any) => (
                           <FormField
                             key={doc.id}
                             control={form.control}
