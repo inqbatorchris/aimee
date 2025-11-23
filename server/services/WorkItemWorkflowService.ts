@@ -1,5 +1,5 @@
 import { db } from '../db';
-import { workItems, workItemWorkflowExecutions, workItemWorkflowExecutionSteps, workflowTemplates } from '@shared/schema';
+import { workItems, workItemWorkflowExecutions, workItemWorkflowExecutionSteps, workflowTemplates, workItemSources } from '@shared/schema';
 import { eq, and } from 'drizzle-orm';
 
 export interface CreateWorkItemWithWorkflowData {
@@ -806,7 +806,7 @@ export class WorkItemWorkflowService {
   }
 
   /**
-   * Trigger photo analysis via agent workflow
+   * Trigger photo analysis using OCR action
    * This is called when a photo is uploaded to a step with photoAnalysisConfig enabled
    */
   private async triggerPhotoAnalysis(
@@ -818,54 +818,140 @@ export class WorkItemWorkflowService {
   ) {
     console.log(`[WorkItemWorkflowService] Triggering photo analysis for ${photos.length} photo(s)`);
 
-    // If a specific agent workflow is configured, trigger it
-    if (photoAnalysisConfig.agentWorkflowId) {
-      // Dynamic import to avoid circular dependency
-      const { WorkflowExecutor } = await import('./workflow/WorkflowExecutor');
-      const { agentWorkflows } = await import('../../shared/schema');
+    // Import OCR action
+    const { AnalyzeImageOCRAction } = await import('./workflow/actions/AnalyzeImageOCRAction');
+    const ocrAction = new AnalyzeImageOCRAction();
 
-      const executor = new WorkflowExecutor();
+    // Process each photo
+    for (const photo of photos) {
+      try {
+        console.log(`[WorkItemWorkflowService] Processing photo: ${photo.url}`);
 
-      // Fetch the agent workflow
-      const [workflow] = await db
-        .select()
-        .from(agentWorkflows)
-        .where(
-          and(
-            eq(agentWorkflows.id, photoAnalysisConfig.agentWorkflowId),
-            eq(agentWorkflows.organizationId, organizationId)
-          )
-        )
-        .limit(1);
-
-      if (!workflow) {
-        console.error(`[WorkItemWorkflowService] Agent workflow ${photoAnalysisConfig.agentWorkflowId} not found`);
-        return;
-      }
-
-      // Execute workflow for each photo
-      for (const photo of photos) {
-        try {
-          await executor.executeWorkflow(workflow, {
+        // Execute OCR analysis
+        const result = await ocrAction.execute(
+          {
+            stepId: step.id,
+            workItemId: step.workItemId,
+            photoData: photo,
+            photoAnalysisConfig,
+          },
+          {
             organizationId: organizationId.toString(),
-            triggerSource: 'workflow_step_photo_added',
             userId,
-            // Pass OCR-specific data via manualData (generic payload field)
             manualData: {
               stepId: step.id,
               workItemId: step.workItemId,
               photoData: photo,
               photoAnalysisConfig,
             },
-          });
+          }
+        );
 
-          console.log(`[WorkItemWorkflowService] Triggered agent workflow for photo: ${photo.url}`);
-        } catch (error) {
-          console.error(`[WorkItemWorkflowService] Failed to trigger workflow for photo ${photo.url}:`, error);
+        if (result.success) {
+          console.log(`[WorkItemWorkflowService] OCR completed successfully for ${photo.url}`);
+          console.log(`  Extracted fields: ${Object.keys(result.extractedData).length}`);
+          console.log(`  Average confidence: ${result.confidence}%`);
+
+          // Log extraction activity
+          await this.logOCRExtractionActivity(
+            step.workItemId,
+            organizationId,
+            result.extractedData,
+            userId
+          );
+        } else {
+          console.error(`[WorkItemWorkflowService] OCR failed for ${photo.url}`);
+          if (result.errors) {
+            console.error(`  Errors: ${result.errors.join(', ')}`);
+          }
         }
+      } catch (error) {
+        console.error(`[WorkItemWorkflowService] Failed to process photo ${photo.url}:`, error);
+        // Log failure activity
+        await this.logOCRExtractionFailure(
+          step.workItemId,
+          organizationId,
+          photo.url,
+          error instanceof Error ? error.message : 'Unknown error',
+          userId
+        );
       }
-    } else {
-      console.log('[WorkItemWorkflowService] No agent workflow configured, OCR will need manual trigger');
+    }
+  }
+
+  /**
+   * Log OCR extraction activity
+   */
+  private async logOCRExtractionActivity(
+    workItemId: number,
+    organizationId: number,
+    extractedData: Record<string, any>,
+    userId?: number
+  ) {
+    try {
+      // Get work item to find source linkage
+      const [workItem] = await db
+        .select()
+        .from(workItems)
+        .where(
+          and(
+            eq(workItems.id, workItemId),
+            eq(workItems.organizationId, organizationId)
+          )
+        )
+        .limit(1);
+
+      if (!workItem) return;
+
+      // Get work item source linkage
+      const [workItemSource] = await db
+        .select()
+        .from(workItemSources)
+        .where(
+          and(
+            eq(workItemSources.workItemId, workItemId),
+            eq(workItemSources.organizationId, organizationId)
+          )
+        )
+        .limit(1);
+
+      if (!workItemSource) return;
+
+      // Build activity description
+      const extractionSummary = Object.entries(extractedData)
+        .map(([field, data]: [string, any]) => `${data.field || field}: ${data.value} (${data.confidence}%)`)
+        .join(', ');
+
+      // Log to appropriate activity table based on source type
+      if (workItemSource.sourceTable === 'addresses') {
+        const { addresses } = await import('../../shared/schema.js');
+        
+        // For now, create a simple activity log (we'll enhance this in P0.3)
+        console.log(`[Activity Log] OCR extraction completed: ${extractionSummary}`);
+        
+        // TODO: P0.3 - Add proper activity logging to addresses activity table
+      }
+    } catch (error) {
+      console.error('[WorkItemWorkflowService] Failed to log OCR activity:', error);
+      // Don't throw - logging failure shouldn't break OCR processing
+    }
+  }
+
+  /**
+   * Log OCR extraction failure
+   */
+  private async logOCRExtractionFailure(
+    workItemId: number,
+    organizationId: number,
+    photoUrl: string,
+    errorMessage: string,
+    userId?: number
+  ) {
+    try {
+      console.log(`[Activity Log] OCR extraction failed for ${photoUrl}: ${errorMessage}`);
+      // TODO: P0.3 - Add proper activity logging for failures
+    } catch (error) {
+      console.error('[WorkItemWorkflowService] Failed to log OCR failure:', error);
     }
   }
 

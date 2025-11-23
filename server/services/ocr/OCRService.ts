@@ -58,6 +58,26 @@ export class OCRService {
         temperature = 0.1, // Low temperature for consistent extraction
       } = options;
 
+      // Mock mode for testing without API calls
+      if (process.env.MOCK_OCR === 'true') {
+        console.log('[OCRService] MOCK MODE: Returning simulated OCR result');
+        console.log(`  Prompt: ${extractionPrompt}`);
+        console.log(`  Image: ${imageData.substring(0, 50)}...`);
+        
+        // Generate a mock serial number or value based on the prompt
+        const mockValue = extractionPrompt.toLowerCase().includes('serial') 
+          ? 'MOCK-SERIAL-' + Math.random().toString(36).substring(2, 8).toUpperCase()
+          : 'MOCK-VALUE-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+        
+        return {
+          success: true,
+          extractedText: mockValue,
+          confidence: 95, // High confidence for mock data
+          model: 'gpt-4o-mock',
+          tokensUsed: 0,
+        };
+      }
+
       // Construct the system prompt
       const systemPrompt = structuredOutput
         ? `You are a precise OCR extraction assistant. Extract the requested information from images and return it as valid JSON. 

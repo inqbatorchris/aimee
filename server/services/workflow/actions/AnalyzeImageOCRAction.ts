@@ -78,23 +78,66 @@ export class AnalyzeImageOCRAction {
       }
 
       // Get work item source linkage to determine target record
-      const [workItemSource] = await db
-        .select()
-        .from(workItemSources)
-        .where(
-          and(
-            eq(workItemSources.workItemId, workItemId),
-            eq(workItemSources.organizationId, organizationId)
-          )
-        )
-        .limit(1);
+      // First, try to get from work_item_sources table (new approach)
+      let sourceTable: string | null = null;
+      let sourceId: number | null = null;
 
-      if (!workItemSource) {
-        throw new Error(`Work item ${workItemId} has no source linkage`);
+      try {
+        const [workItemSource] = await db
+          .select()
+          .from(workItemSources)
+          .where(
+            and(
+              eq(workItemSources.workItemId, workItemId),
+              eq(workItemSources.organizationId, organizationId)
+            )
+          )
+          .limit(1);
+
+        if (workItemSource) {
+          sourceTable = workItemSource.sourceTable;
+          sourceId = workItemSource.sourceId;
+          console.log(`[AnalyzeImageOCR] Source from work_item_sources: ${sourceTable}#${sourceId}`);
+        }
+      } catch (error) {
+        // Log the error to ensure we're not hiding real query issues
+        console.log(`[AnalyzeImageOCR] Could not query work_item_sources (table might not exist):`, error instanceof Error ? error.message : error);
+        console.log(`[AnalyzeImageOCR] Falling back to workflow_metadata`);
       }
 
-      const sourceTable = workItemSource.sourceTable;
-      const sourceId = workItemSource.sourceId;
+      // Fallback: Get source from work item metadata (legacy/backward compatibility)
+      if (!sourceTable || !sourceId) {
+        const { workItems } = await import('../../../../shared/schema');
+        const [workItem] = await db
+          .select()
+          .from(workItems)
+          .where(
+            and(
+              eq(workItems.id, workItemId),
+              eq(workItems.organizationId, organizationId)
+            )
+          )
+          .limit(1);
+
+        if (!workItem) {
+          throw new Error(`Work item ${workItemId} not found`);
+        }
+
+        const metadata = workItem.workflowMetadata as any;
+        
+        // Try to get address ID from metadata
+        if (metadata?.addressRecordId) {
+          sourceTable = 'addresses';
+          sourceId = metadata.addressRecordId;
+          console.log(`[AnalyzeImageOCR] Source from metadata: ${sourceTable}#${sourceId}`);
+        } else if (metadata?.customerId) {
+          sourceTable = 'customers';
+          sourceId = metadata.customerId;
+          console.log(`[AnalyzeImageOCR] Source from metadata: ${sourceTable}#${sourceId}`);
+        } else {
+          throw new Error(`Work item ${workItemId} has no source linkage in work_item_sources or metadata`);
+        }
+      }
 
       console.log(`[AnalyzeImageOCR] Source: ${sourceTable}#${sourceId}`);
 
