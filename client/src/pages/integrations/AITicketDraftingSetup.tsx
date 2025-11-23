@@ -21,7 +21,7 @@ import {
   FormMessage,
   FormDescription,
 } from "@/components/ui/form";
-import { MessageSquareText, Loader2, CheckCircle, Sparkles, ArrowLeft } from "lucide-react";
+import { MessageSquareText, Loader2, CheckCircle, Sparkles, ArrowLeft, Workflow, ArrowRight, Bot, Info } from "lucide-react";
 import { Link } from "wouter";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 
@@ -460,6 +460,72 @@ export default function AITicketDraftingSetup() {
                   </FormItem>
                 )}
               />
+            </CardContent>
+          </Card>
+
+          <Card className="border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950">
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2 text-blue-900 dark:text-blue-100">
+                <Info className="h-4 w-4" />
+                Next Steps: Create Automation Workflow
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-sm text-blue-700 dark:text-blue-300">
+                After saving your configuration, set up a workflow to automatically generate draft responses when support tickets are created.
+              </p>
+              
+              <div className="bg-white dark:bg-gray-900 border border-blue-200 dark:border-blue-700 rounded-md p-4 space-y-3">
+                <div className="flex items-start gap-3">
+                  <div className="bg-blue-100 dark:bg-blue-900 p-1.5 rounded">
+                    <span className="text-blue-700 dark:text-blue-300 font-semibold text-sm">1</span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Save your AI configuration</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Use the "Save & Initialize" button below</p>
+                  </div>
+                </div>
+                
+                <div className="flex items-start gap-3">
+                  <div className="bg-blue-100 dark:bg-blue-900 p-1.5 rounded">
+                    <span className="text-blue-700 dark:text-blue-300 font-semibold text-sm">2</span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Create a workflow in Agent Builder</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">Add these steps to your workflow:</p>
+                    <div className="text-xs space-y-1 ml-4">
+                      <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                        <div className="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                        <span>Step 1: Create Work Item (from webhook data)</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                        <div className="w-1.5 h-1.5 rounded-full bg-fuchsia-500"></div>
+                        <span>Step 2: AI Draft Response (uses this configuration)</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="flex items-start gap-3">
+                  <div className="bg-blue-100 dark:bg-blue-900 p-1.5 rounded">
+                    <span className="text-blue-700 dark:text-blue-300 font-semibold text-sm">3</span>
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-gray-900 dark:text-gray-100">Set up Splynx webhook trigger</p>
+                    <p className="text-xs text-gray-600 dark:text-gray-400">Configure your workflow to trigger when support tickets are created</p>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="pt-2">
+                <Link href="/agent-builder">
+                  <Button variant="outline" className="w-full" type="button">
+                    <Workflow className="mr-2 h-4 w-4" />
+                    Go to Agent Builder
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </Button>
+                </Link>
+              </div>
             </CardContent>
           </Card>
 

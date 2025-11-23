@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database, Calculator, Loader2, Eye, Cloud, Repeat, ClipboardList, FileText, Hash, User } from 'lucide-react';
+import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database, Calculator, Loader2, Eye, Cloud, Repeat, ClipboardList, FileText, Hash, User, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -20,7 +20,7 @@ import { DataInspectorPanel } from './DataInspectorPanel';
 
 interface WorkflowStep {
   id: string;
-  type: 'integration_action' | 'strategy_update' | 'log_event' | 'notification' | 'data_source_query' | 'data_transformation' | 'splynx_query' | 'for_each' | 'create_work_item';
+  type: 'integration_action' | 'strategy_update' | 'log_event' | 'notification' | 'data_source_query' | 'data_transformation' | 'splynx_query' | 'for_each' | 'create_work_item' | 'ai_draft_response';
   name: string;
   config?: any;
 }
@@ -370,6 +370,12 @@ const STEP_TYPES = {
     icon: ClipboardList,
     color: 'bg-emerald-500',
     description: 'Create a task/work item in the platform'
+  },
+  ai_draft_response: {
+    label: 'AI Draft Response',
+    icon: Bot,
+    color: 'bg-fuchsia-500',
+    description: 'Generate AI-powered draft response for support tickets'
   },
   data_transformation: {
     label: 'Data Transformation',
@@ -1694,6 +1700,42 @@ export default function WorkflowStepBuilder({
               />
               <p className="text-xs text-muted-foreground mt-1">
                 Link to external system record. Click to insert variables from previous steps.
+              </p>
+            </div>
+          </div>
+        );
+
+      case 'ai_draft_response':
+        return (
+          <div className="space-y-4">
+            <div className="p-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md">
+              <div className="flex items-start gap-3">
+                <Bot className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
+                <div>
+                  <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-1">AI Configuration</h4>
+                  <p className="text-sm text-blue-700 dark:text-blue-300">
+                    This step will use the AI model, system prompts, and knowledge base documents configured in your AI Ticket Drafting settings.
+                  </p>
+                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-2">
+                    Configure AI settings at: Integration Hub → AI Ticket Drafting
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div>
+              <Label>Work Item ID (Optional)</Label>
+              <VariableFieldPicker
+                value={step.config.workItemId || ''}
+                onChange={(value) => updateStep(step.id, {
+                  config: { ...step.config, workItemId: value }
+                })}
+                placeholder="e.g., {{step2Output.workItemId}}"
+                availableFields={getAvailableFields()}
+                variablePrefix="stepOutput"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Leave empty to automatically use the most recent work item created in a previous step. Or specify explicitly using {{"{{"}}stepNOutput.workItemId{{"}}"}}.
               </p>
             </div>
           </div>
