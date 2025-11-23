@@ -99,6 +99,7 @@ const AirtableSetup = lazy(() => import("@/pages/integrations/AirtableSetup"));
 const XeroSetup = lazy(() => import("@/pages/integrations/XeroSetup"));
 const XeroCallback = lazy(() => import("@/pages/integrations/XeroCallback"));
 const VapiSetup = lazy(() => import("@/pages/integrations/VapiSetup"));
+const AITicketDraftingSetup = lazy(() => import("@/pages/integrations/AITicketDraftingSetup"));
 const WebhookManager = lazy(() => import("@/pages/integrations/WebhookManager"));
 const AirtableTableView = lazy(() => import("@/pages/data/AirtableTableView"));
 const Integrations = lazy(() => import("@/pages/Integrations"));
@@ -589,6 +590,7 @@ function AppContent() {
               <Route path="/integrations/xero/callback" component={XeroCallback} />
               <Route path="/integrations/xero" component={XeroSetup} />
               <Route path="/integrations/vapi/setup" component={VapiSetup} />
+              <Route path="/integrations/ai-ticket-drafting/setup" component={AITicketDraftingSetup} />
               <Route path="/integrations/webhooks" component={WebhookManager} />
               <Route path="/finance" component={FinanceDashboard} />
               <Route path="/finance/transactions" component={Transactions} />
