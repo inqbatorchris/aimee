@@ -179,6 +179,18 @@ router.get('/:id', authenticateToken, async (req: any, res) => {
       return res.status(404).json({ error: 'Address not found' });
     }
     
+    // Get custom field definitions for this organization (for displaying extracted fields)
+    const { customFieldDefinitions } = await import('../../shared/schema');
+    const fieldDefinitions = await db
+      .select()
+      .from(customFieldDefinitions)
+      .where(
+        and(
+          eq(customFieldDefinitions.organizationId, req.user.organizationId),
+          eq(customFieldDefinitions.tableName, 'addresses')
+        )
+      );
+    
     // Log the view activity
     await logActivity(
       req.user.organizationId,
@@ -190,7 +202,11 @@ router.get('/:id', authenticateToken, async (req: any, res) => {
       { action: 'view', airtableRecordId: address.airtableRecordId }
     );
     
-    res.json({ address });
+    res.json({ 
+      address,
+      extractedData: address.extractedData || {},
+      customFieldDefinitions: fieldDefinitions
+    });
   } catch (error: any) {
     console.error('Error fetching address:', error);
     res.status(500).json({ error: 'Failed to fetch address' });

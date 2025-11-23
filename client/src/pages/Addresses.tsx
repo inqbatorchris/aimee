@@ -10,6 +10,7 @@ import { useToast } from '@/hooks/use-toast';
 import { queryClient } from '@/lib/queryClient';
 import { createWorkItem } from '@/lib/workItems.api';
 import WorkItemPanel from '@/components/work-items/WorkItemPanel';
+import { ExtractedFieldsPanel } from '@/components/ExtractedFieldsPanel';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -303,6 +304,19 @@ export default function Addresses() {
   const { data: users } = useQuery<any[]>({
     queryKey: ['/api/work-items/users'],
   });
+  
+  // Fetch detailed address data when an address is selected (for extracted fields)
+  const { data: addressDetailData, isLoading: isLoadingAddressDetail } = useQuery<{
+    address: AddressRecord;
+    extractedData: Record<string, any>;
+    customFieldDefinitions: any[];
+  }>({
+    queryKey: ['/api/addresses', selectedAddress?.id],
+    enabled: !!selectedAddress?.id,
+  });
+  
+  const extractedData = addressDetailData?.extractedData || {};
+  const customFieldDefinitions = addressDetailData?.customFieldDefinitions || [];
   
   // Poll for sync progress
   useEffect(() => {
@@ -1542,6 +1556,13 @@ export default function Addresses() {
 
               {/* Details Tab */}
               <TabsContent value="details" className="space-y-6">
+                {/* Extracted Fields from OCR */}
+                <ExtractedFieldsPanel 
+                  extractedData={extractedData}
+                  customFieldDefinitions={customFieldDefinitions}
+                  loading={isLoadingAddressDetail}
+                />
+                
                 {/* Airtable Fields */}
                 <div>
                   <h3 className="text-sm font-semibold mb-3">Airtable Data</h3>
