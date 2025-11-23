@@ -311,7 +311,7 @@ export default function Addresses() {
     extractedData: Record<string, any>;
     customFieldDefinitions: any[];
   }>({
-    queryKey: ['/api/addresses', selectedAddress?.id],
+    queryKey: [`/api/addresses/${selectedAddress?.id}`],
     enabled: !!selectedAddress?.id,
   });
   
