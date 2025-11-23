@@ -1807,7 +1807,21 @@ export class WorkflowExecutor {
         throw new Error('AI drafting configuration not found. Please configure AI ticket drafting first.');
       }
       
-      console.log(`[WorkflowExecutor]   ⚙️ Configuration loaded: ${config.modelType}`);
+      // Extract and validate model config
+      const modelConfig = config.modelConfig as any;
+      if (!modelConfig || typeof modelConfig !== 'object') {
+        throw new Error('AI drafting configuration is malformed: modelConfig is missing or invalid. Please reconfigure AI ticket drafting.');
+      }
+      
+      const modelType = modelConfig.model;
+      if (!modelType) {
+        throw new Error('AI drafting configuration is incomplete: model is not specified. Please reconfigure AI ticket drafting.');
+      }
+      
+      const temperature = modelConfig.temperature ?? 0.7;
+      const maxTokens = modelConfig.maxTokens ?? 1000;
+      
+      console.log(`[WorkflowExecutor]   ⚙️ Configuration loaded: ${modelType}`);
       
       // Load system prompt documents with security validation
       const systemPromptDocIds = config.systemPromptDocumentIds || [];
@@ -1869,7 +1883,7 @@ Generate a draft response that addresses the customer's issue professionally and
       }
       
       console.log(`[WorkflowExecutor]   🔑 OpenAI API key found`);
-      console.log(`[WorkflowExecutor]   🎯 Calling OpenAI ${config.modelType}...`);
+      console.log(`[WorkflowExecutor]   🎯 Calling OpenAI ${modelType}...`);
       
       // Call OpenAI API
       const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -1879,7 +1893,7 @@ Generate a draft response that addresses the customer's issue professionally and
           'Authorization': `Bearer ${openaiKey}`,
         },
         body: JSON.stringify({
-          model: config.modelType,
+          model: modelType,
           messages: [
             {
               role: 'system',
@@ -1890,8 +1904,8 @@ Generate a draft response that addresses the customer's issue professionally and
               content: userMessage,
             },
           ],
-          temperature: config.temperature,
-          max_tokens: config.maxTokens,
+          temperature: temperature,
+          max_tokens: maxTokens,
         }),
       });
       
@@ -1912,7 +1926,7 @@ Generate a draft response that addresses the customer's issue professionally and
           organizationId,
           workItemId,
           draftContent: draftResponse,
-          modelUsed: config.modelType,
+          modelUsed: modelType,
           configurationSnapshot: config,
           status: 'pending_review',
         })
@@ -1927,7 +1941,7 @@ Generate a draft response that addresses the customer's issue professionally and
           draftId: savedDraft.id,
           workItemId,
           draftContent: draftResponse,
-          model: config.modelType,
+          model: modelType,
           status: 'pending_review',
           cached: false,
         },
