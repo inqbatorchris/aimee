@@ -17,7 +17,7 @@ export function WorkflowTemplateSelector({
   placeholder = 'Select a template'
 }: WorkflowTemplateSelectorProps) {
   const { data: templates, isLoading } = useQuery<any[]>({
-    queryKey: ['/api/workflow-templates'],
+    queryKey: ['/api/workflows/templates'],
   });
 
   if (isLoading) {
