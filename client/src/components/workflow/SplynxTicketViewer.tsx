@@ -424,19 +424,6 @@ export function SplynxTicketViewer({
             </Select>
           </div>
 
-          {aiDraft && !aiDraft.sentAt && (
-            <Alert className="py-2 px-3 border-blue-200 bg-blue-50 dark:bg-blue-950/50">
-              <AlertDescription className="text-xs text-blue-800 dark:text-blue-200">
-                AI-generated response loaded. Review and edit before sending.
-                {aiDraft.generationMetadata?.model && (
-                  <span className="block text-[10px] text-blue-600 dark:text-blue-300 mt-0.5">
-                    Model: {aiDraft.generationMetadata.model}
-                  </span>
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
-
           {aiDraft && aiDraft.sentAt && aiDraft.editPercentage !== undefined && (
             <Alert className="py-2 px-3 border-green-200 bg-green-50 dark:bg-green-950/50">
               <AlertDescription className="text-xs text-green-800 dark:text-green-200">
