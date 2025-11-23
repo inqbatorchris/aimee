@@ -306,106 +306,80 @@ export function SplynxTicketViewer({
   // Get priority with proper fallback
   const priorityLabel = ticket?.priority ? String(ticket.priority).charAt(0).toUpperCase() + String(ticket.priority).slice(1) : 'Normal';
 
-  // UNIFIED MODE - All-in-one ticket processing view
+  // UNIFIED MODE - Message-focused layout
   if (mode === 'unified') {
     return (
-      <div className="space-y-3" data-testid="splynx-ticket-viewer-unified">
-        {/* Compact Header */}
-        <div className="flex items-start justify-between gap-2">
-          <div className="flex-1 min-w-0">
-            <h3 className="font-semibold text-sm truncate">{ticket?.subject || 'Support Ticket'}</h3>
-            <p className="text-xs text-muted-foreground">Ticket #{ticketId}</p>
+      <div className="flex flex-col h-full" data-testid="splynx-ticket-viewer-unified">
+        {/* Minimal Header */}
+        <div className="flex items-center justify-between gap-2 pb-2 border-b flex-shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <Ticket className="h-3.5 w-3.5 text-muted-foreground" />
+            <h3 className="font-medium text-sm truncate">{ticket?.subject || 'Support Ticket'}</h3>
           </div>
-          <div className="flex flex-col gap-1 items-end">
-            <Badge className={`${priorityColors[ticket?.priority?.toLowerCase()]} text-xs px-2 py-0`}>
-              Priority: {priorityLabel}
+          <div className="flex items-center gap-1.5">
+            <Badge className={`${priorityColors[ticket?.priority?.toLowerCase()]} text-[10px] px-1.5 py-0.5`}>
+              {priorityLabel}
             </Badge>
-            <Badge variant="outline" className="text-xs px-2 py-0">
-              {currentStatusLabel}
-            </Badge>
-          </div>
-        </div>
-
-        {/* Quick Links Row */}
-        <div className="flex gap-2">
-          {customerUrl && (
             <Button
-              variant="outline"
+              variant="ghost"
               size="sm"
               asChild
-              className="flex-1 h-8 text-xs"
+              className="h-6 px-2"
             >
-              <a href={customerUrl} target="_blank" rel="noopener noreferrer" data-testid="link-customer">
-                <User className="h-3 w-3 mr-1" />
-                Customer #{ticket?.customer_id}
-                <ExternalLink className="h-3 w-3 ml-1" />
+              <a href={ticketUrl} target="_blank" rel="noopener noreferrer" data-testid="link-ticket">
+                <ExternalLink className="h-3 w-3" />
               </a>
             </Button>
-          )}
-          <Button
-            variant="outline"
-            size="sm"
-            asChild
-            className="flex-1 h-8 text-xs"
-          >
-            <a href={ticketUrl} target="_blank" rel="noopener noreferrer" data-testid="link-ticket">
-              <Ticket className="h-3 w-3 mr-1" />
-              Open in Splynx
-              <ExternalLink className="h-3 w-3 ml-1" />
-            </a>
-          </Button>
+          </div>
         </div>
 
-        <Separator />
-
-        {/* Messages - Compact scrollable view */}
-        <div className="space-y-2">
-          <div className="flex items-center gap-2 text-xs font-medium">
-            <MessageSquare className="h-3 w-3" />
-            Messages ({messages.length})
-          </div>
-          <div className="max-h-48 overflow-y-auto space-y-2 border rounded-md p-2 bg-muted/20">
-            {messages.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-3">No messages yet</p>
-            ) : (
-              messages.map((msg: any, idx: number) => {
-                const isHidden = msg.hide_for_customer === '1' || msg.hide_for_customer === 1;
-                return (
-                  <div 
-                    key={idx} 
-                    className={`p-2 rounded text-xs ${
-                      isHidden
-                        ? 'bg-amber-50 dark:bg-amber-950/50 border border-amber-300 dark:border-amber-900' 
-                        : 'bg-background border'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <div className="flex items-center gap-2">
-                        <span className="font-medium text-xs">{msg.author_type === 'admin' ? 'Agent' : msg.author_type === 'customer' ? 'Customer' : 'User'}</span>
-                        {isHidden && (
-                          <Badge variant="outline" className="text-[10px] px-1 py-0 bg-amber-100 dark:bg-amber-900 border-amber-300">Private</Badge>
-                        )}
-                      </div>
-                      <span className="text-[10px] text-muted-foreground">
-                        {msg.date && msg.time ? format(new Date(`${msg.date} ${msg.time}`), 'MMM d, h:mm a') : ''}
+        {/* Messages - Expanded scrollable area */}
+        <div className="flex-1 overflow-y-auto py-3 space-y-2.5 min-h-0">
+          {messages.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-8">No messages yet</p>
+          ) : (
+            messages.map((msg: any, idx: number) => {
+              const isHidden = msg.hide_for_customer === '1' || msg.hide_for_customer === 1;
+              const isCustomer = msg.author_type === 'customer';
+              return (
+                <div 
+                  key={idx} 
+                  className={`p-2.5 rounded-lg ${
+                    isHidden
+                      ? 'bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900' 
+                      : isCustomer
+                      ? 'bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900'
+                      : 'bg-muted/50 border'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-xs">
+                        {msg.author_type === 'admin' ? 'Agent' : msg.author_type === 'customer' ? 'Customer' : 'User'}
                       </span>
+                      {isHidden && (
+                        <Badge variant="outline" className="text-[10px] px-1 py-0 bg-amber-100 dark:bg-amber-900">Private</Badge>
+                      )}
                     </div>
-                    <div 
-                      className="text-xs prose prose-xs dark:prose-invert max-w-none leading-relaxed"
-                      dangerouslySetInnerHTML={{ __html: renderMessageHTML(msg.rawMessage || msg.message) }}
-                    />
+                    <span className="text-[10px] text-muted-foreground">
+                      {msg.date && msg.time ? format(new Date(`${msg.date} ${msg.time}`), 'MMM d, h:mm a') : ''}
+                    </span>
                   </div>
-                );
-              })
-            )}
-          </div>
+                  <div 
+                    className="text-xs prose prose-xs dark:prose-invert max-w-none leading-relaxed"
+                    dangerouslySetInnerHTML={{ __html: renderMessageHTML(msg.rawMessage || msg.message) }}
+                  />
+                </div>
+              );
+            })
+          )}
         </div>
 
-        {/* Quick Reply */}
-        <div className="space-y-2">
+        {/* Quick Reply - Fixed bottom section */}
+        <div className="border-t pt-3 space-y-2 flex-shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <label className="text-xs font-medium">Quick Reply</label>
+              <label className="text-xs font-medium">Reply</label>
               {aiDraft && !aiDraft.sentAt && (
                 <Badge variant="secondary" className="text-[10px] px-1.5 py-0 gap-1">
                   <Sparkles className="h-2.5 w-2.5" />
@@ -413,96 +387,96 @@ export function SplynxTicketViewer({
                 </Badge>
               )}
             </div>
-            <Select value={isInternal ? 'true' : 'false'} onValueChange={(v) => setIsInternal(v === 'true')}>
-              <SelectTrigger className="w-24 h-7 text-xs" data-testid="select-message-type">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="false">Public</SelectItem>
-                <SelectItem value="true">Private</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex items-center gap-2">
+              <Select value={isInternal ? 'true' : 'false'} onValueChange={(v) => setIsInternal(v === 'true')}>
+                <SelectTrigger className="w-20 h-6 text-[10px]" data-testid="select-message-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="false">Public</SelectItem>
+                  <SelectItem value="true">Private</SelectItem>
+                </SelectContent>
+              </Select>
+              <Select value={selectedStatus} onValueChange={setSelectedStatus}>
+                <SelectTrigger className="w-36 h-6 text-[10px]" data-testid="select-ticket-status">
+                  <SelectValue placeholder="Update status..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {statusOptions.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          <div className="relative">
+            <Textarea
+              value={message}
+              onChange={(e) => setMessage(e.target.value)}
+              placeholder="Type your response..."
+              className="min-h-32 text-sm pr-20 resize-none"
+              data-testid="textarea-ticket-message"
+            />
+            {aiDraft && !aiDraft.sentAt && message !== aiDraft.originalDraft && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setMessage(aiDraft.originalDraft)}
+                className="absolute top-2 right-2 h-6 px-2 text-[10px]"
+                data-testid="button-restore-draft"
+              >
+                <RefreshCw className="h-3 w-3 mr-1" />
+                Restore
+              </Button>
+            )}
+          </div>
+
+          <div className="flex gap-2">
+            <Button 
+              onClick={handleSendMessage} 
+              disabled={sendMessageMutation.isPending || !message.trim()}
+              size="sm"
+              className="flex-1 h-8"
+              data-testid="button-send-message"
+            >
+              {sendMessageMutation.isPending ? (
+                <>
+                  <Loader2 className="h-3 w-3 mr-2 animate-spin" />
+                  Sending...
+                </>
+              ) : (
+                <>
+                  <Send className="h-3 w-3 mr-2" />
+                  Send Reply
+                </>
+              )}
+            </Button>
+            {selectedStatus && (
+              <Button
+                onClick={handleUpdateStatus}
+                disabled={updateStatusMutation.isPending}
+                size="sm"
+                variant="outline"
+                className="h-8 px-3"
+                data-testid="button-update-status"
+              >
+                {updateStatusMutation.isPending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <CheckCircle className="h-3 w-3" />
+                )}
+              </Button>
+            )}
           </div>
 
           {aiDraft && aiDraft.sentAt && aiDraft.editPercentage !== undefined && (
-            <Alert className="py-2 px-3 border-green-200 bg-green-50 dark:bg-green-950/50">
-              <AlertDescription className="text-xs text-green-800 dark:text-green-200">
-                Previous response was edited {Number(aiDraft.editPercentage).toFixed(1)}% before sending.
-              </AlertDescription>
-            </Alert>
+            <p className="text-[10px] text-muted-foreground text-center pt-1">
+              Previous response edited {Number(aiDraft.editPercentage).toFixed(1)}% before sending
+            </p>
           )}
-
-          <Textarea
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="Type your response..."
-            className="min-h-20 text-sm"
-            data-testid="textarea-ticket-message"
-          />
-
-          {aiDraft && !aiDraft.sentAt && message !== aiDraft.originalDraft && (
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setMessage(aiDraft.originalDraft)}
-              className="h-7 text-xs"
-              data-testid="button-restore-draft"
-            >
-              <RefreshCw className="h-3 w-3 mr-1" />
-              Restore Draft
-            </Button>
-          )}
-          <Button 
-            onClick={handleSendMessage} 
-            disabled={sendMessageMutation.isPending || !message.trim()}
-            size="sm"
-            className="w-full h-9"
-            data-testid="button-send-message"
-          >
-            {sendMessageMutation.isPending ? (
-              <>
-                <Loader2 className="h-3 w-3 mr-2 animate-spin" />
-                Sending...
-              </>
-            ) : (
-              <>
-                <Send className="h-3 w-3 mr-2" />
-                Send Reply
-              </>
-            )}
-          </Button>
-        </div>
-
-        {/* Status Update */}
-        <div className="space-y-2">
-          <label className="text-xs font-medium">Update Status</label>
-          <div className="flex gap-2">
-            <Select value={selectedStatus} onValueChange={setSelectedStatus}>
-              <SelectTrigger className="flex-1 h-9 text-sm" data-testid="select-ticket-status">
-                <SelectValue placeholder="Change status..." />
-              </SelectTrigger>
-              <SelectContent>
-                {statusOptions.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Button
-              onClick={handleUpdateStatus}
-              disabled={updateStatusMutation.isPending || !selectedStatus}
-              size="sm"
-              className="h-9 px-3"
-              data-testid="button-update-status"
-            >
-              {updateStatusMutation.isPending ? (
-                <Loader2 className="h-3 w-3 animate-spin" />
-              ) : (
-                <CheckCircle className="h-3 w-3" />
-              )}
-            </Button>
-          </div>
         </div>
       </div>
     );
