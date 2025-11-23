@@ -1765,14 +1765,15 @@ export class WorkflowExecutor {
       if (existingDrafts.length > 0) {
         const existingDraft = existingDrafts[0];
         console.log(`[WorkflowExecutor]   ♻️ Draft already exists (ID ${existingDraft.id}) - returning existing draft`);
+        const metadata = existingDraft.generationMetadata as any;
         return {
           success: true,
           output: {
             draftId: existingDraft.id,
             workItemId,
-            draftContent: existingDraft.draftContent,
-            model: existingDraft.modelUsed,
-            status: existingDraft.status,
+            draftContent: existingDraft.originalDraft,
+            model: metadata?.model || 'unknown',
+            status: 'pending_review',
             cached: true,
           },
         };
@@ -1925,10 +1926,14 @@ Generate a draft response that addresses the customer's issue professionally and
         .values({
           organizationId,
           workItemId,
-          draftContent: draftResponse,
-          modelUsed: modelType,
-          configurationSnapshot: config,
-          status: 'pending_review',
+          originalDraft: draftResponse,
+          generationMetadata: {
+            model: modelType,
+            temperature,
+            maxTokens,
+            systemPromptDocIds,
+            knowledgeDocIds,
+          },
         })
         .returning();
       
@@ -1940,7 +1945,7 @@ Generate a draft response that addresses the customer's issue professionally and
         output: {
           draftId: savedDraft.id,
           workItemId,
-          draftContent: draftResponse,
+          draftContent: savedDraft.originalDraft,
           model: modelType,
           status: 'pending_review',
           cached: false,
