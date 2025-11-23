@@ -517,7 +517,7 @@ router.patch('/drafts/:id', async (req, res) => {
       .update(ticketDraftResponses)
       .set({
         finalResponse,
-        editPercentage: editPercentage.toString(),
+        editPercentage: editPercentage,
         sentAt: new Date(),
         sentBy: user.id,
         updatedAt: new Date(),
