@@ -8,7 +8,9 @@ import {
   knowledgeDocuments,
   workflowTemplates,
   insertTicketDraftResponseSchema,
-  insertAiAgentConfigurationSchema
+  insertAiAgentConfigurationSchema,
+  objectives,
+  keyResults
 } from '../../shared/schema';
 import { eq, and, desc, inArray } from 'drizzle-orm';
 import { z } from 'zod';
@@ -499,7 +501,7 @@ router.patch('/drafts/:id', async (req, res) => {
       .update(ticketDraftResponses)
       .set({
         finalResponse,
-        editPercentage,
+        editPercentage: editPercentage.toString(),
         sentAt: new Date(),
         sentBy: user.id,
         updatedAt: new Date(),
@@ -551,7 +553,7 @@ router.delete('/drafts/:id', async (req, res) => {
   }
 });
 
-// Initialize AI drafting workflows (draft generator + KPI calculator)
+// Initialize AI drafting (validate configuration)
 router.post('/initialize-workflows', async (req, res) => {
   try {
     const user = req.user;
@@ -559,182 +561,105 @@ router.post('/initialize-workflows', async (req, res) => {
       return res.status(401).json({ error: 'User not authenticated or missing organization' });
     }
 
-    // Get AI configuration to extract knowledge document IDs and objective/KR info
+    // Get AI configuration
     const configs = await db
       .select()
       .from(aiAgentConfigurations)
-      .where(eq(aiAgentConfigurations.organizationId, user.organizationId))
+      .where(
+        and(
+          eq(aiAgentConfigurations.organizationId, user.organizationId),
+          eq(aiAgentConfigurations.featureType, 'ticket_drafting')
+        )
+      )
       .limit(1);
 
     if (!configs.length) {
       return res.status(400).json({ 
-        error: 'No AI configuration found. Please complete the setup wizard first.' 
+        error: 'No AI configuration found. Please save your configuration first.' 
       });
     }
 
     const agentConfig = configs[0];
 
     // Validate that referenced resources exist
-    if (agentConfig.objectiveId) {
+    const validations = [];
+
+    if (agentConfig.linkedObjectiveId) {
       const objective = await db
         .select()
         .from(objectives)
         .where(
           and(
-            eq(objectives.id, agentConfig.objectiveId),
+            eq(objectives.id, agentConfig.linkedObjectiveId),
             eq(objectives.organizationId, user.organizationId)
           )
         )
         .limit(1);
 
       if (!objective.length) {
-        return res.status(400).json({ error: 'Referenced objective not found. Please reconfigure.' });
+        validations.push({ field: 'objective', error: 'Referenced objective not found' });
       }
     }
 
-    if (agentConfig.keyResultIds && agentConfig.keyResultIds.length > 0) {
+    if (agentConfig.linkedKeyResultIds && agentConfig.linkedKeyResultIds.length > 0) {
       const keyResultsData = await db
         .select()
         .from(keyResults)
         .where(
           and(
-            inArray(keyResults.id, agentConfig.keyResultIds),
+            inArray(keyResults.id, agentConfig.linkedKeyResultIds),
             eq(keyResults.organizationId, user.organizationId)
           )
         );
 
-      if (keyResultsData.length !== agentConfig.keyResultIds.length) {
-        return res.status(400).json({ error: 'Some referenced key results not found. Please reconfigure.' });
+      if (keyResultsData.length !== agentConfig.linkedKeyResultIds.length) {
+        validations.push({ field: 'keyResults', error: 'Some referenced key results not found' });
       }
     }
 
     if (agentConfig.knowledgeDocumentIds && agentConfig.knowledgeDocumentIds.length > 0) {
       const kbDocs = await db
         .select()
-        .from(knowledgeDocs)
+        .from(knowledgeDocuments)
         .where(
           and(
-            inArray(knowledgeDocs.id, agentConfig.knowledgeDocumentIds),
-            eq(knowledgeDocs.organizationId, user.organizationId)
+            inArray(knowledgeDocuments.id, agentConfig.knowledgeDocumentIds),
+            eq(knowledgeDocuments.organizationId, user.organizationId)
           )
         );
 
       if (kbDocs.length !== agentConfig.knowledgeDocumentIds.length) {
-        return res.status(400).json({ error: 'Some referenced knowledge documents not found. Please reconfigure.' });
+        validations.push({ field: 'knowledgeDocuments', error: 'Some referenced knowledge documents not found' });
       }
     }
 
-    // Create Draft Generator Workflow Template
-    const draftGeneratorId = `ai-draft-generator-${user.organizationId}`;
-    const draftGeneratorTemplate = {
-      id: draftGeneratorId,
-      organizationId: user.organizationId,
-      name: 'AI Ticket Draft Generator',
-      description: 'Automatically generates draft responses for support tickets using AI and knowledge base',
-      category: 'automation',
-      applicableTypes: ['support_ticket'],
-      steps: [
-        {
-          id: 'generate_draft',
-          type: 'action',
-          actionType: 'generate_draft',
-          label: 'Generate Draft Response',
-          description: 'Generate AI draft response using knowledge base',
-          config: {
-            knowledgeDocumentIds: config.knowledgeDocumentIds || [],
-          },
-          order: 1,
-        },
-      ],
-      version: 1,
-      isActive: true,
-      isSystemTemplate: false,
-      displayInMenu: false,
-    };
+    if (validations.length > 0) {
+      return res.status(400).json({ 
+        error: 'Configuration validation failed',
+        details: validations
+      });
+    }
 
-    // Create KPI Calculator Workflow Template
-    const kpiCalculatorId = `ai-draft-kpi-calculator-${user.organizationId}`;
-    const kpiCalculatorTemplate = {
-      id: kpiCalculatorId,
-      organizationId: user.organizationId,
-      name: 'AI Drafting KPI Calculator',
-      description: 'Daily scheduled workflow to calculate AI drafting performance metrics',
-      category: 'analytics',
-      applicableTypes: ['scheduled_task'],
-      steps: [
-        {
-          id: 'calculate_metrics',
-          type: 'action',
-          actionType: 'calculate_ai_draft_metrics',
-          label: 'Calculate Draft Metrics',
-          description: 'Calculate acceptance rate, edit percentage, and time saved',
-          config: {
-            objectiveId: config.objectiveId,
-            keyResultIds: config.keyResultIds || [],
-          },
-          order: 1,
-        },
-      ],
-      version: 1,
-      isActive: true,
-      isSystemTemplate: false,
-      displayInMenu: false,
-    };
-
-    // Insert or update workflow templates within a transaction
-    const result = await db.transaction(async (tx) => {
-      const draftGeneratorResult = await tx
-        .insert(workflowTemplates)
-        .values(draftGeneratorTemplate)
-        .onConflictDoUpdate({
-          target: [workflowTemplates.organizationId, workflowTemplates.id],
-          set: {
-            name: draftGeneratorTemplate.name,
-            description: draftGeneratorTemplate.description,
-            category: draftGeneratorTemplate.category,
-            applicableTypes: draftGeneratorTemplate.applicableTypes,
-            steps: draftGeneratorTemplate.steps,
-            version: draftGeneratorTemplate.version,
-            isActive: draftGeneratorTemplate.isActive,
-            displayInMenu: draftGeneratorTemplate.displayInMenu,
-            updatedAt: new Date(),
-          },
-        })
-        .returning();
-
-      const kpiCalculatorResult = await tx
-        .insert(workflowTemplates)
-        .values(kpiCalculatorTemplate)
-        .onConflictDoUpdate({
-          target: [workflowTemplates.organizationId, workflowTemplates.id],
-          set: {
-            name: kpiCalculatorTemplate.name,
-            description: kpiCalculatorTemplate.description,
-            category: kpiCalculatorTemplate.category,
-            applicableTypes: kpiCalculatorTemplate.applicableTypes,
-            steps: kpiCalculatorTemplate.steps,
-            version: kpiCalculatorTemplate.version,
-            isActive: kpiCalculatorTemplate.isActive,
-            displayInMenu: kpiCalculatorTemplate.displayInMenu,
-            updatedAt: new Date(),
-          },
-        })
-        .returning();
-
-      return {
-        draftGenerator: draftGeneratorResult[0],
-        kpiCalculator: kpiCalculatorResult[0],
-      };
-    });
+    // Mark config as enabled
+    await db
+      .update(aiAgentConfigurations)
+      .set({ isEnabled: true, updatedAt: new Date() })
+      .where(eq(aiAgentConfigurations.id, agentConfig.id));
 
     res.json({
       success: true,
-      message: 'Workflows initialized successfully',
-      workflows: result,
+      message: 'AI ticket drafting has been successfully initialized and enabled',
+      config: {
+        id: agentConfig.id,
+        isEnabled: true,
+        knowledgeDocCount: agentConfig.knowledgeDocumentIds?.length || 0,
+        linkedObjectiveId: agentConfig.linkedObjectiveId,
+        linkedKeyResultCount: agentConfig.linkedKeyResultIds?.length || 0,
+      }
     });
   } catch (error) {
-    console.error('Error initializing workflows:', error);
-    res.status(500).json({ error: 'Failed to initialize workflows' });
+    console.error('Error initializing AI drafting:', error);
+    res.status(500).json({ error: 'Failed to initialize AI drafting' });
   }
 });
 
