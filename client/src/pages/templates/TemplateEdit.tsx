@@ -172,6 +172,7 @@ export default function TemplateEdit() {
         completionCallbacks,
       };
       
+      console.log('[TemplateEdit] Saving new template:', JSON.stringify(templateData, null, 2));
       createMutation.mutate(templateData);
     } else {
       // For updates, don't include id to preserve existing template ID
@@ -182,6 +183,7 @@ export default function TemplateEdit() {
         completionCallbacks,
       };
       
+      console.log('[TemplateEdit] Updating template:', JSON.stringify(updateData, null, 2));
       updateMutation.mutate(updateData);
     }
   };

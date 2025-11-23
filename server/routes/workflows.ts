@@ -302,6 +302,8 @@ router.put('/templates/:id', authenticateToken, async (req: AuthRequest, res) =>
     res.json(updated);
   } catch (error) {
     if (error instanceof z.ZodError) {
+      console.error('[Workflows] Template validation error:', JSON.stringify(error.errors, null, 2));
+      console.error('[Workflows] Request body:', JSON.stringify(req.body, null, 2));
       return res.status(400).json({ error: 'Validation error', details: error.errors });
     }
     console.error('Error updating workflow template:', error);
