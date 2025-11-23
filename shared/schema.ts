@@ -2230,10 +2230,25 @@ export const insertKeyResultCommentSchema = createInsertSchema(keyResultComments
 });
 
 // Migration 005: Work Items validators
+
+// Define workflowMetadata schema for type safety
+export const workflowMetadataSchema = z.object({
+  addressRecordId: z.number().optional(),
+  addressData: z.object({
+    name: z.string(),
+    fields: z.record(z.any())
+  }).optional(),
+  airtableRecordId: z.string().optional(),
+  templateName: z.string().optional(),
+  templateCategory: z.string().optional()
+}).passthrough(); // Allow additional fields
+
 export const insertWorkItemSchema = createInsertSchema(workItems).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+}).extend({
+  workflowMetadata: workflowMetadataSchema.optional()
 });
 
 // Migration 006: Check-in Cycle Participants validators
