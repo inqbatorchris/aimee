@@ -30,7 +30,9 @@ Aimee.works is a Strategy Operating System (Strategy OS) designed to integrate s
 - **Default KB Document**: "Support Ticket AI System Prompt - ISP/MSP" (ID 39) provides comprehensive ISP/MSP response guidelines
 - **Draft Pre-fill Flow**: SplynxTicketViewer queries `/api/ai-drafting/drafts/work-item/${workItemId}` → pre-fills "Quick Reply" textarea on mount → tracks edits → PATCH to `/api/ai-drafting/drafts/${draftId}` on send → calculates edit % via Levenshtein distance
 - **Component Architecture**: Workflow template uses step type "splynx_ticket" with mode "unified" which renders SplynxTicketViewer component (not SplynxTicketStep)
-- **Bug Fix** (Nov 23): Fixed type mismatch where editPercentage was returned as string but frontend expected number for `.toFixed()` calls. Backend now returns numeric value; frontend uses defensive `Number()` parsing for robustness.
+- **Bug Fixes** (Nov 23): 
+  - Fixed database schema mismatch in WorkflowExecutor where AI draft generation was attempting to save to non-existent fields (`draftContent`, `modelUsed`, `configurationSnapshot`, `status`). Now correctly saves to `originalDraft` (text) and `generationMetadata` (jsonb) fields per schema definition in `ticket_draft_responses` table. This prevented drafts from being saved and caused frontend crashes due to null `originalDraft` values.
+  - Fixed type mismatch where editPercentage was returned as string but frontend expected number for `.toFixed()` calls. Backend now returns numeric value; frontend uses defensive `Number()` parsing for robustness.
 
 ### November 2025 - Field App Chunked Download System
 **Problem Solved**: Field app downloads were failing when downloading large numbers of work items or items with many high-resolution photos due to mobile browser memory limitations.
