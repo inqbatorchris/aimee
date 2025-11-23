@@ -102,7 +102,23 @@ router.get('/config', async (req, res) => {
       .limit(1);
 
     if (!configs.length) {
-      return res.status(404).json({ error: 'AI configuration not found' });
+      // Return default configuration for first-time setup
+      return res.json({
+        id: null,
+        organizationId: user.organizationId,
+        featureType,
+        isEnabled: false,
+        systemPromptDocumentIds: [],
+        knowledgeDocumentIds: [],
+        modelConfig: {
+          model: 'gpt-4o-mini',
+          temperature: 0.7,
+          maxTokens: 1000,
+        },
+        linkedObjectiveId: null,
+        linkedKeyResultIds: [],
+        autoGenerateOnArrival: true,
+      });
     }
 
     res.json(configs[0]);
