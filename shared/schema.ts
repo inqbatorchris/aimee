@@ -2837,8 +2837,11 @@ export const workflowStepSchema = z.object({
     }).refine(
       (data) => data.fieldId !== undefined || (data.targetTable && data.targetField),
       { message: "Each extraction must have either a fieldId or both targetTable and targetField" }
-    )).min(1), // At least one extraction must be defined
-  }).optional(),
+    )).optional().default([]),
+  }).optional().refine(
+    (data) => !data || !data.enabled || (data.extractions && data.extractions.length > 0),
+    { message: "At least one extraction must be defined when OCR is enabled" }
+  ),
 }).refine(
   (data) => data.title || data.label,
   { message: "Step must have either a title or label" }
