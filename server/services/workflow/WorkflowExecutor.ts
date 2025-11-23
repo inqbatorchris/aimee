@@ -1,6 +1,6 @@
 import { db } from '../../db';
 import { eq, and, or, sql, count, sum, avg, min, max, ilike, isNull, isNotNull, gt, lt, gte, lte, inArray, notInArray, ne } from 'drizzle-orm';
-import { agentWorkflows, agentWorkflowRuns, integrations, keyResults, objectives, activityLogs, users, addressRecords, workItems, fieldTasks, ragStatusRecords, tariffRecords } from '@shared/schema';
+import { agentWorkflows, agentWorkflowRuns, integrations, keyResults, objectives, activityLogs, users, addressRecords, workItems, fieldTasks, ragStatusRecords, tariffRecords, aiAgentConfigurations, knowledgeDocuments, ticketDraftResponses } from '@shared/schema';
 import { ActionHandlers } from './ActionHandlers';
 import { storage } from '../../storage';
 import { SplynxService } from '../integrations/splynxService';
@@ -307,6 +307,9 @@ export class WorkflowExecutor {
         
         case 'create_work_item':
           return await this.executeCreateWorkItem(step, context);
+        
+        case 'ai_draft_response':
+          return await this.executeAIDraftResponse(step, context);
         
         default:
           throw new Error(`Unknown step type: ${step.type}`);
@@ -1688,6 +1691,249 @@ export class WorkflowExecutor {
       };
     } catch (error: any) {
       console.error(`[WorkflowExecutor]   ❌ Create work item failed: ${error.message}`);
+      return {
+        success: false,
+        error: error.message,
+        stack: error.stack,
+      };
+    }
+  }
+
+  private async executeAIDraftResponse(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      console.log(`[WorkflowExecutor] 🤖 Generating AI draft response for step: ${step.name || 'AI Draft Response'}`);
+      
+      // Safely get organization ID - it may already be numeric or string
+      let organizationId: number;
+      if (typeof context.organizationId === 'number') {
+        organizationId = context.organizationId;
+      } else if (typeof context.organizationId === 'string') {
+        organizationId = parseInt(context.organizationId);
+        if (isNaN(organizationId)) {
+          throw new Error('Invalid organization ID format');
+        }
+      } else {
+        throw new Error('Organization ID is required but not found in context');
+      }
+      
+      // Resolve work item ID - check config first, then search previous step outputs
+      let workItemId: number | undefined;
+      
+      // 1. Check explicit config
+      if (step.config?.workItemId) {
+        const configValue = step.config.workItemId;
+        // Handle template strings like "{{step2Output.workItemId}}"
+        if (typeof configValue === 'string' && configValue.includes('{{')) {
+          const resolved = this.processTemplate(configValue, context);
+          workItemId = parseInt(resolved);
+        } else {
+          workItemId = parseInt(configValue);
+        }
+      }
+      
+      // 2. If not in config, search through all previous step outputs for a create_work_item result
+      if (!workItemId) {
+        console.log(`[WorkflowExecutor]   🔍 No explicit work item ID - searching previous step outputs...`);
+        for (let i = 1; i <= 20; i++) { // Check up to 20 previous steps
+          const stepOutput = context[`step${i}Output`];
+          if (stepOutput?.workItemId) {
+            workItemId = stepOutput.workItemId;
+            console.log(`[WorkflowExecutor]   ✓ Found work item ID from step ${i}: ${workItemId}`);
+            break;
+          }
+        }
+      }
+      
+      if (!workItemId || isNaN(workItemId)) {
+        throw new Error('Work item ID is required. Either specify it in config or create a work item in a previous step.');
+      }
+      
+      console.log(`[WorkflowExecutor]   📋 Work Item ID: ${workItemId}`);
+      
+      // Check if draft already exists for this work item and run (idempotency)
+      const existingDrafts = await db
+        .select()
+        .from(ticketDraftResponses)
+        .where(
+          and(
+            eq(ticketDraftResponses.workItemId, workItemId),
+            eq(ticketDraftResponses.organizationId, organizationId)
+          )
+        )
+        .limit(1);
+      
+      if (existingDrafts.length > 0) {
+        const existingDraft = existingDrafts[0];
+        console.log(`[WorkflowExecutor]   ♻️ Draft already exists (ID ${existingDraft.id}) - returning existing draft`);
+        return {
+          success: true,
+          output: {
+            draftId: existingDraft.id,
+            workItemId,
+            draftContent: existingDraft.draftContent,
+            model: existingDraft.modelUsed,
+            status: existingDraft.status,
+            cached: true,
+          },
+        };
+      }
+      
+      // Fetch the work item (with organization validation)
+      const [workItem] = await db
+        .select()
+        .from(workItems)
+        .where(
+          and(
+            eq(workItems.id, workItemId),
+            eq(workItems.organizationId, organizationId)
+          )
+        )
+        .limit(1);
+      
+      if (!workItem) {
+        throw new Error(`Work item ${workItemId} not found or does not belong to organization ${organizationId}`);
+      }
+      
+      console.log(`[WorkflowExecutor]   ✓ Work item loaded: "${workItem.title}"`);
+      
+      // Fetch AI drafting configuration for this organization
+      const [config] = await db
+        .select()
+        .from(aiAgentConfigurations)
+        .where(eq(aiAgentConfigurations.organizationId, organizationId))
+        .limit(1);
+      
+      if (!config) {
+        throw new Error('AI drafting configuration not found. Please configure AI ticket drafting first.');
+      }
+      
+      console.log(`[WorkflowExecutor]   ⚙️ Configuration loaded: ${config.modelType}`);
+      
+      // Load system prompt documents with security validation
+      const systemPromptDocIds = config.systemPromptDocumentIds || [];
+      const systemPromptDocs = await db
+        .select()
+        .from(knowledgeDocuments)
+        .where(
+          and(
+            eq(knowledgeDocuments.organizationId, organizationId),
+            inArray(knowledgeDocuments.id, systemPromptDocIds.length > 0 ? systemPromptDocIds : [-1])
+          )
+        );
+      
+      // Validate all requested documents were found
+      if (systemPromptDocIds.length > 0 && systemPromptDocs.length !== systemPromptDocIds.length) {
+        throw new Error(`Security violation: Some system prompt documents do not belong to organization ${organizationId}`);
+      }
+      
+      // Load reference knowledge base documents with security validation
+      const knowledgeDocIds = config.knowledgeBaseDocumentIds || [];
+      const referenceKBDocs = await db
+        .select()
+        .from(knowledgeDocuments)
+        .where(
+          and(
+            eq(knowledgeDocuments.organizationId, organizationId),
+            inArray(knowledgeDocuments.id, knowledgeDocIds.length > 0 ? knowledgeDocIds : [-1])
+          )
+        );
+      
+      // Validate all requested documents were found
+      if (knowledgeDocIds.length > 0 && referenceKBDocs.length !== knowledgeDocIds.length) {
+        throw new Error(`Security violation: Some knowledge base documents do not belong to organization ${organizationId}`);
+      }
+      
+      console.log(`[WorkflowExecutor]   📚 Loaded ${systemPromptDocs.length} system prompt docs, ${referenceKBDocs.length} reference docs`);
+      
+      // Build system prompt
+      const systemPrompt = systemPromptDocs.map(doc => doc.content).join('\n\n---\n\n');
+      const referenceContext = referenceKBDocs.map(doc => `# ${doc.title}\n\n${doc.content}`).join('\n\n---\n\n');
+      
+      // Build user message with ticket context
+      const userMessage = `Please draft a professional response for the following support ticket:
+
+**Ticket Title:** ${workItem.title}
+
+**Ticket Description:**
+${workItem.description || 'No description provided'}
+
+${referenceContext ? `\n**Reference Information:**\n${referenceContext}\n` : ''}
+
+Generate a draft response that addresses the customer's issue professionally and helpfully.`;
+      
+      // Get OpenAI API key
+      const openaiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+      
+      if (!openaiKey) {
+        throw new Error('OpenAI API key not configured. Please set up OpenAI integration.');
+      }
+      
+      console.log(`[WorkflowExecutor]   🔑 OpenAI API key found`);
+      console.log(`[WorkflowExecutor]   🎯 Calling OpenAI ${config.modelType}...`);
+      
+      // Call OpenAI API
+      const response = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${openaiKey}`,
+        },
+        body: JSON.stringify({
+          model: config.modelType,
+          messages: [
+            {
+              role: 'system',
+              content: systemPrompt || 'You are a helpful support agent. Provide professional, empathetic, and clear responses to customer support tickets.',
+            },
+            {
+              role: 'user',
+              content: userMessage,
+            },
+          ],
+          temperature: config.temperature,
+          max_tokens: config.maxTokens,
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(`OpenAI API error: ${errorData.error?.message || response.statusText}`);
+      }
+      
+      const result = await response.json();
+      const draftResponse = result.choices[0].message.content;
+      
+      console.log(`[WorkflowExecutor]   ✅ Draft generated (${draftResponse.length} characters)`);
+      
+      // Save draft to database
+      const [savedDraft] = await db
+        .insert(ticketDraftResponses)
+        .values({
+          organizationId,
+          workItemId,
+          draftContent: draftResponse,
+          modelUsed: config.modelType,
+          configurationSnapshot: config,
+          status: 'pending_review',
+        })
+        .returning();
+      
+      console.log(`[WorkflowExecutor]   💾 Draft saved: ID ${savedDraft.id}`);
+      
+      // Return structured output for downstream steps
+      return {
+        success: true,
+        output: {
+          draftId: savedDraft.id,
+          workItemId,
+          draftContent: draftResponse,
+          model: config.modelType,
+          status: 'pending_review',
+          cached: false,
+        },
+      };
+    } catch (error: any) {
+      console.error(`[WorkflowExecutor]   ❌ AI draft response failed: ${error.message}`);
       return {
         success: false,
         error: error.message,
