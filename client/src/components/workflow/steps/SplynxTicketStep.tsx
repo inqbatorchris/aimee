@@ -387,7 +387,7 @@ export default function SplynxTicketStep({ workItemId, ticketId, taskId, onSave 
             />
             {aiDraft && aiDraft.sentAt && aiDraft.editPercentage !== undefined && (
               <p className="text-xs text-muted-foreground">
-                Previous response was edited {aiDraft.editPercentage.toFixed(1)}% before sending
+                Previous response was edited {Number(aiDraft.editPercentage).toFixed(1)}% before sending
               </p>
             )}
           </div>
