@@ -133,7 +133,33 @@ export default function TemplateEdit() {
     },
   });
 
+  const cleanStepsForSave = (steps: any[]) => {
+    // Remove UI-only fields from OCR extractions before saving
+    return steps.map(step => {
+      if (step.config?.photoAnalysisConfig?.extractions) {
+        return {
+          ...step,
+          config: {
+            ...step.config,
+            photoAnalysisConfig: {
+              ...step.config.photoAnalysisConfig,
+              extractions: step.config.photoAnalysisConfig.extractions.map((ext: any) => {
+                // Remove UI-only fields (id, displayLabel) and keep only schema fields
+                const { id: _, displayLabel: __, ...schemaFields } = ext;
+                return schemaFields;
+              }),
+            },
+          },
+        };
+      }
+      return step;
+    });
+  };
+
   const handleSave = () => {
+    // Clean steps to remove UI-only fields before saving
+    const cleanedSteps = cleanStepsForSave(steps);
+
     if (id === 'new') {
       // Generate a slug ID from the name for new templates only
       const slugId = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
@@ -142,7 +168,7 @@ export default function TemplateEdit() {
         id: slugId,
         name,
         description,
-        steps,
+        steps: cleanedSteps,
         completionCallbacks,
       };
       
@@ -152,7 +178,7 @@ export default function TemplateEdit() {
       const updateData = {
         name,
         description,
-        steps,
+        steps: cleanedSteps,
         completionCallbacks,
       };
       
