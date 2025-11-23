@@ -520,45 +520,64 @@ function StepEditor({ step, onSave, onCancel }: { step: WorkflowTemplateStep; on
 
         {/* Photo Configuration */}
         {editedStep.type === 'photo' && (
-          <div className="space-y-3 border-t pt-4">
-            <Label className="text-base">Photo Settings</Label>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label htmlFor="min-photos">Minimum Photos</Label>
-                <Input
-                  id="min-photos"
-                  type="number"
-                  min="0"
-                  value={editedStep.photoConfig?.minPhotos || 1}
-                  onChange={e => setEditedStep({
-                    ...editedStep,
-                    photoConfig: {
-                      ...editedStep.photoConfig!,
-                      minPhotos: parseInt(e.target.value) || 0,
-                    }
-                  })}
-                  data-testid="input-min-photos"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="max-photos">Maximum Photos</Label>
-                <Input
-                  id="max-photos"
-                  type="number"
-                  min="1"
-                  value={editedStep.photoConfig?.maxPhotos || 10}
-                  onChange={e => setEditedStep({
-                    ...editedStep,
-                    photoConfig: {
-                      ...editedStep.photoConfig!,
-                      maxPhotos: parseInt(e.target.value) || 1,
-                    }
-                  })}
-                  data-testid="input-max-photos"
-                />
+          <>
+            <div className="space-y-3 border-t pt-4">
+              <Label className="text-base">Photo Settings</Label>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label htmlFor="min-photos">Minimum Photos</Label>
+                  <Input
+                    id="min-photos"
+                    type="number"
+                    min="0"
+                    value={editedStep.photoConfig?.minPhotos || 1}
+                    onChange={e => {
+                      const defaultPhotoConfig = { minPhotos: 1, maxPhotos: 10, required: false };
+                      setEditedStep({
+                        ...editedStep,
+                        photoConfig: {
+                          ...(editedStep.photoConfig || defaultPhotoConfig),
+                          minPhotos: parseInt(e.target.value) || 0,
+                        }
+                      });
+                    }}
+                    data-testid="input-min-photos"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="max-photos">Maximum Photos</Label>
+                  <Input
+                    id="max-photos"
+                    type="number"
+                    min="1"
+                    value={editedStep.photoConfig?.maxPhotos || 10}
+                    onChange={e => {
+                      const defaultPhotoConfig = { minPhotos: 1, maxPhotos: 10, required: false };
+                      setEditedStep({
+                        ...editedStep,
+                        photoConfig: {
+                          ...(editedStep.photoConfig || defaultPhotoConfig),
+                          maxPhotos: parseInt(e.target.value) || 1,
+                        }
+                      });
+                    }}
+                    data-testid="input-max-photos"
+                  />
+                </div>
               </div>
             </div>
-          </div>
+
+            {/* Photo Analysis/OCR Configuration */}
+            <PhotoAnalysisConfig 
+              config={editedStep.config || {}}
+              onChange={(config) => setEditedStep({ 
+                ...editedStep, 
+                config,
+                // Ensure photoConfig is preserved when updating config
+                photoConfig: editedStep.photoConfig || { minPhotos: 1, maxPhotos: 10, required: false }
+              })}
+            />
+          </>
         )}
 
         {/* Form Fields Editor */}
@@ -790,5 +809,207 @@ function StepEditor({ step, onSave, onCancel }: { step: WorkflowTemplateStep; on
         <Button onClick={() => onSave(editedStep)} data-testid="button-save-step">Save Step</Button>
       </SheetFooter>
     </>
+  );
+}
+
+interface PhotoAnalysisConfigProps {
+  config: any;
+  onChange: (config: any) => void;
+}
+
+function PhotoAnalysisConfig({ config, onChange }: PhotoAnalysisConfigProps) {
+  // Defensive initialization: ensure config exists
+  const safeConfig = config || {};
+  const photoAnalysisConfig = safeConfig.photoAnalysisConfig || null;
+  const [enabled, setEnabled] = useState(!!photoAnalysisConfig);
+  const [extractions, setExtractions] = useState(photoAnalysisConfig?.extractions || []);
+
+  const handleToggle = (checked: boolean) => {
+    setEnabled(checked);
+    if (checked && !photoAnalysisConfig) {
+      onChange({
+        ...safeConfig,
+        photoAnalysisConfig: {
+          enabled: true,
+          agentWorkflowId: null,
+          extractions: [],
+        },
+      });
+    } else if (!checked) {
+      const { photoAnalysisConfig: _, ...rest } = safeConfig;
+      onChange(rest);
+    }
+  };
+
+  const handleAddExtraction = () => {
+    const newExtraction = {
+      id: `extraction-${Date.now()}`,
+      displayLabel: '',
+      extractionPrompt: '',
+      targetTable: 'addresses',
+      targetField: '',
+      autoCreateField: true,
+    };
+    const updated = [...extractions, newExtraction];
+    setExtractions(updated);
+    onChange({
+      ...safeConfig,
+      photoAnalysisConfig: {
+        ...photoAnalysisConfig,
+        extractions: updated,
+      },
+    });
+  };
+
+  const handleUpdateExtraction = (index: number, updates: any) => {
+    const updated = [...extractions];
+    updated[index] = { ...updated[index], ...updates };
+    setExtractions(updated);
+    onChange({
+      ...safeConfig,
+      photoAnalysisConfig: {
+        ...photoAnalysisConfig,
+        extractions: updated,
+      },
+    });
+  };
+
+  const handleDeleteExtraction = (index: number) => {
+    const updated = extractions.filter((_: any, i: number) => i !== index);
+    setExtractions(updated);
+    onChange({
+      ...safeConfig,
+      photoAnalysisConfig: {
+        ...photoAnalysisConfig,
+        extractions: updated,
+      },
+    });
+  };
+
+  return (
+    <div className="space-y-3 border-t pt-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <Label className="text-base">Photo Text Extraction (OCR)</Label>
+          <p className="text-xs text-muted-foreground mt-1">
+            Automatically extract text from photos using AI
+          </p>
+        </div>
+        <Switch
+          checked={enabled}
+          onCheckedChange={handleToggle}
+          data-testid="switch-enable-ocr"
+        />
+      </div>
+
+      {enabled && (
+        <div className="space-y-3 pl-4 border-l-2 border-blue-200">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm font-medium">Fields to Extract</Label>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={handleAddExtraction}
+              data-testid="button-add-extraction"
+            >
+              <Plus className="h-4 w-4 mr-1" />
+              Add Field
+            </Button>
+          </div>
+
+          {extractions.length === 0 ? (
+            <div className="text-sm text-muted-foreground text-center py-4 border rounded-md bg-muted/20">
+              No extraction fields configured. Click "Add Field" to extract text from photos.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {extractions.map((extraction: any, index: number) => (
+                <div key={extraction.id} className="p-3 border rounded-md bg-muted/30 space-y-2">
+                  <div className="flex items-start justify-between">
+                    <Label className="text-sm font-medium">Field {index + 1}</Label>
+                    <Button
+                      type="button"
+                      size="icon"
+                      variant="ghost"
+                      onClick={() => handleDeleteExtraction(index)}
+                      data-testid={`button-delete-extraction-${index}`}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+
+                  <div className="space-y-2">
+                    <div>
+                      <Label htmlFor={`extraction-label-${index}`} className="text-xs">Field Label</Label>
+                      <Input
+                        id={`extraction-label-${index}`}
+                        value={extraction.displayLabel || ''}
+                        onChange={e => handleUpdateExtraction(index, { displayLabel: e.target.value })}
+                        placeholder="e.g., Serial Number"
+                        data-testid={`input-extraction-label-${index}`}
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor={`extraction-prompt-${index}`} className="text-xs">What to extract</Label>
+                      <Textarea
+                        id={`extraction-prompt-${index}`}
+                        value={extraction.extractionPrompt || ''}
+                        onChange={e => handleUpdateExtraction(index, { extractionPrompt: e.target.value })}
+                        placeholder="e.g., Find and extract the serial number from the device label"
+                        rows={2}
+                        data-testid={`input-extraction-prompt-${index}`}
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1">
+                        <Label htmlFor={`extraction-table-${index}`} className="text-xs">Save to Table</Label>
+                        <select
+                          id={`extraction-table-${index}`}
+                          className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                          value={extraction.targetTable || 'addresses'}
+                          onChange={e => handleUpdateExtraction(index, { targetTable: e.target.value })}
+                          data-testid={`select-extraction-table-${index}`}
+                        >
+                          <option value="addresses">Addresses (supported)</option>
+                        </select>
+                        <p className="text-xs text-muted-foreground">
+                          Only Addresses table is currently supported
+                        </p>
+                      </div>
+
+                      <div>
+                        <Label htmlFor={`extraction-field-${index}`} className="text-xs">Field Name</Label>
+                        <Input
+                          id={`extraction-field-${index}`}
+                          value={extraction.targetField || ''}
+                          onChange={e => handleUpdateExtraction(index, { targetField: e.target.value })}
+                          placeholder="e.g., serial_number"
+                          data-testid={`input-extraction-field-${index}`}
+                        />
+                      </div>
+                    </div>
+
+                    <div className="flex items-center space-x-2">
+                      <Switch
+                        id={`auto-create-${index}`}
+                        checked={extraction.autoCreateField ?? true}
+                        onCheckedChange={checked => handleUpdateExtraction(index, { autoCreateField: checked })}
+                        data-testid={`switch-auto-create-${index}`}
+                      />
+                      <Label htmlFor={`auto-create-${index}`} className="text-xs">
+                        Auto-create field if it doesn't exist
+                      </Label>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   );
 }

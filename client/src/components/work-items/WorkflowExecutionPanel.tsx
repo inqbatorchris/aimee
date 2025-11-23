@@ -572,45 +572,86 @@ export function WorkflowExecutionPanel({ workItemId }: WorkflowExecutionPanelPro
                     >
                       Hide Images
                     </Button>
-                    <div className="flex flex-wrap gap-2">
-                      {(step.evidence as WorkflowEvidence).photos!.map((photo: WorkflowPhoto, index: number) => (
-                        <div
-                          key={index}
-                          className="relative group"
-                          data-testid={`step-${step.stepIndex}-photo-${index}`}
-                        >
+                    <div className="flex flex-wrap gap-3">
+                      {(step.evidence as WorkflowEvidence).photos!.map((photo: WorkflowPhoto, index: number) => {
+                        // Get OCR extracted data for this photo if available
+                        const photoEvidence = step.evidence as any;
+                        const ocrExtractedData = photoEvidence?.ocrExtractedData?.[index] as Record<string, { field?: string; value?: string; confidence?: number; targetTable?: string }> | undefined;
+
+                        return (
                           <div
-                            className="cursor-pointer"
-                            onClick={() => {
-                              setSelectedPhoto(photo);
-                              setSelectedPhotoMeta({ stepId: step.id, photoIndex: index });
-                            }}
+                            key={index}
+                            className="space-y-2"
+                            data-testid={`step-${step.stepIndex}-photo-${index}`}
                           >
-                            <img
-                              src={photo.data}
-                              alt={`Step photo ${index + 1}`}
-                              className="w-32 h-32 object-cover rounded border-2 border-gray-200 dark:border-gray-700 group-hover:border-blue-500 transition-colors"
-                              loading="lazy"
-                            />
-                            <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-opacity rounded flex items-center justify-center">
-                              <Camera className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                            <div className="relative group">
+                              <div
+                                className="cursor-pointer"
+                                onClick={() => {
+                                  setSelectedPhoto(photo);
+                                  setSelectedPhotoMeta({ stepId: step.id, photoIndex: index });
+                                }}
+                              >
+                                <img
+                                  src={photo.data}
+                                  alt={`Step photo ${index + 1}`}
+                                  className="w-32 h-32 object-cover rounded border-2 border-gray-200 dark:border-gray-700 group-hover:border-blue-500 transition-colors"
+                                  loading="lazy"
+                                />
+                                <div className="absolute inset-0 bg-black bg-opacity-0 group-hover:bg-opacity-20 transition-opacity rounded flex items-center justify-center">
+                                  <Camera className="h-6 w-6 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+                                </div>
+                              </div>
+                              <Button
+                                size="icon"
+                                variant="destructive"
+                                className="absolute -top-2 -right-2 h-6 w-6 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setPhotoToDelete({ stepId: step.id, photoIndex: index });
+                                  setShowDeleteConfirm(true);
+                                }}
+                                data-testid={`step-${step.stepIndex}-photo-${index}-delete`}
+                              >
+                                <X className="h-4 w-4" />
+                              </Button>
                             </div>
+
+                            {/* OCR Extracted Data */}
+                            {ocrExtractedData && Object.keys(ocrExtractedData).length > 0 && (
+                              <div className="w-32 text-xs space-y-1 p-2 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded">
+                                {Object.entries(ocrExtractedData)
+                                  .filter(([_, data]) => data && (data.value !== null && data.value !== undefined))
+                                  .map(([fieldName, data]: [string, any]) => {
+                                    // Backend returns confidence as percentage (0-100), display as-is
+                                    const confidence = data?.confidence;
+                                    return (
+                                      <div key={fieldName} className="space-y-0.5">
+                                        <div className="text-xs font-medium text-blue-900 dark:text-blue-100">
+                                          {data?.field || fieldName}
+                                        </div>
+                                        <div className="text-xs text-blue-800 dark:text-blue-200 break-words">
+                                          {String(data.value)}
+                                        </div>
+                                        {typeof confidence === 'number' && (
+                                          <Badge variant="secondary" className="text-xs px-1 py-0">
+                                            {confidence}%
+                                          </Badge>
+                                        )}
+                                      </div>
+                                    );
+                                  })
+                                }
+                                {Object.entries(ocrExtractedData).filter(([_, data]) => data && (data.value !== null && data.value !== undefined)).length === 0 && (
+                                  <div className="text-xs text-muted-foreground italic">
+                                    No data extracted
+                                  </div>
+                                )}
+                              </div>
+                            )}
                           </div>
-                          <Button
-                            size="icon"
-                            variant="destructive"
-                            className="absolute -top-2 -right-2 h-6 w-6 rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setPhotoToDelete({ stepId: step.id, photoIndex: index });
-                              setShowDeleteConfirm(true);
-                            }}
-                            data-testid={`step-${step.stepIndex}-photo-${index}-delete`}
-                          >
-                            <X className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 )}
