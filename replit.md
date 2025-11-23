@@ -19,16 +19,17 @@ Aimee.works is a Strategy Operating System (Strategy OS) designed to integrate s
 - **Workflow Integration**: New `ai_draft_response` workflow step type in Agent Builder for automated draft generation
 - **Draft Generation Logic**: Embedded in WorkflowExecutor, loads configuration and KB docs, calls OpenAI API, saves drafts with status tracking
 - **Setup Guidance**: "Next Steps" card on setup page with direct link to Agent Builder and workflow creation instructions
-- **End-to-End Integration** (Nov 23, 2025): AI drafts automatically pre-fill into SplynxTicketStep response textarea when work items are opened in workflow templates. Visual indicators (Sparkles icon, AI Draft badge, blue alert) show when content is AI-generated. Users can review, edit, or restore the draft before sending. Edit tracking uses Levenshtein distance algorithm to calculate percentage changes, displayed after sending.
+- **End-to-End Integration** (Nov 23, 2025): AI drafts automatically pre-fill into SplynxTicketViewer "Quick Reply" textarea when work items are opened in workflow templates. Visual indicators (Sparkles icon, AI Draft badge, blue alert) show when content is AI-generated. Users can review, edit, or restore the draft before sending. Edit tracking uses Levenshtein distance algorithm to calculate percentage changes, displayed after sending.
 
 **Technical Details**:
-- Files: `client/src/pages/integrations/AITicketDraftingSetup.tsx`, `server/routes/ai-drafting.ts`, `server/services/workflow/WorkflowExecutor.ts`, `client/src/components/workflow/WorkflowStepBuilder.tsx`, `client/src/components/workflow/steps/SplynxTicketStep.tsx`
+- Files: `client/src/pages/integrations/AITicketDraftingSetup.tsx`, `server/routes/ai-drafting.ts`, `server/services/workflow/WorkflowExecutor.ts`, `client/src/components/workflow/WorkflowStepBuilder.tsx`, `client/src/components/workflow/SplynxTicketViewer.tsx`
 - Configuration includes: model type, temperature (0-2), max tokens, system prompt docs, knowledge base docs, linked objective/key results
 - Validation requires: minimum 1 system prompt document, 1 objective, 1 key result
 - Accessible only via Integration Hub card (emerald color, MessageSquareText icon)
 - **Workflow Setup**: Users create workflows with webhook triggers (Splynx ticket creation) → Create Work Item step → AI Draft Response step
 - **Default KB Document**: "Support Ticket AI System Prompt - ISP/MSP" (ID 39) provides comprehensive ISP/MSP response guidelines
-- **Draft Pre-fill Flow**: SplynxTicketStep queries `/api/ai-drafting/drafts/work-item/${workItemId}` → pre-fills response on mount → tracks edits → PATCH to `/api/ai-drafting/drafts/${draftId}` on send → calculates edit % via Levenshtein distance
+- **Draft Pre-fill Flow**: SplynxTicketViewer queries `/api/ai-drafting/drafts/work-item/${workItemId}` → pre-fills "Quick Reply" textarea on mount → tracks edits → PATCH to `/api/ai-drafting/drafts/${draftId}` on send → calculates edit % via Levenshtein distance
+- **Component Architecture**: Workflow template uses step type "splynx_ticket" with mode "unified" which renders SplynxTicketViewer component (not SplynxTicketStep)
 - **Bug Fix** (Nov 23): Fixed type mismatch where editPercentage was returned as string but frontend expected number for `.toFixed()` calls. Backend now returns numeric value; frontend uses defensive `Number()` parsing for robustness.
 
 ### November 2025 - Field App Chunked Download System
