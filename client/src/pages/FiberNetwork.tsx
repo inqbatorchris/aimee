@@ -575,7 +575,7 @@ export default function FiberNetwork() {
         createdVia: 'manual' | 'workflow_step';
       }>;
     }) => {
-      return apiRequest('/api/fiber-network/splice-trays', {
+      return apiRequest(`/api/fiber-network/nodes/${data.nodeId}/splice-trays`, {
         method: 'POST',
         body: data,
       });
@@ -4253,11 +4253,6 @@ export default function FiberNetwork() {
                                   }}
                                 />
                                 <span>#{conn.rightFiberNumber} {conn.rightFiberColor}</span>
-                                {conn.leftFiberColor !== conn.rightFiberColor && (
-                                  <Badge variant="outline" className="text-[10px] px-1 py-0 text-orange-600 border-orange-300">
-                                    Color mismatch
-                                  </Badge>
-                                )}
                               </div>
                               <Button
                                 variant="ghost"
