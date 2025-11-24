@@ -207,6 +207,25 @@ function MapClickHandler({
   return null;
 }
 
+// Component to handle adding waypoints to cable paths
+function WaypointAdder({
+  enabled,
+  onWaypointAdd
+}: {
+  enabled: boolean;
+  onWaypointAdd: (lat: number, lng: number) => void;
+}) {
+  useMapEvents({
+    click: (e) => {
+      if (enabled) {
+        onWaypointAdd(e.latlng.lat, e.latlng.lng);
+      }
+    },
+  });
+  
+  return null;
+}
+
 export default function FiberNetwork() {
   const { toast } = useToast();
   const { currentUser } = useAuth();
@@ -293,6 +312,7 @@ export default function FiberNetwork() {
   const [editingCable, setEditingCable] = useState<any>(null);
   const [editingCableWaypoints, setEditingCableWaypoints] = useState<Array<[number, number]>>([]);
   const [originalCableWaypoints, setOriginalCableWaypoints] = useState<Array<[number, number]>>([]);
+  const [addingWaypoint, setAddingWaypoint] = useState(false);
 
   // Derived states for backward compatibility
   const cableRoutingMode = mapMode === 'cableRouting';
@@ -1632,6 +1652,23 @@ export default function FiberNetwork() {
               disabled={mapMode !== 'addNode'}
             />
             
+            {/* Waypoint adder for cable path editing */}
+            <WaypointAdder
+              enabled={cableEditMode && addingWaypoint}
+              onWaypointAdd={(lat, lng) => {
+                // Add the waypoint to the array at the end (before the last point which is the end node)
+                const newWaypoints = [...editingCableWaypoints];
+                // Insert before the last waypoint (which is the end node)
+                newWaypoints.splice(newWaypoints.length - 1, 0, [lat, lng]);
+                setEditingCableWaypoints(newWaypoints);
+                setAddingWaypoint(false); // Exit add waypoint mode after adding one
+                toast({
+                  title: 'Waypoint Added',
+                  description: 'A new waypoint has been added to the cable path. Drag it to adjust.',
+                });
+              }}
+            />
+            
             {/* Cable Polylines */}
             {showCables && (() => {
               // Collect all cables from nodes (avoid duplicates by tracking cable IDs)
@@ -1705,36 +1742,63 @@ export default function FiberNetwork() {
                 />
                 
                 {/* Draggable waypoint markers */}
-                {editingCableWaypoints.map((waypoint, index) => (
-                  <Marker
-                    key={`waypoint-${index}`}
-                    position={waypoint}
-                    draggable={true}
-                    eventHandlers={{
-                      dragend: (e) => {
-                        const marker = e.target;
-                        const position = marker.getLatLng();
-                        const newWaypoints = [...editingCableWaypoints];
-                        newWaypoints[index] = [position.lat, position.lng];
-                        setEditingCableWaypoints(newWaypoints);
-                      },
-                    }}
-                    icon={L.divIcon({
-                      className: 'custom-waypoint-icon',
-                      html: `<div style="
-                        width: 12px;
-                        height: 12px;
-                        border-radius: 50%;
-                        background: #F59E0B;
-                        border: 2px solid white;
-                        cursor: move;
-                        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-                      "></div>`,
-                      iconSize: [12, 12],
-                      iconAnchor: [6, 6],
-                    })}
-                  />
-                ))}
+                {editingCableWaypoints.map((waypoint, index) => {
+                  const isFirstOrLast = index === 0 || index === editingCableWaypoints.length - 1;
+                  return (
+                    <Marker
+                      key={`waypoint-${index}`}
+                      position={waypoint}
+                      draggable={true}
+                      eventHandlers={{
+                        dragend: (e) => {
+                          const marker = e.target;
+                          const position = marker.getLatLng();
+                          const newWaypoints = [...editingCableWaypoints];
+                          newWaypoints[index] = [position.lat, position.lng];
+                          setEditingCableWaypoints(newWaypoints);
+                        },
+                      }}
+                      icon={L.divIcon({
+                        className: 'custom-waypoint-icon',
+                        html: `<div style="
+                          width: 12px;
+                          height: 12px;
+                          border-radius: 50%;
+                          background: #F59E0B;
+                          border: 2px solid white;
+                          cursor: move;
+                          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                        "></div>`,
+                        iconSize: [12, 12],
+                        iconAnchor: [6, 6],
+                      })}
+                    >
+                      {!isFirstOrLast && (
+                        <Popup>
+                          <div className="p-2">
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => {
+                                const newWaypoints = [...editingCableWaypoints];
+                                newWaypoints.splice(index, 1);
+                                setEditingCableWaypoints(newWaypoints);
+                                toast({
+                                  title: 'Waypoint Removed',
+                                  description: 'The waypoint has been deleted from the cable path.',
+                                });
+                              }}
+                              data-testid={`button-delete-waypoint-${index}`}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Delete Waypoint
+                            </Button>
+                          </div>
+                        </Popup>
+                      )}
+                    </Marker>
+                  );
+                })}
               </>
             )}
             
@@ -1745,7 +1809,29 @@ export default function FiberNetwork() {
                   <Cable className="w-4 h-4" />
                   <span className="font-semibold">Editing: {editingCable.cableIdentifier}</span>
                 </div>
-                <div className="flex gap-2">
+                {addingWaypoint && (
+                  <div className="mb-3 text-sm text-blue-600 bg-blue-50 p-2 rounded">
+                    Click on the map to add a waypoint
+                  </div>
+                )}
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    variant={addingWaypoint ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setAddingWaypoint(!addingWaypoint);
+                      if (!addingWaypoint) {
+                        toast({
+                          title: 'Add Waypoint Mode',
+                          description: 'Click on the map to add a waypoint to the cable path.',
+                        });
+                      }
+                    }}
+                    data-testid="button-add-waypoint"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    {addingWaypoint ? 'Adding...' : 'Add Waypoint'}
+                  </Button>
                   <Button
                     variant="default"
                     size="sm"
@@ -1772,6 +1858,7 @@ export default function FiberNetwork() {
                         setEditingCable(null);
                         setEditingCableWaypoints([]);
                         setOriginalCableWaypoints([]);
+                        setAddingWaypoint(false);
                         // Refresh data
                         queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
                         toast({
@@ -1801,6 +1888,7 @@ export default function FiberNetwork() {
                       setEditingCable(null);
                       setEditingCableWaypoints([]);
                       setOriginalCableWaypoints([]);
+                      setAddingWaypoint(false);
                       // Refresh data to show original cable path
                       queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
                       toast({
