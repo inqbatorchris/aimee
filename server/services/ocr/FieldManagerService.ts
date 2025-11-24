@@ -172,8 +172,10 @@ export class FieldManagerService {
    * 
    * This method converts OCR field names (which can be snake_case or PascalCase)
    * to the camelCase column names used in the database schema.
+   * 
+   * PUBLIC: Now callable from AnalyzeImageOCRAction for validation before execution
    */
-  private getColumnName(tableName: string, fieldName: string): string | null {
+  public getColumnName(tableName: string, fieldName: string): string | null {
     // Address records have specific OCR columns
     if (tableName === 'address_records') {
       // List of known OCR columns in the schema (camelCase)
@@ -196,6 +198,21 @@ export class FieldManagerService {
     
     // Add support for other tables here as needed
     return null;
+  }
+
+  /**
+   * Get list of known columns for a table
+   * Used for error messages when field doesn't exist
+   */
+  public getKnownColumns(tableName: string): string[] {
+    if (tableName === 'address_records') {
+      return [
+        'routerSerial', 'routerMac', 'routerModel',
+        'onuSerial', 'onuMac', 'onuModel',
+        'postcode', 'summary', 'address', 'premise', 'network', 'udprn', 'statusId'
+      ];
+    }
+    return [];
   }
 
   /**
