@@ -8,11 +8,12 @@ import { z } from 'zod';
 import { storage } from '../storage';
 import { authenticateToken } from '../auth';
 import { db } from '../db';
-import { workItems, workItemWorkflowExecutions, workItemWorkflowExecutionSteps, fiberNetworkNodes, fiberNetworkActivityLogs } from '@shared/schema';
+import { workItems, workItemWorkflowExecutions, workItemWorkflowExecutionSteps, fiberNetworkNodes, fiberNetworkActivityLogs, audioRecordings } from '@shared/schema';
 import { and, eq, inArray, asc } from 'drizzle-orm';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { audioProcessingService } from '../services/audioProcessingService';
 
 const router = Router();
 
@@ -1019,7 +1020,30 @@ router.post('/upload-audio', authenticateToken, audioUpload.single('file'), asyn
       duration
     });
 
-    // Convert uploaded file to base64 for database storage
+    // Generate unique audio ID
+    const audioId = `audio-${Date.now()}-${Math.round(Math.random() * 1E9)}`;
+
+    // Create audio_recordings database record
+    const [audioRecord] = await db.insert(audioRecordings).values({
+      id: audioId,
+      organizationId,
+      workItemId: parseInt(workItemId),
+      stepId: stepId || null,
+      filePath: file.path,
+      fileName: file.filename,
+      mimeType: file.mimetype,
+      size: file.size,
+      duration: parseInt(duration) || 0,
+      uploadedBy: userId,
+    }).returning();
+
+    console.log('[Upload Audio] Created audio_recordings record:', audioRecord.id);
+
+    // Trigger async AI processing in background
+    audioProcessingService.processAudioRecording(audioId, organizationId)
+      .catch(err => console.error('[Upload Audio] Processing failed:', err));
+
+    // Convert uploaded file to base64 for step evidence backward compatibility
     const audioPath = file.path;
     const audioBuffer = await fs.promises.readFile(audioPath);
     const base64Data = `data:${file.mimetype};base64,${audioBuffer.toString('base64')}`;
@@ -1095,6 +1119,7 @@ router.post('/upload-audio', authenticateToken, audioUpload.single('file'), asyn
               }
               
               const newAudio = {
+                audioId,
                 data: base64Data,
                 fileName: file.filename,
                 size: file.size,
@@ -1138,14 +1163,11 @@ router.post('/upload-audio', authenticateToken, audioUpload.single('file'), asyn
       }
     }
 
-    // Clean up uploaded file after storing in database
-    fs.unlink(file.path, (err) => {
-      if (err) console.error('Failed to delete uploaded audio file:', err);
-    });
+    // Keep file on disk for AI processing (don't delete it)
 
     res.json({
       success: true,
-      audioId: `audio-${Date.now()}`,
+      audioId,
       fileName: file.filename,
       size: file.size,
       duration: parseInt(duration) || 0,
@@ -1162,6 +1184,113 @@ router.post('/upload-audio', authenticateToken, audioUpload.single('file'), asyn
     }
     
     res.status(500).json({ error: 'Failed to upload audio' });
+  }
+});
+
+// Get audio recording with transcription and extracted data
+router.get('/audio-recordings/:id', authenticateToken, async (req: any, res) => {
+  try {
+    const audioId = req.params.id;
+    const organizationId = req.user?.organizationId;
+
+    const [audioRec] = await db
+      .select()
+      .from(audioRecordings)
+      .where(
+        and(
+          eq(audioRecordings.id, audioId),
+          eq(audioRecordings.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+
+    if (!audioRec) {
+      return res.status(404).json({ error: 'Audio recording not found' });
+    }
+
+    res.json({ audioRecording: audioRec });
+  } catch (error) {
+    console.error('Error fetching audio recording:', error);
+    res.status(500).json({ error: 'Failed to fetch audio recording' });
+  }
+});
+
+// Update audio recording (manual corrections to transcription/extracted data)
+router.patch('/audio-recordings/:id', authenticateToken, async (req: any, res) => {
+  try {
+    const audioId = req.params.id;
+    const organizationId = req.user?.organizationId;
+    const { transcription, extractedData } = req.body;
+
+    const updateData: any = {};
+    if (transcription !== undefined) {
+      updateData.transcription = transcription;
+    }
+    if (extractedData !== undefined) {
+      updateData.extractedData = extractedData;
+    }
+
+    const [updated] = await db
+      .update(audioRecordings)
+      .set(updateData)
+      .where(
+        and(
+          eq(audioRecordings.id, audioId),
+          eq(audioRecordings.organizationId, organizationId)
+        )
+      )
+      .returning();
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Audio recording not found' });
+    }
+
+    console.log('[Audio Recording] Updated:', audioId);
+    res.json({ success: true, audioRecording: updated });
+  } catch (error) {
+    console.error('Error updating audio recording:', error);
+    res.status(500).json({ error: 'Failed to update audio recording' });
+  }
+});
+
+// Trigger re-processing of audio recording
+router.post('/audio-recordings/:id/reprocess', authenticateToken, async (req: any, res) => {
+  try {
+    const audioId = req.params.id;
+    const organizationId = req.user?.organizationId;
+
+    const [audioRec] = await db
+      .select()
+      .from(audioRecordings)
+      .where(
+        and(
+          eq(audioRecordings.id, audioId),
+          eq(audioRecordings.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+
+    if (!audioRec) {
+      return res.status(404).json({ error: 'Audio recording not found' });
+    }
+
+    // Reset processing status
+    await db
+      .update(audioRecordings)
+      .set({
+        processingStatus: 'pending',
+        processingError: null
+      })
+      .where(eq(audioRecordings.id, audioId));
+
+    // Trigger reprocessing
+    audioProcessingService.processAudioRecording(audioId, organizationId)
+      .catch(err => console.error('[Reprocess Audio] Processing failed:', err));
+
+    res.json({ success: true, message: 'Reprocessing started' });
+  } catch (error) {
+    console.error('Error reprocessing audio:', error);
+    res.status(500).json({ error: 'Failed to reprocess audio' });
   }
 });
 
