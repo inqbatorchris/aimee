@@ -640,12 +640,12 @@ export class WorkItemWorkflowService {
 
     // Handle database integration (for OCR and other use cases)
     if (callback.action === 'database_integration' && callback.databaseConfig) {
-      const { targetTable, recordIdSource } = callback.databaseConfig;
+      let { targetTable, recordIdSource } = callback.databaseConfig;
       
-      console.log(`[Callback] Database integration: updating ${targetTable}`);
+      console.log(`[Callback] Database integration: initial target table = ${targetTable}`);
 
       try {
-        // Determine the target record ID
+        // Determine the target record ID and dynamically resolve target table
         let targetRecordId: number | undefined;
 
         if (recordIdSource === 'work_item_source') {
@@ -662,9 +662,11 @@ export class WorkItemWorkflowService {
             )
             .limit(1);
 
-          if (source && source.sourceTable === targetTable) {
+          if (source) {
+            // DYNAMIC: Use source table from work_item_sources linkage
+            targetTable = source.sourceTable;
             targetRecordId = source.sourceId;
-            console.log(`[Callback] Using work item source: ${targetTable}#${targetRecordId}`);
+            console.log(`[Callback] Using dynamic source: ${targetTable}#${targetRecordId}`);
           }
         } else if (recordIdSource?.startsWith('workflow_metadata.')) {
           // Get from workflow metadata (e.g., workflow_metadata.addressId)
@@ -686,13 +688,17 @@ export class WorkItemWorkflowService {
           throw new Error(`Could not determine target record ID from ${recordIdSource}`);
         }
 
+        // CRITICAL: Don't collect OCR data yet - it must be filtered by field definitions first
+        // OCR data will be collected after we know which fields are allowed for the target table
+        console.log(`[Callback] Will collect OCR data after validating against target table schema`);
+
         // Use FieldManagerService to update the record
         const { FieldManagerService } = await import('./ocr/FieldManagerService');
         const { customFieldDefinitions } = await import('@shared/schema');
         const fieldManager = new FieldManagerService();
 
-        // Get allowed custom fields for this table to validate mappings
-        const allowedFields = await db
+        // Get allowed fields: UNION of custom fields AND physical schema columns
+        const customFields = await db
           .select()
           .from(customFieldDefinitions)
           .where(
@@ -702,22 +708,72 @@ export class WorkItemWorkflowService {
             )
           );
 
-        const allowedFieldNames = new Set(allowedFields.map(f => f.fieldName));
+        // CRITICAL: Include physical schema columns (routerSerial, routerMac, etc.)
+        const schemaColumns = fieldManager.getKnownColumns(targetTable);
+        
+        // Merge custom fields + schema columns into allowed set
+        const allowedFieldNames = new Set([
+          ...customFields.map(f => f.fieldName),
+          ...schemaColumns
+        ]);
+        
         console.log(`[Callback] Allowed fields for ${targetTable}:`, Array.from(allowedFieldNames));
+        console.log(`[Callback]   - Custom fields: ${customFields.length}, Schema columns: ${schemaColumns.length}`);
 
-        // Update each mapped field (only if allowed or no restrictions)
+        // CRITICAL: Filter ALL mappedData against allowedFieldNames BEFORE writing
+        // This prevents arbitrary form fields, notes, photos from leaking into disallowed tables
+        const filteredData: Record<string, any> = {};
+        
+        console.log(`[Callback] Filtering pre-populated mappedData against allowed fields`);
+        console.log(`[Callback] Pre-filter mappedData keys:`, Object.keys(mappedData));
+        
+        // Filter field mappings (from callback configuration)
         for (const [fieldName, value] of Object.entries(mappedData)) {
-          // Skip meta fields
+          // Skip meta fields - never write these to records
           if (['organizationId', 'workItemId', 'photos', 'notes'].includes(fieldName)) {
+            console.log(`[Callback] Skipping meta field: ${fieldName}`);
             continue;
           }
-
-          // Validate field is allowed (if custom fields are defined)
-          if (allowedFields.length > 0 && !allowedFieldNames.has(fieldName)) {
-            console.warn(`[Callback] Skipping ${fieldName}: not in allowed custom fields for ${targetTable}`);
-            continue;
+          
+          // Only include if explicitly allowed for target table
+          if (allowedFieldNames.has(fieldName)) {
+            filteredData[fieldName] = value;
+            console.log(`[Callback] Field mapping allowed: ${fieldName} = ${value}`);
+          } else {
+            console.warn(`[Callback] Skipping non-allowed field mapping: ${fieldName}`);
           }
+        }
+        
+        // NOW collect OCR data, but ONLY for allowed fields in the target table
+        console.log(`[Callback] Collecting OCR data filtered by allowed fields`);
+        for (const step of steps) {
+          if (step.evidence && typeof step.evidence === 'object') {
+            const evidence = step.evidence as any;
+            // Check if this step has OCR extracted data in formData
+            if (evidence.formData && typeof evidence.formData === 'object') {
+              console.log(`[Callback] Step ${step.id} has formData with keys:`, Object.keys(evidence.formData));
+              
+              // FILTER: Only add OCR fields that are allowed for this target table
+              for (const [key, value] of Object.entries(evidence.formData)) {
+                // Skip metadata fields
+                if (key.startsWith('_')) continue;
+                
+                // CRITICAL: Only add if field is explicitly allowed for target table
+                if (allowedFieldNames.has(key)) {
+                  filteredData[key] = value;
+                  console.log(`[Callback] OCR field allowed: ${key} = ${value}`);
+                } else {
+                  console.warn(`[Callback] Skipping non-allowed OCR field: ${key}`);
+                }
+              }
+            }
+          }
+        }
 
+        console.log(`[Callback] Filtered data keys to write:`, Object.keys(filteredData));
+        
+        // Write ONLY filtered, validated fields to target record
+        for (const [fieldName, value] of Object.entries(filteredData)) {
           await fieldManager.updateDynamicField({
             organizationId,
             tableName: targetTable,
