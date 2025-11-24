@@ -32,9 +32,7 @@ export class OCRService {
     if (apiKey) {
       this.openai = new OpenAI({ 
         apiKey,
-        baseURL: process.env.AI_INTEGRATIONS_OPENAI_API_KEY 
-          ? 'https://api.replit.com/v1' 
-          : undefined 
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL || undefined
       });
     } else {
       // Mock mode - no OpenAI client needed
