@@ -67,6 +67,8 @@ import vapiRoutes from './vapi.js';
 console.log('✅ Vapi routes loaded:', typeof vapiRoutes);
 import vapiWebhooksRoutes from './vapiWebhooks.js';
 console.log('✅ Vapi webhooks routes loaded:', typeof vapiWebhooksRoutes);
+import fieldsRoutes from './fields.js';
+console.log('✅ Fields routes loaded:', typeof fieldsRoutes);
 
 const router = Router();
 console.log('🔥 Express Router created');
@@ -134,6 +136,8 @@ console.log('🔗 Mounting vapi routes');
 router.use('/vapi', vapiRoutes);
 console.log('🔗 Mounting vapi-webhooks routes');
 router.use('/', vapiWebhooksRoutes); // Mount at root for /vapi/webhook endpoint
+console.log('🔗 Mounting fields routes');
+router.use('/fields', fieldsRoutes);
 
 // Direct feature routes
 router.use('/', coreFeatureRoutes);

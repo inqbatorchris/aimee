@@ -9,7 +9,9 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Switch } from '@/components/ui/switch';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from '@/components/ui/sheet';
-import { CheckSquare, Type, Upload, ThumbsUp, Link2, MessageSquare, GripVertical, Trash2, Plus, Camera, FileText, List, PenTool, Ruler, X, MapPin, Ticket } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/hooks/use-toast';
+import { CheckSquare, Type, Upload, ThumbsUp, Link2, MessageSquare, GripVertical, Trash2, Plus, Camera, FileText, List, PenTool, Ruler, X, MapPin, Ticket, Check, Clock, AlertCircle, Loader2, Database, RefreshCw, CheckCircle } from 'lucide-react';
 
 export interface ChecklistItem {
   id: string;
@@ -823,6 +825,15 @@ function PhotoAnalysisConfig({ config, onChange }: PhotoAnalysisConfigProps) {
   const photoAnalysisConfig = safeConfig.photoAnalysisConfig || null;
   const [enabled, setEnabled] = useState(!!photoAnalysisConfig?.enabled);
   const [extractions, setExtractions] = useState(photoAnalysisConfig?.extractions || []);
+  const { toast } = useToast();
+  
+  // Track field creation status for each extraction
+  const [fieldStatuses, setFieldStatuses] = useState<Map<string, {
+    status: 'active' | 'pending' | 'error' | 'creating';
+    columnName?: string;
+    createdAt?: string;
+    errorMessage?: string;
+  }>>(new Map());
 
   // Update state when config changes (e.g., when loading existing template)
   useEffect(() => {
@@ -893,6 +904,112 @@ function PhotoAnalysisConfig({ config, onChange }: PhotoAnalysisConfigProps) {
     });
   };
 
+  // Get status badge component for field status
+  const getStatusBadge = (status: string) => {
+    const badges = {
+      active: { icon: Check, color: 'bg-green-500', label: 'Active' },
+      pending: { icon: Clock, color: 'bg-yellow-500', label: 'Pending' },
+      error: { icon: AlertCircle, color: 'bg-red-500', label: 'Error' },
+      creating: { icon: Loader2, color: 'bg-gray-500', label: 'Creating...' }
+    };
+    const badge = badges[status as keyof typeof badges];
+    const Icon = badge.icon;
+    
+    return (
+      <Badge className={`${badge.color} text-white text-xs`}>
+        <Icon className={`h-3 w-3 mr-1 ${status === 'creating' ? 'animate-spin' : ''}`} />
+        {badge.label}
+      </Badge>
+    );
+  };
+
+  // Create field immediately when user clicks "Create Field Now"
+  const createFieldNow = async (extraction: any, index: number) => {
+    if (!extraction.targetField || !extraction.displayLabel) {
+      toast({
+        title: 'Missing Information',
+        description: 'Please fill in Field Label and Field Name before creating the field.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setFieldStatuses(prev => new Map(prev).set(extraction.id, { status: 'creating' }));
+    
+    try {
+      const response = await fetch('/api/fields/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          tableName: extraction.targetTable || 'address_records',
+          fieldName: extraction.targetField,
+          displayLabel: extraction.displayLabel,
+          extractionPrompt: extraction.extractionPrompt,
+        }),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Field creation failed');
+      }
+      
+      const data = await response.json();
+      setFieldStatuses(prev => new Map(prev).set(extraction.id, {
+        status: 'active',
+        columnName: data.field.fieldName,
+        createdAt: data.field.createdAt,
+      }));
+      
+      toast({
+        title: 'Field Created',
+        description: `"${extraction.displayLabel}" is now ready for use`,
+      });
+    } catch (error) {
+      setFieldStatuses(prev => new Map(prev).set(extraction.id, {
+        status: 'error',
+        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+      }));
+      
+      toast({
+        title: 'Field Creation Failed',
+        description: error instanceof Error ? error.message : 'Unknown error',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  // Verify all fields exist
+  const verifyAllFields = async () => {
+    for (const extraction of extractions) {
+      if (!extraction.targetField) continue;
+      
+      try {
+        const response = await fetch('/api/fields/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({
+            tableName: extraction.targetTable || 'address_records',
+            fieldName: extraction.targetField,
+          }),
+        });
+        
+        const data = await response.json();
+        setFieldStatuses(prev => new Map(prev).set(extraction.id, {
+          status: data.exists ? 'active' : 'pending',
+        }));
+      } catch (error) {
+        console.error('Error verifying field:', error);
+      }
+    }
+    
+    toast({
+      title: 'Fields Verified',
+      description: 'Field status updated for all extractions',
+    });
+  };
+
   return (
     <div className="space-y-3 border-t pt-4">
       <div className="flex items-center justify-between">
@@ -931,20 +1048,26 @@ function PhotoAnalysisConfig({ config, onChange }: PhotoAnalysisConfigProps) {
             </div>
           ) : (
             <div className="space-y-3">
-              {extractions.map((extraction: any, index: number) => (
-                <div key={extraction.id} className="p-3 border rounded-md bg-muted/30 space-y-2">
-                  <div className="flex items-start justify-between">
-                    <Label className="text-sm font-medium">Field {index + 1}</Label>
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant="ghost"
-                      onClick={() => handleDeleteExtraction(index)}
-                      data-testid={`button-delete-extraction-${index}`}
-                    >
-                      <X className="h-4 w-4" />
-                    </Button>
-                  </div>
+              {extractions.map((extraction: any, index: number) => {
+                const fieldStatus = fieldStatuses.get(extraction.id) || { status: 'pending' };
+                
+                return (
+                  <div key={extraction.id} className="p-3 border rounded-md bg-muted/30 space-y-2">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-2">
+                        <Label className="text-sm font-medium">Field {index + 1}</Label>
+                        {getStatusBadge(fieldStatus.status)}
+                      </div>
+                      <Button
+                        type="button"
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => handleDeleteExtraction(index)}
+                        data-testid={`button-delete-extraction-${index}`}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
 
                   <div className="space-y-2">
                     <div>
@@ -999,21 +1122,78 @@ function PhotoAnalysisConfig({ config, onChange }: PhotoAnalysisConfigProps) {
                       </div>
                     </div>
 
-                    <div className="flex items-center space-x-2">
-                      <Switch
-                        id={`auto-create-${index}`}
-                        checked={extraction.autoCreateField ?? true}
-                        onCheckedChange={checked => handleUpdateExtraction(index, { autoCreateField: checked })}
-                        data-testid={`switch-auto-create-${index}`}
-                      />
-                      <Label htmlFor={`auto-create-${index}`} className="text-xs">
-                        Auto-create field if it doesn't exist
-                      </Label>
-                    </div>
+                    {/* Field Status Information */}
+                    {fieldStatus.status === 'active' && (
+                      <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-md p-2 text-xs space-y-1">
+                        <div className="flex items-center gap-1 text-green-700 dark:text-green-300">
+                          <Database className="h-3 w-3" />
+                          <span className="font-medium">Database Column:</span>
+                          <code className="font-mono">{fieldStatus.columnName || extraction.targetField}</code>
+                        </div>
+                        {fieldStatus.createdAt && (
+                          <div className="text-green-600 dark:text-green-400">
+                            Created: {new Date(fieldStatus.createdAt).toLocaleDateString()}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {fieldStatus.status === 'pending' && (
+                      <div className="bg-yellow-50 dark:bg-yellow-950/20 border border-yellow-200 dark:border-yellow-800 rounded-md p-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => createFieldNow(extraction, index)}
+                          className="w-full"
+                          data-testid={`button-create-field-${index}`}
+                        >
+                          <Plus className="h-4 w-4 mr-1" />
+                          Create Field Now
+                        </Button>
+                      </div>
+                    )}
+
+                    {fieldStatus.status === 'error' && (
+                      <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-md p-2 text-xs">
+                        <div className="text-red-700 dark:text-red-300 font-medium mb-1">
+                          Field Creation Failed
+                        </div>
+                        <div className="text-red-600 dark:text-red-400 mb-2">
+                          {fieldStatus.errorMessage}
+                        </div>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          onClick={() => createFieldNow(extraction, index)}
+                          className="w-full"
+                          data-testid={`button-retry-create-field-${index}`}
+                        >
+                          <RefreshCw className="h-4 w-4 mr-1" />
+                          Retry
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
-              ))}
+              );
+              })}
             </div>
+          )}
+          
+          {/* Verify All Fields Button */}
+          {extractions.length > 0 && (
+            <Button
+              type="button"
+              variant="outline"
+              className="w-full"
+              onClick={verifyAllFields}
+              data-testid="button-verify-all-fields"
+            >
+              <CheckCircle className="h-4 w-4 mr-1" />
+              Verify All Fields
+            </Button>
           )}
         </div>
       )}
