@@ -19,7 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { MapPin, Search, X, FileText, Activity, Plus, Image as ImageIcon, Wrench, Trash2, Upload, Camera, Map, Table as TableIcon, Download, Settings, Eye, EyeOff, GripVertical, Square, CheckCircle, Hand, Pencil, Cable, Link2 } from 'lucide-react';
+import { MapPin, Search, X, FileText, Activity, Plus, Image as ImageIcon, Wrench, Trash2, Upload, Camera, Map, Table as TableIcon, Download, Settings, Eye, EyeOff, GripVertical, Square, CheckCircle, Hand, Pencil, Cable, Link2, Edit, Save } from 'lucide-react';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
@@ -290,7 +290,9 @@ export default function FiberNetwork() {
   });
   const [selectedCable, setSelectedCable] = useState<any>(null);
   const [cableEditMode, setCableEditMode] = useState(false);
+  const [editingCable, setEditingCable] = useState<any>(null);
   const [editingCableWaypoints, setEditingCableWaypoints] = useState<Array<[number, number]>>([]);
+  const [originalCableWaypoints, setOriginalCableWaypoints] = useState<Array<[number, number]>>([]);
 
   // Derived states for backward compatibility
   const cableRoutingMode = mapMode === 'cableRouting';
@@ -1688,6 +1690,132 @@ export default function FiberNetwork() {
               ));
             })()}
             
+            {/* Cable edit mode - draggable waypoints */}
+            {cableEditMode && editingCable && editingCableWaypoints.length > 0 && (
+              <>
+                {/* Render the cable being edited */}
+                <Polyline
+                  positions={editingCableWaypoints}
+                  pathOptions={{
+                    color: '#F59E0B',
+                    weight: 5,
+                    opacity: 0.8,
+                    dashArray: '10, 5',
+                  }}
+                />
+                
+                {/* Draggable waypoint markers */}
+                {editingCableWaypoints.map((waypoint, index) => (
+                  <Marker
+                    key={`waypoint-${index}`}
+                    position={waypoint}
+                    draggable={true}
+                    eventHandlers={{
+                      dragend: (e) => {
+                        const marker = e.target;
+                        const position = marker.getLatLng();
+                        const newWaypoints = [...editingCableWaypoints];
+                        newWaypoints[index] = [position.lat, position.lng];
+                        setEditingCableWaypoints(newWaypoints);
+                      },
+                    }}
+                    icon={L.divIcon({
+                      className: 'custom-waypoint-icon',
+                      html: `<div style="
+                        width: 12px;
+                        height: 12px;
+                        border-radius: 50%;
+                        background: #F59E0B;
+                        border: 2px solid white;
+                        cursor: move;
+                        box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                      "></div>`,
+                      iconSize: [12, 12],
+                      iconAnchor: [6, 6],
+                    })}
+                  />
+                ))}
+              </>
+            )}
+            
+            {/* Cable edit mode - Save/Cancel buttons */}
+            {cableEditMode && editingCable && (
+              <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1000] bg-white p-4 rounded-lg shadow-lg">
+                <div className="flex items-center gap-2 mb-3">
+                  <Cable className="w-4 h-4" />
+                  <span className="font-semibold">Editing: {editingCable.cableIdentifier}</span>
+                </div>
+                <div className="flex gap-2">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => {
+                      // Save the cable path
+                      if (!editingCable?.startNodeId) {
+                        toast({
+                          title: 'Error',
+                          description: 'Missing node information. Cannot save cable path.',
+                          variant: 'destructive',
+                        });
+                        return;
+                      }
+                      
+                      apiRequest(`/api/fiber-network/cables/${editingCable.id}/route`, {
+                        method: 'PATCH',
+                        body: JSON.stringify({
+                          nodeId: editingCable.startNodeId,
+                          waypoints: editingCableWaypoints,
+                        }),
+                      }).then(() => {
+                        // Clear edit state
+                        setCableEditMode(false);
+                        setEditingCable(null);
+                        setEditingCableWaypoints([]);
+                        setOriginalCableWaypoints([]);
+                        // Refresh data
+                        queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
+                        toast({
+                          title: 'Cable Path Updated',
+                          description: 'The cable route has been saved successfully.',
+                        });
+                      }).catch((error) => {
+                        console.error('Failed to update cable path:', error);
+                        toast({
+                          title: 'Error',
+                          description: error.message || 'Failed to update cable path.',
+                          variant: 'destructive',
+                        });
+                      });
+                    }}
+                    data-testid="button-save-cable-path"
+                  >
+                    <Save className="w-4 h-4 mr-2" />
+                    Save
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      // Restore original state
+                      setCableEditMode(false);
+                      setEditingCable(null);
+                      setEditingCableWaypoints([]);
+                      setOriginalCableWaypoints([]);
+                      // Refresh data to show original cable path
+                      queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
+                      toast({
+                        title: 'Edit Cancelled',
+                        description: 'Cable path changes have been discarded.',
+                      });
+                    }}
+                    data-testid="button-cancel-cable-edit"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+            
             {/* Highlight cable being created */}
             {cableRoutingMode && cableStartNode && !cableDialogOpen && (
               <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1000] bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg">
@@ -2714,15 +2842,47 @@ export default function FiberNetwork() {
                   </div>
                 )}
 
-                <div className="border-t pt-4 mt-6">
-                  <Button
-                    variant="outline"
-                    className="w-full"
-                    onClick={() => setSelectedCable(null)}
-                    data-testid="button-close-cable-sheet"
-                  >
-                    Close
-                  </Button>
+                <div className="border-t pt-4 mt-6 space-y-2">
+                  {!cableEditMode ? (
+                    <>
+                      <Button
+                        variant="default"
+                        className="w-full"
+                        onClick={() => {
+                          if (!selectedCable.startNodeId) {
+                            toast({
+                              title: 'Error',
+                              description: 'Cannot edit this cable - missing node information.',
+                              variant: 'destructive',
+                            });
+                            return;
+                          }
+                          const waypoints = selectedCable.routeGeometry || [];
+                          setCableEditMode(true);
+                          setEditingCable(selectedCable);
+                          setEditingCableWaypoints(waypoints);
+                          setOriginalCableWaypoints(waypoints);
+                          setSelectedCable(null);
+                          toast({
+                            title: 'Edit Mode Active',
+                            description: 'Drag the waypoints to adjust the cable path. Click Save when done.',
+                          });
+                        }}
+                        data-testid="button-edit-cable-path"
+                      >
+                        <Edit className="w-4 h-4 mr-2" />
+                        Edit Path
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => setSelectedCable(null)}
+                        data-testid="button-close-cable-sheet"
+                      >
+                        Close
+                      </Button>
+                    </>
+                  ) : null}
                 </div>
               </div>
             </>
