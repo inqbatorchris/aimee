@@ -234,4 +234,61 @@ export class OCRService {
 
     return results;
   }
+
+  /**
+   * Extract a specific field from photos (workflow integration)
+   * Processes multiple photos with the same prompt and returns the first successful extraction
+   */
+  async extractFieldFromPhotos({
+    photos,
+    fieldPrompt,
+    organizationId,
+  }: {
+    photos: Array<{ url: string; fileName?: string; timestamp?: string }>;
+    fieldPrompt: string;
+    organizationId: number;
+  }): Promise<string | null> {
+    try {
+      console.log(`[OCRService] Extracting field from ${photos.length} photos`);
+      console.log(`[OCRService] Field prompt: ${fieldPrompt}`);
+
+      // Process each photo
+      for (const photo of photos) {
+        try {
+          console.log(`[OCRService] Processing photo: ${photo.fileName || photo.url.substring(0, 50)}`);
+          
+          // Extract from this photo
+          const result = await this.extractFromImage(
+            photo.url,
+            fieldPrompt,
+            {
+              structuredOutput: false, // Return plain text for field values
+              maxTokens: 100, // Short responses for field extraction
+              temperature: 0.1, // Very deterministic
+            }
+          );
+
+          if (result.success && result.extractedText) {
+            const extractedValue = result.extractedText.trim();
+            console.log(`[OCRService] Successfully extracted: ${extractedValue} (confidence: ${result.confidence}%)`);
+            
+            // Return the first successful extraction
+            // In future, could aggregate multiple photos or use confidence thresholds
+            return extractedValue;
+          } else {
+            console.log(`[OCRService] No value extracted from photo: ${result.error || 'empty result'}`);
+          }
+        } catch (photoError) {
+          console.error(`[OCRService] Error processing photo:`, photoError);
+          // Continue to next photo
+        }
+      }
+
+      console.log(`[OCRService] No value extracted from any of the ${photos.length} photos`);
+      return null;
+    } catch (error) {
+      console.error('[OCRService] extractFieldFromPhotos failed:', error);
+      return null;
+    }
+  }
 }
