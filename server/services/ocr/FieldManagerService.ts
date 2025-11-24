@@ -2,6 +2,7 @@ import { db } from '../../db';
 import { 
   customFieldDefinitions, 
   addresses,
+  addressRecords,
 } from '../../../shared/schema';
 import { eq, and } from 'drizzle-orm';
 
@@ -107,12 +108,13 @@ export class FieldManagerService {
 
   /**
    * Get the table schema for a given table name
-   * Currently supports: addresses
+   * Currently supports: addresses, address_records
    * TODO: Add support for customers, tickets, etc. as their schemas are extended with extractedData fields
    */
   private getTableSchema(tableName: string) {
     const tableMap: Record<string, any> = {
       addresses,
+      address_records: addressRecords,
       // Add more tables here as they're extended with extractedData fields:
       // customers,
       // tickets,
