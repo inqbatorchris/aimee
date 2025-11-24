@@ -578,29 +578,46 @@ class FieldDatabase {
   }
   
   // Clear cache (manual only, as requested)
-  async clearCache(): Promise<void> {
+  // Improved version with better error handling and batched operations
+  async clearCache(): Promise<{
+    cleared: string[];
+    failed: string[];
+    errors: Record<string, string>;
+  }> {
     const db = await this.ensureDB();
     
-    // Clear all stores except session
-    const tx = db.transaction([
+    const storesToClear = [
       'workItems', 
       'workflowTemplates', 
       'workflowExecutions', 
       'photos', 
       'syncQueue',
       'fiberNetworkNodes'
-    ], 'readwrite');
+    ] as const;
     
-    await Promise.all([
-      tx.objectStore('workItems').clear(),
-      tx.objectStore('workflowTemplates').clear(),
-      tx.objectStore('workflowExecutions').clear(),
-      tx.objectStore('photos').clear(),
-      tx.objectStore('syncQueue').clear(),
-      tx.objectStore('fiberNetworkNodes').clear()
-    ]);
+    const cleared: string[] = [];
+    const failed: string[] = [];
+    const errors: Record<string, string> = {};
     
-    await tx.done;
+    // Clear each store individually for precise error reporting
+    // This ensures we know exactly which stores failed
+    for (const store of storesToClear) {
+      try {
+        const tx = db.transaction([store as any], 'readwrite');
+        await tx.objectStore(store as any).clear();
+        await tx.done;
+        cleared.push(store);
+        console.log(`[FieldDB] Cleared store: ${store}`);
+      } catch (error: any) {
+        failed.push(store);
+        errors[store] = error.message || 'Unknown error';
+        console.error(`[FieldDB] Failed to clear ${store}:`, error);
+      }
+    }
+    
+    console.log('[FieldDB] Cache cleared:', { cleared, failed, errors });
+    
+    return { cleared, failed, errors };
   }
 }
 
