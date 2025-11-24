@@ -17,6 +17,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { MapPin, Search, X, FileText, Activity, Plus, Image as ImageIcon, Wrench, Trash2, Upload, Camera, Map, Table as TableIcon, Download, Settings, Eye, EyeOff, GripVertical, Square, CheckCircle, Hand, Pencil, Cable, Link2 } from 'lucide-react';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -248,6 +249,8 @@ export default function FiberNetwork() {
   const [selectedNodes, setSelectedNodes] = useState<number[]>([]);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const [bulkStatusValue, setBulkStatusValue] = useState<string>('');
+  const [showNodes, setShowNodes] = useState(true);
+  const [showCables, setShowCables] = useState(true);
 
   // Selection mode state
   const [selectionMode, setSelectionMode] = useState<'polygon' | 'click' | null>(null);
@@ -1571,7 +1574,7 @@ export default function FiberNetwork() {
             />
             
             {/* Cable Polylines */}
-            {(() => {
+            {showCables && (() => {
               // Collect all cables from nodes (avoid duplicates by tracking cable IDs)
               const renderedCables = new Set<string>();
               const cables: any[] = [];
@@ -1609,7 +1612,7 @@ export default function FiberNetwork() {
                   positions={cable.routeGeometry || []}
                   pathOptions={{
                     color: getCableColor(cable.status),
-                    weight: 3,
+                    weight: 5,
                     opacity: 0.8,
                   }}
                   eventHandlers={{
@@ -1647,7 +1650,7 @@ export default function FiberNetwork() {
               }
               return null;
             })()}
-            {filteredNodes.map((node) => {
+            {showNodes && filteredNodes.map((node) => {
               const isSelected = selectedNodes.includes(node.id);
               const isCableStartNode = cableStartNode?.id === node.id;
               
@@ -1849,6 +1852,55 @@ export default function FiberNetwork() {
                     </div>
                   </div>
                 )}
+
+                {/* Visibility Controls */}
+                <div className="space-y-1 pt-2 border-t mt-2">
+                  <Label className="text-[10px] font-medium">Visibility</Label>
+                  
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-[11px] text-gray-700">Show Nodes</span>
+                    <Switch
+                      checked={showNodes}
+                      onCheckedChange={setShowNodes}
+                      data-testid="switch-show-nodes"
+                    />
+                  </div>
+                  
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-[11px] text-gray-700">Show Cables</span>
+                    <Switch
+                      checked={showCables}
+                      onCheckedChange={setShowCables}
+                      data-testid="switch-show-cables"
+                    />
+                  </div>
+                  
+                  {/* Quick preset buttons */}
+                  <div className="flex gap-1 pt-1">
+                    <Button 
+                      onClick={() => {
+                        setShowNodes(false);
+                        setShowCables(true);
+                      }} 
+                      variant="outline"
+                      className="flex-1 h-6 text-[10px] px-1"
+                      data-testid="button-cables-only"
+                    >
+                      Cables Only
+                    </Button>
+                    <Button 
+                      onClick={() => {
+                        setShowNodes(true);
+                        setShowCables(true);
+                      }} 
+                      variant="outline"
+                      className="flex-1 h-6 text-[10px] px-1"
+                      data-testid="button-show-all"
+                    >
+                      Show All
+                    </Button>
+                  </div>
+                </div>
 
                 {/* Cable Routing Tools */}
                 {filteredNodes.length > 0 && (
