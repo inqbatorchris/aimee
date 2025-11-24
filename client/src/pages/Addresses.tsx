@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Download, RefreshCw, Eye, Loader2, Check, X, Settings, Filter, GripVertical, ArrowUpDown, Wrench, FileText, Activity, User } from 'lucide-react';
@@ -1554,6 +1554,27 @@ export default function Addresses() {
 
               {/* Details Tab */}
               <TabsContent value="details" className="space-y-6">
+                {/* Record Identifiers */}
+                <Card className="bg-muted/50">
+                  <CardContent className="pt-4">
+                    <div className="grid grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <div className="text-xs font-medium text-muted-foreground mb-1">Database ID</div>
+                        <div className="font-mono font-semibold">{selectedAddress.id}</div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-medium text-muted-foreground mb-1">Airtable Record</div>
+                        <div className="font-mono text-xs">{selectedAddress.airtableRecordId}</div>
+                      </div>
+                    </div>
+                    {selectedAddress.airtableFields.ID && (
+                      <div className="mt-3 pt-3 border-t text-xs text-muted-foreground">
+                        Note: The "ID" field in Airtable Data below ({selectedAddress.airtableFields.ID}) is synced data, not the database ID.
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+
                 {/* Extracted Fields from OCR */}
                 <ExtractedFieldsPanel 
                   extractedData={extractedData}

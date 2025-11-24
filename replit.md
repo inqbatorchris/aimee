@@ -5,6 +5,27 @@ Aimee.works is a Strategy Operating System (Strategy OS) designed to integrate s
 
 ## Recent Changes
 
+### November 2025 - OCR Data Extraction System
+**Problem Solved**: Need to automatically extract text data (serial numbers, MAC addresses, model numbers, etc.) from equipment photos during field installations and write it directly to source records.
+
+**Solution Implemented**:
+- **Photo Analysis Integration**: Added OCR capability to workflow photo steps via `photoAnalysisConfig` in template configuration
+- **Configurable Field Extraction**: Each photo step can define multiple fields to extract with custom prompts (e.g., "serial number", "MAC address")
+- **Dynamic Field Writing**: Extracted data automatically written to `extracted_data` JSONB column on source records (addresses, customers, etc.)
+- **Dual Activity Logging**: OCR events logged to both work item and source record activity feeds for full visibility
+- **Airtable Sync Safety**: `extracted_data` is local-only field, never overwritten during Airtable sync (like `localStatus`, `localNotes`)
+- **Table Name Mapping**: Entity type mapper converts table names to proper entity types for activity logs (`address_records` → `address`)
+
+**Technical Details**:
+- Files: `server/services/WorkItemWorkflowService.ts`, `server/services/ocr/OCRService.ts`, `server/services/ocr/FieldManagerService.ts`
+- UI: `client/src/components/ExtractedFieldsPanel.tsx` displays extracted fields with confidence scores and timestamps
+- Database: `address_records.extracted_data` JSONB column stores all OCR extractions
+- Configuration: Template photo steps define extraction targets via `photoAnalysisConfig.extractions[]`
+
+**UI Clarification**: Added prominent Database ID vs Airtable ID display in address detail panels to avoid confusion between database primary keys and Airtable sync data fields.
+
+**Impact**: Field workers can photograph equipment labels during installation, and serial numbers/MAC addresses/model numbers are automatically extracted and written to the correct address records without manual data entry.
+
 ### November 2025 - Field App Chunked Download System
 **Problem Solved**: Field app downloads were failing when downloading large numbers of work items or items with many high-resolution photos due to mobile browser memory limitations.
 
