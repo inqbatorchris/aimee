@@ -4499,11 +4499,12 @@ export class CleanDatabaseStorage implements ICleanStorage {
           airtableFields: mergedFields,
           lastSyncedAt: new Date(),
           updatedAt: new Date(),
-          // Preserve local-only fields
+          // Preserve local-only fields (never overwrite with Airtable data)
           localStatus: existingLocalFields?.localStatus ?? existing.localStatus,
           localNotes: existingLocalFields?.localNotes ?? existing.localNotes,
           workItemCount: existingLocalFields?.workItemCount ?? existing.workItemCount,
           lastWorkItemDate: existingLocalFields?.lastWorkItemDate ?? existing.lastWorkItemDate,
+          extractedData: existingLocalFields?.extractedData ?? existing.extractedData, // Preserve OCR-extracted data during sync
         })
         .where(eq(addressRecords.id, existing.id))
         .returning();
