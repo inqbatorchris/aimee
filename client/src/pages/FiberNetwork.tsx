@@ -2821,8 +2821,16 @@ export default function FiberNetwork() {
                       <Button
                         size="sm"
                         onClick={() => {
+                          // Generate automatic tray identifier: {NETWORK}-{NODE_NAME}-TRAY-{NUMBER}
+                          const network = selectedNode?.network || 'NETWORK';
+                          const nodeName = selectedNode?.name || 'NODE';
+                          // Count existing trays for this node to determine next number
+                          const existingTrays = selectedNode?.fiberDetails?.spliceTrays || [];
+                          const nextNumber = (existingTrays.length + 1).toString().padStart(3, '0');
+                          const autoTrayId = `${network}-${nodeName}-TRAY-${nextNumber}`;
+                          
                           setSpliceTrayFormData({
-                            trayIdentifier: '',
+                            trayIdentifier: autoTrayId,
                             description: '',
                           });
                           setSelectedSpliceTray(null);
@@ -3978,7 +3986,7 @@ export default function FiberNetwork() {
                     <SelectTrigger data-testid="select-left-cable">
                       <SelectValue placeholder="Select cable..." />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="z-[9999]" position="popper" sideOffset={4}>
                       {(selectedNode?.fiberDetails?.cables || []).map((cable: any) => (
                         <SelectItem key={cable.id} value={cable.id.toString()}>
                           {cable.cableIdentifier} ({cable.fiberCount || 0} fibers)
@@ -3996,7 +4004,7 @@ export default function FiberNetwork() {
                     <SelectTrigger data-testid="select-right-cable">
                       <SelectValue placeholder="Select cable..." />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="z-[9999]" position="popper" sideOffset={4}>
                       {(selectedNode?.fiberDetails?.cables || []).map((cable: any) => (
                         <SelectItem key={cable.id} value={cable.id.toString()}>
                           {cable.cableIdentifier} ({cable.fiberCount || 0} fibers)
