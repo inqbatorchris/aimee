@@ -244,7 +244,7 @@ export class OCRService {
     fieldPrompt,
     organizationId,
   }: {
-    photos: Array<{ url: string; fileName?: string; timestamp?: string }>;
+    photos: Array<{ data: string; fileName?: string; size?: number; uploadedAt?: string; uploadedBy?: number }>;
     fieldPrompt: string;
     organizationId: number;
   }): Promise<string | null> {
@@ -255,11 +255,12 @@ export class OCRService {
       // Process each photo
       for (const photo of photos) {
         try {
-          console.log(`[OCRService] Processing photo: ${photo.fileName || photo.url.substring(0, 50)}`);
+          const photoDesc = photo.fileName || `Photo (${Math.round((photo.size || 0) / 1024)}KB)`;
+          console.log(`[OCRService] Processing photo: ${photoDesc}`);
           
-          // Extract from this photo
+          // Extract from this photo using base64 data
           const result = await this.extractFromImage(
-            photo.url,
+            photo.data, // Base64 encoded image data
             fieldPrompt,
             {
               structuredOutput: false, // Return plain text for field values
