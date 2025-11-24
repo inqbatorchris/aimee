@@ -826,9 +826,10 @@ function PhotoAnalysisConfig({ config, onChange }: PhotoAnalysisConfigProps) {
 
   // Update state when config changes (e.g., when loading existing template)
   useEffect(() => {
-    setEnabled(!!photoAnalysisConfig?.enabled);
-    setExtractions(photoAnalysisConfig?.extractions || []);
-  }, [photoAnalysisConfig]);
+    const newPhotoAnalysisConfig = safeConfig.photoAnalysisConfig || null;
+    setEnabled(!!newPhotoAnalysisConfig?.enabled);
+    setExtractions(newPhotoAnalysisConfig?.extractions || []);
+  }, [config]); // Watch entire config object
 
   const handleToggle = (checked: boolean) => {
     setEnabled(checked);
