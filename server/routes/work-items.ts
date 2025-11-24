@@ -9,7 +9,7 @@ import {
 } from '@shared/schema';
 import { eq, and, or, gte, lte, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '../db';
-import { workItems, checkInCycles, checkInMeetings, users, keyResultTasks, teams, keyResults, objectives, knowledgeDocumentAttachments, knowledgeDocuments, workItemWorkflowExecutions, workItemWorkflowExecutionSteps, workItemSources } from '@shared/schema';
+import { workItems, checkInCycles, checkInMeetings, users, keyResultTasks, teams, keyResults, objectives, knowledgeDocumentAttachments, knowledgeDocuments, workItemWorkflowExecutions, workItemWorkflowExecutionSteps, workItemSources, addresses } from '@shared/schema';
 
 const router = Router();
 
@@ -598,26 +598,92 @@ router.post('/', authenticateToken, async (req: Request, res: Response) => {
       metadata: { title: data.title, status: data.status }
     });
     
-    // If this work item is associated with an address, also log activity for the address
+    // If this work item is associated with an address, ensure the address exists and link it
     const metadata = data.workflowMetadata as any;
-    if (metadata?.addressRecordId) {
-      await storage.logActivity({
-        organizationId,
-        userId,
-        actionType: 'creation',
-        entityType: 'address',
-        entityId: parseInt(metadata.addressRecordId),
-        description: `Work item "${data.title}" added to address`,
-        metadata: { workItemId: workItem.id, title: data.title, status: data.status }
-      });
+    if (metadata?.addressRecordId || metadata?.airtableRecordId) {
+      let addressId = metadata.addressRecordId ? parseInt(metadata.addressRecordId) : null;
       
-      // Create work_item_source record to link work item to address
-      await db.insert(workItemSources).values({
-        organizationId,
-        workItemId: workItem.id,
-        sourceTable: 'addresses',
-        sourceId: parseInt(metadata.addressRecordId)
-      });
+      // If addressRecordId is provided, verify it exists in database
+      if (addressId) {
+        const [existingAddress] = await db
+          .select()
+          .from(addresses)
+          .where(
+            and(
+              eq(addresses.id, addressId),
+              eq(addresses.organizationId, organizationId)
+            )
+          )
+          .limit(1);
+        
+        // If address doesn't exist, create it from Airtable data
+        if (!existingAddress && metadata.addressData) {
+          console.log(`[Work Item Creation] Address ID ${addressId} not found, creating from Airtable data`);
+          const addressData = metadata.addressData;
+          const fields = addressData.fields || {};
+          
+          const [newAddress] = await db.insert(addresses).values({
+            organizationId,
+            streetAddress: fields.street || fields.address || fields.summary,
+            city: fields.City || fields.city,
+            postcode: fields.postcode || fields.Postcode,
+            country: 'UK',
+            isActive: true,
+            createdBy: userId,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            extractedData: {},
+          }).returning();
+          
+          addressId = newAddress.id;
+          console.log(`[Work Item Creation] Created new address with ID ${addressId}`);
+        }
+      } else if (metadata.airtableRecordId && metadata.addressData) {
+        // No address ID provided but have Airtable data - create new address
+        console.log(`[Work Item Creation] Creating address from Airtable record ${metadata.airtableRecordId}`);
+        const addressData = metadata.addressData;
+        const fields = addressData.fields || {};
+        
+        const [newAddress] = await db.insert(addresses).values({
+          organizationId,
+          streetAddress: fields.street || fields.address || fields.summary,
+          city: fields.City || fields.city,
+          postcode: fields.postcode || fields.Postcode,
+          country: 'UK',
+          externalId: metadata.airtableRecordId,
+          isActive: true,
+          createdBy: userId,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          extractedData: {},
+        }).returning();
+        
+        addressId = newAddress.id;
+        console.log(`[Work Item Creation] Created new address with ID ${addressId}`);
+      }
+      
+      // Now create the work_item_source link if we have a valid address ID
+      if (addressId) {
+        await storage.logActivity({
+          organizationId,
+          userId,
+          actionType: 'creation',
+          entityType: 'address',
+          entityId: addressId,
+          description: `Work item "${data.title}" added to address`,
+          metadata: { workItemId: workItem.id, title: data.title, status: data.status }
+        });
+        
+        // Create work_item_source record to link work item to address
+        await db.insert(workItemSources).values({
+          organizationId,
+          workItemId: workItem.id,
+          sourceTable: 'addresses',
+          sourceId: addressId
+        });
+        
+        console.log(`[Work Item Creation] Linked work item ${workItem.id} to address ${addressId}`);
+      }
     }
     
     // Auto-initialize workflow execution if template is assigned
