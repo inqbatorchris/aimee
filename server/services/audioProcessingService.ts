@@ -68,12 +68,11 @@ class AudioProcessingService {
       throw new Error(`Audio file not found: ${fullPath}`);
     }
 
-    const fileBuffer = fs.readFileSync(fullPath);
-    const blob = new Blob([fileBuffer], { type: 'audio/webm' });
-    
-    const file = new File([blob], path.basename(fullPath), { type: 'audio/webm' });
+    // Use fs.createReadStream for Node.js - OpenAI SDK accepts ReadStream
+    const audioStream = fs.createReadStream(fullPath) as any;
+    audioStream.path = path.basename(fullPath); // Add filename for OpenAI
 
-    const response = await openaiService.createTranscription(file);
+    const response = await openaiService.createTranscription(audioStream);
     return response.text || '';
   }
 
