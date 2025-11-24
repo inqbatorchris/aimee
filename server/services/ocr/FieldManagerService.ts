@@ -149,27 +149,49 @@ export class FieldManagerService {
   }
 
   /**
+   * Convert snake_case or PascalCase to camelCase
+   */
+  private toCamelCase(str: string): string {
+    // Handle snake_case: "router_serial" → "routerSerial"
+    if (str.includes('_')) {
+      return str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+    }
+    
+    // Handle PascalCase: "RouterSerial" → "routerSerial"
+    if (str[0] === str[0].toUpperCase()) {
+      return str[0].toLowerCase() + str.slice(1);
+    }
+    
+    // Already camelCase
+    return str;
+  }
+
+  /**
    * Map field names to real database columns
    * Returns the database column name if it exists, otherwise null
+   * 
+   * This method converts OCR field names (which can be snake_case or PascalCase)
+   * to the camelCase column names used in the database schema.
    */
   private getColumnName(tableName: string, fieldName: string): string | null {
     // Address records have specific OCR columns
     if (tableName === 'address_records') {
-      const fieldMap: Record<string, string> = {
-        'RouterSerial': 'routerSerial',
-        'router_serial': 'routerSerial',
-        'Mac': 'routerMac',
-        'router_mac': 'routerMac',
-        'ModelNumber': 'routerModel',
-        'router_model': 'routerModel',
-        'ONUSerial': 'onuSerial',
-        'onu_serial': 'onuSerial',
-        'ONUMac': 'onuMac',
-        'onu_mac': 'onuMac',
-        'ONUModel': 'onuModel',
-        'onu_model': 'onuModel',
-      };
-      return fieldMap[fieldName] || null;
+      // List of known OCR columns in the schema (camelCase)
+      const knownColumns = [
+        'routerSerial', 'routerMac', 'routerModel',
+        'onuSerial', 'onuMac', 'onuModel',
+        'postcode', 'summary', 'address', 'premise', 'network', 'udprn', 'statusId'
+      ];
+      
+      // Convert input fieldName to camelCase
+      const camelCased = this.toCamelCase(fieldName);
+      
+      // Check if it matches a known column
+      if (knownColumns.includes(camelCased)) {
+        return camelCased;
+      }
+      
+      return null;
     }
     
     // Add support for other tables here as needed
