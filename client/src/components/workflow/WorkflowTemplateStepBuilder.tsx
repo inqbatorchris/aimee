@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { DndContext, closestCenter, KeyboardSensor, PointerSensor, useSensor, useSensors, DragEndEvent } from '@dnd-kit/core';
 import { arrayMove, SortableContext, sortableKeyboardCoordinates, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -821,8 +821,14 @@ function PhotoAnalysisConfig({ config, onChange }: PhotoAnalysisConfigProps) {
   // Defensive initialization: ensure config exists
   const safeConfig = config || {};
   const photoAnalysisConfig = safeConfig.photoAnalysisConfig || null;
-  const [enabled, setEnabled] = useState(!!photoAnalysisConfig);
+  const [enabled, setEnabled] = useState(!!photoAnalysisConfig?.enabled);
   const [extractions, setExtractions] = useState(photoAnalysisConfig?.extractions || []);
+
+  // Update state when config changes (e.g., when loading existing template)
+  useEffect(() => {
+    setEnabled(!!photoAnalysisConfig?.enabled);
+    setExtractions(photoAnalysisConfig?.extractions || []);
+  }, [photoAnalysisConfig]);
 
   const handleToggle = (checked: boolean) => {
     setEnabled(checked);
