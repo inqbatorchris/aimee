@@ -26,6 +26,7 @@ import { apiRequest, queryClient } from '@/lib/queryClient';
 import { createWorkItem } from '@/lib/workItems.api';
 import { useLocation } from 'wouter';
 import { useAuth } from '@/contexts/AuthContext';
+import { getColorForFiberNumber, FiberInfo } from '@shared/fiberColorStandards';
 
 // Fix Leaflet icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl;
