@@ -441,6 +441,31 @@ export class WorkItemWorkflowService {
     mappedData.organizationId = organizationId;
     mappedData.workItemId = workItemId;
 
+    // Extract fields from workflowMetadata if specified in callback
+    const [workItem] = await db
+      .select()
+      .from(workItems)
+      .where(eq(workItems.id, workItemId))
+      .limit(1);
+
+    const workflowMetadata = (workItem?.workflowMetadata as Record<string, any>) || {};
+    
+    // Check if callback specifies metadata fields to include
+    if (callback.metadataFields && Array.isArray(callback.metadataFields)) {
+      for (const metadataField of callback.metadataFields) {
+        if (workflowMetadata[metadataField] !== undefined) {
+          mappedData[metadataField] = workflowMetadata[metadataField];
+          console.log(`[Callback] Added metadata field ${metadataField} = ${workflowMetadata[metadataField]}`);
+        }
+      }
+    }
+
+    // Legacy: Always include fiberNodeId if it exists in workflowMetadata
+    if (workflowMetadata.fiberNodeId !== undefined) {
+      mappedData.fiberNodeId = workflowMetadata.fiberNodeId;
+      console.log(`[Callback] Added fiberNodeId from workflowMetadata = ${workflowMetadata.fiberNodeId}`);
+    }
+
     console.log(`[Callback] Mapped data:`, JSON.stringify(mappedData, null, 2));
 
     // Handle Splynx-specific callbacks (update ticket/task status)
