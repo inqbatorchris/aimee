@@ -57,6 +57,11 @@ export default function WorkflowStep({
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingStartTimeRef = useRef<number>(0);
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Splice documentation state (for AI-extracted splice data)
+  const [spliceConnections, setSpliceConnections] = useState<any[]>(data?.spliceConnections || []);
+  const [transcriptionText, setTranscriptionText] = useState<string>(data?.transcriptionText || '');
+  const [loadingAudioData, setLoadingAudioData] = useState(false);
 
   // Sync data prop changes to local state
   useEffect(() => {
@@ -67,6 +72,8 @@ export default function WorkflowStep({
       setAudioId(data.audioId || null);
       setAudioDuration(data.audioDuration || 0);
       setAudioSize(data.audioSize || 0);
+      setSpliceConnections(data.spliceConnections || []);
+      setTranscriptionText(data.transcriptionText || '');
     }
   }, [data]);
 
@@ -305,7 +312,12 @@ export default function WorkflowStep({
     const completeData = {
       ...stepData,
       completed: true,
-      completedAt: new Date().toISOString()
+      completedAt: new Date().toISOString(),
+      // Include splice documentation data if available
+      ...(spliceConnections.length > 0 && { spliceConnections }),
+      ...(transcriptionText && { transcriptionText }),
+      // Include audio data if available
+      ...(audioId && { audioId, audioDuration, audioSize })
     };
     onComplete(completeData);
   };
@@ -450,6 +462,10 @@ export default function WorkflowStep({
 
       case 'audio_recording':
         return audioId !== null;
+
+      case 'fiber_splice_documentation':
+        // Step is complete if we have splice connections data (human has reviewed)
+        return spliceConnections && spliceConnections.length > 0;
 
       default:
         return true;
@@ -807,6 +823,124 @@ export default function WorkflowStep({
                     Record Again
                   </Button>
                 )}
+              </div>
+            )}
+          </div>
+        );
+
+      case 'fiber_splice_documentation':
+        return (
+          <div className="space-y-4">
+            {/* Audio Player Section */}
+            {audioId && (
+              <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="h-10 w-10 bg-blue-900/50 rounded-full flex items-center justify-center">
+                    <Mic className="h-5 w-5 text-blue-400" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-white">Voice Memo</div>
+                    <div className="text-xs text-zinc-400">
+                      {audioDuration > 0 ? `Duration: ${Math.floor(audioDuration / 60)}:${(audioDuration % 60).toString().padStart(2, '0')}` : 'Audio recorded'}
+                    </div>
+                  </div>
+                </div>
+                {audioBlob && (
+                  <audio 
+                    controls 
+                    className="w-full mt-2"
+                    src={URL.createObjectURL(audioBlob)}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Loading State */}
+            {loadingAudioData && (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+                <span className="ml-3 text-zinc-400">Processing audio...</span>
+              </div>
+            )}
+
+            {/* Transcription Section */}
+            {transcriptionText && (
+              <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
+                <Label className="text-sm font-medium text-white mb-2 block">Transcription</Label>
+                <div className="text-sm text-zinc-300 whitespace-pre-wrap bg-zinc-800 rounded p-3">
+                  {transcriptionText}
+                </div>
+              </div>
+            )}
+
+            {/* Splice Connections Table */}
+            {spliceConnections && spliceConnections.length > 0 && (
+              <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
+                <Label className="text-sm font-medium text-white mb-3 block">
+                  Splice Connections ({spliceConnections.length})
+                </Label>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {spliceConnections.map((conn, idx) => (
+                    <div 
+                      key={idx} 
+                      className="bg-zinc-800 border border-zinc-700 rounded-lg p-3 text-sm"
+                    >
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <div className="text-xs text-zinc-500 mb-1">Incoming</div>
+                          <div className="text-white font-medium">
+                            {conn.incomingCable || 'N/A'}
+                          </div>
+                          <div className="text-zinc-400 text-xs mt-1">
+                            Fiber: {conn.incomingFiber || 'N/A'}
+                            {conn.incomingBufferTube && ` • Tube: ${conn.incomingBufferTube}`}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-zinc-500 mb-1">Outgoing</div>
+                          <div className="text-white font-medium">
+                            {conn.outgoingCable || 'N/A'}
+                          </div>
+                          <div className="text-zinc-400 text-xs mt-1">
+                            Fiber: {conn.outgoingFiber || 'N/A'}
+                            {conn.outgoingBufferTube && ` • Tube: ${conn.outgoingBufferTube}`}
+                          </div>
+                        </div>
+                      </div>
+                      {conn.notes && (
+                        <div className="mt-2 pt-2 border-t border-zinc-700">
+                          <div className="text-xs text-zinc-500">Notes</div>
+                          <div className="text-zinc-300 text-xs mt-1">{conn.notes}</div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* No Data State */}
+            {!loadingAudioData && (!spliceConnections || spliceConnections.length === 0) && !transcriptionText && (
+              <div className="text-center py-8 bg-zinc-900 border border-zinc-700 rounded-lg">
+                <p className="text-sm text-zinc-400">
+                  No splice documentation data available yet.
+                </p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Audio will be processed automatically after upload.
+                </p>
+              </div>
+            )}
+
+            {/* Human Review Status */}
+            {spliceConnections && spliceConnections.length > 0 && (
+              <div className="bg-emerald-950/20 border border-emerald-900/50 rounded-lg p-3 flex items-start gap-2">
+                <Check className="h-5 w-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <div className="font-medium text-emerald-400">Ready for Verification</div>
+                  <div className="text-xs text-zinc-400 mt-1">
+                    Review the extracted connections above. When satisfied, complete this step to save them to the fiber node.
+                  </div>
+                </div>
               </div>
             )}
           </div>
