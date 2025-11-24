@@ -77,6 +77,51 @@ export default function WorkflowStep({
     }
   }, [data]);
 
+  // Load splice documentation data from audio recording API
+  useEffect(() => {
+    const loadSpliceData = async () => {
+      if (step.type === 'fiber_splice_documentation' && audioId && !loadingAudioData) {
+        setLoadingAudioData(true);
+        try {
+          const response = await fetch(`/api/field-app/audio-recordings/${audioId}`, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          });
+          
+          if (response.ok) {
+            const { audioRecording } = await response.json();
+            
+            // Update state with extracted data
+            if (audioRecording.transcription) {
+              setTranscriptionText(audioRecording.transcription);
+            }
+            if (audioRecording.extractedData?.connections) {
+              setSpliceConnections(audioRecording.extractedData.connections);
+            }
+            
+            // Update step data using functional setState to avoid closure issues
+            setStepData(prev => ({
+              ...prev,
+              transcriptionText: audioRecording.transcription || '',
+              spliceConnections: audioRecording.extractedData?.connections || [],
+              audioReference: audioId,
+              audioId,
+              audioDuration,
+              audioSize
+            }));
+          }
+        } catch (error) {
+          console.error('Failed to load splice documentation data:', error);
+        } finally {
+          setLoadingAudioData(false);
+        }
+      }
+    };
+    
+    loadSpliceData();
+  }, [step.type, audioId, audioDuration, audioSize]);
+
   // Load audio blob if audioId exists
   useEffect(() => {
     const loadAudio = async () => {
@@ -312,12 +357,7 @@ export default function WorkflowStep({
     const completeData = {
       ...stepData,
       completed: true,
-      completedAt: new Date().toISOString(),
-      // Include splice documentation data if available
-      ...(spliceConnections.length > 0 && { spliceConnections }),
-      ...(transcriptionText && { transcriptionText }),
-      // Include audio data if available
-      ...(audioId && { audioId, audioDuration, audioSize })
+      completedAt: new Date().toISOString()
     };
     onComplete(completeData);
   };
