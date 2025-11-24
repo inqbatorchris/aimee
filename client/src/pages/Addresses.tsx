@@ -5,12 +5,11 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Download, RefreshCw, Eye, Loader2, Check, X, Settings, Filter, GripVertical, ArrowUpDown, Wrench, FileText, Activity, User } from 'lucide-react';
+import { Download, RefreshCw, Eye, Loader2, Check, X, Settings, Filter, GripVertical, ArrowUpDown, Wrench, FileText, Activity, User, Bot } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient } from '@/lib/queryClient';
 import { createWorkItem } from '@/lib/workItems.api';
 import WorkItemPanel from '@/components/work-items/WorkItemPanel';
-import { ExtractedFieldsPanel } from '@/components/ExtractedFieldsPanel';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -320,16 +319,13 @@ export default function Addresses() {
     queryKey: ['/api/work-items/users'],
   });
   
-  // Fetch detailed address data when an address is selected (for extracted fields)
+  // Fetch detailed address data when an address is selected
   const { data: addressDetailData, isLoading: isLoadingAddressDetail } = useQuery<{
     address: AddressRecord;
-    extractedData: Record<string, any>;
   }>({
     queryKey: [`/api/addresses/${selectedAddress?.id}`],
     enabled: !!selectedAddress?.id,
   });
-  
-  const extractedData = addressDetailData?.extractedData || {};
   
   // Poll for sync progress
   useEffect(() => {
@@ -354,7 +350,9 @@ export default function Addresses() {
   }, [latestSyncLog, addresses.length]);
   
   // Fetch available columns dynamically from backend
-  const { data: columnMetadata, isLoading: isLoadingColumns } = useQuery({
+  const { data: columnMetadata, isLoading: isLoadingColumns } = useQuery<{
+    columns: Array<{ key: string; category: string; label: string }>;
+  }>({
     queryKey: ['/api/addresses/metadata/columns'],
   });
   
@@ -556,10 +554,9 @@ export default function Addresses() {
       // Create work items for all selected addresses
       const promises = addressesToProcess.map(address => {
         // Extract useful address info - prioritize summary (full address)
-        const addressName = address.airtableFields.summary || 
-                           address.airtableFields.name || 
-                           address.airtableFields.address || 
-                           address.airtableFields.street || 
+        const addressName = address.summary || 
+                           address.address || 
+                           address.premise || 
                            `Address ${address.id}`;
         
         const workItemData = {
@@ -579,7 +576,11 @@ export default function Addresses() {
             airtableRecordId: address.airtableRecordId,
             addressData: {
               name: addressName,
-              fields: address.airtableFields,
+              summary: address.summary,
+              address: address.address,
+              premise: address.premise,
+              postcode: address.postcode,
+              network: address.network,
             },
           },
         };
@@ -1559,12 +1560,6 @@ export default function Addresses() {
                   </CardContent>
                 </Card>
 
-                {/* Extracted Fields from OCR */}
-                <ExtractedFieldsPanel 
-                  extractedData={extractedData}
-                  loading={isLoadingAddressDetail}
-                />
-                
                 {/* Address Information */}
                 <div>
                   <h3 className="text-sm font-semibold mb-3">Address Information</h3>
@@ -1613,6 +1608,160 @@ export default function Addresses() {
                     )}
                   </div>
                 </div>
+
+                {/* OCR-Extracted Equipment Data */}
+                {(selectedAddress.routerSerial || selectedAddress.routerMac || selectedAddress.routerModel || 
+                  selectedAddress.onuSerial || selectedAddress.onuMac || selectedAddress.onuModel) && (
+                  <Card>
+                    <CardContent className="pt-4">
+                      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                        <Bot className="h-4 w-4 text-blue-500" />
+                        Equipment Data (OCR Extracted)
+                      </h3>
+                      <div className="space-y-2">
+                        {/* Router Information */}
+                        {(selectedAddress.routerSerial || selectedAddress.routerMac || selectedAddress.routerModel) && (
+                          <div className="space-y-2">
+                            <div className="text-xs font-semibold text-muted-foreground">Router</div>
+                            {selectedAddress.routerSerial && (
+                              <div className="flex gap-2 bg-blue-50 dark:bg-blue-950/20 -mx-2 px-2 py-1.5 rounded">
+                                <div className="text-sm font-medium text-gray-600 w-1/3">Serial:</div>
+                                <div className="text-sm flex-1 font-mono">{selectedAddress.routerSerial}</div>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <button className="text-blue-500 hover:text-blue-700">
+                                      <Bot className="h-3 w-3" />
+                                    </button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-80">
+                                    <div className="space-y-2 text-xs">
+                                      <div className="font-semibold text-sm">OCR Extraction Details</div>
+                                      <div className="text-muted-foreground">
+                                        This field was automatically extracted from a photo using AI-powered OCR.
+                                      </div>
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              </div>
+                            )}
+                            {selectedAddress.routerMac && (
+                              <div className="flex gap-2 bg-blue-50 dark:bg-blue-950/20 -mx-2 px-2 py-1.5 rounded">
+                                <div className="text-sm font-medium text-gray-600 w-1/3">MAC:</div>
+                                <div className="text-sm flex-1 font-mono">{selectedAddress.routerMac}</div>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <button className="text-blue-500 hover:text-blue-700">
+                                      <Bot className="h-3 w-3" />
+                                    </button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-80">
+                                    <div className="space-y-2 text-xs">
+                                      <div className="font-semibold text-sm">OCR Extraction Details</div>
+                                      <div className="text-muted-foreground">
+                                        This field was automatically extracted from a photo using AI-powered OCR.
+                                      </div>
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              </div>
+                            )}
+                            {selectedAddress.routerModel && (
+                              <div className="flex gap-2 bg-blue-50 dark:bg-blue-950/20 -mx-2 px-2 py-1.5 rounded">
+                                <div className="text-sm font-medium text-gray-600 w-1/3">Model:</div>
+                                <div className="text-sm flex-1">{selectedAddress.routerModel}</div>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <button className="text-blue-500 hover:text-blue-700">
+                                      <Bot className="h-3 w-3" />
+                                    </button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-80">
+                                    <div className="space-y-2 text-xs">
+                                      <div className="font-semibold text-sm">OCR Extraction Details</div>
+                                      <div className="text-muted-foreground">
+                                        This field was automatically extracted from a photo using AI-powered OCR.
+                                      </div>
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* ONU Information */}
+                        {(selectedAddress.onuSerial || selectedAddress.onuMac || selectedAddress.onuModel) && (
+                          <div className="space-y-2 mt-4">
+                            <div className="text-xs font-semibold text-muted-foreground">ONU</div>
+                            {selectedAddress.onuSerial && (
+                              <div className="flex gap-2 bg-blue-50 dark:bg-blue-950/20 -mx-2 px-2 py-1.5 rounded">
+                                <div className="text-sm font-medium text-gray-600 w-1/3">Serial:</div>
+                                <div className="text-sm flex-1 font-mono">{selectedAddress.onuSerial}</div>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <button className="text-blue-500 hover:text-blue-700">
+                                      <Bot className="h-3 w-3" />
+                                    </button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-80">
+                                    <div className="space-y-2 text-xs">
+                                      <div className="font-semibold text-sm">OCR Extraction Details</div>
+                                      <div className="text-muted-foreground">
+                                        This field was automatically extracted from a photo using AI-powered OCR.
+                                      </div>
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              </div>
+                            )}
+                            {selectedAddress.onuMac && (
+                              <div className="flex gap-2 bg-blue-50 dark:bg-blue-950/20 -mx-2 px-2 py-1.5 rounded">
+                                <div className="text-sm font-medium text-gray-600 w-1/3">MAC:</div>
+                                <div className="text-sm flex-1 font-mono">{selectedAddress.onuMac}</div>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <button className="text-blue-500 hover:text-blue-700">
+                                      <Bot className="h-3 w-3" />
+                                    </button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-80">
+                                    <div className="space-y-2 text-xs">
+                                      <div className="font-semibold text-sm">OCR Extraction Details</div>
+                                      <div className="text-muted-foreground">
+                                        This field was automatically extracted from a photo using AI-powered OCR.
+                                      </div>
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              </div>
+                            )}
+                            {selectedAddress.onuModel && (
+                              <div className="flex gap-2 bg-blue-50 dark:bg-blue-950/20 -mx-2 px-2 py-1.5 rounded">
+                                <div className="text-sm font-medium text-gray-600 w-1/3">Model:</div>
+                                <div className="text-sm flex-1">{selectedAddress.onuModel}</div>
+                                <Popover>
+                                  <PopoverTrigger asChild>
+                                    <button className="text-blue-500 hover:text-blue-700">
+                                      <Bot className="h-3 w-3" />
+                                    </button>
+                                  </PopoverTrigger>
+                                  <PopoverContent className="w-80">
+                                    <div className="space-y-2 text-xs">
+                                      <div className="font-semibold text-sm">OCR Extraction Details</div>
+                                      <div className="text-muted-foreground">
+                                        This field was automatically extracted from a photo using AI-powered OCR.
+                                      </div>
+                                    </div>
+                                  </PopoverContent>
+                                </Popover>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
                 
                 {/* Local Management Fields */}
                 <div>

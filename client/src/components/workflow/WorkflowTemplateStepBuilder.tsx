@@ -864,7 +864,7 @@ function PhotoAnalysisConfig({ config, onChange }: PhotoAnalysisConfigProps) {
       id: `extraction-${Date.now()}`,
       displayLabel: '',
       extractionPrompt: '',
-      targetTable: 'addresses',
+      targetTable: 'address_records',
       targetField: '',
       autoCreateField: true,
     };
@@ -942,7 +942,7 @@ function PhotoAnalysisConfig({ config, onChange }: PhotoAnalysisConfigProps) {
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
         body: JSON.stringify({
-          tableName: extraction.targetTable || 'address_records',
+          tableName: 'address_records', // Always use address_records (only supported table)
           fieldName: extraction.targetField,
           displayLabel: extraction.displayLabel,
           extractionPrompt: extraction.extractionPrompt,
@@ -1099,14 +1099,14 @@ function PhotoAnalysisConfig({ config, onChange }: PhotoAnalysisConfigProps) {
                         <select
                           id={`extraction-table-${index}`}
                           className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
-                          value={extraction.targetTable || 'addresses'}
+                          value={extraction.targetTable || 'address_records'}
                           onChange={e => handleUpdateExtraction(index, { targetTable: e.target.value })}
                           data-testid={`select-extraction-table-${index}`}
                         >
-                          <option value="addresses">Addresses (supported)</option>
+                          <option value="address_records">Address Records</option>
                         </select>
                         <p className="text-xs text-muted-foreground">
-                          Only Addresses table is currently supported
+                          OCR extraction configured for address_records table
                         </p>
                       </div>
 

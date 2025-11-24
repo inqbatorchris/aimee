@@ -174,7 +174,19 @@ export class AnalyzeImageOCRAction {
             continue;
           }
 
-          console.log(`[AnalyzeImageOCR] Extracting "${displayLabel}" (${targetTable}.${targetField})`);
+          // VALIDATION: Verify field exists before attempting extraction
+          const columnName = this.fieldManager.getColumnName(targetTable, targetField);
+          if (!columnName) {
+            const knownColumns = this.fieldManager.getKnownColumns(targetTable);
+            const errorMsg = `Field "${targetField}" does not exist on table "${targetTable}". ` +
+              `Available columns: ${knownColumns.join(', ')}. ` +
+              `Please create this field in the workflow template configuration before using it.`;
+            errors.push(errorMsg);
+            console.error(`[AnalyzeImageOCR] ${errorMsg}`);
+            continue; // Skip this extraction
+          }
+
+          console.log(`[AnalyzeImageOCR] Extracting "${displayLabel}" (${targetTable}.${targetField} → ${columnName})`);
 
           // Execute OCR extraction
           const ocrResult = await this.ocrService.extractFromImage(
@@ -219,27 +231,13 @@ export class AnalyzeImageOCRAction {
             targetTable,
           };
 
-          // Auto-create field definition if needed (BEFORE updating the record)
-          if (extraction.autoCreateField && !extraction.fieldId) {
-            try {
-              await this.fieldManager.createOrUpdateFieldDefinition({
-                organizationId,
-                tableName: targetTable,
-                fieldName: targetField,
-                displayLabel,
-                fieldType: 'text',
-                description: `Auto-created from OCR extraction`,
-                extractionPrompt: extraction.extractionPrompt,
-              });
-
-              console.log(`[AnalyzeImageOCR] Auto-created field definition: ${targetTable}.${targetField}`);
-            } catch (error) {
-              console.warn(`[AnalyzeImageOCR] Failed to auto-create field:`, error);
-            }
-          }
-
           // Update the source record with extracted data
+          // NOTE: Field validation already passed above, so we know the column exists
           try {
+            if (!sourceId) {
+              throw new Error('Source record ID not found');
+            }
+            
             const updated = await this.fieldManager.updateDynamicField({
               organizationId,
               tableName: targetTable,

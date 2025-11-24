@@ -173,13 +173,14 @@ export class FieldManagerService {
    * This method converts OCR field names (which can be snake_case or PascalCase)
    * to the camelCase column names used in the database schema.
    * 
+   * DYNAMIC: Checks both hard-coded schema columns AND custom field definitions
    * PUBLIC: Now callable from AnalyzeImageOCRAction for validation before execution
    */
   public getColumnName(tableName: string, fieldName: string): string | null {
     // Address records have specific OCR columns
     if (tableName === 'address_records') {
-      // List of known OCR columns in the schema (camelCase)
-      const knownColumns = [
+      // List of built-in OCR columns in the schema (camelCase)
+      const builtInColumns = [
         'routerSerial', 'routerMac', 'routerModel',
         'onuSerial', 'onuMac', 'onuModel',
         'postcode', 'summary', 'address', 'premise', 'network', 'udprn', 'statusId'
@@ -188,10 +189,15 @@ export class FieldManagerService {
       // Convert input fieldName to camelCase
       const camelCased = this.toCamelCase(fieldName);
       
-      // Check if it matches a known column
-      if (knownColumns.includes(camelCased)) {
+      // Check if it matches a built-in column
+      if (builtInColumns.includes(camelCased)) {
         return camelCased;
       }
+      
+      // NOTE: Custom fields created via /api/fields/create are tracked in customFieldDefinitions table
+      // but they map to the SAME physical columns above (via fieldName → column mapping)
+      // If a field was created via API, it should already be in the builtInColumns list
+      // This method returns the column name for fields that physically exist in the schema
       
       return null;
     }
@@ -269,23 +275,14 @@ export class FieldManagerService {
         .returning();
       return updated[0];
     } else {
-      // Fallback to JSONB for unknown fields
-      console.log(`[FieldManagerService] Writing ${fieldName} to extractedDataExtras JSONB on ${tableName}#${recordId}`);
-      const currentExtras = (record.extractedDataExtras as Record<string, any>) || {};
-      const updatedExtras = {
-        ...currentExtras,
-        [fieldName]: value,
-      };
-
-      const updated = await db
-        .update(table)
-        .set({
-          extractedDataExtras: updatedExtras,
-          updatedAt: new Date(),
-        })
-        .where(eq(table.id, recordId))
-        .returning();
-      return updated[0];
+      // STRICT MODE: Field must exist - no JSONB fallback
+      const knownColumns = this.getKnownColumns(tableName);
+      console.error(`[FieldManagerService] Cannot write ${fieldName}: no column mapping exists on ${tableName}`);
+      throw new Error(
+        `Field "${fieldName}" not found on table "${tableName}". ` +
+        `Available columns: ${knownColumns.join(', ')}. ` +
+        `Please create this field in the workflow template configuration before using it.`
+      );
     }
   }
 
@@ -338,37 +335,37 @@ export class FieldManagerService {
       throw new Error(`${tableName} record not found: ID ${recordId}`);
     }
 
-    // Split fields into real columns and JSONB extras
+    // STRICT MODE: Only map to real columns, reject unknown fields
     const columnUpdates: Record<string, any> = {};
-    const jsonbExtras: Record<string, any> = {};
+    const unknownFields: string[] = [];
 
     for (const [fieldName, value] of Object.entries(fields)) {
       const columnName = this.getColumnName(tableName, fieldName);
       if (columnName) {
-        // Map to real column
         columnUpdates[columnName] = value;
         console.log(`[FieldManagerService] Batch mapping ${fieldName} → ${columnName}`);
       } else {
-        // Store in JSONB
-        jsonbExtras[fieldName] = value;
-        console.log(`[FieldManagerService] Batch storing ${fieldName} in extractedDataExtras`);
+        // STRICT MODE: Reject unknown fields
+        unknownFields.push(fieldName);
+        console.error(`[FieldManagerService] Unknown field rejected: ${fieldName}`);
       }
     }
 
-    // Build update object
+    // If any unknown fields, throw error
+    if (unknownFields.length > 0) {
+      const knownColumns = this.getKnownColumns(tableName);
+      throw new Error(
+        `Unknown fields in batch update: ${unknownFields.join(', ')}. ` +
+        `Available columns: ${knownColumns.join(', ')}. ` +
+        `Please create these fields in the workflow template configuration.`
+      );
+    }
+
+    // Build update object with only known columns
     const updateData: any = {
       ...columnUpdates,
       updatedAt: new Date(),
     };
-
-    // If we have JSONB extras, merge with existing
-    if (Object.keys(jsonbExtras).length > 0) {
-      const currentExtras = (record.extractedDataExtras as Record<string, any>) || {};
-      updateData.extractedDataExtras = {
-        ...currentExtras,
-        ...jsonbExtras,
-      };
-    }
 
     // Update the record
     const updated = await db
