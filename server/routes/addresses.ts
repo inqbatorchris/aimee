@@ -32,6 +32,36 @@ async function logActivity(
   }
 }
 
+// Get available columns metadata (dynamic discovery from schema + custom fields)
+router.get('/metadata/columns', authenticateToken, async (req: any, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    
+    // Get schema-derived columns from address_records table
+    // These are the real database columns we can query
+    const schemaColumns = [
+      { key: 'postcode', label: 'Postcode', category: 'airtable' },
+      { key: 'summary', label: 'Summary', category: 'airtable' },
+      { key: 'address', label: 'Address', category: 'airtable' },
+      { key: 'premise', label: 'Premise', category: 'airtable' },
+      { key: 'network', label: 'Network', category: 'airtable' },
+      { key: 'udprn', label: 'UDPRN', category: 'airtable' },
+      { key: 'statusId', label: 'Status', category: 'airtable' },
+      { key: 'routerSerial', label: 'Router Serial', category: 'ocr' },
+      { key: 'routerMac', label: 'Router MAC', category: 'ocr' },
+      { key: 'routerModel', label: 'Router Model', category: 'ocr' },
+      { key: 'onuSerial', label: 'ONU Serial', category: 'ocr' },
+      { key: 'onuMac', label: 'ONU MAC', category: 'ocr' },
+      { key: 'onuModel', label: 'ONU Model', category: 'ocr' },
+    ];
+    
+    res.json({ columns: schemaColumns });
+  } catch (error: any) {
+    console.error('Error fetching column metadata:', error);
+    res.status(500).json({ error: 'Failed to fetch column metadata' });
+  }
+});
+
 // Get sync logs
 router.get('/sync-logs', authenticateToken, async (req: any, res) => {
   try {
@@ -186,13 +216,22 @@ router.get('/:id', authenticateToken, async (req: any, res) => {
       'creation', // Using 'creation' as it's the closest to 'view'
       'address',
       address.id,
-      `Viewed address ${address.airtableFields.Street || address.airtableFields.summary || address.airtableRecordId}`,
+      `Viewed address ${address.summary || address.address || address.airtableRecordId}`,
       { action: 'view', airtableRecordId: address.airtableRecordId }
     );
     
+    // Build extracted data from OCR columns
+    const extractedData: Record<string, any> = {};
+    if (address.routerSerial) extractedData.routerSerial = address.routerSerial;
+    if (address.routerMac) extractedData.routerMac = address.routerMac;
+    if (address.routerModel) extractedData.routerModel = address.routerModel;
+    if (address.onuSerial) extractedData.onuSerial = address.onuSerial;
+    if (address.onuMac) extractedData.onuMac = address.onuMac;
+    if (address.onuModel) extractedData.onuModel = address.onuModel;
+    
     res.json({ 
       address,
-      extractedData: address.extractedData || {}
+      extractedData
     });
   } catch (error: any) {
     console.error('Error fetching address:', error);
@@ -223,7 +262,7 @@ router.patch('/:id', authenticateToken, async (req: any, res) => {
         'status_change',
         'address',
         address.id,
-        `Changed status to "${localStatus}" for address ${address.airtableFields.Street || address.airtableFields.summary || address.airtableRecordId}`,
+        `Changed status to "${localStatus}" for address ${address.summary || address.address || address.airtableRecordId}`,
         { 
           previousStatus: address.localStatus,
           newStatus: localStatus,

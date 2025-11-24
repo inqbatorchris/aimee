@@ -353,26 +353,23 @@ export default function Addresses() {
     }
   }, [latestSyncLog, addresses.length]);
   
-  // Searchable Airtable columns (real database columns)
-  const airtableColumns = [
-    'postcode',
-    'summary',
-    'address',
-    'premise',
-    'network',
-    'udprn',
-    'statusId',
-  ];
+  // Fetch available columns dynamically from backend
+  const { data: columnMetadata, isLoading: isLoadingColumns } = useQuery({
+    queryKey: ['/api/addresses/metadata/columns'],
+  });
   
-  // OCR extracted columns (real database columns)
-  const ocrColumns = [
-    'routerSerial',
-    'routerMac',
-    'routerModel',
-    'onuSerial',
-    'onuMac',
-    'onuModel',
-  ];
+  // Parse column metadata into categories
+  const airtableColumns = useMemo(() => {
+    return columnMetadata?.columns
+      ?.filter((col: any) => col.category === 'airtable')
+      ?.map((col: any) => col.key) || [];
+  }, [columnMetadata]);
+  
+  const ocrColumns = useMemo(() => {
+    return columnMetadata?.columns
+      ?.filter((col: any) => col.category === 'ocr')
+      ?.map((col: any) => col.key) || [];
+  }, [columnMetadata]);
   
   // System columns (local-only fields)
   const systemColumns = ['localStatus', 'workItems'];
@@ -380,7 +377,7 @@ export default function Addresses() {
   // All available columns
   const allColumns = useMemo(() => {
     return [...airtableColumns, ...ocrColumns, ...systemColumns];
-  }, []);
+  }, [airtableColumns, ocrColumns]);
   
   // Initialize column order and visibility with first 6 Airtable columns + system columns
   useEffect(() => {

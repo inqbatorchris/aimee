@@ -798,17 +798,66 @@ router.get('/connections/:connectionId/export-addresses-csv', async (req, res) =
       return res.status(404).json({ error: 'No addresses found' });
     }
     
-    // Export using real columns (searchable Airtable fields + OCR fields)
-    const headers = [
-      'id', 'postcode', 'summary', 'address', 'premise', 'network', 'udprn', 
-      'statusId', 'routerSerial', 'routerMac', 'routerModel', 
-      'onuSerial', 'onuMac', 'onuModel', 'localStatus', 'localNotes'
-    ];
+    // Get latest snapshot to extract all available Airtable fields dynamically
+    const latestSnapshot = await db
+      .select()
+      .from(airtableAddressSnapshots)
+      .where(eq(airtableAddressSnapshots.organizationId, user.organizationId))
+      .orderBy(desc(airtableAddressSnapshots.syncedAt))
+      .limit(1);
+    
+    // Get all OCR fields from custom field definitions
+    const ocrFields = await db
+      .select()
+      .from(customFieldDefinitions)
+      .where(and(
+        eq(customFieldDefinitions.organizationId, user.organizationId),
+        eq(customFieldDefinitions.entityType, 'address'),
+        eq(customFieldDefinitions.isAutoCreated, true)
+      ));
+    
+    // Build headers dynamically
+    const baseHeaders = ['id'];
+    const ocrHeaders = ocrFields.map(f => f.fieldName);
+    const snapshotHeaders = latestSnapshot.length > 0 
+      ? Object.keys(latestSnapshot[0].airtableFields || {})
+      : [];
+    const localHeaders = ['localStatus', 'localNotes'];
+    
+    const headers = [...baseHeaders, ...snapshotHeaders, ...ocrHeaders, ...localHeaders];
     const csvRows = [headers.join(',')];
+    
+    // Get snapshot data for each address for complete field coverage
+    const snapshotsByRecordId = new Map();
+    if (latestSnapshot.length > 0) {
+      const snapshots = await db
+        .select()
+        .from(airtableAddressSnapshots)
+        .where(and(
+          eq(airtableAddressSnapshots.organizationId, user.organizationId),
+          eq(airtableAddressSnapshots.airtableConnectionId, connectionId)
+        ));
+      
+      snapshots.forEach(s => {
+        snapshotsByRecordId.set(s.airtableRecordId, s.airtableFields);
+      });
+    }
     
     for (const addr of addresses) {
       const values = headers.map(h => {
-        const val = (addr as any)[h];
+        let val;
+        
+        // Get value from appropriate source
+        if (h === 'id' || h === 'localStatus' || h === 'localNotes') {
+          val = (addr as any)[h];
+        } else if (ocrHeaders.includes(h)) {
+          val = (addr as any)[h]; // OCR fields are real columns on address_records
+        } else {
+          // Airtable fields from snapshot
+          const snapshot = snapshotsByRecordId.get(addr.airtableRecordId);
+          val = snapshot?.[h];
+        }
+        
         // Escape commas and quotes
         if (val === null || val === undefined) return '';
         const str = String(val);
