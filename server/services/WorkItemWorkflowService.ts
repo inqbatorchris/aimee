@@ -870,74 +870,146 @@ export class WorkItemWorkflowService {
             
             console.log(`[OCR] Processing extraction: ${extractionPrompt} -> ${targetTable}.${targetField}`);
 
-            // Get target record ID from work_item_sources
-            const [source] = await db
-              .select()
-              .from(workItemSources)
-              .where(
-                and(
-                  eq(workItemSources.workItemId, workItemId),
-                  eq(workItemSources.organizationId, organizationId)
+            try {
+              // Get target record ID from work_item_sources
+              const [source] = await db
+                .select()
+                .from(workItemSources)
+                .where(
+                  and(
+                    eq(workItemSources.workItemId, workItemId),
+                    eq(workItemSources.organizationId, organizationId)
+                  )
                 )
-              )
-              .limit(1);
+                .limit(1);
 
-            if (!source || source.sourceTable !== targetTable) {
-              console.log(`[OCR] No matching source record found for ${targetTable}`);
-              continue;
-            }
+              if (!source || source.sourceTable !== targetTable) {
+                const errorMsg = `No matching source record found for ${targetTable}`;
+                console.log(`[OCR] ${errorMsg}`);
+                
+                // Log failed extraction attempt
+                await db.insert(activityLogs).values({
+                  organizationId,
+                  userId: null,
+                  actionType: 'ocr_extraction_failed',
+                  entityType: 'work_item',
+                  entityId: workItemId,
+                  description: `OCR extraction failed: ${errorMsg}`,
+                  metadata: {
+                    workItemId,
+                    executionId,
+                    stepId: templateStep.id,
+                    targetField,
+                    targetTable,
+                    extractionPrompt,
+                    error: errorMsg,
+                  },
+                });
+                
+                continue;
+              }
 
-            const targetRecordId = source.sourceId;
-            console.log(`[OCR] Target record: ${targetTable}#${targetRecordId}`);
+              const targetRecordId = source.sourceId;
+              console.log(`[OCR] Target record: ${targetTable}#${targetRecordId}`);
 
-            // Run OCR extraction
-            const { OCRService } = await import('./ocr/OCRService');
-            const ocrService = new OCRService();
+              // Run OCR extraction
+              const { OCRService } = await import('./ocr/OCRService');
+              const ocrService = new OCRService();
 
-            const extractedValue = await ocrService.extractFieldFromPhotos({
-              photos,
-              fieldPrompt: extractionPrompt,
-              organizationId,
-            });
+              const extractedValue = await ocrService.extractFieldFromPhotos({
+                photos,
+                fieldPrompt: extractionPrompt,
+                organizationId,
+              });
 
-            console.log(`[OCR] Extracted value for ${extractionPrompt}: ${extractedValue}`);
+              console.log(`[OCR] Extracted value for ${extractionPrompt}: ${extractedValue}`);
 
-            if (!extractedValue) {
-              console.log(`[OCR] No value extracted for ${extractionPrompt}`);
-              continue;
-            }
+              if (!extractedValue) {
+                const errorMsg = `No value extracted from ${photos.length} photo(s)`;
+                console.log(`[OCR] ${errorMsg}`);
+                
+                // Log failed extraction attempt
+                await db.insert(activityLogs).values({
+                  organizationId,
+                  userId: null,
+                  actionType: 'ocr_extraction_failed',
+                  entityType: targetTable,
+                  entityId: targetRecordId,
+                  description: `OCR extraction failed for "${extractionPrompt}": ${errorMsg}`,
+                  metadata: {
+                    workItemId,
+                    executionId,
+                    stepId: templateStep.id,
+                    targetField,
+                    targetTable,
+                    extractionPrompt,
+                    photoCount: photos.length,
+                    error: errorMsg,
+                  },
+                });
+                
+                continue;
+              }
 
-            // Write extracted value to target record
-            const { FieldManagerService } = await import('./ocr/FieldManagerService');
-            const fieldManager = new FieldManagerService();
+              // Write extracted value to target record
+              const { FieldManagerService } = await import('./ocr/FieldManagerService');
+              const fieldManager = new FieldManagerService();
 
-            await fieldManager.updateDynamicField({
-              organizationId,
-              tableName: targetTable,
-              recordId: targetRecordId,
-              fieldName: targetField,
-              value: extractedValue,
-            });
-
-            console.log(`[OCR] Successfully updated ${targetTable}#${targetRecordId}.${targetField} = ${extractedValue}`);
-
-            // Log activity
-            await db.insert(activityLogs).values({
-              organizationId,
-              userId: null,
-              actionType: 'ocr_extraction',
-              entityType: targetTable,
-              entityId: targetRecordId,
-              description: `OCR extracted ${extractionPrompt}: ${extractedValue}`,
-              metadata: {
-                workItemId,
-                executionId,
-                stepId: templateStep.id,
+              await fieldManager.updateDynamicField({
+                organizationId,
+                tableName: targetTable,
+                recordId: targetRecordId,
                 fieldName: targetField,
-                extractedValue,
-                photoCount: photos.length,
-              },
-            });
+                value: extractedValue,
+              });
+
+              console.log(`[OCR] Successfully updated ${targetTable}#${targetRecordId}.${targetField} = ${extractedValue}`);
+
+              // Log successful extraction
+              await db.insert(activityLogs).values({
+                organizationId,
+                userId: null,
+                actionType: 'ocr_extraction',
+                entityType: targetTable,
+                entityId: targetRecordId,
+                description: `OCR extracted ${extractionPrompt}: ${extractedValue}`,
+                metadata: {
+                  workItemId,
+                  executionId,
+                  stepId: templateStep.id,
+                  fieldName: targetField,
+                  extractedValue,
+                  photoCount: photos.length,
+                },
+              });
+              
+            } catch (extractionError) {
+              // Log extraction error with full details
+              const errorMessage = extractionError instanceof Error ? extractionError.message : 'Unknown error';
+              console.error(`[OCR] Extraction error for ${extractionPrompt}:`, extractionError);
+              
+              await db.insert(activityLogs).values({
+                organizationId,
+                userId: null,
+                actionType: 'ocr_extraction_failed',
+                entityType: 'work_item',
+                entityId: workItemId,
+                description: `OCR extraction failed for "${extractionPrompt}": ${errorMessage}`,
+                metadata: {
+                  workItemId,
+                  executionId,
+                  stepId: templateStep.id,
+                  targetField,
+                  targetTable,
+                  extractionPrompt,
+                  error: errorMessage,
+                  errorStack: extractionError instanceof Error ? extractionError.stack : undefined,
+                },
+              });
+              
+              // Continue to next extraction instead of failing entire workflow
+              continue;
+            }
           }
         }
       }

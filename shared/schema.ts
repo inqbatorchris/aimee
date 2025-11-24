@@ -27,7 +27,7 @@ import { relations } from "drizzle-orm";
 // ========================================
 
 // Enums for core system
-export const activityTypeEnum = pgEnum('activity_type', ['creation', 'status_change', 'assignment', 'comment', 'file_upload', 'kpi_update', 'agent_action', 'completion', 'deletion', 'generation', 'bulk_update', 'openai_test', 'openai_key_saved', 'ai_chat', 'field_app_sync_success', 'field_app_sync_partial', 'field_app_sync_failed']);
+export const activityTypeEnum = pgEnum('activity_type', ['creation', 'status_change', 'assignment', 'comment', 'file_upload', 'kpi_update', 'agent_action', 'completion', 'deletion', 'generation', 'bulk_update', 'openai_test', 'openai_key_saved', 'ai_chat', 'field_app_sync_success', 'field_app_sync_partial', 'field_app_sync_failed', 'ocr_extraction', 'ocr_extraction_failed']);
 export const userRoleEnum = pgEnum('user_role', ['super_admin', 'admin', 'manager', 'team_member', 'customer', 'dev']);
 export const userTypeEnum = pgEnum('user_type', ['human', 'agent']);
 
