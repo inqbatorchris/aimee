@@ -314,11 +314,6 @@ export default function Addresses() {
     enabled: !!selectedAddress?.id,
   });
   
-  // Debug logging
-  console.log('Selected address:', selectedAddress?.id, selectedAddress?.airtableFields?.summary);
-  console.log('Address detail data:', addressDetailData);
-  console.log('Loading state:', isLoadingAddressDetail);
-  
   const extractedData = addressDetailData?.extractedData || {};
   
   // Poll for sync progress
