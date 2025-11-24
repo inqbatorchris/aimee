@@ -2622,10 +2622,14 @@ export default function FiberNetwork() {
               </SheetHeader>
 
               <Tabs defaultValue="details" className="mt-6">
-                <TabsList className="grid w-full grid-cols-4">
+                <TabsList className="grid w-full grid-cols-5">
                   <TabsTrigger value="details" data-testid="tab-details">
                     <FileText className="w-4 h-4 mr-2" />
                     Details
+                  </TabsTrigger>
+                  <TabsTrigger value="splice-trays" data-testid="tab-splice-trays">
+                    <Cable className="w-4 h-4 mr-2" />
+                    Splices
                   </TabsTrigger>
                   <TabsTrigger value="photos" data-testid="tab-photos">
                     <ImageIcon className="w-4 h-4 mr-2" />
@@ -2749,6 +2753,32 @@ export default function FiberNetwork() {
                     <Wrench className="w-4 h-4 mr-2" />
                     Create Work Item
                   </Button>
+                </TabsContent>
+
+                <TabsContent value="splice-trays" className="space-y-4">
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-sm font-medium">Splice Trays at this Node</h3>
+                      <Button
+                        size="sm"
+                        onClick={() => {/* TODO: Open Add Tray Dialog */}}
+                        data-testid="button-add-splice-tray"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Tray
+                      </Button>
+                    </div>
+                    
+                    <div className="text-center py-8 text-sm text-gray-500">
+                      Splice documentation feature coming soon. This will allow you to:
+                      <ul className="mt-2 space-y-1 text-left max-w-md mx-auto">
+                        <li>• Document splice trays at this node</li>
+                        <li>• Record fiber-to-fiber connections</li>
+                        <li>• Track which cables connect to which fibers</li>
+                        <li>• Trace customer connections through the network</li>
+                      </ul>
+                    </div>
+                  </div>
                 </TabsContent>
 
                 <TabsContent value="photos" className="space-y-4">

@@ -1,9 +1,23 @@
 import { Router } from 'express';
 import { db } from '../db';
-import { fiberNetworkNodes, fiberNetworkActivityLogs, fiberNodeTypes, workItems, insertFiberNetworkNodeSchema, insertFiberNodeTypeSchema } from '../../shared/schema';
+import { 
+  fiberNetworkNodes, 
+  fiberNetworkActivityLogs, 
+  fiberNodeTypes, 
+  workItems, 
+  fiberSpliceTrays,
+  fiberConnections,
+  cableFiberDefinitions,
+  insertFiberNetworkNodeSchema, 
+  insertFiberNodeTypeSchema,
+  insertFiberSpliceTraySchema,
+  insertFiberConnectionSchema,
+  insertCableFiberDefinitionSchema
+} from '../../shared/schema';
 import { eq, and, sql, inArray, desc } from 'drizzle-orm';
 import { authenticateToken } from '../auth';
 import { z } from 'zod';
+import { generateFiberColorScheme } from '../../shared/fiberColorStandards';
 
 const router = Router();
 
@@ -1489,6 +1503,578 @@ router.delete('/cables/:cableId', authenticateToken, async (req: any, res) => {
   } catch (error: any) {
     console.error('Error deleting cable:', error);
     res.status(500).json({ error: 'Failed to delete cable', details: error.message });
+  }
+});
+
+// ========================================
+// SPLICE DOCUMENTATION ENDPOINTS
+// ========================================
+
+// Create a splice tray at a node
+router.post('/nodes/:nodeId/splice-trays', authenticateToken, async (req: any, res) => {
+  try {
+    const { nodeId } = req.params;
+    const organizationId = req.user.organizationId;
+    const userId = req.user.id;
+
+    // Verify node exists and belongs to organization
+    const node = await db
+      .select()
+      .from(fiberNetworkNodes)
+      .where(
+        and(
+          eq(fiberNetworkNodes.id, parseInt(nodeId)),
+          eq(fiberNetworkNodes.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+
+    if (node.length === 0) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+
+    // Validate request body
+    const createTraySchema = insertFiberSpliceTraySchema.omit({
+      organizationId: true,
+      nodeId: true,
+      createdBy: true,
+      updatedBy: true
+    });
+
+    const validation = createTraySchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({ 
+        error: 'Validation failed', 
+        details: validation.error.format() 
+      });
+    }
+
+    // Create splice tray
+    const result = await db
+      .insert(fiberSpliceTrays)
+      .values({
+        ...validation.data,
+        organizationId,
+        nodeId: parseInt(nodeId),
+        createdBy: userId,
+        updatedBy: userId
+      })
+      .returning();
+
+    const tray = result[0];
+
+    // Log activity
+    await db.insert(fiberNetworkActivityLogs).values({
+      organizationId,
+      userId,
+      userName: req.user.fullName || req.user.email,
+      actionType: 'create',
+      entityType: 'splice_tray',
+      entityId: parseInt(nodeId),
+      changes: {
+        added: {
+          trayId: tray.id,
+          trayNumber: tray.trayNumber,
+          enclosureType: tray.enclosureType
+        }
+      },
+      ipAddress: req.ip
+    });
+
+    res.status(201).json({ tray });
+  } catch (error: any) {
+    console.error('Error creating splice tray:', error);
+    res.status(500).json({ error: 'Failed to create splice tray', details: error.message });
+  }
+});
+
+// Get all splice trays for a node
+router.get('/nodes/:nodeId/splice-trays', authenticateToken, async (req: any, res) => {
+  try {
+    const { nodeId } = req.params;
+    const organizationId = req.user.organizationId;
+
+    const trays = await db
+      .select()
+      .from(fiberSpliceTrays)
+      .where(
+        and(
+          eq(fiberSpliceTrays.nodeId, parseInt(nodeId)),
+          eq(fiberSpliceTrays.organizationId, organizationId)
+        )
+      )
+      .orderBy(fiberSpliceTrays.trayNumber);
+
+    // Get connection counts for each tray
+    const connectionCounts = await db
+      .select({
+        trayId: fiberConnections.trayId,
+        count: sql<number>`COUNT(*)::int`
+      })
+      .from(fiberConnections)
+      .where(
+        and(
+          inArray(fiberConnections.trayId, trays.map(t => t.id)),
+          eq(fiberConnections.isDeleted, false)
+        )
+      )
+      .groupBy(fiberConnections.trayId);
+
+    const countsByTray = new Map(connectionCounts.map(c => [c.trayId, c.count]));
+
+    const traysWithCounts = trays.map(tray => ({
+      ...tray,
+      connectionCount: countsByTray.get(tray.id) || 0
+    }));
+
+    res.json({ trays: traysWithCounts });
+  } catch (error: any) {
+    console.error('Error fetching splice trays:', error);
+    res.status(500).json({ error: 'Failed to fetch splice trays', details: error.message });
+  }
+});
+
+// Update a splice tray
+router.patch('/splice-trays/:trayId', authenticateToken, async (req: any, res) => {
+  try {
+    const { trayId } = req.params;
+    const organizationId = req.user.organizationId;
+    const userId = req.user.id;
+
+    // Verify tray exists and belongs to organization
+    const existing = await db
+      .select()
+      .from(fiberSpliceTrays)
+      .where(
+        and(
+          eq(fiberSpliceTrays.id, parseInt(trayId)),
+          eq(fiberSpliceTrays.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Splice tray not found' });
+    }
+
+    const updateSchema = insertFiberSpliceTraySchema.partial().omit({
+      organizationId: true,
+      nodeId: true,
+      createdBy: true
+    });
+
+    const validation = updateSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({ 
+        error: 'Validation failed', 
+        details: validation.error.format() 
+      });
+    }
+
+    const result = await db
+      .update(fiberSpliceTrays)
+      .set({
+        ...validation.data,
+        updatedBy: userId,
+        updatedAt: new Date()
+      })
+      .where(eq(fiberSpliceTrays.id, parseInt(trayId)))
+      .returning();
+
+    // Log activity
+    await db.insert(fiberNetworkActivityLogs).values({
+      organizationId,
+      userId,
+      userName: req.user.fullName || req.user.email,
+      actionType: 'update',
+      entityType: 'splice_tray',
+      entityId: existing[0].nodeId,
+      changes: {
+        before: existing[0],
+        after: validation.data
+      },
+      ipAddress: req.ip
+    });
+
+    res.json({ tray: result[0] });
+  } catch (error: any) {
+    console.error('Error updating splice tray:', error);
+    res.status(500).json({ error: 'Failed to update splice tray', details: error.message });
+  }
+});
+
+// Delete a splice tray
+router.delete('/splice-trays/:trayId', authenticateToken, async (req: any, res) => {
+  try {
+    const { trayId } = req.params;
+    const organizationId = req.user.organizationId;
+    const userId = req.user.id;
+
+    // Verify tray exists and belongs to organization
+    const existing = await db
+      .select()
+      .from(fiberSpliceTrays)
+      .where(
+        and(
+          eq(fiberSpliceTrays.id, parseInt(trayId)),
+          eq(fiberSpliceTrays.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Splice tray not found' });
+    }
+
+    // Check if tray has connections
+    const connections = await db
+      .select()
+      .from(fiberConnections)
+      .where(
+        and(
+          eq(fiberConnections.trayId, parseInt(trayId)),
+          eq(fiberConnections.isDeleted, false)
+        )
+      )
+      .limit(1);
+
+    if (connections.length > 0) {
+      return res.status(400).json({ 
+        error: 'Cannot delete tray with existing connections. Delete connections first.' 
+      });
+    }
+
+    // Delete tray (cascade will handle connections)
+    await db
+      .delete(fiberSpliceTrays)
+      .where(eq(fiberSpliceTrays.id, parseInt(trayId)));
+
+    // Log activity
+    await db.insert(fiberNetworkActivityLogs).values({
+      organizationId,
+      userId,
+      userName: req.user.fullName || req.user.email,
+      actionType: 'delete',
+      entityType: 'splice_tray',
+      entityId: existing[0].nodeId,
+      changes: {
+        before: existing[0]
+      },
+      ipAddress: req.ip
+    });
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Error deleting splice tray:', error);
+    res.status(500).json({ error: 'Failed to delete splice tray', details: error.message });
+  }
+});
+
+// Create splice connections (manual entry)
+router.post('/splice-connections/manual', authenticateToken, async (req: any, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    const userId = req.user.id;
+    const { trayId, connections, workItemId } = req.body;
+
+    // Verify tray exists
+    const tray = await db
+      .select()
+      .from(fiberSpliceTrays)
+      .where(
+        and(
+          eq(fiberSpliceTrays.id, trayId),
+          eq(fiberSpliceTrays.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+
+    if (tray.length === 0) {
+      return res.status(404).json({ error: 'Splice tray not found' });
+    }
+
+    // Validate connections array
+    if (!Array.isArray(connections) || connections.length === 0) {
+      return res.status(400).json({ error: 'Connections array required' });
+    }
+
+    // Insert all connections
+    const createdConnections = [];
+    for (const conn of connections) {
+      const validation = insertFiberConnectionSchema.omit({
+        organizationId: true,
+        createdByUserId: true,
+        createdAt: true,
+        updatedAt: true
+      }).safeParse({
+        ...conn,
+        trayId,
+        nodeId: tray[0].nodeId,
+        workItemId: workItemId || null,
+        createdVia: 'manual',
+        isDeleted: false
+      });
+
+      if (!validation.success) {
+        return res.status(400).json({ 
+          error: 'Connection validation failed', 
+          details: validation.error.format() 
+        });
+      }
+
+      const result = await db
+        .insert(fiberConnections)
+        .values({
+          ...validation.data,
+          organizationId,
+          createdByUserId: userId
+        })
+        .returning();
+
+      createdConnections.push(result[0]);
+    }
+
+    // Log activity
+    await db.insert(fiberNetworkActivityLogs).values({
+      organizationId,
+      userId,
+      userName: req.user.fullName || req.user.email,
+      actionType: 'create',
+      entityType: 'splice_connections',
+      entityId: tray[0].nodeId,
+      changes: {
+        added: {
+          trayId,
+          connectionCount: connections.length,
+          workItemId: workItemId || null
+        }
+      },
+      workItemId: workItemId || null,
+      ipAddress: req.ip
+    });
+
+    res.status(201).json({ connections: createdConnections });
+  } catch (error: any) {
+    console.error('Error creating splice connections:', error);
+    res.status(500).json({ error: 'Failed to create splice connections', details: error.message });
+  }
+});
+
+// Get splice connections for a node
+router.get('/nodes/:nodeId/splice-connections', authenticateToken, async (req: any, res) => {
+  try {
+    const { nodeId } = req.params;
+    const organizationId = req.user.organizationId;
+
+    const connections = await db
+      .select()
+      .from(fiberConnections)
+      .where(
+        and(
+          eq(fiberConnections.nodeId, parseInt(nodeId)),
+          eq(fiberConnections.organizationId, organizationId),
+          eq(fiberConnections.isDeleted, false)
+        )
+      )
+      .orderBy(fiberConnections.createdAt);
+
+    res.json({ connections });
+  } catch (error: any) {
+    console.error('Error fetching splice connections:', error);
+    res.status(500).json({ error: 'Failed to fetch splice connections', details: error.message });
+  }
+});
+
+// Get splice connections for a tray
+router.get('/splice-trays/:trayId/connections', authenticateToken, async (req: any, res) => {
+  try {
+    const { trayId } = req.params;
+    const organizationId = req.user.organizationId;
+
+    // Verify tray exists
+    const tray = await db
+      .select()
+      .from(fiberSpliceTrays)
+      .where(
+        and(
+          eq(fiberSpliceTrays.id, parseInt(trayId)),
+          eq(fiberSpliceTrays.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+
+    if (tray.length === 0) {
+      return res.status(404).json({ error: 'Splice tray not found' });
+    }
+
+    const connections = await db
+      .select()
+      .from(fiberConnections)
+      .where(
+        and(
+          eq(fiberConnections.trayId, parseInt(trayId)),
+          eq(fiberConnections.isDeleted, false)
+        )
+      )
+      .orderBy(fiberConnections.cableAId, fiberConnections.cableAFiberNumber);
+
+    res.json({ connections });
+  } catch (error: any) {
+    console.error('Error fetching tray connections:', error);
+    res.status(500).json({ error: 'Failed to fetch tray connections', details: error.message });
+  }
+});
+
+// Delete a splice connection (soft delete)
+router.delete('/splice-connections/:connectionId', authenticateToken, async (req: any, res) => {
+  try {
+    const { connectionId } = req.params;
+    const organizationId = req.user.organizationId;
+    const userId = req.user.id;
+
+    // Verify connection exists
+    const existing = await db
+      .select()
+      .from(fiberConnections)
+      .where(
+        and(
+          eq(fiberConnections.id, parseInt(connectionId)),
+          eq(fiberConnections.organizationId, organizationId),
+          eq(fiberConnections.isDeleted, false)
+        )
+      )
+      .limit(1);
+
+    if (existing.length === 0) {
+      return res.status(404).json({ error: 'Connection not found' });
+    }
+
+    // Soft delete
+    await db
+      .update(fiberConnections)
+      .set({
+        isDeleted: true,
+        deletedAt: new Date(),
+        deletedByUserId: userId
+      })
+      .where(eq(fiberConnections.id, parseInt(connectionId)));
+
+    // Log activity
+    await db.insert(fiberNetworkActivityLogs).values({
+      organizationId,
+      userId,
+      userName: req.user.fullName || req.user.email,
+      actionType: 'delete',
+      entityType: 'splice_connection',
+      entityId: existing[0].nodeId,
+      changes: {
+        before: existing[0]
+      },
+      ipAddress: req.ip
+    });
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Error deleting splice connection:', error);
+    res.status(500).json({ error: 'Failed to delete splice connection', details: error.message });
+  }
+});
+
+// ========================================
+// CABLE FIBER DEFINITION ENDPOINTS
+// ========================================
+
+// Create or update cable fiber definition
+router.post('/cables/:cableId/fiber-definition', authenticateToken, async (req: any, res) => {
+  try {
+    const { cableId } = req.params;
+    const organizationId = req.user.organizationId;
+    const userId = req.user.id;
+    const { nodeId, fiberCount, cableType, bufferTubeCount, fibersPerTube } = req.body;
+
+    // Generate color scheme based on fiber count
+    const colorScheme = generateFiberColorScheme(fiberCount, cableType || 'single_mode');
+
+    // Check if definition already exists
+    const existing = await db
+      .select()
+      .from(cableFiberDefinitions)
+      .where(
+        and(
+          eq(cableFiberDefinitions.cableId, cableId),
+          eq(cableFiberDefinitions.nodeId, nodeId),
+          eq(cableFiberDefinitions.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+
+    let result;
+    if (existing.length > 0) {
+      // Update existing
+      result = await db
+        .update(cableFiberDefinitions)
+        .set({
+          fiberCount,
+          cableType: cableType || 'single_mode',
+          bufferTubeCount,
+          fibersPerTube,
+          colorScheme,
+          updatedAt: new Date()
+        })
+        .where(eq(cableFiberDefinitions.id, existing[0].id))
+        .returning();
+    } else {
+      // Create new
+      result = await db
+        .insert(cableFiberDefinitions)
+        .values({
+          organizationId,
+          cableId,
+          nodeId,
+          fiberCount,
+          cableType: cableType || 'single_mode',
+          bufferTubeCount,
+          fibersPerTube,
+          colorScheme,
+          createdBy: userId
+        })
+        .returning();
+    }
+
+    res.status(201).json({ definition: result[0] });
+  } catch (error: any) {
+    console.error('Error creating cable fiber definition:', error);
+    res.status(500).json({ error: 'Failed to create cable fiber definition', details: error.message });
+  }
+});
+
+// Get cable fiber definition
+router.get('/cables/:cableId/fiber-definition', authenticateToken, async (req: any, res) => {
+  try {
+    const { cableId } = req.params;
+    const { nodeId } = req.query;
+    const organizationId = req.user.organizationId;
+
+    const definition = await db
+      .select()
+      .from(cableFiberDefinitions)
+      .where(
+        and(
+          eq(cableFiberDefinitions.cableId, cableId),
+          nodeId ? eq(cableFiberDefinitions.nodeId, parseInt(nodeId as string)) : sql`true`,
+          eq(cableFiberDefinitions.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+
+    if (definition.length === 0) {
+      return res.status(404).json({ error: 'Cable fiber definition not found' });
+    }
+
+    res.json({ definition: definition[0] });
+  } catch (error: any) {
+    console.error('Error fetching cable fiber definition:', error);
+    res.status(500).json({ error: 'Failed to fetch cable fiber definition', details: error.message });
   }
 });
 
