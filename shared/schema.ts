@@ -2676,6 +2676,11 @@ export const fiberNodeStatusEnum = pgEnum('fiber_node_status', ['active', 'plann
 export const fiberNetworkEnum = pgEnum('fiber_network', ['CCNet', 'FibreLtd', 'S&MFibre']);
 export const fiberActivityTypeEnum = pgEnum('fiber_activity_type', ['create', 'update', 'delete', 'view', 'work_item_created', 'workflow_completed']);
 
+// Splice Documentation Enums
+export const spliceEnclosureTypeEnum = pgEnum('splice_enclosure_type', ['dome', 'inline', 'rack', 'wall_box']);
+export const cableTypeEnum = pgEnum('cable_type', ['single_mode', 'multi_mode', 'hybrid']);
+export const createdViaEnum = pgEnum('created_via', ['manual', 'workflow_step']);
+
 // Zod schemas for JSONB validation (type-safe workflow definitions)
 export const workflowStepSchema = z.object({
   id: z.string(),
@@ -3387,6 +3392,108 @@ export const audioRecordings = pgTable("audio_recordings", {
   index("idx_audio_status").on(table.processingStatus),
 ]);
 
+// Fiber Splice Trays - Physical splice enclosures at nodes
+export const fiberSpliceTrays = pgTable("fiber_splice_trays", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  nodeId: integer("node_id").references(() => fiberNetworkNodes.id, { onDelete: "cascade" }).notNull(),
+  
+  // Tray details
+  trayNumber: integer("tray_number").notNull(),
+  enclosureType: spliceEnclosureTypeEnum("enclosure_type").default('dome').notNull(),
+  capacity: integer("capacity").default(12).notNull(),
+  installDate: timestamp("install_date"),
+  notes: text("notes"),
+  
+  // Audit
+  createdBy: integer("created_by").references(() => users.id),
+  updatedBy: integer("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_splice_trays_org").on(table.organizationId),
+  index("idx_splice_trays_node").on(table.nodeId),
+  unique("unique_tray_per_node").on(table.nodeId, table.trayNumber),
+]);
+
+// Fiber Connections - Individual fiber-to-fiber splice mappings
+export const fiberConnections = pgTable("fiber_connections", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  trayId: integer("tray_id").references(() => fiberSpliceTrays.id, { onDelete: "cascade" }).notNull(),
+  nodeId: integer("node_id").references(() => fiberNetworkNodes.id, { onDelete: "cascade" }).notNull(),
+  
+  // Cable A (incoming)
+  cableAId: varchar("cable_a_id", { length: 255 }).notNull(),
+  cableAFiberNumber: integer("cable_a_fiber_number").notNull(),
+  cableAFiberColor: varchar("cable_a_fiber_color", { length: 50 }).notNull(),
+  cableABufferTube: integer("cable_a_buffer_tube"),
+  
+  // Cable B (outgoing)
+  cableBId: varchar("cable_b_id", { length: 255 }).notNull(),
+  cableBFiberNumber: integer("cable_b_fiber_number").notNull(),
+  cableBFiberColor: varchar("cable_b_fiber_color", { length: 50 }).notNull(),
+  cableBBufferTube: integer("cable_b_buffer_tube"),
+  
+  // Quality metrics (optional)
+  spliceLossDb: decimal("splice_loss_db", { precision: 5, scale: 2 }),
+  testPassed: boolean("test_passed"),
+  
+  // Integration with work items system
+  workItemId: integer("work_item_id").references(() => workItems.id),
+  createdByUserId: integer("created_by_user_id").references(() => users.id).notNull(),
+  createdVia: createdViaEnum("created_via").default('manual').notNull(),
+  
+  // Soft delete support
+  isDeleted: boolean("is_deleted").default(false).notNull(),
+  deletedAt: timestamp("deleted_at"),
+  deletedByUserId: integer("deleted_by_user_id").references(() => users.id),
+  
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_fiber_conn_org").on(table.organizationId),
+  index("idx_fiber_conn_tray").on(table.trayId),
+  index("idx_fiber_conn_node").on(table.nodeId),
+  index("idx_fiber_conn_work_item").on(table.workItemId),
+  index("idx_fiber_conn_cable_a").on(table.cableAId),
+  index("idx_fiber_conn_cable_b").on(table.cableBId),
+  index("idx_fiber_conn_deleted").on(table.isDeleted),
+]);
+
+// Cable Fiber Definitions - Metadata about each cable's fiber composition
+export const cableFiberDefinitions = pgTable("cable_fiber_definitions", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  cableId: varchar("cable_id", { length: 255 }).notNull(),
+  nodeId: integer("node_id").references(() => fiberNetworkNodes.id, { onDelete: "cascade" }).notNull(),
+  
+  // Fiber composition
+  fiberCount: integer("fiber_count").notNull(),
+  cableType: cableTypeEnum("cable_type").default('single_mode').notNull(),
+  bufferTubeCount: integer("buffer_tube_count"),
+  fibersPerTube: integer("fibers_per_tube"),
+  
+  // Color scheme (TIA-598-C standard)
+  colorScheme: jsonb("color_scheme").$type<Array<{
+    fiberNumber: number;
+    color: string;
+    bufferTube?: number;
+    tracerColor?: string;
+  }>>().default([]),
+  
+  // Audit
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_cable_fiber_org").on(table.organizationId),
+  index("idx_cable_fiber_cable").on(table.cableId),
+  index("idx_cable_fiber_node").on(table.nodeId),
+  unique("unique_cable_per_node").on(table.cableId, table.nodeId),
+]);
+
 // ========================================
 // AIRTABLE INTEGRATION MODULE
 // ========================================
@@ -3762,6 +3869,35 @@ export const insertAudioRecordingSchema = createInsertSchema(audioRecordings).om
 
 export type AudioRecording = typeof audioRecordings.$inferSelect;
 export type InsertAudioRecording = z.infer<typeof insertAudioRecordingSchema>;
+
+// Insert schemas for Fiber Splice Documentation
+export const insertFiberSpliceTraySchema = createInsertSchema(fiberSpliceTrays).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertFiberConnectionSchema = createInsertSchema(fiberConnections).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertCableFiberDefinitionSchema = createInsertSchema(cableFiberDefinitions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Types for Fiber Splice Documentation
+export type FiberSpliceTray = typeof fiberSpliceTrays.$inferSelect;
+export type InsertFiberSpliceTray = z.infer<typeof insertFiberSpliceTraySchema>;
+
+export type FiberConnection = typeof fiberConnections.$inferSelect;
+export type InsertFiberConnection = z.infer<typeof insertFiberConnectionSchema>;
+
+export type CableFiberDefinition = typeof cableFiberDefinitions.$inferSelect;
+export type InsertCableFiberDefinition = z.infer<typeof insertCableFiberDefinitionSchema>;
 
 // Insert schemas for Airtable integration
 export const insertAirtableConnectionSchema = createInsertSchema(airtableConnections).omit({
