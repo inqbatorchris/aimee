@@ -462,6 +462,24 @@ export default function FiberNetwork() {
   const [newNodeTypeName, setNewNodeTypeName] = useState('');
   const [newNodeTypeLabel, setNewNodeTypeLabel] = useState('');
 
+  // Splice tray editor state
+  const [spliceTrayEditorOpen, setSpliceTrayEditorOpen] = useState(false);
+  const [selectedSpliceTray, setSelectedSpliceTray] = useState<any>(null);
+  const [spliceTrayFormData, setSpliceTrayFormData] = useState({
+    trayIdentifier: '',
+    description: '',
+  });
+  const [leftCableId, setLeftCableId] = useState<number | null>(null);
+  const [rightCableId, setRightCableId] = useState<number | null>(null);
+  const [fiberConnections, setFiberConnections] = useState<Array<{
+    id?: number;
+    leftCableId: number;
+    leftFiberNumber: number;
+    rightCableId: number;
+    rightFiberNumber: number;
+    createdVia: 'manual' | 'workflow_step';
+  }>>([]);
+
   // Fetch node types
   const { data: nodeTypesData } = useQuery<{ nodeTypes: any[] }>({
     queryKey: ['/api/fiber-network/node-types'],
@@ -513,6 +531,47 @@ export default function FiberNetwork() {
       toast({
         title: 'Error',
         description: error.message || 'Failed to delete node type',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // Create splice tray mutation
+  const createSpliceTrayMutation = useMutation({
+    mutationFn: async (data: {
+      nodeId: number;
+      trayIdentifier: string;
+      description?: string;
+      connections: Array<{
+        leftCableId: number;
+        leftFiberNumber: number;
+        rightCableId: number;
+        rightFiberNumber: number;
+        createdVia: 'manual' | 'workflow_step';
+      }>;
+    }) => {
+      return apiRequest('/api/fiber-network/splice-trays', {
+        method: 'POST',
+        body: data,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
+      setSpliceTrayEditorOpen(false);
+      setSelectedSpliceTray(null);
+      setSpliceTrayFormData({ trayIdentifier: '', description: '' });
+      setFiberConnections([]);
+      setLeftCableId(null);
+      setRightCableId(null);
+      toast({
+        title: 'Success',
+        description: 'Splice tray created successfully',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to create splice tray',
         variant: 'destructive',
       });
     },
@@ -2761,7 +2820,14 @@ export default function FiberNetwork() {
                       <h3 className="text-sm font-medium">Splice Trays at this Node</h3>
                       <Button
                         size="sm"
-                        onClick={() => {/* TODO: Open Add Tray Dialog */}}
+                        onClick={() => {
+                          setSpliceTrayFormData({
+                            trayIdentifier: '',
+                            description: '',
+                          });
+                          setSelectedSpliceTray(null);
+                          setSpliceTrayEditorOpen(true);
+                        }}
                         data-testid="button-add-splice-tray"
                       >
                         <Plus className="w-4 h-4 mr-2" />
@@ -3844,6 +3910,271 @@ export default function FiberNetwork() {
                 </Button>
               </div>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Splice Tray Editor Dialog */}
+      <Dialog open={spliceTrayEditorOpen} onOpenChange={(open) => {
+        if (!open) {
+          setSpliceTrayEditorOpen(false);
+          setSelectedSpliceTray(null);
+          setSpliceTrayFormData({ trayIdentifier: '', description: '' });
+        }
+      }}>
+        <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto" data-testid="splice-tray-editor-dialog">
+          <DialogHeader>
+            <DialogTitle>
+              {selectedSpliceTray ? 'Edit Splice Tray' : 'Create Splice Tray'}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            {/* Tray Information */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium">Tray Information</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="tray-identifier">Tray Identifier*</Label>
+                  <Input
+                    id="tray-identifier"
+                    value={spliceTrayFormData.trayIdentifier}
+                    onChange={(e) => setSpliceTrayFormData(prev => ({
+                      ...prev,
+                      trayIdentifier: e.target.value
+                    }))}
+                    placeholder="e.g., TRAY-001, Tray A"
+                    data-testid="input-tray-identifier"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="tray-description">Description</Label>
+                  <Input
+                    id="tray-description"
+                    value={spliceTrayFormData.description || ''}
+                    onChange={(e) => setSpliceTrayFormData(prev => ({
+                      ...prev,
+                      description: e.target.value
+                    }))}
+                    placeholder="Optional description"
+                    data-testid="input-tray-description"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Fiber Connections Section */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium">Fiber Connections</h3>
+              
+              {/* Cable Selection - Only show cables from selected node */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Left Cable</Label>
+                  <Select
+                    value={leftCableId?.toString() || ''}
+                    onValueChange={(value) => setLeftCableId(value ? parseInt(value) : null)}
+                  >
+                    <SelectTrigger data-testid="select-left-cable">
+                      <SelectValue placeholder="Select cable..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(selectedNode?.fiberDetails?.cables || []).map((cable: any) => (
+                        <SelectItem key={cable.id} value={cable.id.toString()}>
+                          {cable.cableIdentifier} ({cable.fiberCount || 0} fibers)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Right Cable</Label>
+                  <Select
+                    value={rightCableId?.toString() || ''}
+                    onValueChange={(value) => setRightCableId(value ? parseInt(value) : null)}
+                  >
+                    <SelectTrigger data-testid="select-right-cable">
+                      <SelectValue placeholder="Select cable..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(selectedNode?.fiberDetails?.cables || []).map((cable: any) => (
+                        <SelectItem key={cable.id} value={cable.id.toString()}>
+                          {cable.cableIdentifier} ({cable.fiberCount || 0} fibers)
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              {/* Fiber Connection Interface */}
+              {leftCableId && rightCableId ? (
+                <div className="border rounded-lg p-4">
+                  <div className="space-y-4">
+                    {/* Connection Stats */}
+                    <div className="flex justify-between items-center pb-2 border-b">
+                      <span className="text-sm text-gray-600 dark:text-gray-400">
+                        {fiberConnections.length} connection(s) created
+                      </span>
+                      {fiberConnections.length > 0 && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setFiberConnections([])}
+                          data-testid="button-clear-connections"
+                        >
+                          Clear All
+                        </Button>
+                      )}
+                    </div>
+
+                    {/* Quick Connect Interface */}
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <div className="text-xs font-medium mb-2">
+                          {(selectedNode?.fiberDetails?.cables || []).find((c: any) => c.id === leftCableId)?.cableIdentifier}
+                        </div>
+                        <div className="space-y-1 max-h-[300px] overflow-y-auto">
+                          {Array.from({ length: (selectedNode?.fiberDetails?.cables || []).find((c: any) => c.id === leftCableId)?.fiberCount || 0 }, (_, i) => i + 1).map(fiberNum => {
+                            const hasConnection = fiberConnections.some(
+                              conn => conn.leftCableId === leftCableId && conn.leftFiberNumber === fiberNum
+                            );
+                            return (
+                              <div
+                                key={fiberNum}
+                                className={`p-2 text-xs border rounded cursor-pointer transition-colors ${
+                                  hasConnection
+                                    ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-700'
+                                    : 'bg-white dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-900'
+                                }`}
+                                onClick={() => {
+                                  // Simple click-to-connect: creates 1-to-1 connection
+                                  if (!hasConnection && rightCableId) {
+                                    const rightCable = (selectedNode?.fiberDetails?.cables || []).find((c: any) => c.id === rightCableId);
+                                    const nextAvailableRight = Array.from(
+                                      { length: rightCable?.fiberCount || 0 },
+                                      (_, i) => i + 1
+                                    ).find(num => !fiberConnections.some(
+                                      conn => conn.rightCableId === rightCableId && conn.rightFiberNumber === num
+                                    ));
+                                    
+                                    if (nextAvailableRight) {
+                                      setFiberConnections(prev => [...prev, {
+                                        leftCableId,
+                                        leftFiberNumber: fiberNum,
+                                        rightCableId,
+                                        rightFiberNumber: nextAvailableRight,
+                                        createdVia: 'manual'
+                                      }]);
+                                    }
+                                  }
+                                }}
+                                data-testid={`fiber-left-${fiberNum}`}
+                              >
+                                Fiber {fiberNum}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-xs font-medium mb-2">
+                          {(selectedNode?.fiberDetails?.cables || []).find((c: any) => c.id === rightCableId)?.cableIdentifier}
+                        </div>
+                        <div className="space-y-1 max-h-[300px] overflow-y-auto">
+                          {Array.from({ length: (selectedNode?.fiberDetails?.cables || []).find((c: any) => c.id === rightCableId)?.fiberCount || 0 }, (_, i) => i + 1).map(fiberNum => {
+                            const hasConnection = fiberConnections.some(
+                              conn => conn.rightCableId === rightCableId && conn.rightFiberNumber === fiberNum
+                            );
+                            return (
+                              <div
+                                key={fiberNum}
+                                className={`p-2 text-xs border rounded ${
+                                  hasConnection
+                                    ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-700'
+                                    : 'bg-white dark:bg-gray-800'
+                                }`}
+                                data-testid={`fiber-right-${fiberNum}`}
+                              >
+                                Fiber {fiberNum}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Connection List */}
+                    {fiberConnections.length > 0 && (
+                      <div className="mt-4 pt-4 border-t">
+                        <div className="text-xs font-medium mb-2">Connections</div>
+                        <div className="space-y-2 max-h-[150px] overflow-y-auto">
+                          {fiberConnections.map((conn, index) => (
+                            <div key={index} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-900 rounded text-xs">
+                              <span>
+                                Fiber {conn.leftFiberNumber} ⟷ Fiber {conn.rightFiberNumber}
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0"
+                                onClick={() => setFiberConnections(prev => prev.filter((_, i) => i !== index))}
+                                data-testid={`button-delete-connection-${index}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="border rounded-lg p-8 text-center text-sm text-gray-500">
+                  <Cable className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                  <p>Select two cables to begin creating fiber connections</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Dialog Actions */}
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSpliceTrayEditorOpen(false);
+                setSelectedSpliceTray(null);
+                setSpliceTrayFormData({ trayIdentifier: '', description: '' });
+              }}
+              data-testid="button-cancel-splice-tray"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                if (!selectedNode?.id) {
+                  toast({
+                    title: 'Error',
+                    description: 'No node selected',
+                    variant: 'destructive',
+                  });
+                  return;
+                }
+                
+                createSpliceTrayMutation.mutate({
+                  nodeId: selectedNode.id,
+                  trayIdentifier: spliceTrayFormData.trayIdentifier,
+                  description: spliceTrayFormData.description,
+                  connections: fiberConnections,
+                });
+              }}
+              disabled={!spliceTrayFormData.trayIdentifier.trim() || createSpliceTrayMutation.isPending}
+              data-testid="button-save-splice-tray"
+            >
+              {createSpliceTrayMutation.isPending ? 'Creating...' : (selectedSpliceTray ? 'Update' : 'Create')} Tray
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
