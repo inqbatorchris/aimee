@@ -273,6 +273,23 @@ export default function FiberNetwork() {
   const [createWorkItemForNewNode, setCreateWorkItemForNewNode] = useState(false);
   const [newNodeTemplate, setNewNodeTemplate] = useState<any>(null);
 
+  // Cable routing state
+  const [cableRoutingMode, setCableRoutingMode] = useState(false);
+  const [cableStartNode, setCableStartNode] = useState<FiberNode | null>(null);
+  const [cableEndNode, setCableEndNode] = useState<FiberNode | null>(null);
+  const [cableDialogOpen, setCableDialogOpen] = useState(false);
+  const [newCableData, setNewCableData] = useState({
+    cableId: '',
+    fiberCount: 24,
+    cableType: 'single_mode',
+    lengthMeters: 0,
+    status: 'planned',
+    notes: '',
+  });
+  const [selectedCable, setSelectedCable] = useState<any>(null);
+  const [cableEditMode, setCableEditMode] = useState(false);
+  const [editingCableWaypoints, setEditingCableWaypoints] = useState<Array<[number, number]>>([]);
+
   // Fetch all fiber nodes
   const { data: nodesData, isLoading } = useQuery<{ nodes: FiberNode[] }>({
     queryKey: ['/api/fiber-network/nodes'],
@@ -364,6 +381,30 @@ export default function FiberNetwork() {
       toast({
         title: 'Error',
         description: error.message || 'Failed to delete node',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // Create cable mutation
+  const createCableMutation = useMutation({
+    mutationFn: async (data: { startNodeId: number; endNodeId: number; cableData: typeof newCableData }) => {
+      return apiRequest('/api/fiber-network/cables', {
+        method: 'POST',
+        body: data,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
+      toast({
+        title: 'Success',
+        description: 'Cable created successfully',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to create cable',
         variant: 'destructive',
       });
     },
@@ -871,6 +912,38 @@ export default function FiberNetwork() {
 
   // Click selection handler for markers
   const handleMarkerClick = (nodeId: number) => {
+    // Handle cable routing mode clicks
+    if (cableRoutingMode) {
+      const node = nodes.find(n => n.id === nodeId);
+      if (!node) return;
+      
+      if (!cableStartNode) {
+        // First click - select start node
+        setCableStartNode(node);
+        toast({
+          title: 'Start node selected',
+          description: `Now click on the end node to create cable from ${node.name}`,
+        });
+      } else if (cableStartNode.id === nodeId) {
+        // Clicked same node - deselect
+        setCableStartNode(null);
+        toast({
+          title: 'Selection cleared',
+          description: 'Click a node to start cable routing',
+        });
+      } else {
+        // Second click - select end node and open dialog
+        setCableEndNode(node);
+        setCableDialogOpen(true);
+        // Auto-generate cable ID
+        setNewCableData(prev => ({
+          ...prev,
+          cableId: `CBL-${cableStartNode.id}-${nodeId}`,
+        }));
+      }
+      return;
+    }
+    
     if (selectionMode !== 'click') return;
     
     setSelectedNodes(prev => {
@@ -1494,8 +1567,72 @@ export default function FiberNetwork() {
             {/* Map click handler for adding nodes (disabled during selection modes) */}
             <MapClickHandler 
               onMapClick={handleMapClick} 
-              disabled={!!selectionMode || isDrawing}
+              disabled={!!selectionMode || isDrawing || cableRoutingMode}
             />
+            
+            {/* Cable Polylines */}
+            {(() => {
+              // Collect all cables from nodes (avoid duplicates by tracking cable IDs)
+              const renderedCables = new Set<string>();
+              const cables: any[] = [];
+              
+              nodes.forEach((node) => {
+                const nodeCables = node.fiberDetails?.cables || [];
+                nodeCables.forEach((cable: any) => {
+                  // Only render each cable once (check both directions)
+                  const cableKey = [node.id, cable.connectedNodeId].sort().join('-');
+                  if (!renderedCables.has(cableKey) && cable.direction === 'outgoing') {
+                    renderedCables.add(cableKey);
+                    cables.push({
+                      ...cable,
+                      startNodeId: node.id,
+                      startNodeName: node.name
+                    });
+                  }
+                });
+              });
+              
+              // Color coding function
+              const getCableColor = (status: string) => {
+                switch (status) {
+                  case 'active': return '#10B981'; // green
+                  case 'planned': return '#3B82F6'; // blue
+                  case 'under_construction': return '#F59E0B'; // orange
+                  case 'decommissioned': return '#6B7280'; // gray
+                  default: return '#3B82F6';
+                }
+              };
+              
+              return cables.map((cable) => (
+                <Polyline
+                  key={`cable-${cable.id}`}
+                  positions={cable.routeGeometry || []}
+                  pathOptions={{
+                    color: getCableColor(cable.status),
+                    weight: 3,
+                    opacity: 0.8,
+                  }}
+                  eventHandlers={{
+                    click: () => {
+                      if (!cableRoutingMode && !selectionMode) {
+                        toast({
+                          title: `Cable: ${cable.cableIdentifier}`,
+                          description: `${cable.startNodeName} → ${cable.connectedNodeName} (${cable.fiberCount} fibers)`,
+                        });
+                      }
+                    },
+                  }}
+                />
+              ));
+            })()}
+            
+            {/* Highlight cable being created */}
+            {cableRoutingMode && cableStartNode && !cableDialogOpen && (
+              <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1000] bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg">
+                <Cable className="w-4 h-4 inline mr-2" />
+                From: {cableStartNode.name} - Click end node
+              </div>
+            )}
             
             {filteredNodes.length === 0 && nodes.length > 0 && (
               <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[1000] bg-white p-4 rounded-lg shadow-lg text-center">
@@ -1706,6 +1843,49 @@ export default function FiberNetwork() {
                     <div className="text-[10px] text-gray-600">
                       Showing {filteredNodes.length} of {nodes.length} chambers
                     </div>
+                  </div>
+                )}
+
+                {/* Cable Routing Tools */}
+                {filteredNodes.length > 0 && (
+                  <div className="space-y-1 pt-2 border-t mt-2">
+                    <Label className="text-[10px] font-medium">Cable Routing</Label>
+                    
+                    <Button 
+                      onClick={() => {
+                        if (cableRoutingMode) {
+                          // Turn off cable routing mode
+                          setCableRoutingMode(false);
+                          setCableStartNode(null);
+                          setCableEndNode(null);
+                        } else {
+                          // Turn on cable routing mode, turn off selection modes
+                          setCableRoutingMode(true);
+                          setSelectionMode(null);
+                          setSelectedNodes([]);
+                          setSelectedPolygon([]);
+                          setIsDrawing(false);
+                          toast({
+                            title: 'Cable Routing Mode',
+                            description: 'Click two nodes to create a cable connection',
+                          });
+                        }
+                      }} 
+                      variant={cableRoutingMode ? 'default' : 'outline'}
+                      className="w-full h-8 text-[11px] px-2"
+                      data-testid="button-cable-routing-mode"
+                    >
+                      <Cable className="w-3 h-3 mr-1" />
+                      {cableRoutingMode ? 'Cable Mode Active' : 'Cable Routing'}
+                    </Button>
+                    
+                    {cableRoutingMode && cableStartNode && (
+                      <div className="text-[10px] text-gray-600 p-2 bg-blue-50 dark:bg-blue-900/20 rounded">
+                        Start: {cableStartNode.name}
+                        <br />
+                        Click end node...
+                      </div>
+                    )}
                   </div>
                 )}
 
@@ -2809,6 +2989,192 @@ export default function FiberNetwork() {
                 data-testid="button-confirm-add-node"
               >
                 {createNodeMutation.isPending ? 'Creating...' : 'Add Node'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Cable Dialog */}
+      <Dialog open={cableDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setCableDialogOpen(false);
+          setCableStartNode(null);
+          setCableEndNode(null);
+          setNewCableData({
+            cableId: '',
+            fiberCount: 24,
+            cableType: 'single_mode',
+            lengthMeters: 0,
+            status: 'planned',
+            notes: '',
+          });
+        }
+      }}>
+        <DialogContent className="sm:max-w-[500px]" data-testid="add-cable-dialog">
+          <DialogHeader>
+            <DialogTitle>
+              <Cable className="w-5 h-5 inline mr-2" />
+              Create Cable Route
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-sm">
+              <div className="flex items-center gap-2 text-blue-900 dark:text-blue-100">
+                <Link2 className="w-4 h-4" />
+                <span className="font-medium">Connection:</span>
+              </div>
+              <div className="mt-1 text-xs text-blue-800 dark:text-blue-200">
+                {cableStartNode?.name} → {cableEndNode?.name}
+              </div>
+            </div>
+
+            <div>
+              <Label>Cable ID *</Label>
+              <Input
+                value={newCableData.cableId}
+                onChange={(e) => setNewCableData({ ...newCableData, cableId: e.target.value })}
+                placeholder="e.g., CBL-001"
+                data-testid="input-cable-id"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Fiber Count</Label>
+                <Select
+                  value={newCableData.fiberCount.toString()}
+                  onValueChange={(value) => setNewCableData({ ...newCableData, fiberCount: parseInt(value) })}
+                >
+                  <SelectTrigger data-testid="select-fiber-count">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="12">12 fibers</SelectItem>
+                    <SelectItem value="24">24 fibers</SelectItem>
+                    <SelectItem value="48">48 fibers</SelectItem>
+                    <SelectItem value="96">96 fibers</SelectItem>
+                    <SelectItem value="144">144 fibers</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Cable Type</Label>
+                <Select
+                  value={newCableData.cableType}
+                  onValueChange={(value) => setNewCableData({ ...newCableData, cableType: value })}
+                >
+                  <SelectTrigger data-testid="select-cable-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="single_mode">Single Mode</SelectItem>
+                    <SelectItem value="multi_mode">Multi Mode</SelectItem>
+                    <SelectItem value="armored">Armored</SelectItem>
+                    <SelectItem value="aerial">Aerial</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Length (meters)</Label>
+                <Input
+                  type="number"
+                  value={newCableData.lengthMeters || ''}
+                  onChange={(e) => setNewCableData({ ...newCableData, lengthMeters: parseFloat(e.target.value) || 0 })}
+                  placeholder="0"
+                  data-testid="input-cable-length"
+                />
+              </div>
+
+              <div>
+                <Label>Status</Label>
+                <Select
+                  value={newCableData.status}
+                  onValueChange={(value) => setNewCableData({ ...newCableData, status: value })}
+                >
+                  <SelectTrigger data-testid="select-cable-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="planned">Planned</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="under_construction">Under Construction</SelectItem>
+                    <SelectItem value="decommissioned">Decommissioned</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div>
+              <Label>Notes</Label>
+              <Textarea
+                value={newCableData.notes}
+                onChange={(e) => setNewCableData({ ...newCableData, notes: e.target.value })}
+                placeholder="Add notes about this cable..."
+                rows={3}
+                data-testid="textarea-cable-notes"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCableDialogOpen(false);
+                  setCableStartNode(null);
+                  setCableEndNode(null);
+                  setNewCableData({
+                    cableId: '',
+                    fiberCount: 24,
+                    cableType: 'single_mode',
+                    lengthMeters: 0,
+                    status: 'planned',
+                    notes: '',
+                  });
+                }}
+                data-testid="button-cancel-add-cable"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  if (!newCableData.cableId || !cableStartNode || !cableEndNode) {
+                    toast({
+                      title: 'Validation Error',
+                      description: 'Please provide a cable ID',
+                      variant: 'destructive',
+                    });
+                    return;
+                  }
+
+                  await createCableMutation.mutateAsync({
+                    startNodeId: cableStartNode.id,
+                    endNodeId: cableEndNode.id,
+                    cableData: newCableData,
+                  });
+
+                  setCableDialogOpen(false);
+                  setCableStartNode(null);
+                  setCableEndNode(null);
+                  setCableRoutingMode(false);
+                  setNewCableData({
+                    cableId: '',
+                    fiberCount: 24,
+                    cableType: 'single_mode',
+                    lengthMeters: 0,
+                    status: 'planned',
+                    notes: '',
+                  });
+                }}
+                disabled={!newCableData.cableId || createCableMutation.isPending}
+                data-testid="button-confirm-add-cable"
+              >
+                {createCableMutation.isPending ? 'Creating...' : 'Create Cable'}
               </Button>
             </div>
           </div>

@@ -1168,4 +1168,328 @@ router.post('/save-splice-connections', authenticateToken, async (req: any, res)
   }
 });
 
+// Create a new cable connection between two nodes
+router.post('/cables', authenticateToken, async (req: any, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    const userId = req.user.id;
+    const { startNodeId, endNodeId, cableData } = req.body;
+
+    // Validate input
+    if (!startNodeId || !endNodeId || !cableData?.cableId) {
+      return res.status(400).json({ error: 'Missing required fields: startNodeId, endNodeId, and cableData.cableId' });
+    }
+
+    // Get both nodes
+    const nodes = await db
+      .select()
+      .from(fiberNetworkNodes)
+      .where(
+        and(
+          inArray(fiberNetworkNodes.id, [startNodeId, endNodeId]),
+          eq(fiberNetworkNodes.organizationId, organizationId)
+        )
+      );
+
+    if (nodes.length !== 2) {
+      return res.status(404).json({ error: 'One or both nodes not found' });
+    }
+
+    const [startNode, endNode] = nodes[0].id === startNodeId ? [nodes[0], nodes[1]] : [nodes[1], nodes[0]];
+
+    // Calculate initial route geometry (straight line)
+    const routeGeometry: Array<[number, number]> = [
+      [Number(startNode.latitude), Number(startNode.longitude)],
+      [Number(endNode.latitude), Number(endNode.longitude)]
+    ];
+
+    // Create cable object using cableId as the shared identifier
+    const newCable = {
+      id: cableData.cableId,
+      connectedNodeId: endNode.id,
+      connectedNodeName: endNode.name,
+      fiberCount: cableData.fiberCount || 24,
+      cableIdentifier: cableData.cableId,
+      cableType: cableData.cableType || 'single_mode',
+      lengthMeters: cableData.lengthMeters || 0,
+      status: cableData.status || 'planned',
+      direction: 'outgoing' as const,
+      routeGeometry,
+      notes: cableData.notes || '',
+      createdBy: userId,
+      createdAt: new Date().toISOString()
+    };
+
+    // Create reverse cable for end node
+    const reverseCable = {
+      ...newCable,
+      connectedNodeId: startNode.id,
+      connectedNodeName: startNode.name,
+      direction: 'incoming' as const,
+      routeGeometry: [...routeGeometry].reverse()
+    };
+
+    // Update start node
+    const startFiberDetails = startNode.fiberDetails || {};
+    const startCables = startFiberDetails.cables || [];
+    await db
+      .update(fiberNetworkNodes)
+      .set({
+        fiberDetails: {
+          ...startFiberDetails,
+          cables: [...startCables, newCable]
+        },
+        updatedBy: userId,
+        updatedAt: new Date()
+      })
+      .where(eq(fiberNetworkNodes.id, startNode.id));
+
+    // Update end node
+    const endFiberDetails = endNode.fiberDetails || {};
+    const endCables = endFiberDetails.cables || [];
+    await db
+      .update(fiberNetworkNodes)
+      .set({
+        fiberDetails: {
+          ...endFiberDetails,
+          cables: [...endCables, reverseCable]
+        },
+        updatedBy: userId,
+        updatedAt: new Date()
+      })
+      .where(eq(fiberNetworkNodes.id, endNode.id));
+
+    // Log activity
+    await db.insert(fiberNetworkActivityLogs).values({
+      organizationId,
+      userId,
+      userName: req.user.fullName || req.user.email,
+      actionType: 'create',
+      entityType: 'cable',
+      entityId: startNode.id,
+      changes: {
+        added: {
+          cableId: newCable.id,
+          from: startNode.name,
+          to: endNode.name,
+          fiberCount: newCable.fiberCount
+        }
+      },
+      ipAddress: req.ip
+    });
+
+    res.status(201).json({ 
+      success: true, 
+      cable: newCable,
+      startNode: startNode.name,
+      endNode: endNode.name
+    });
+  } catch (error: any) {
+    console.error('Error creating cable:', error);
+    res.status(500).json({ error: 'Failed to create cable', details: error.message });
+  }
+});
+
+// Update cable route geometry (waypoints)
+router.patch('/cables/:cableId/route', authenticateToken, async (req: any, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    const userId = req.user.id;
+    const { cableId } = req.params;
+    const { nodeId, waypoints } = req.body;
+
+    if (!waypoints || !Array.isArray(waypoints)) {
+      return res.status(400).json({ error: 'Waypoints array is required' });
+    }
+
+    // Get the node
+    const [node] = await db
+      .select()
+      .from(fiberNetworkNodes)
+      .where(
+        and(
+          eq(fiberNetworkNodes.id, nodeId),
+          eq(fiberNetworkNodes.organizationId, organizationId)
+        )
+      );
+
+    if (!node) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+
+    // Find and update the cable
+    const fiberDetails = node.fiberDetails || {};
+    const cables = fiberDetails.cables || [];
+    const cableIndex = cables.findIndex((c: any) => c.id === cableId);
+
+    if (cableIndex === -1) {
+      return res.status(404).json({ error: 'Cable not found' });
+    }
+
+    // Update route geometry
+    cables[cableIndex].routeGeometry = waypoints;
+
+    await db
+      .update(fiberNetworkNodes)
+      .set({
+        fiberDetails: {
+          ...fiberDetails,
+          cables
+        },
+        updatedBy: userId,
+        updatedAt: new Date()
+      })
+      .where(eq(fiberNetworkNodes.id, nodeId));
+
+    // Also update the connected node's reverse cable
+    const connectedNodeId = cables[cableIndex].connectedNodeId;
+    const [connectedNode] = await db
+      .select()
+      .from(fiberNetworkNodes)
+      .where(
+        and(
+          eq(fiberNetworkNodes.id, connectedNodeId),
+          eq(fiberNetworkNodes.organizationId, organizationId)
+        )
+      );
+
+    if (connectedNode) {
+      const connectedFiberDetails = connectedNode.fiberDetails || {};
+      const connectedCables = connectedFiberDetails.cables || [];
+      const connectedCableIndex = connectedCables.findIndex((c: any) => 
+        c.id === cableId && c.connectedNodeId === nodeId
+      );
+
+      if (connectedCableIndex !== -1) {
+        connectedCables[connectedCableIndex].routeGeometry = [...waypoints].reverse();
+        
+        await db
+          .update(fiberNetworkNodes)
+          .set({
+            fiberDetails: {
+              ...connectedFiberDetails,
+              cables: connectedCables
+            },
+            updatedBy: userId,
+            updatedAt: new Date()
+          })
+          .where(eq(fiberNetworkNodes.id, connectedNodeId));
+      }
+    }
+
+    res.json({ success: true, cableId, waypoints: waypoints.length });
+  } catch (error: any) {
+    console.error('Error updating cable route:', error);
+    res.status(500).json({ error: 'Failed to update cable route', details: error.message });
+  }
+});
+
+// Delete a cable
+router.delete('/cables/:cableId', authenticateToken, async (req: any, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    const userId = req.user.id;
+    const { cableId } = req.params;
+    const { nodeId } = req.query;
+
+    if (!nodeId) {
+      return res.status(400).json({ error: 'nodeId query parameter is required' });
+    }
+
+    // Get the node
+    const [node] = await db
+      .select()
+      .from(fiberNetworkNodes)
+      .where(
+        and(
+          eq(fiberNetworkNodes.id, parseInt(nodeId as string)),
+          eq(fiberNetworkNodes.organizationId, organizationId)
+        )
+      );
+
+    if (!node) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+
+    // Find the cable to get connected node
+    const fiberDetails = node.fiberDetails || {};
+    const cables = fiberDetails.cables || [];
+    const cable = cables.find((c: any) => c.id === cableId);
+
+    if (!cable) {
+      return res.status(404).json({ error: 'Cable not found' });
+    }
+
+    const connectedNodeId = cable.connectedNodeId;
+
+    // Remove cable from this node
+    const updatedCables = cables.filter((c: any) => c.id !== cableId);
+    await db
+      .update(fiberNetworkNodes)
+      .set({
+        fiberDetails: {
+          ...fiberDetails,
+          cables: updatedCables
+        },
+        updatedBy: userId,
+        updatedAt: new Date()
+      })
+      .where(eq(fiberNetworkNodes.id, node.id));
+
+    // Remove reverse cable from connected node
+    const [connectedNode] = await db
+      .select()
+      .from(fiberNetworkNodes)
+      .where(
+        and(
+          eq(fiberNetworkNodes.id, connectedNodeId),
+          eq(fiberNetworkNodes.organizationId, organizationId)
+        )
+      );
+
+    if (connectedNode) {
+      const connectedFiberDetails = connectedNode.fiberDetails || {};
+      const connectedCables = connectedFiberDetails.cables || [];
+      const filteredConnectedCables = connectedCables.filter((c: any) => 
+        !(c.id === cableId && c.connectedNodeId === node.id)
+      );
+
+      await db
+        .update(fiberNetworkNodes)
+        .set({
+          fiberDetails: {
+            ...connectedFiberDetails,
+            cables: filteredConnectedCables
+          },
+          updatedBy: userId,
+          updatedAt: new Date()
+        })
+        .where(eq(fiberNetworkNodes.id, connectedNodeId));
+    }
+
+    // Log activity
+    await db.insert(fiberNetworkActivityLogs).values({
+      organizationId,
+      userId,
+      userName: req.user.fullName || req.user.email,
+      actionType: 'delete',
+      entityType: 'cable',
+      entityId: node.id,
+      changes: {
+        before: {
+          cableId,
+          from: node.name,
+          to: cable.connectedNodeName
+        }
+      },
+      ipAddress: req.ip
+    });
+
+    res.json({ success: true, cableId });
+  } catch (error: any) {
+    console.error('Error deleting cable:', error);
+    res.status(500).json({ error: 'Failed to delete cable', details: error.message });
+  }
+});
+
 export default router;
