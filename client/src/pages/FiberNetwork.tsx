@@ -487,6 +487,21 @@ export default function FiberNetwork() {
 
   const nodeTypes = nodeTypesData?.nodeTypes || [];
 
+  // Fetch cables for selected node when splice tray editor is open
+  const { data: nodeCablesData, isLoading: cablesLoading } = useQuery<{ cables: any[] }>({
+    queryKey: ['/api/fiber-network/nodes', selectedNode?.id, 'cables'],
+    queryFn: async () => {
+      const response = await fetch(`/api/fiber-network/nodes/${selectedNode?.id}/cables`, {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Failed to fetch cables');
+      return response.json();
+    },
+    enabled: !!selectedNode?.id && spliceTrayEditorOpen,
+  });
+
+  const nodeCables = nodeCablesData?.cables || [];
+
   // Create node type mutation
   const createNodeTypeMutation = useMutation({
     mutationFn: async (data: { value: string; label: string }) => {
@@ -3976,44 +3991,55 @@ export default function FiberNetwork() {
               <h3 className="text-sm font-medium">Fiber Connections</h3>
               
               {/* Cable Selection - Only show cables from selected node */}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <Label>Left Cable</Label>
-                  <Select
-                    value={leftCableId?.toString() || ''}
-                    onValueChange={(value) => setLeftCableId(value ? parseInt(value) : null)}
-                  >
-                    <SelectTrigger data-testid="select-left-cable">
-                      <SelectValue placeholder="Select cable..." />
-                    </SelectTrigger>
-                    <SelectContent className="z-[9999]" position="popper" sideOffset={4}>
-                      {(selectedNode?.fiberDetails?.cables || []).map((cable: any) => (
-                        <SelectItem key={cable.id} value={cable.id.toString()}>
-                          {cable.cableIdentifier} ({cable.fiberCount || 0} fibers)
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+              {cablesLoading ? (
+                <div className="text-center py-4 text-sm text-gray-500">
+                  Loading cables...
                 </div>
-                <div>
-                  <Label>Right Cable</Label>
-                  <Select
-                    value={rightCableId?.toString() || ''}
-                    onValueChange={(value) => setRightCableId(value ? parseInt(value) : null)}
-                  >
-                    <SelectTrigger data-testid="select-right-cable">
-                      <SelectValue placeholder="Select cable..." />
-                    </SelectTrigger>
-                    <SelectContent className="z-[9999]" position="popper" sideOffset={4}>
-                      {(selectedNode?.fiberDetails?.cables || []).map((cable: any) => (
-                        <SelectItem key={cable.id} value={cable.id.toString()}>
-                          {cable.cableIdentifier} ({cable.fiberCount || 0} fibers)
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+              ) : nodeCables.length === 0 ? (
+                <div className="text-center py-4 text-sm text-amber-600 bg-amber-50 rounded-lg border border-amber-200">
+                  <p className="font-medium">No cables connected to this node</p>
+                  <p className="text-xs mt-1">Add cables to this node first before creating splice connections.</p>
                 </div>
-              </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Left Cable</Label>
+                    <Select
+                      value={leftCableId?.toString() || ''}
+                      onValueChange={(value) => setLeftCableId(value ? parseInt(value) : null)}
+                    >
+                      <SelectTrigger data-testid="select-left-cable">
+                        <SelectValue placeholder="Select cable..." />
+                      </SelectTrigger>
+                      <SelectContent className="z-[9999]" position="popper" sideOffset={4}>
+                        {nodeCables.map((cable: any) => (
+                          <SelectItem key={cable.id} value={cable.id.toString()}>
+                            {cable.cableIdentifier} ({cable.fiberCount || 0} fibers)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Right Cable</Label>
+                    <Select
+                      value={rightCableId?.toString() || ''}
+                      onValueChange={(value) => setRightCableId(value ? parseInt(value) : null)}
+                    >
+                      <SelectTrigger data-testid="select-right-cable">
+                        <SelectValue placeholder="Select cable..." />
+                      </SelectTrigger>
+                      <SelectContent className="z-[9999]" position="popper" sideOffset={4}>
+                        {nodeCables.map((cable: any) => (
+                          <SelectItem key={cable.id} value={cable.id.toString()}>
+                            {cable.cableIdentifier} ({cable.fiberCount || 0} fibers)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
 
               {/* Fiber Connection Interface */}
               {leftCableId && rightCableId ? (
@@ -4040,10 +4066,10 @@ export default function FiberNetwork() {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <div className="text-xs font-medium mb-2">
-                          {(selectedNode?.fiberDetails?.cables || []).find((c: any) => c.id === leftCableId)?.cableIdentifier}
+                          {nodeCables.find((c: any) => c.id === leftCableId)?.cableIdentifier}
                         </div>
                         <div className="space-y-1 max-h-[300px] overflow-y-auto">
-                          {Array.from({ length: (selectedNode?.fiberDetails?.cables || []).find((c: any) => c.id === leftCableId)?.fiberCount || 0 }, (_, i) => i + 1).map(fiberNum => {
+                          {Array.from({ length: nodeCables.find((c: any) => c.id === leftCableId)?.fiberCount || 0 }, (_, i) => i + 1).map(fiberNum => {
                             const hasConnection = fiberConnections.some(
                               conn => conn.leftCableId === leftCableId && conn.leftFiberNumber === fiberNum
                             );
@@ -4058,7 +4084,7 @@ export default function FiberNetwork() {
                                 onClick={() => {
                                   // Simple click-to-connect: creates 1-to-1 connection
                                   if (!hasConnection && rightCableId) {
-                                    const rightCable = (selectedNode?.fiberDetails?.cables || []).find((c: any) => c.id === rightCableId);
+                                    const rightCable = nodeCables.find((c: any) => c.id === rightCableId);
                                     const nextAvailableRight = Array.from(
                                       { length: rightCable?.fiberCount || 0 },
                                       (_, i) => i + 1
@@ -4087,10 +4113,10 @@ export default function FiberNetwork() {
                       </div>
                       <div>
                         <div className="text-xs font-medium mb-2">
-                          {(selectedNode?.fiberDetails?.cables || []).find((c: any) => c.id === rightCableId)?.cableIdentifier}
+                          {nodeCables.find((c: any) => c.id === rightCableId)?.cableIdentifier}
                         </div>
                         <div className="space-y-1 max-h-[300px] overflow-y-auto">
-                          {Array.from({ length: (selectedNode?.fiberDetails?.cables || []).find((c: any) => c.id === rightCableId)?.fiberCount || 0 }, (_, i) => i + 1).map(fiberNum => {
+                          {Array.from({ length: nodeCables.find((c: any) => c.id === rightCableId)?.fiberCount || 0 }, (_, i) => i + 1).map(fiberNum => {
                             const hasConnection = fiberConnections.some(
                               conn => conn.rightCableId === rightCableId && conn.rightFiberNumber === fiberNum
                             );
