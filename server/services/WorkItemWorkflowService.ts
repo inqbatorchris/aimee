@@ -965,12 +965,41 @@ export class WorkItemWorkflowService {
 
               console.log(`[OCR] Successfully updated ${targetTable}#${targetRecordId}.${targetField} = ${extractedValue}`);
 
-              // Log successful extraction
+              // Map table names to entity types for activity logs
+              const entityTypeMap: Record<string, string> = {
+                'address_records': 'address',
+                'addresses': 'address',
+                'work_items': 'work_item',
+              };
+              const targetEntityType = entityTypeMap[targetTable] || targetTable;
+
+              // Log successful extraction to BOTH work item and target record
+              // 1. Log to work item activity
               await db.insert(activityLogs).values({
                 organizationId,
                 userId: null,
                 actionType: 'ocr_extraction',
-                entityType: targetTable,
+                entityType: 'work_item',
+                entityId: workItemId,
+                description: `OCR extracted ${extractionPrompt}: ${extractedValue}`,
+                metadata: {
+                  workItemId,
+                  executionId,
+                  stepId: templateStep.id,
+                  targetTable,
+                  targetRecordId,
+                  fieldName: targetField,
+                  extractedValue,
+                  photoCount: photos.length,
+                },
+              });
+
+              // 2. Log to target record activity (address, customer, etc.)
+              await db.insert(activityLogs).values({
+                organizationId,
+                userId: null,
+                actionType: 'ocr_extraction',
+                entityType: targetEntityType,
                 entityId: targetRecordId,
                 description: `OCR extracted ${extractionPrompt}: ${extractedValue}`,
                 metadata: {
