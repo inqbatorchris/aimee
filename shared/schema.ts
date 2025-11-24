@@ -3346,6 +3346,47 @@ export const fiberNodeTypes = pgTable("fiber_node_types", {
   unique("unique_node_type_per_org").on(table.organizationId, table.value),
 ]);
 
+// Audio Recordings - Voice memos for splice documentation
+export const audioRecordings = pgTable("audio_recordings", {
+  id: varchar("id", { length: 100 }).primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  workItemId: integer("work_item_id").references(() => workItems.id).notNull(),
+  stepId: varchar("step_id", { length: 100 }),
+  
+  // File metadata
+  filePath: varchar("file_path", { length: 500 }).notNull(),
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  mimeType: varchar("mime_type", { length: 100 }).notNull(),
+  size: integer("size").notNull(),
+  duration: integer("duration").notNull(),
+  
+  // AI Processing
+  transcription: text("transcription"),
+  extractedData: jsonb("extracted_data").$type<{
+    connections: Array<{
+      incomingCable: string;
+      incomingFiber: number;
+      incomingBufferTube?: string;
+      outgoingCable: string;
+      outgoingFiber: number;
+      outgoingBufferTube?: string;
+      notes?: string;
+    }>;
+  }>(),
+  processingStatus: varchar("processing_status", { length: 20 }).default('pending').notNull(),
+  processingError: text("processing_error"),
+  processedAt: timestamp("processed_at"),
+  
+  // Upload tracking
+  uploadedBy: integer("uploaded_by").references(() => users.id),
+  uploadedAt: timestamp("uploaded_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_audio_org").on(table.organizationId),
+  index("idx_audio_work_item").on(table.workItemId),
+  index("idx_audio_status").on(table.processingStatus),
+]);
+
 // ========================================
 // AIRTABLE INTEGRATION MODULE
 // ========================================
@@ -3713,6 +3754,14 @@ export type InsertFiberNetworkActivityLog = z.infer<typeof insertFiberNetworkAct
 
 export type FiberNodeType = typeof fiberNodeTypes.$inferSelect;
 export type InsertFiberNodeType = z.infer<typeof insertFiberNodeTypeSchema>;
+
+// Insert schema for Audio Recordings
+export const insertAudioRecordingSchema = createInsertSchema(audioRecordings).omit({
+  createdAt: true,
+});
+
+export type AudioRecording = typeof audioRecordings.$inferSelect;
+export type InsertAudioRecording = z.infer<typeof insertAudioRecordingSchema>;
 
 // Insert schemas for Airtable integration
 export const insertAirtableConnectionSchema = createInsertSchema(airtableConnections).omit({
