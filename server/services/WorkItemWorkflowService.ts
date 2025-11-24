@@ -523,18 +523,20 @@ export class WorkItemWorkflowService {
     });
     
     // Collect from step evidence (current storage location)
+    console.log(`[Callback] Processing ${steps.length} steps for photos`);
     steps.forEach((step: any) => {
       const evidence = step.evidence as any;
+      console.log(`[Callback] Step ${step.id} evidence keys:`, evidence ? Object.keys(evidence) : 'no evidence');
       if (evidence) {
         // Collect photos from evidence
         if (evidence.photos && Array.isArray(evidence.photos)) {
           allPhotos.push(...evidence.photos);
-          console.log(`[Callback] Collected ${evidence.photos.length} photos from step ${step.stepId}`);
+          console.log(`[Callback] Collected ${evidence.photos.length} photos from step ${step.id} (stepId: ${evidence.stepId})`);
         }
         // Collect photo URLs if stored differently
         if (evidence.photoUrl) {
           allPhotos.push({ url: evidence.photoUrl });
-          console.log(`[Callback] Collected photoUrl from step ${step.stepId}`);
+          console.log(`[Callback] Collected photoUrl from step ${step.id}`);
         }
       }
       // Collect notes from step
