@@ -72,13 +72,18 @@ const getStepFields = (step: WorkflowTemplateStep): Array<{ id: string; label: s
     
     case 'photo':
       // Add OCR extracted fields if configured
+      // NOTE: photoAnalysisConfig is stored in step.config.photoAnalysisConfig, NOT step.photoAnalysisConfig
       const photoStep = step as any;
-      if (photoStep.photoAnalysisConfig?.extractions && photoStep.photoAnalysisConfig.extractions.length > 0) {
-        photoStep.photoAnalysisConfig.extractions.forEach((extraction: any) => {
-          if (extraction.targetField && extraction.displayLabel) {
+      const photoConfig = photoStep.config?.photoAnalysisConfig || photoStep.photoAnalysisConfig;
+      
+      if (photoConfig?.extractions && photoConfig.extractions.length > 0) {
+        photoConfig.extractions.forEach((extraction: any) => {
+          if (extraction.targetField) {
+            // Use displayLabel if available, otherwise fall back to extractionPrompt or targetField
+            const label = extraction.displayLabel || extraction.extractionPrompt || extraction.targetField;
             fields.push({ 
               id: extraction.targetField, 
-              label: `${extraction.displayLabel} (OCR)` 
+              label: `${label} (OCR)` 
             });
           }
         });
