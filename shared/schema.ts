@@ -3562,26 +3562,64 @@ export const airtableRecordLinks = pgTable("airtable_record_links", {
   unique("unique_conn_record").on(table.connectionId, table.airtableRecordId),
 ]);
 
-// Address Records - Local storage of Airtable address data with workflow management
+// Airtable Address Snapshots - Raw Airtable sync data (backend only, never shown in UI)
+export const airtableAddressSnapshots = pgTable("airtable_address_snapshots", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  airtableConnectionId: integer("airtable_connection_id").references(() => airtableConnections.id, { onDelete: "cascade" }).notNull(),
+  airtableRecordId: varchar("airtable_record_id", { length: 100 }).notNull(),
+  
+  // Complete Airtable payload (raw JSON from Airtable API)
+  snapshotData: jsonb("snapshot_data").notNull().$type<Record<string, any>>(),
+  
+  // Sync metadata
+  syncedAt: timestamp("synced_at").defaultNow().notNull(),
+  
+  // Audit
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_snapshot_org").on(table.organizationId),
+  index("idx_snapshot_airtable_record").on(table.airtableRecordId),
+  index("idx_snapshot_connection").on(table.airtableConnectionId),
+  unique("unique_snapshot_airtable_record").on(table.organizationId, table.airtableConnectionId, table.airtableRecordId),
+]);
+
+// Address Records - Operational address data with searchable columns (what users query)
 export const addressRecords = pgTable("address_records", {
   id: serial("id").primaryKey(),
   organizationId: integer("organization_id").references(() => organizations.id).notNull(),
   
-  // Airtable linkage
+  // Airtable linkage (reference to snapshot)
   airtableRecordId: varchar("airtable_record_id", { length: 100 }).notNull(),
   airtableConnectionId: integer("airtable_connection_id").references(() => airtableConnections.id, { onDelete: "cascade" }).notNull(),
   
-  // Complete Airtable record data (exact schema match, dynamic)
-  airtableFields: jsonb("airtable_fields").notNull().$type<Record<string, any>>(),
+  // Searchable Airtable fields (copied from snapshots for query performance)
+  postcode: varchar("postcode", { length: 20 }),
+  summary: text("summary"),
+  address: text("address"),
+  premise: text("premise"),
+  network: varchar("network", { length: 50 }),
+  udprn: varchar("udprn", { length: 50 }),
+  statusId: varchar("status_id", { length: 50 }),
+  tariffIds: jsonb("tariff_ids").$type<string[]>(),
+  
+  // OCR extracted fields (auto-created from workflow templates)
+  routerSerial: varchar("router_serial", { length: 100 }),
+  routerMac: varchar("router_mac", { length: 50 }),
+  routerModel: varchar("router_model", { length: 100 }),
+  onuSerial: varchar("onu_serial", { length: 100 }),
+  onuMac: varchar("onu_mac", { length: 50 }),
+  onuModel: varchar("onu_model", { length: 100 }),
+  
+  // Non-critical extracted data (JSONB for flexibility)
+  extractedDataExtras: jsonb("extracted_data_extras").default({}).$type<Record<string, any>>(),
   
   // Local-only fields for workflow management (never synced to Airtable)
   localStatus: varchar("local_status", { length: 50 }),
   localNotes: text("local_notes"),
   workItemCount: integer("work_item_count").default(0),
   lastWorkItemDate: timestamp("last_work_item_date"),
-  
-  // OCR extracted data from workflow completions
-  extractedData: jsonb("extracted_data").default({}).$type<Record<string, any>>(),
   
   // Sync metadata
   lastSyncedAt: timestamp("last_synced_at"),
@@ -3593,6 +3631,8 @@ export const addressRecords = pgTable("address_records", {
   index("idx_address_org").on(table.organizationId),
   index("idx_address_airtable_record").on(table.airtableRecordId),
   index("idx_address_connection").on(table.airtableConnectionId),
+  index("idx_address_postcode").on(table.postcode),
+  index("idx_address_network").on(table.network),
   unique("unique_address_airtable_record").on(table.organizationId, table.airtableConnectionId, table.airtableRecordId),
 ]);
 

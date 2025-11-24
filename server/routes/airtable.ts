@@ -798,18 +798,17 @@ router.get('/connections/:connectionId/export-addresses-csv', async (req, res) =
       return res.status(404).json({ error: 'No addresses found' });
     }
     
-    // Build CSV from airtableFields
-    const allFields = new Set<string>();
-    addresses.forEach(addr => {
-      Object.keys(addr.airtableFields).forEach(field => allFields.add(field));
-    });
-    
-    const headers = Array.from(allFields);
+    // Export using real columns (searchable Airtable fields + OCR fields)
+    const headers = [
+      'id', 'postcode', 'summary', 'address', 'premise', 'network', 'udprn', 
+      'statusId', 'routerSerial', 'routerMac', 'routerModel', 
+      'onuSerial', 'onuMac', 'onuModel', 'localStatus', 'localNotes'
+    ];
     const csvRows = [headers.join(',')];
     
     for (const addr of addresses) {
       const values = headers.map(h => {
-        const val = addr.airtableFields[h];
+        const val = (addr as any)[h];
         // Escape commas and quotes
         if (val === null || val === undefined) return '';
         const str = String(val);

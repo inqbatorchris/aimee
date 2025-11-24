@@ -185,6 +185,7 @@ import {
   airtableConnections,
   airtableWorkflowTemplates,
   airtableRecordLinks,
+  airtableAddressSnapshots,
   addressRecords,
   ragStatusRecords,
   tariffRecords,
@@ -4477,7 +4478,29 @@ export class CleanDatabaseStorage implements ICleanStorage {
     fields: any,
     existingLocalFields?: Partial<AddressRecord>
   ): Promise<AddressRecord> {
-    // Check if record exists
+    // Step 1: Write raw Airtable data to snapshot table (always)
+    await db.insert(airtableAddressSnapshots)
+      .values({
+        organizationId,
+        airtableConnectionId: connectionId,
+        airtableRecordId,
+        snapshotData: fields,
+        syncedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: [
+          airtableAddressSnapshots.organizationId,
+          airtableAddressSnapshots.airtableConnectionId,
+          airtableAddressSnapshots.airtableRecordId
+        ],
+        set: {
+          snapshotData: fields,
+          syncedAt: new Date(),
+          updatedAt: new Date(),
+        }
+      });
+
+    // Step 2: Reconcile to operational address_records table
     const [existing] = await db.select()
       .from(addressRecords)
       .where(and(
@@ -4487,26 +4510,40 @@ export class CleanDatabaseStorage implements ICleanStorage {
       ))
       .limit(1);
 
-    if (existing) {
-      // Update: Merge new Airtable fields with existing (never remove old fields)
-      const mergedFields = {
-        ...existing.airtableFields,
-        ...fields,
-      };
+    // Extract searchable fields from Airtable payload
+    const searchableFields = {
+      postcode: fields.postcode || null,
+      summary: fields.summary || null,
+      address: fields.address || null,
+      premise: fields.premise || null,
+      network: fields.Network || fields.network || null,
+      udprn: fields.udprn || null,
+      statusId: fields.status_id || null,
+      tariffIds: fields.tariffs || fields.Tariffs || null,
+    };
 
+    if (existing) {
+      // Update: Copy Airtable fields to real columns, preserve ID and local fields
       const [updated] = await db.update(addressRecords)
         .set({
-          airtableFields: mergedFields,
+          ...searchableFields,
           lastSyncedAt: new Date(),
           updatedAt: new Date(),
-          // Preserve local-only fields (never overwrite with Airtable data)
+          // CRITICAL: Preserve local-only fields (never overwrite with Airtable data)
           localStatus: existingLocalFields?.localStatus ?? existing.localStatus,
           localNotes: existingLocalFields?.localNotes ?? existing.localNotes,
           workItemCount: existingLocalFields?.workItemCount ?? existing.workItemCount,
           lastWorkItemDate: existingLocalFields?.lastWorkItemDate ?? existing.lastWorkItemDate,
-          extractedData: existingLocalFields?.extractedData ?? existing.extractedData, // Preserve OCR-extracted data during sync
+          // CRITICAL: Preserve OCR-extracted columns (never overwrite with Airtable data)
+          routerSerial: existing.routerSerial,
+          routerMac: existing.routerMac,
+          routerModel: existing.routerModel,
+          onuSerial: existing.onuSerial,
+          onuMac: existing.onuMac,
+          onuModel: existing.onuModel,
+          extractedDataExtras: existingLocalFields?.extractedDataExtras ?? existing.extractedDataExtras,
         })
-        .where(eq(addressRecords.id, existing.id))
+        .where(eq(addressRecords.id, existing.id)) // CRITICAL: Use existing ID to prevent link breakage
         .returning();
       return updated;
     } else {
@@ -4516,7 +4553,7 @@ export class CleanDatabaseStorage implements ICleanStorage {
           organizationId,
           airtableConnectionId: connectionId,
           airtableRecordId,
-          airtableFields: fields,
+          ...searchableFields,
           lastSyncedAt: new Date(),
           ...existingLocalFields,
         })

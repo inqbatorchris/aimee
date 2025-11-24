@@ -48,7 +48,22 @@ interface AddressRecord {
   id: number;
   airtableRecordId: string;
   airtableConnectionId: number;
-  airtableFields: Record<string, any>;
+  // Real searchable Airtable columns
+  postcode?: string | null;
+  summary?: string | null;
+  address?: string | null;
+  premise?: string | null;
+  network?: string | null;
+  udprn?: string | null;
+  statusId?: string | null;
+  // OCR extracted columns
+  routerSerial?: string | null;
+  routerMac?: string | null;
+  routerModel?: string | null;
+  onuSerial?: string | null;
+  onuMac?: string | null;
+  onuModel?: string | null;
+  // Local fields
   localStatus?: string;
   localNotes?: string;
   workItemCount: number;
@@ -338,30 +353,34 @@ export default function Addresses() {
     }
   }, [latestSyncLog, addresses.length]);
   
-  // Extract all unique column keys from all addresses' Airtable fields
-  const allAirtableColumns = useMemo(() => {
-    const columns = new Set<string>();
-    addresses.forEach(addr => {
-      if (addr.airtableFields && typeof addr.airtableFields === 'object') {
-        Object.keys(addr.airtableFields).forEach(key => columns.add(key));
-      }
-    });
-    const columnArray = Array.from(columns).sort();
-    console.log('Extracted Airtable columns:', {
-      addressCount: addresses.length,
-      columnCount: columnArray.length,
-      sampleFields: addresses[0]?.airtableFields ? Object.keys(addresses[0].airtableFields).slice(0, 5) : []
-    });
-    return columnArray;
-  }, [addresses]);
+  // Searchable Airtable columns (real database columns)
+  const airtableColumns = [
+    'postcode',
+    'summary',
+    'address',
+    'premise',
+    'network',
+    'udprn',
+    'statusId',
+  ];
   
-  // System columns (non-Airtable fields)
+  // OCR extracted columns (real database columns)
+  const ocrColumns = [
+    'routerSerial',
+    'routerMac',
+    'routerModel',
+    'onuSerial',
+    'onuMac',
+    'onuModel',
+  ];
+  
+  // System columns (local-only fields)
   const systemColumns = ['localStatus', 'workItems'];
   
   // All available columns
   const allColumns = useMemo(() => {
-    return [...allAirtableColumns, ...systemColumns];
-  }, [allAirtableColumns]);
+    return [...airtableColumns, ...ocrColumns, ...systemColumns];
+  }, []);
   
   // Initialize column order and visibility with first 6 Airtable columns + system columns
   useEffect(() => {
@@ -411,7 +430,7 @@ export default function Addresses() {
       setColumnOrder(defaultOrder);
       
       const defaultVisible = new Set([
-        ...allAirtableColumns.slice(0, Math.min(6, allAirtableColumns.length)),
+        ...airtableColumns.slice(0, Math.min(6, airtableColumns.length)),
         ...systemColumns
       ]);
       setVisibleColumns(defaultVisible);
@@ -423,10 +442,10 @@ export default function Addresses() {
       console.log('Initialized columns with defaults:', {
         total: allColumns.length,
         visible: defaultVisible.size,
-        airtable: allAirtableColumns.length
+        airtable: airtableColumns.length
       });
     }
-  }, [allColumns.length, allAirtableColumns.length]);
+  }, [allColumns.length]);
   
   // Get ordered visible columns
   const orderedVisibleColumns = useMemo(() => {
@@ -599,11 +618,28 @@ export default function Addresses() {
   // Filter addresses based on search and filters
   const filteredAddresses = useMemo(() => {
     return addresses.filter(addr => {
+      // Search across all searchable real columns
+      const searchableFields = [
+        addr.postcode,
+        addr.summary,
+        addr.address,
+        addr.premise,
+        addr.network,
+        addr.udprn,
+        addr.statusId,
+        addr.routerSerial,
+        addr.routerMac,
+        addr.routerModel,
+        addr.onuSerial,
+        addr.onuMac,
+        addr.onuModel,
+        addr.localStatus,
+      ].filter(Boolean);
+      
       const searchMatch = searchTerm === '' || 
-        Object.values(addr.airtableFields).some(val => 
+        searchableFields.some(val => 
           String(val).toLowerCase().includes(searchTerm.toLowerCase())
-        ) ||
-        (addr.localStatus && addr.localStatus.toLowerCase().includes(searchTerm.toLowerCase()));
+        );
       
       const statusMatch = filterStatus === 'all' || addr.localStatus === filterStatus;
       
@@ -613,25 +649,17 @@ export default function Addresses() {
         (filterHasWorkItems === 'with' && hasWorkItems) ||
         (filterHasWorkItems === 'without' && !hasWorkItems);
       
-      // Filter by network
-      const networkMatch = filterNetwork === 'all' || 
-        (addr.airtableFields.Network === filterNetwork);
+      // Filter by network (using real column)
+      const networkMatch = filterNetwork === 'all' || (addr.network === filterNetwork);
       
-      // Filter by city
-      const cityMatch = filterCity === 'all' ||
-        (addr.airtableFields.City === filterCity);
+      // Disable legacy airtableFields-based filters
+      const cityMatch = true; // Legacy filter disabled
+      const resolvedStatusMatch = true; // Legacy filter disabled
+      const tariffMatch = true; // Legacy filter disabled
       
-      // Filter by resolved status
-      const resolvedStatusMatch = filterResolvedStatus === 'all' ||
-        (addr.airtableFields._resolved_status === filterResolvedStatus);
-      
-      // Filter by tariff
-      const tariffMatch = filterTariff === 'all' || 
-        formatTariffValue(addr.airtableFields._resolved_tariff) === filterTariff;
-      
-      // Apply advanced filters
+      // Apply advanced filters (using real columns)
       const advancedFilterMatch = advancedFilters.every(filter => {
-        const fieldValue = addr.airtableFields[filter.field];
+        const fieldValue = (addr as any)[filter.field];
         const valueStr = fieldValue !== undefined && fieldValue !== null ? String(fieldValue).toLowerCase() : '';
         const filterValueStr = filter.value.toLowerCase();
         
@@ -678,22 +706,13 @@ export default function Addresses() {
   )).sort();
   
   const uniqueNetworks = Array.from(new Set(
-    addresses.map(a => a.airtableFields.Network).filter(Boolean)
+    addresses.map(a => a.network).filter(Boolean)
   )).sort();
   
-  const uniqueCities = Array.from(new Set(
-    addresses.map(a => a.airtableFields.City).filter(Boolean)
-  )).sort();
-  
-  const uniqueResolvedStatuses = Array.from(new Set(
-    addresses.map(a => a.airtableFields._resolved_status).filter(Boolean)
-  )).sort();
-  
-  const uniqueTariffs = Array.from(new Set(
-    addresses
-      .map(a => formatTariffValue(a.airtableFields._resolved_tariff))
-      .filter(Boolean)
-  )).sort();
+  // Legacy filters disabled - using simple network filter only
+  const uniqueCities: string[] = [];
+  const uniqueResolvedStatuses: string[] = [];
+  const uniqueTariffs: string[] = [];
   
   // Check if any filters are active
   const hasActiveFilters = filterStatus !== 'all' || filterHasWorkItems !== 'all' || 
@@ -824,24 +843,8 @@ export default function Addresses() {
       return <span className="text-gray-400">0</span>;
     }
     
-    // Special handling for status_ID/status_id field - show resolved status instead
-    if ((column === 'status_ID' || column === 'status_id') && addr.airtableFields['_resolved_status']) {
-      const resolvedValue = addr.airtableFields['_resolved_status'];
-      return resolvedValue ? (
-        <Badge variant="outline" className="text-xs">
-          {String(resolvedValue)}
-        </Badge>
-      ) : '-';
-    }
-    
-    // Special handling for tariff/tariffs field - show resolved tariff instead
-    if ((column === 'tariff' || column === 'tariffs') && addr.airtableFields['_resolved_tariff']) {
-      const resolvedValue = addr.airtableFields['_resolved_tariff'];
-      return resolvedValue ? formatTariffValue(resolvedValue) : '-';
-    }
-    
-    // For other columns, show the raw value
-    const value = addr.airtableFields[column];
+    // For all other columns, get value from real database columns
+    const value = (addr as any)[column];
     return value !== undefined && value !== null ? String(value) : '-';
   };
   
@@ -856,19 +859,8 @@ export default function Addresses() {
       return '0';
     }
     
-    // Special handling for status_ID/status_id field - show resolved status instead
-    if ((column === 'status_ID' || column === 'status_id') && addr.airtableFields['_resolved_status']) {
-      const resolvedValue = addr.airtableFields['_resolved_status'];
-      return resolvedValue ? String(resolvedValue) : '-';
-    }
-    
-    // Special handling for tariff/tariffs field - show resolved tariff instead
-    if ((column === 'tariff' || column === 'tariffs') && addr.airtableFields['_resolved_tariff']) {
-      const resolvedValue = addr.airtableFields['_resolved_tariff'];
-      return resolvedValue ? formatTariffValue(resolvedValue) : '-';
-    }
-    
-    const value = addr.airtableFields[column];
+    // For all other columns, get value from real database columns
+    const value = (addr as any)[column];
     return value !== undefined && value !== null ? String(value) : '-';
   };
   
@@ -1521,16 +1513,16 @@ export default function Addresses() {
             <SheetHeader>
               <SheetTitle className="flex items-center gap-2">
                 <Eye className="w-5 h-5" />
-                {selectedAddress.airtableFields.summary || selectedAddress.airtableFields.address || selectedAddress.airtableFields.street || `Address #${selectedAddress.id}`}
+                {selectedAddress.summary || selectedAddress.address || selectedAddress.premise || `Address #${selectedAddress.id}`}
               </SheetTitle>
               <SheetDescription>
                 {selectedAddress.localStatus && (
                   <Badge variant="secondary">{selectedAddress.localStatus}</Badge>
                 )}
-                {selectedAddress.airtableFields.network && (
+                {selectedAddress.network && (
                   <>
                     {selectedAddress.localStatus && ' • '}
-                    <span>{selectedAddress.airtableFields.network}</span>
+                    <span>{selectedAddress.network}</span>
                   </>
                 )}
               </SheetDescription>
@@ -1567,11 +1559,6 @@ export default function Addresses() {
                         <div className="font-mono text-xs">{selectedAddress.airtableRecordId}</div>
                       </div>
                     </div>
-                    {selectedAddress.airtableFields.ID && (
-                      <div className="mt-3 pt-3 border-t text-xs text-muted-foreground">
-                        Note: The "ID" field in Airtable Data below ({selectedAddress.airtableFields.ID}) is synced data, not the database ID.
-                      </div>
-                    )}
                   </CardContent>
                 </Card>
 
@@ -1581,16 +1568,52 @@ export default function Addresses() {
                   loading={isLoadingAddressDetail}
                 />
                 
-                {/* Airtable Fields */}
+                {/* Address Information */}
                 <div>
-                  <h3 className="text-sm font-semibold mb-3">Airtable Data</h3>
+                  <h3 className="text-sm font-semibold mb-3">Address Information</h3>
                   <div className="space-y-2">
-                    {Object.entries(selectedAddress.airtableFields).map(([key, value]) => (
-                      <div key={key} className="flex gap-2">
-                        <div className="text-sm font-medium text-gray-600 w-1/3">{key}:</div>
-                        <div className="text-sm flex-1">{String(value)}</div>
+                    {selectedAddress.postcode && (
+                      <div className="flex gap-2">
+                        <div className="text-sm font-medium text-gray-600 w-1/3">Postcode:</div>
+                        <div className="text-sm flex-1">{selectedAddress.postcode}</div>
                       </div>
-                    ))}
+                    )}
+                    {selectedAddress.summary && (
+                      <div className="flex gap-2">
+                        <div className="text-sm font-medium text-gray-600 w-1/3">Summary:</div>
+                        <div className="text-sm flex-1">{selectedAddress.summary}</div>
+                      </div>
+                    )}
+                    {selectedAddress.address && (
+                      <div className="flex gap-2">
+                        <div className="text-sm font-medium text-gray-600 w-1/3">Address:</div>
+                        <div className="text-sm flex-1">{selectedAddress.address}</div>
+                      </div>
+                    )}
+                    {selectedAddress.premise && (
+                      <div className="flex gap-2">
+                        <div className="text-sm font-medium text-gray-600 w-1/3">Premise:</div>
+                        <div className="text-sm flex-1">{selectedAddress.premise}</div>
+                      </div>
+                    )}
+                    {selectedAddress.network && (
+                      <div className="flex gap-2">
+                        <div className="text-sm font-medium text-gray-600 w-1/3">Network:</div>
+                        <div className="text-sm flex-1">{selectedAddress.network}</div>
+                      </div>
+                    )}
+                    {selectedAddress.udprn && (
+                      <div className="flex gap-2">
+                        <div className="text-sm font-medium text-gray-600 w-1/3">UDPRN:</div>
+                        <div className="text-sm flex-1">{selectedAddress.udprn}</div>
+                      </div>
+                    )}
+                    {selectedAddress.statusId && (
+                      <div className="flex gap-2">
+                        <div className="text-sm font-medium text-gray-600 w-1/3">Status:</div>
+                        <div className="text-sm flex-1">{selectedAddress.statusId}</div>
+                      </div>
+                    )}
                   </div>
                 </div>
                 
@@ -1803,7 +1826,7 @@ export default function Addresses() {
                 </p>
                 <p className="text-blue-700 dark:text-blue-300 text-xs mt-1">
                   {addresses.filter(a => selectedAddresses.includes(a.id)).map(a => {
-                    const name = a.airtableFields.name || a.airtableFields.address || a.airtableFields.street || 'Address';
+                    const name = a.summary || a.address || a.premise || 'Address';
                     return String(name);
                   }).slice(0, 3).join(', ')}
                   {selectedAddresses.length > 3 && ` and ${selectedAddresses.length - 3} more...`}
