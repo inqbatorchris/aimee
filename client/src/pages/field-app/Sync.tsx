@@ -73,6 +73,7 @@ export default function Sync({ session, onComplete }: SyncProps) {
       setStatus(`Uploading ${queue.length} changes...`);
 
       // Prepare sync payload
+      const CONCURRENT_UPLOADS = 3;
       const updates = [];
       const photoUploads = [];
       const audioUploads = [];
@@ -207,7 +208,6 @@ export default function Sync({ session, onComplete }: SyncProps) {
         }
         
         // Upload photos in parallel batches (3 at a time)
-        const CONCURRENT_UPLOADS = 3;
         let uploadedCount = 0;
         
         const uploadPhoto = async (photo: any) => {
@@ -274,9 +274,10 @@ export default function Sync({ session, onComplete }: SyncProps) {
           return response.json();
         };
         
-        // Upload audio files sequentially (audio files can be large)
-        for (const audio of audioUploads) {
-          await uploadAudio(audio);
+        // Upload in batches with concurrency limit
+        for (let i = 0; i < audioUploads.length; i += CONCURRENT_UPLOADS) {
+          const batch = audioUploads.slice(i, i + CONCURRENT_UPLOADS);
+          await Promise.all(batch.map(audio => uploadAudio(audio)));
         }
       }
 
