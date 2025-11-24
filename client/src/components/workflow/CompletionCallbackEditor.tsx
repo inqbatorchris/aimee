@@ -71,6 +71,19 @@ const getStepFields = (step: WorkflowTemplateStep): Array<{ id: string; label: s
       break;
     
     case 'photo':
+      // Add OCR extracted fields if configured
+      const photoStep = step as any;
+      if (photoStep.photoAnalysisConfig?.extractions && photoStep.photoAnalysisConfig.extractions.length > 0) {
+        photoStep.photoAnalysisConfig.extractions.forEach((extraction: any) => {
+          if (extraction.targetField && extraction.displayLabel) {
+            fields.push({ 
+              id: extraction.targetField, 
+              label: `${extraction.displayLabel} (OCR)` 
+            });
+          }
+        });
+      }
+      // Also include photos array
       fields.push({ id: 'photos', label: 'Photos (auto-collected)' });
       break;
   }
@@ -298,7 +311,7 @@ export default function CompletionCallbackEditor({
                             handleUpdateCallback(currentCallback.id, {
                               ...baseCallback,
                               databaseConfig: {
-                                targetTable: 'addresses',
+                                targetTable: 'work_item_source', // Dynamic resolution
                                 recordIdSource: 'work_item_source',
                               },
                             });
@@ -343,11 +356,12 @@ export default function CompletionCallbackEditor({
                             <SelectValue />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="addresses">Addresses (supported)</SelectItem>
+                            <SelectItem value="work_item_source">Source Record (Dynamic)</SelectItem>
+                            <SelectItem value="address_records">Address Records (Explicit)</SelectItem>
                           </SelectContent>
                         </Select>
                         <p className="text-xs text-muted-foreground">
-                          Only Addresses table is currently supported for dynamic fields
+                          "Source Record" dynamically resolves to the table linked to the work item
                         </p>
                       </div>
 

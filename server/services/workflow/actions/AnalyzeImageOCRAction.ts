@@ -224,6 +224,7 @@ export class AnalyzeImageOCRAction {
 
           console.log(`[AnalyzeImageOCR] Extracted value: "${extractedValue}" (confidence: ${ocrResult.confidence}%)`);
 
+          // Store extraction result for completion callbacks to process
           extractionResults[targetField] = {
             value: extractedValue,
             confidence: ocrResult.confidence,
@@ -231,32 +232,7 @@ export class AnalyzeImageOCRAction {
             targetTable,
           };
 
-          // Update the source record with extracted data
-          // NOTE: Field validation already passed above, so we know the column exists
-          try {
-            if (!sourceId) {
-              throw new Error('Source record ID not found');
-            }
-            
-            const updated = await this.fieldManager.updateDynamicField({
-              organizationId,
-              tableName: targetTable,
-              recordId: sourceId,
-              fieldName: targetField,
-              value: extractedValue,
-            });
-
-            // If table is not supported, updateDynamicField returns null
-            if (updated) {
-              console.log(`[AnalyzeImageOCR] Updated ${targetTable}#${sourceId}.${targetField}`);
-            } else {
-              errors.push(`Table ${targetTable} not yet supported for dynamic field updates. Field definition created but record not updated.`);
-              console.warn(`[AnalyzeImageOCR] Table ${targetTable} not supported, field definition created but record not updated`);
-            }
-          } catch (error) {
-            errors.push(`Failed to update ${targetTable}.${targetField}: ${error instanceof Error ? error.message : 'Unknown error'}`);
-            console.error(`[AnalyzeImageOCR] Update failed:`, error);
-          }
+          console.log(`[AnalyzeImageOCR] Stored extraction result for ${targetField} (will be written to DB via completion callback)`);
 
         } catch (error) {
           const errorMsg = error instanceof Error ? error.message : 'Unknown error';
@@ -288,10 +264,44 @@ export class AnalyzeImageOCRAction {
         errorMessage: errors.length > 0 ? errors.join('; ') : undefined,
       });
 
+      // Store OCR results in step execution data for completion callbacks to access
+      // Convert extraction results to simple key-value format
+      const ocrData: Record<string, string> = {};
+      for (const [fieldName, result] of Object.entries(extractionResults)) {
+        ocrData[fieldName] = (result as any).value;
+      }
+
+      // Update step evidence with OCR data
+      const currentEvidence = step.evidence || {};
+      await db
+        .update(workItemWorkflowExecutionSteps)
+        .set({
+          evidence: {
+            ...currentEvidence,
+            formData: {
+              ...(currentEvidence.formData || {}),
+              ...ocrData, // Add OCR extracted fields
+              _ocrMetadata: { // Store metadata for reference
+                confidence: overallConfidence,
+                extractedFields: Object.keys(ocrData),
+                processingTimeMs: processingTime,
+              },
+            },
+          },
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(workItemWorkflowExecutionSteps.id, stepId),
+            eq(workItemWorkflowExecutionSteps.organizationId, organizationId)
+          )
+        );
+
       console.log(`[AnalyzeImageOCR] Completed in ${processingTime}ms`);
       console.log(`  Extractions: ${Object.keys(extractionResults).length}`);
       console.log(`  Errors: ${errors.length}`);
       console.log(`  Average confidence: ${overallConfidence}%`);
+      console.log(`  OCR data stored in step evidence.formData for completion callbacks`);
 
       return {
         success: true,
