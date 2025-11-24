@@ -472,12 +472,17 @@ export default function FiberNetwork() {
   });
   const [leftCableId, setLeftCableId] = useState<string | null>(null);
   const [rightCableId, setRightCableId] = useState<string | null>(null);
+  const [selectedLeftFiber, setSelectedLeftFiber] = useState<number | null>(null);
   const [fiberConnections, setFiberConnections] = useState<Array<{
     id?: number;
     leftCableId: string;
     leftFiberNumber: number;
+    leftFiberColor: string;
+    leftFiberColorHex: string;
     rightCableId: string;
     rightFiberNumber: number;
+    rightFiberColor: string;
+    rightFiberColorHex: string;
     createdVia: 'manual' | 'workflow_step';
   }>>([]);
 
@@ -561,8 +566,12 @@ export default function FiberNetwork() {
       connections: Array<{
         leftCableId: string;
         leftFiberNumber: number;
+        leftFiberColor: string;
+        leftFiberColorHex: string;
         rightCableId: string;
         rightFiberNumber: number;
+        rightFiberColor: string;
+        rightFiberColorHex: string;
         createdVia: 'manual' | 'workflow_step';
       }>;
     }) => {
@@ -579,6 +588,7 @@ export default function FiberNetwork() {
       setFiberConnections([]);
       setLeftCableId(null);
       setRightCableId(null);
+      setSelectedLeftFiber(null);
       toast({
         title: 'Success',
         description: 'Splice tray created successfully',
@@ -4046,92 +4056,171 @@ export default function FiberNetwork() {
               {leftCableId && rightCableId ? (
                 <div className="border rounded-lg p-4">
                   <div className="space-y-4">
-                    {/* Connection Stats */}
+                    {/* Connection Stats & Instructions */}
                     <div className="flex justify-between items-center pb-2 border-b">
-                      <span className="text-sm text-gray-600 dark:text-gray-400">
-                        {fiberConnections.length} connection(s) created
-                      </span>
-                      {fiberConnections.length > 0 && (
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setFiberConnections([])}
-                          data-testid="button-clear-connections"
-                        >
-                          Clear All
-                        </Button>
-                      )}
+                      <div>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">
+                          {fiberConnections.length} connection(s) created
+                        </span>
+                        {selectedLeftFiber && (
+                          <span className="ml-2 text-sm text-blue-600 dark:text-blue-400">
+                            — Now click a fiber on the right to connect
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        {selectedLeftFiber && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSelectedLeftFiber(null)}
+                            data-testid="button-cancel-selection"
+                          >
+                            Cancel Selection
+                          </Button>
+                        )}
+                        {fiberConnections.length > 0 && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setFiberConnections([]);
+                              setSelectedLeftFiber(null);
+                            }}
+                            data-testid="button-clear-connections"
+                          >
+                            Clear All
+                          </Button>
+                        )}
+                      </div>
                     </div>
 
-                    {/* Quick Connect Interface */}
-                    <div className="grid grid-cols-2 gap-4">
+                    {/* Color-Based Click-to-Connect Interface */}
+                    <div className="grid grid-cols-2 gap-6">
+                      {/* Left Cable Fibers */}
                       <div>
-                        <div className="text-xs font-medium mb-2">
+                        <div className="text-xs font-medium mb-2 flex items-center gap-2">
+                          <span className="text-blue-600">●</span>
                           {nodeCables.find((c: any) => c.id === leftCableId)?.cableIdentifier}
+                          <span className="text-gray-400 font-normal">(Click to select)</span>
                         </div>
-                        <div className="space-y-1 max-h-[300px] overflow-y-auto">
+                        <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1">
                           {Array.from({ length: nodeCables.find((c: any) => c.id === leftCableId)?.fiberCount || 0 }, (_, i) => i + 1).map(fiberNum => {
+                            const fiberInfo = getColorForFiberNumber(fiberNum, nodeCables.find((c: any) => c.id === leftCableId)?.fiberCount || 12);
                             const hasConnection = fiberConnections.some(
                               conn => conn.leftCableId === leftCableId && conn.leftFiberNumber === fiberNum
                             );
+                            const isSelected = selectedLeftFiber === fiberNum;
+                            
                             return (
                               <div
                                 key={fiberNum}
-                                className={`p-2 text-xs border rounded cursor-pointer transition-colors ${
+                                className={`flex items-center gap-2 p-2 text-xs border rounded cursor-pointer transition-all ${
                                   hasConnection
-                                    ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-700'
-                                    : 'bg-white dark:bg-gray-800 hover:bg-blue-50 dark:hover:bg-blue-900'
+                                    ? 'bg-green-100 dark:bg-green-900/50 border-green-400 dark:border-green-600 cursor-not-allowed opacity-60'
+                                    : isSelected
+                                    ? 'bg-blue-100 dark:bg-blue-900 border-blue-500 ring-2 ring-blue-400 ring-offset-1'
+                                    : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border-gray-200 dark:border-gray-600'
                                 }`}
                                 onClick={() => {
-                                  // Simple click-to-connect: creates 1-to-1 connection
-                                  if (!hasConnection && rightCableId) {
-                                    const rightCable = nodeCables.find((c: any) => c.id === rightCableId);
-                                    const nextAvailableRight = Array.from(
-                                      { length: rightCable?.fiberCount || 0 },
-                                      (_, i) => i + 1
-                                    ).find(num => !fiberConnections.some(
-                                      conn => conn.rightCableId === rightCableId && conn.rightFiberNumber === num
-                                    ));
-                                    
-                                    if (nextAvailableRight) {
-                                      setFiberConnections(prev => [...prev, {
-                                        leftCableId,
-                                        leftFiberNumber: fiberNum,
-                                        rightCableId,
-                                        rightFiberNumber: nextAvailableRight,
-                                        createdVia: 'manual'
-                                      }]);
+                                  if (!hasConnection) {
+                                    if (isSelected) {
+                                      setSelectedLeftFiber(null);
+                                    } else {
+                                      setSelectedLeftFiber(fiberNum);
                                     }
                                   }
                                 }}
                                 data-testid={`fiber-left-${fiberNum}`}
                               >
-                                Fiber {fiberNum}
+                                <div
+                                  className="w-4 h-4 rounded-full border-2 flex-shrink-0"
+                                  style={{
+                                    backgroundColor: fiberInfo.colorHex,
+                                    borderColor: fiberInfo.color === 'white' ? '#999' : fiberInfo.colorHex
+                                  }}
+                                  title={`${fiberInfo.color}${fiberInfo.tracerColor !== 'none' ? ` (${fiberInfo.tracerColor} tracer)` : ''}`}
+                                />
+                                <span className="flex-1">
+                                  #{fiberNum} {fiberInfo.color.charAt(0).toUpperCase() + fiberInfo.color.slice(1)}
+                                  {fiberInfo.tracerColor !== 'none' && (
+                                    <span className="text-gray-400 ml-1">({fiberInfo.tracerColor})</span>
+                                  )}
+                                </span>
+                                {hasConnection && <CheckCircle className="w-3 h-3 text-green-600" />}
                               </div>
                             );
                           })}
                         </div>
                       </div>
+
+                      {/* Right Cable Fibers */}
                       <div>
-                        <div className="text-xs font-medium mb-2">
+                        <div className="text-xs font-medium mb-2 flex items-center gap-2">
+                          <span className="text-orange-600">●</span>
                           {nodeCables.find((c: any) => c.id === rightCableId)?.cableIdentifier}
+                          {selectedLeftFiber && <span className="text-gray-400 font-normal">(Click to connect)</span>}
                         </div>
-                        <div className="space-y-1 max-h-[300px] overflow-y-auto">
+                        <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1">
                           {Array.from({ length: nodeCables.find((c: any) => c.id === rightCableId)?.fiberCount || 0 }, (_, i) => i + 1).map(fiberNum => {
+                            const fiberInfo = getColorForFiberNumber(fiberNum, nodeCables.find((c: any) => c.id === rightCableId)?.fiberCount || 12);
                             const hasConnection = fiberConnections.some(
                               conn => conn.rightCableId === rightCableId && conn.rightFiberNumber === fiberNum
                             );
+                            const leftFiberInfo = selectedLeftFiber 
+                              ? getColorForFiberNumber(selectedLeftFiber, nodeCables.find((c: any) => c.id === leftCableId)?.fiberCount || 12)
+                              : null;
+                            const isMatchingColor = leftFiberInfo && leftFiberInfo.color === fiberInfo.color;
+                            
                             return (
                               <div
                                 key={fiberNum}
-                                className={`p-2 text-xs border rounded ${
+                                className={`flex items-center gap-2 p-2 text-xs border rounded transition-all ${
                                   hasConnection
-                                    ? 'bg-green-100 dark:bg-green-900 border-green-300 dark:border-green-700'
-                                    : 'bg-white dark:bg-gray-800'
+                                    ? 'bg-green-100 dark:bg-green-900/50 border-green-400 dark:border-green-600 cursor-not-allowed opacity-60'
+                                    : selectedLeftFiber
+                                    ? isMatchingColor
+                                      ? 'bg-yellow-50 dark:bg-yellow-900/30 border-yellow-400 cursor-pointer hover:bg-yellow-100 dark:hover:bg-yellow-900/50 ring-1 ring-yellow-300'
+                                      : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700'
+                                    : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600'
                                 }`}
+                                onClick={() => {
+                                  if (!hasConnection && selectedLeftFiber && leftCableId && rightCableId) {
+                                    const leftFiber = getColorForFiberNumber(selectedLeftFiber, nodeCables.find((c: any) => c.id === leftCableId)?.fiberCount || 12);
+                                    setFiberConnections(prev => [...prev, {
+                                      leftCableId,
+                                      leftFiberNumber: selectedLeftFiber,
+                                      leftFiberColor: leftFiber.color,
+                                      leftFiberColorHex: leftFiber.colorHex,
+                                      rightCableId,
+                                      rightFiberNumber: fiberNum,
+                                      rightFiberColor: fiberInfo.color,
+                                      rightFiberColorHex: fiberInfo.colorHex,
+                                      createdVia: 'manual'
+                                    }]);
+                                    setSelectedLeftFiber(null);
+                                  }
+                                }}
                                 data-testid={`fiber-right-${fiberNum}`}
                               >
-                                Fiber {fiberNum}
+                                <div
+                                  className="w-4 h-4 rounded-full border-2 flex-shrink-0"
+                                  style={{
+                                    backgroundColor: fiberInfo.colorHex,
+                                    borderColor: fiberInfo.color === 'white' ? '#999' : fiberInfo.colorHex
+                                  }}
+                                  title={`${fiberInfo.color}${fiberInfo.tracerColor !== 'none' ? ` (${fiberInfo.tracerColor} tracer)` : ''}`}
+                                />
+                                <span className="flex-1">
+                                  #{fiberNum} {fiberInfo.color.charAt(0).toUpperCase() + fiberInfo.color.slice(1)}
+                                  {fiberInfo.tracerColor !== 'none' && (
+                                    <span className="text-gray-400 ml-1">({fiberInfo.tracerColor})</span>
+                                  )}
+                                </span>
+                                {hasConnection && <CheckCircle className="w-3 h-3 text-green-600" />}
+                                {isMatchingColor && !hasConnection && selectedLeftFiber && (
+                                  <span className="text-yellow-600 text-[10px]">Match!</span>
+                                )}
                               </div>
                             );
                           })}
@@ -4139,16 +4228,37 @@ export default function FiberNetwork() {
                       </div>
                     </div>
 
-                    {/* Connection List */}
+                    {/* Connection List with Colors */}
                     {fiberConnections.length > 0 && (
                       <div className="mt-4 pt-4 border-t">
-                        <div className="text-xs font-medium mb-2">Connections</div>
+                        <div className="text-xs font-medium mb-2">Splice Connections</div>
                         <div className="space-y-2 max-h-[150px] overflow-y-auto">
                           {fiberConnections.map((conn, index) => (
                             <div key={index} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-900 rounded text-xs">
-                              <span>
-                                Fiber {conn.leftFiberNumber} ⟷ Fiber {conn.rightFiberNumber}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="w-3 h-3 rounded-full border"
+                                  style={{
+                                    backgroundColor: conn.leftFiberColorHex,
+                                    borderColor: conn.leftFiberColor === 'white' ? '#999' : conn.leftFiberColorHex
+                                  }}
+                                />
+                                <span>#{conn.leftFiberNumber} {conn.leftFiberColor}</span>
+                                <span className="text-gray-400">⟷</span>
+                                <div
+                                  className="w-3 h-3 rounded-full border"
+                                  style={{
+                                    backgroundColor: conn.rightFiberColorHex,
+                                    borderColor: conn.rightFiberColor === 'white' ? '#999' : conn.rightFiberColorHex
+                                  }}
+                                />
+                                <span>#{conn.rightFiberNumber} {conn.rightFiberColor}</span>
+                                {conn.leftFiberColor !== conn.rightFiberColor && (
+                                  <Badge variant="outline" className="text-[10px] px-1 py-0 text-orange-600 border-orange-300">
+                                    Color mismatch
+                                  </Badge>
+                                )}
+                              </div>
                               <Button
                                 variant="ghost"
                                 size="sm"
@@ -4169,6 +4279,7 @@ export default function FiberNetwork() {
                 <div className="border rounded-lg p-8 text-center text-sm text-gray-500">
                   <Cable className="w-12 h-12 mx-auto mb-2 text-gray-400" />
                   <p>Select two cables to begin creating fiber connections</p>
+                  <p className="text-xs mt-1 text-gray-400">Fibers will be shown with TIA-598-C color coding</p>
                 </div>
               )}
             </div>
