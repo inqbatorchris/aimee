@@ -63,6 +63,37 @@ const upload = multer({
   }
 });
 
+// Ensure audio upload directory exists
+const audioUploadDir = 'uploads/field-audio';
+if (!fs.existsSync(audioUploadDir)) {
+  fs.mkdirSync(audioUploadDir, { recursive: true });
+}
+
+// Configure multer for audio uploads
+const audioStorage = multer.diskStorage({
+  destination: audioUploadDir,
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `audio-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+const audioUpload = multer({ 
+  storage: audioStorage,
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit for audio
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /webm|m4a|mp3|wav|ogg|aac/;
+    const mimetype = allowedTypes.test(file.mimetype);
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    
+    if (mimetype || extname) { // Allow if either matches (some browsers send wrong MIME types)
+      return cb(null, true);
+    } else {
+      cb(new Error('Only audio files (webm, m4a, mp3, wav, ogg, aac) are allowed'));
+    }
+  }
+});
+
 // Get available work items for download
 router.get('/available-items', authenticateToken, async (req: any, res) => {
   try {
@@ -965,7 +996,7 @@ router.post('/upload-photo', authenticateToken, upload.single('file'), async (re
 });
 
 // Upload audio from field app
-router.post('/upload-audio', authenticateToken, upload.single('file'), async (req: any, res) => {
+router.post('/upload-audio', authenticateToken, audioUpload.single('file'), async (req: any, res) => {
   try {
     const organizationId = req.user?.organizationId;
     const userId = req.user?.id;
