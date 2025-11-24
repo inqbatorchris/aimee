@@ -185,6 +185,8 @@ function transformStepForUI(dbStep: any) {
   if (dbStep.config) {
     if (dbStep.config.placeholder) config.placeholder = dbStep.config.placeholder;
     if (dbStep.config.multiline !== undefined) config.multiline = dbStep.config.multiline;
+    // Preserve OCR configuration
+    if (dbStep.config.photoAnalysisConfig) config.photoAnalysisConfig = dbStep.config.photoAnalysisConfig;
   }
 
   if (dbStep.checklistItems && dbStep.checklistItems.length > 0) {
