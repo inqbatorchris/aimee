@@ -213,6 +213,7 @@ export default function FiberNetwork() {
   const [selectedNode, setSelectedNode] = useState<FiberNode | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<'map' | 'table'>('map');
+  const [tableTab, setTableTab] = useState<'nodes' | 'cables'>('nodes'); // Tab selection for table view
   const [photoUploadOpen, setPhotoUploadOpen] = useState(false);
   const [viewPhotoUrl, setViewPhotoUrl] = useState<string | null>(null);
   const [workItemDialogOpen, setWorkItemDialogOpen] = useState(false);
@@ -252,11 +253,10 @@ export default function FiberNetwork() {
   const [showNodes, setShowNodes] = useState(true);
   const [showCables, setShowCables] = useState(true);
 
-  // Selection mode state
-  const [selectionMode, setSelectionMode] = useState<'polygon' | 'click' | null>(null);
+  // Unified map mode state - only one mode can be active at a time
+  const [mapMode, setMapMode] = useState<'idle' | 'addNode' | 'cableRouting' | 'polygonSelect' | 'clickSelect'>('idle');
   
   // Polygon drawing state
-  const [isDrawing, setIsDrawing] = useState(false);
   const [currentPolygon, setCurrentPolygon] = useState<[number, number][]>([]);
   const [selectedPolygon, setSelectedPolygon] = useState<[number, number][]>([]);
 
@@ -277,7 +277,6 @@ export default function FiberNetwork() {
   const [newNodeTemplate, setNewNodeTemplate] = useState<any>(null);
 
   // Cable routing state
-  const [cableRoutingMode, setCableRoutingMode] = useState(false);
   const [cableStartNode, setCableStartNode] = useState<FiberNode | null>(null);
   const [cableEndNode, setCableEndNode] = useState<FiberNode | null>(null);
   const [cableDialogOpen, setCableDialogOpen] = useState(false);
@@ -292,6 +291,11 @@ export default function FiberNetwork() {
   const [selectedCable, setSelectedCable] = useState<any>(null);
   const [cableEditMode, setCableEditMode] = useState(false);
   const [editingCableWaypoints, setEditingCableWaypoints] = useState<Array<[number, number]>>([]);
+
+  // Derived states for backward compatibility
+  const cableRoutingMode = mapMode === 'cableRouting';
+  const selectionMode = mapMode === 'polygonSelect' ? 'polygon' : mapMode === 'clickSelect' ? 'click' : null;
+  const isDrawing = mapMode === 'polygonSelect'; // Activate drawing immediately when mode is set
 
   // Fetch all fiber nodes
   const { data: nodesData, isLoading } = useQuery<{ nodes: FiberNode[] }>({
@@ -493,6 +497,83 @@ export default function FiberNetwork() {
   });
 
   const nodes = nodesData?.nodes || [];
+  
+  // Extract all cables from nodes (for cable table view)
+  const allCables = (() => {
+    const renderedCables = new Set<string>();
+    const cables: any[] = [];
+    
+    nodes.forEach((node) => {
+      const nodeCables = node.fiberDetails?.cables || [];
+      nodeCables.forEach((cable: any) => {
+        // Only include each cable once (check both directions)
+        const cableKey = [node.id, cable.connectedNodeId].sort().join('-');
+        if (!renderedCables.has(cableKey) && cable.direction === 'outgoing') {
+          renderedCables.add(cableKey);
+          cables.push({
+            ...cable,
+            startNodeId: node.id,
+            startNodeName: node.name,
+            endNodeId: cable.connectedNodeId,
+            endNodeName: cable.connectedNodeName,
+          });
+        }
+      });
+    });
+    
+    return cables;
+  })();
+  
+  // Mode management helpers - ensures clean transitions between modes
+  const enterAddNodeMode = () => {
+    setMapMode('addNode');
+    // Clear conflicting state
+    setCableStartNode(null);
+    setCableEndNode(null);
+    setSelectedNodes([]);
+    setSelectedPolygon([]);
+    setCurrentPolygon([]);
+    toast({
+      title: 'Add Node Mode',
+      description: 'Click on the map to place a new node',
+    });
+  };
+
+  const enterCableRoutingMode = () => {
+    setMapMode('cableRouting');
+    // Clear conflicting state
+    setSelectedNodes([]);
+    setSelectedPolygon([]);
+    setCurrentPolygon([]);
+    toast({
+      title: 'Cable Routing Mode',
+      description: 'Click two nodes to create a cable connection',
+    });
+  };
+
+  const enterPolygonSelectMode = () => {
+    setMapMode('polygonSelect');
+    // Clear conflicting state
+    setCableStartNode(null);
+    setCableEndNode(null);
+  };
+
+  const enterClickSelectMode = () => {
+    setMapMode('clickSelect');
+    // Clear conflicting state
+    setCableStartNode(null);
+    setCableEndNode(null);
+  };
+
+  const exitMode = () => {
+    setMapMode('idle');
+    // Clear all mode-related state
+    setCableStartNode(null);
+    setCableEndNode(null);
+    setSelectedNodes([]);
+    setSelectedPolygon([]);
+    setCurrentPolygon([]);
+  };
   
   // Check if filters are active
   const hasActiveFilters = !!(selectedNetwork || selectedStatus || selectedType || workItemFilter !== 'all');
@@ -823,42 +904,18 @@ export default function FiberNetwork() {
     }
   };
 
-  // Selection mode functions
-  const startPolygonMode = () => {
-    setSelectionMode('polygon');
-    setIsDrawing(true);
+  // Polygon drawing functions - updated to use new mode system
+  const startDrawing = () => {
+    setMapMode('polygonSelect');
     setCurrentPolygon([]);
     setSelectedPolygon([]);
     setSelectedNodes([]);
+    setCableStartNode(null);
+    setCableEndNode(null);
     toast({
       title: "Polygon Mode",
       description: "Click on the map to create polygon points. Click finish when done.",
     });
-  };
-
-  const startClickMode = () => {
-    setSelectionMode('click');
-    setIsDrawing(false);
-    setCurrentPolygon([]);
-    setSelectedPolygon([]);
-    setSelectedNodes([]);
-    toast({
-      title: "Click Selection Mode",
-      description: "Click on markers to select/deselect chambers for bulk operations.",
-    });
-  };
-
-  const clearSelectionMode = () => {
-    setSelectionMode(null);
-    setSelectedPolygon([]);
-    setCurrentPolygon([]);
-    setIsDrawing(false);
-    setSelectedNodes([]);
-  };
-
-  // Polygon drawing functions
-  const startDrawing = () => {
-    startPolygonMode();
   };
 
   const addPolygonPoint = (point: [number, number]) => {
@@ -886,7 +943,7 @@ export default function FiberNetwork() {
     }
 
     setSelectedPolygon(closedPolygon);
-    setIsDrawing(false);
+    setCurrentPolygon([]); // Clear drawing polygon
 
     // Find nodes within the polygon using Turf.js
     // Note: Uses filteredNodes to only select from currently visible/filtered chambers
@@ -910,7 +967,7 @@ export default function FiberNetwork() {
   };
 
   const clearPolygon = () => {
-    clearSelectionMode();
+    exitMode();
   };
 
   // Click selection handler for markers
@@ -1567,10 +1624,10 @@ export default function FiberNetwork() {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
             
-            {/* Map click handler for adding nodes (disabled during selection modes) */}
+            {/* Map click handler for adding nodes (only enabled in add node mode) */}
             <MapClickHandler 
               onMapClick={handleMapClick} 
-              disabled={!!selectionMode || isDrawing || cableRoutingMode}
+              disabled={mapMode !== 'addNode'}
             />
             
             {/* Cable Polylines */}
@@ -1902,29 +1959,37 @@ export default function FiberNetwork() {
                   </div>
                 </div>
 
-                {/* Cable Routing Tools */}
+                {/* Map Tools */}
                 {filteredNodes.length > 0 && (
                   <div className="space-y-1 pt-2 border-t mt-2">
-                    <Label className="text-[10px] font-medium">Cable Routing</Label>
+                    <Label className="text-[10px] font-medium">Map Tools</Label>
+                    
+                    <Button 
+                      onClick={() => {
+                        if (mapMode === 'addNode') {
+                          // Turn off add node mode
+                          exitMode();
+                        } else {
+                          // Turn on add node mode
+                          enterAddNodeMode();
+                        }
+                      }} 
+                      variant={mapMode === 'addNode' ? 'default' : 'outline'}
+                      className="w-full h-8 text-[11px] px-2"
+                      data-testid="button-add-node-mode"
+                    >
+                      <Plus className="w-3 h-3 mr-1" />
+                      {mapMode === 'addNode' ? 'Add Node Active' : 'Add Node'}
+                    </Button>
                     
                     <Button 
                       onClick={() => {
                         if (cableRoutingMode) {
                           // Turn off cable routing mode
-                          setCableRoutingMode(false);
-                          setCableStartNode(null);
-                          setCableEndNode(null);
+                          exitMode();
                         } else {
-                          // Turn on cable routing mode, turn off selection modes
-                          setCableRoutingMode(true);
-                          setSelectionMode(null);
-                          setSelectedNodes([]);
-                          setSelectedPolygon([]);
-                          setIsDrawing(false);
-                          toast({
-                            title: 'Cable Routing Mode',
-                            description: 'Click two nodes to create a cable connection',
-                          });
+                          // Turn on cable routing mode
+                          enterCableRoutingMode();
                         }
                       }} 
                       variant={cableRoutingMode ? 'default' : 'outline'}
@@ -1934,6 +1999,12 @@ export default function FiberNetwork() {
                       <Cable className="w-3 h-3 mr-1" />
                       {cableRoutingMode ? 'Cable Mode Active' : 'Cable Routing'}
                     </Button>
+                    
+                    {mapMode === 'addNode' && (
+                      <div className="text-[10px] text-gray-600 p-2 bg-green-50 dark:bg-green-900/20 rounded">
+                        Click on the map to place a new node
+                      </div>
+                    )}
                     
                     {cableRoutingMode && cableStartNode && (
                       <div className="text-[10px] text-gray-600 p-2 bg-blue-50 dark:bg-blue-900/20 rounded">
@@ -1954,7 +2025,7 @@ export default function FiberNetwork() {
                     {!isDrawing && selectedPolygon.length === 0 && (
                       <div className="flex gap-1">
                         <Button 
-                          onClick={startPolygonMode} 
+                          onClick={startDrawing} 
                           variant={selectionMode === 'polygon' ? 'default' : 'outline'}
                           className="flex-1 h-8 text-[11px] px-2"
                           data-testid="button-polygon-mode"
@@ -1963,7 +2034,7 @@ export default function FiberNetwork() {
                           Draw
                         </Button>
                         <Button 
-                          onClick={startClickMode} 
+                          onClick={enterClickSelectMode} 
                           variant={selectionMode === 'click' ? 'default' : 'outline'}
                           className="flex-1 h-8 text-[11px] px-2"
                           data-testid="button-click-mode"
@@ -1999,7 +2070,7 @@ export default function FiberNetwork() {
 
                     {(selectedPolygon.length > 0 || (selectionMode === 'click' && selectedNodes.length > 0)) && !isDrawing && (
                       <Button 
-                        onClick={clearSelectionMode} 
+                        onClick={exitMode} 
                         variant="outline" 
                         className="w-full h-7 text-[11px] px-2"
                         data-testid="button-clear-selection-mode"
@@ -2090,6 +2161,13 @@ export default function FiberNetwork() {
             </div>
           )}
           <div className="flex-1 overflow-auto">
+            <Tabs value={tableTab} onValueChange={(value) => setTableTab(value as 'nodes' | 'cables')} className="h-full flex flex-col">
+              <TabsList className="mx-4 mt-2">
+                <TabsTrigger value="nodes" data-testid="tab-nodes">Nodes</TabsTrigger>
+                <TabsTrigger value="cables" data-testid="tab-cables">Cables ({allCables.length})</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="nodes" className="flex-1 overflow-auto m-0 p-0">
             <Table>
             <TableHeader>
               <TableRow>
@@ -2234,6 +2312,75 @@ export default function FiberNetwork() {
               )}
             </TableBody>
           </Table>
+              </TabsContent>
+              
+              <TabsContent value="cables" className="flex-1 overflow-auto m-0 p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Cable ID</TableHead>
+                      <TableHead>Route</TableHead>
+                      <TableHead>Fiber Count</TableHead>
+                      <TableHead>Cable Type</TableHead>
+                      <TableHead>Length (m)</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="w-[100px]">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {allCables.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                          No cables found
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      allCables.map((cable) => (
+                        <TableRow 
+                          key={cable.id}
+                          className="hover:bg-gray-50"
+                          data-testid={`cable-row-${cable.id}`}
+                        >
+                          <TableCell className="font-medium">{cable.cableIdentifier}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1">
+                              <span>{cable.startNodeName}</span>
+                              <span className="text-gray-400">→</span>
+                              <span>{cable.endNodeName}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>{cable.fiberCount}</TableCell>
+                          <TableCell className="capitalize">{cable.cableType?.replace('_', ' ')}</TableCell>
+                          <TableCell>{cable.lengthMeters || 0}</TableCell>
+                          <TableCell>
+                            <Badge variant={cable.status === 'active' ? 'default' : 'secondary'}>
+                              {cable.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                // Navigate to map and highlight cable
+                                setViewMode('map');
+                                toast({
+                                  title: 'Cable Selected',
+                                  description: `${cable.cableIdentifier}: ${cable.startNodeName} → ${cable.endNodeName}`,
+                                });
+                              }}
+                              data-testid={`button-view-cable-${cable.id}`}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </TabsContent>
+            </Tabs>
           </div>
         </div>
       )}
@@ -3217,7 +3364,7 @@ export default function FiberNetwork() {
                   setCableDialogOpen(false);
                   setCableStartNode(null);
                   setCableEndNode(null);
-                  setCableRoutingMode(false);
+                  exitMode();
                   setNewCableData({
                     cableId: '',
                     fiberCount: 24,
