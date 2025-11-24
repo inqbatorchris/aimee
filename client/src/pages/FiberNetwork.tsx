@@ -1675,6 +1675,8 @@ export default function FiberNetwork() {
                   eventHandlers={{
                     click: () => {
                       if (!cableRoutingMode && !selectionMode) {
+                        // Open cable detail sheet
+                        setSelectedCable(cable);
                         toast({
                           title: `Cable: ${cable.cableIdentifier}`,
                           description: `${cable.startNodeName} → ${cable.connectedNodeName} (${cable.fiberCount} fibers)`,
@@ -2646,6 +2648,88 @@ export default function FiberNetwork() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Cable Detail Sheet */}
+      <Sheet open={!!selectedCable} onOpenChange={(open) => !open && setSelectedCable(null)}>
+        <SheetContent className="sm:w-[640px] overflow-y-auto">
+          {selectedCable && (
+            <>
+              <SheetHeader>
+                <SheetTitle className="flex items-center gap-2">
+                  <Cable className="w-5 h-5" />
+                  {selectedCable.cableIdentifier}
+                </SheetTitle>
+                <SheetDescription>
+                  <Badge variant={selectedCable.status === 'active' ? 'default' : 'secondary'}>
+                    {selectedCable.status}
+                  </Badge>
+                  {' • '}
+                  <span className="capitalize">{selectedCable.cableType}</span>
+                </SheetDescription>
+              </SheetHeader>
+
+              <div className="mt-6 space-y-4">
+                <div>
+                  <Label>Cable ID</Label>
+                  <p className="text-sm text-gray-900">{selectedCable.cableIdentifier}</p>
+                </div>
+
+                <div>
+                  <Label>Route</Label>
+                  <p className="text-sm text-gray-900">
+                    {selectedCable.startNodeName} → {selectedCable.connectedNodeName}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Cable Type</Label>
+                    <p className="text-sm text-gray-900 capitalize">{selectedCable.cableType}</p>
+                  </div>
+                  <div>
+                    <Label>Fiber Count</Label>
+                    <p className="text-sm text-gray-900">{selectedCable.fiberCount} fibers</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Length</Label>
+                    <p className="text-sm text-gray-900">
+                      {selectedCable.lengthMeters ? `${selectedCable.lengthMeters}m` : 'Not specified'}
+                    </p>
+                  </div>
+                  <div>
+                    <Label>Status</Label>
+                    <Badge variant={selectedCable.status === 'active' ? 'default' : 'secondary'}>
+                      {selectedCable.status}
+                    </Badge>
+                  </div>
+                </div>
+
+                {selectedCable.notes && (
+                  <div>
+                    <Label>Notes</Label>
+                    <p className="text-sm text-gray-600">{selectedCable.notes}</p>
+                  </div>
+                )}
+
+                <div className="border-t pt-4 mt-6">
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setSelectedCable(null)}
+                    data-testid="button-close-cable-sheet"
+                  >
+                    Close
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
+
       {/* Photo Upload Dialog */}
       <Dialog open={photoUploadOpen} onOpenChange={setPhotoUploadOpen}>
         <DialogContent className="sm:max-w-[500px]" data-testid="photo-upload-dialog">
