@@ -469,13 +469,13 @@ export default function FiberNetwork() {
     trayIdentifier: '',
     description: '',
   });
-  const [leftCableId, setLeftCableId] = useState<number | null>(null);
-  const [rightCableId, setRightCableId] = useState<number | null>(null);
+  const [leftCableId, setLeftCableId] = useState<string | null>(null);
+  const [rightCableId, setRightCableId] = useState<string | null>(null);
   const [fiberConnections, setFiberConnections] = useState<Array<{
     id?: number;
-    leftCableId: number;
+    leftCableId: string;
     leftFiberNumber: number;
-    rightCableId: number;
+    rightCableId: string;
     rightFiberNumber: number;
     createdVia: 'manual' | 'workflow_step';
   }>>([]);
@@ -558,9 +558,9 @@ export default function FiberNetwork() {
       trayIdentifier: string;
       description?: string;
       connections: Array<{
-        leftCableId: number;
+        leftCableId: string;
         leftFiberNumber: number;
-        rightCableId: number;
+        rightCableId: string;
         rightFiberNumber: number;
         createdVia: 'manual' | 'workflow_step';
       }>;
@@ -4005,15 +4005,15 @@ export default function FiberNetwork() {
                   <div>
                     <Label>Left Cable</Label>
                     <Select
-                      value={leftCableId?.toString() || ''}
-                      onValueChange={(value) => setLeftCableId(value ? parseInt(value) : null)}
+                      value={leftCableId || ''}
+                      onValueChange={(value) => setLeftCableId(value || null)}
                     >
                       <SelectTrigger data-testid="select-left-cable">
                         <SelectValue placeholder="Select cable..." />
                       </SelectTrigger>
                       <SelectContent className="z-[9999]" position="popper" sideOffset={4}>
                         {nodeCables.map((cable: any) => (
-                          <SelectItem key={cable.id} value={cable.id.toString()}>
+                          <SelectItem key={cable.id} value={cable.id}>
                             {cable.cableIdentifier} ({cable.fiberCount || 0} fibers)
                           </SelectItem>
                         ))}
@@ -4023,15 +4023,15 @@ export default function FiberNetwork() {
                   <div>
                     <Label>Right Cable</Label>
                     <Select
-                      value={rightCableId?.toString() || ''}
-                      onValueChange={(value) => setRightCableId(value ? parseInt(value) : null)}
+                      value={rightCableId || ''}
+                      onValueChange={(value) => setRightCableId(value || null)}
                     >
                       <SelectTrigger data-testid="select-right-cable">
                         <SelectValue placeholder="Select cable..." />
                       </SelectTrigger>
                       <SelectContent className="z-[9999]" position="popper" sideOffset={4}>
                         {nodeCables.map((cable: any) => (
-                          <SelectItem key={cable.id} value={cable.id.toString()}>
+                          <SelectItem key={cable.id} value={cable.id}>
                             {cable.cableIdentifier} ({cable.fiberCount || 0} fibers)
                           </SelectItem>
                         ))}
