@@ -512,6 +512,7 @@ export class WorkItemWorkflowService {
     const allPhotos: any[] = [];
     let allNotes = '';
     
+    // Collect from executionData (backward compatibility)
     Object.values(executionData).forEach((stepData: any) => {
       if (stepData.photos && Array.isArray(stepData.photos)) {
         allPhotos.push(...stepData.photos);
@@ -520,6 +521,29 @@ export class WorkItemWorkflowService {
         allNotes += stepData.notes + '\n';
       }
     });
+    
+    // Collect from step evidence (current storage location)
+    steps.forEach((step: any) => {
+      const evidence = step.evidence as any;
+      if (evidence) {
+        // Collect photos from evidence
+        if (evidence.photos && Array.isArray(evidence.photos)) {
+          allPhotos.push(...evidence.photos);
+          console.log(`[Callback] Collected ${evidence.photos.length} photos from step ${step.stepId}`);
+        }
+        // Collect photo URLs if stored differently
+        if (evidence.photoUrl) {
+          allPhotos.push({ url: evidence.photoUrl });
+          console.log(`[Callback] Collected photoUrl from step ${step.stepId}`);
+        }
+      }
+      // Collect notes from step
+      if (step.notes) {
+        allNotes += step.notes + '\n';
+      }
+    });
+    
+    console.log(`[Callback] Total photos collected: ${allPhotos.length}`);
     
     if (allPhotos.length > 0) {
       mappedData.photos = allPhotos;
