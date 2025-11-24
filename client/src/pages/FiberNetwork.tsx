@@ -1649,6 +1649,7 @@ export default function FiberNetwork() {
             })()}
             {filteredNodes.map((node) => {
               const isSelected = selectedNodes.includes(node.id);
+              const isCableStartNode = cableStartNode?.id === node.id;
               
               return (
                 <Marker
@@ -1657,14 +1658,17 @@ export default function FiberNetwork() {
                   icon={getMarkerIcon(node.nodeType)}
                   eventHandlers={{
                     click: () => {
-                      if (selectionMode === 'click') {
+                      if (selectionMode === 'click' || cableRoutingMode) {
                         handleMarkerClick(node.id);
                       } else {
                         setSelectedNode(node);
                       }
                     },
                   }}
-                  opacity={selectionMode === 'click' && !isSelected ? 0.5 : 1}
+                  opacity={
+                    isCableStartNode ? 1 :
+                    (selectionMode === 'click' || cableRoutingMode) && !isSelected ? 0.5 : 1
+                  }
                 >
                 <Popup>
                   <div className="p-2">
