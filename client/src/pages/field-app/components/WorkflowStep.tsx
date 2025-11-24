@@ -3,7 +3,7 @@
  * Handles all step types: checklist, photo, form, notes, etc.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { fieldDB } from '@/lib/field-app/db';
 import { compressImageSafe } from '@/lib/field-app/imageUtils';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Camera, Check, X, Image as ImageIcon, MapPin, Navigation, Plus, Trash2 } from 'lucide-react';
+import { Camera, Check, X, Image as ImageIcon, MapPin, Navigation, Plus, Trash2, Mic, Square } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
 interface WorkflowStepProps {
@@ -46,6 +46,49 @@ export default function WorkflowStep({
     address: '',
     notes: '',
   });
+  
+  // Audio recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [audioId, setAudioId] = useState<string | null>(data?.audioId || null);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [audioDuration, setAudioDuration] = useState<number>(data?.audioDuration || 0);
+  const [audioSize, setAudioSize] = useState<number>(data?.audioSize || 0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingStartTimeRef = useRef<number>(0);
+  const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Load audio blob if audioId exists
+  useEffect(() => {
+    const loadAudio = async () => {
+      if (audioId) {
+        const audio = await fieldDB.getAudioRecording(audioId);
+        if (audio && audio.arrayBuffer) {
+          const blob = new Blob([audio.arrayBuffer], { type: audio.mimeType });
+          setAudioBlob(blob);
+          setAudioDuration(audio.duration);
+          setAudioSize(audio.size);
+        }
+      }
+    };
+    loadAudio();
+  }, [audioId]);
+
+  // Cleanup: stop recording and release resources on unmount
+  useEffect(() => {
+    return () => {
+      // Stop any active recording
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+        mediaRecorderRef.current.stream?.getTracks().forEach(track => track.stop());
+      }
+      
+      // Clear duration interval
+      if (durationIntervalRef.current) {
+        clearInterval(durationIntervalRef.current);
+      }
+    };
+  }, []);
 
   // Load photo blobs and create object URLs
   useEffect(() => {
@@ -156,6 +199,94 @@ export default function WorkflowStep({
     } finally {
       setCapturing(false);
     }
+  };
+
+  const handleStartRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm'
+      });
+      
+      audioChunksRef.current = [];
+      
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+      
+      mediaRecorder.onstop = async () => {
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        setAudioBlob(blob);
+        
+        // Save to IndexedDB and get ID
+        const id = await fieldDB.saveAudio(
+          workItemId,
+          blob,
+          `audio-${Date.now()}.webm`,
+          audioDuration,
+          step.id
+        );
+        
+        setAudioId(id);
+        setAudioSize(blob.size);
+        
+        const newData = {
+          ...stepData,
+          audioId: id,
+          audioDuration,
+          audioSize: blob.size
+        };
+        setStepData(newData);
+        
+        // Stop all tracks to release microphone
+        stream.getTracks().forEach(track => track.stop());
+        
+        // Clear duration interval
+        if (durationIntervalRef.current) {
+          clearInterval(durationIntervalRef.current);
+          durationIntervalRef.current = null;
+        }
+      };
+      
+      mediaRecorderRef.current = mediaRecorder;
+      recordingStartTimeRef.current = Date.now();
+      setAudioDuration(0);
+      
+      // Update duration every second
+      durationIntervalRef.current = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - recordingStartTimeRef.current) / 1000);
+        setAudioDuration(elapsed);
+      }, 1000);
+      
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (error) {
+      console.error('Failed to start recording:', error);
+      alert('Failed to access microphone. Please check permissions.');
+    }
+  };
+  
+  const handleStopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+  
+  const handleClearAudio = () => {
+    setAudioId(null);
+    setAudioBlob(null);
+    setAudioDuration(0);
+    setAudioSize(0);
+    const newData = {
+      ...stepData,
+      audioId: null,
+      audioDuration: 0,
+      audioSize: 0
+    };
+    setStepData(newData);
   };
 
   const handleComplete = () => {
@@ -304,6 +435,9 @@ export default function WorkflowStep({
 
       case 'fiber_network_node':
         return fiberNodes.length > 0;
+
+      case 'audio_recording':
+        return audioId !== null;
 
       default:
         return true;
@@ -568,6 +702,97 @@ export default function WorkflowStep({
                     className="border-zinc-700 hover:bg-zinc-700"
                   >
                     Recapture Location
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+        );
+
+      case 'audio_recording':
+        const formatDuration = (seconds: number) => {
+          const mins = Math.floor(seconds / 60);
+          const secs = seconds % 60;
+          return `${mins}:${secs.toString().padStart(2, '0')}`;
+        };
+
+        return (
+          <div className="space-y-4">
+            {!audioBlob && !isRecording && (
+              <div className="text-center py-8">
+                <Mic className="h-16 w-16 mx-auto text-zinc-600 mb-4" />
+                <p className="text-sm text-zinc-400 mb-4">
+                  {step.description || 'Record a voice memo'}
+                </p>
+                <Button
+                  onClick={handleStartRecording}
+                  disabled={disabled}
+                  className="bg-red-600 hover:bg-red-700"
+                  data-testid="button-start-recording"
+                >
+                  <Mic className="h-4 w-4 mr-2" />
+                  Start Recording
+                </Button>
+              </div>
+            )}
+
+            {isRecording && (
+              <div className="text-center py-8 bg-red-950/20 border border-red-900/50 rounded-lg">
+                <div className="flex justify-center items-center mb-4">
+                  <div className="h-4 w-4 bg-red-500 rounded-full animate-pulse mr-3"></div>
+                  <span className="text-2xl font-mono text-white">
+                    {formatDuration(audioDuration)}
+                  </span>
+                </div>
+                <p className="text-sm text-zinc-400 mb-4">Recording...</p>
+                <Button
+                  onClick={handleStopRecording}
+                  className="bg-zinc-700 hover:bg-zinc-600"
+                  data-testid="button-stop-recording"
+                >
+                  <Square className="h-4 w-4 mr-2" />
+                  Stop Recording
+                </Button>
+              </div>
+            )}
+
+            {audioBlob && !isRecording && (
+              <div className="space-y-3">
+                <div className="bg-emerald-950/20 border border-emerald-900/50 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 bg-emerald-900/50 rounded-full flex items-center justify-center">
+                        <Mic className="h-5 w-5 text-emerald-400" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-white">Voice Memo Recorded</div>
+                        <div className="text-xs text-zinc-400">
+                          Duration: {formatDuration(audioDuration)} • Size: {Math.round(audioSize / 1024)}KB
+                        </div>
+                      </div>
+                    </div>
+                    {!disabled && (
+                      <Button
+                        onClick={handleClearAudio}
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-400 hover:text-red-300 hover:bg-red-950/30"
+                        data-testid="button-clear-audio"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                {!disabled && (
+                  <Button
+                    onClick={handleStartRecording}
+                    variant="outline"
+                    className="w-full border-zinc-700 hover:bg-zinc-800"
+                    data-testid="button-re-record"
+                  >
+                    <Mic className="h-4 w-4 mr-2" />
+                    Record Again
                   </Button>
                 )}
               </div>

@@ -341,10 +341,10 @@ router.delete('/nodes/:id', authenticateToken, async (req: any, res) => {
       organizationId,
       userId: req.user.id,
       userName: req.user.fullName || req.user.email,
-      actionType: 'delete',
-      entityType: 'fiber_node',
+      actionType: 'delete' as const,
+      entityType: 'fiber_node' as const,
       entityId: nodeId,
-      changes: { deleted: existingNode[0] },
+      changes: { deleted: existingNode[0] } as any,
       ipAddress: req.ip
     });
     
@@ -621,6 +621,434 @@ router.delete('/node-types/:id', authenticateToken, async (req: any, res) => {
   } catch (error) {
     console.error('Error deleting node type:', error);
     res.status(500).json({ error: 'Failed to delete node type' });
+  }
+});
+
+// ========================================
+// CABLE MANAGEMENT ENDPOINTS
+// ========================================
+
+// Add cable connection to a node
+router.post('/nodes/:id/cables', authenticateToken, async (req: any, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    const nodeId = parseInt(req.params.id);
+    const { connectedNodeId, fiberCount, cableIdentifier, cableType, direction, routeGeometry, notes } = req.body;
+    
+    if (!req.user.id || isNaN(req.user.id)) {
+      return res.status(400).json({ error: 'Invalid user authentication' });
+    }
+    
+    if (!connectedNodeId || !fiberCount || !cableIdentifier || !direction) {
+      return res.status(400).json({ 
+        error: 'Missing required fields: connectedNodeId, fiberCount, cableIdentifier, and direction are required' 
+      });
+    }
+    
+    // Get the node
+    const nodes = await db
+      .select()
+      .from(fiberNetworkNodes)
+      .where(
+        and(
+          eq(fiberNetworkNodes.id, nodeId),
+          eq(fiberNetworkNodes.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+    
+    if (nodes.length === 0) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+    
+    const node = nodes[0];
+    const currentFiberDetails = node.fiberDetails || {};
+    const currentCables = currentFiberDetails.cables || [];
+    
+    // Get connected node name
+    const connectedNodes = await db
+      .select()
+      .from(fiberNetworkNodes)
+      .where(
+        and(
+          eq(fiberNetworkNodes.id, connectedNodeId),
+          eq(fiberNetworkNodes.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+    
+    const connectedNodeName = connectedNodes.length > 0 ? connectedNodes[0].name : undefined;
+    
+    // Create new cable entry
+    const newCable = {
+      id: `cable_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      connectedNodeId,
+      connectedNodeName,
+      fiberCount,
+      cableIdentifier,
+      cableType,
+      direction,
+      routeGeometry,
+      notes,
+      createdBy: req.user.id,
+      createdAt: new Date().toISOString()
+    };
+    
+    // Update node with new cable
+    const updatedFiberDetails = {
+      ...currentFiberDetails,
+      cables: [...currentCables, newCable]
+    };
+    
+    const result = await db
+      .update(fiberNetworkNodes)
+      .set({
+        fiberDetails: updatedFiberDetails,
+        updatedBy: req.user.id,
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(fiberNetworkNodes.id, nodeId),
+          eq(fiberNetworkNodes.organizationId, organizationId)
+        )
+      )
+      .returning();
+    
+    // Log the cable addition
+    await db.insert(fiberNetworkActivityLogs).values({
+      organizationId,
+      userId: req.user.id,
+      userName: req.user.fullName || req.user.email,
+      actionType: 'update',
+      entityType: 'fiber_node',
+      entityId: nodeId,
+      changes: { added: { cable: newCable } },
+      ipAddress: req.ip
+    });
+    
+    res.status(201).json({ cable: newCable, node: result[0] });
+  } catch (error) {
+    console.error('Error adding cable to node:', error);
+    res.status(500).json({ error: 'Failed to add cable' });
+  }
+});
+
+// Get cables for a node
+router.get('/nodes/:id/cables', authenticateToken, async (req: any, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    const nodeId = parseInt(req.params.id);
+    
+    const nodes = await db
+      .select()
+      .from(fiberNetworkNodes)
+      .where(
+        and(
+          eq(fiberNetworkNodes.id, nodeId),
+          eq(fiberNetworkNodes.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+    
+    if (nodes.length === 0) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+    
+    const node = nodes[0];
+    const cables = node.fiberDetails?.cables || [];
+    
+    res.json({ cables });
+  } catch (error) {
+    console.error('Error fetching cables:', error);
+    res.status(500).json({ error: 'Failed to fetch cables' });
+  }
+});
+
+// ========================================
+// SPLICE CONNECTION MANAGEMENT ENDPOINTS
+// ========================================
+
+// Get splice connections for a node
+router.get('/nodes/:id/splice-connections', authenticateToken, async (req: any, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    const nodeId = parseInt(req.params.id);
+    
+    const nodes = await db
+      .select()
+      .from(fiberNetworkNodes)
+      .where(
+        and(
+          eq(fiberNetworkNodes.id, nodeId),
+          eq(fiberNetworkNodes.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+    
+    if (nodes.length === 0) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+    
+    const node = nodes[0];
+    const spliceConnections = node.fiberDetails?.spliceConnections || [];
+    
+    res.json({ spliceConnections });
+  } catch (error) {
+    console.error('Error fetching splice connections:', error);
+    res.status(500).json({ error: 'Failed to fetch splice connections' });
+  }
+});
+
+// Add or update splice connections for a node (bulk operation)
+router.patch('/nodes/:id/splice-connections', authenticateToken, async (req: any, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    const nodeId = parseInt(req.params.id);
+    const { connections, operation = 'add' } = req.body; // operation: 'add', 'replace', 'verify'
+    
+    if (!req.user.id || isNaN(req.user.id)) {
+      return res.status(400).json({ error: 'Invalid user authentication' });
+    }
+    
+    if (!connections || !Array.isArray(connections)) {
+      return res.status(400).json({ error: 'Connections array is required' });
+    }
+    
+    // Get the node
+    const nodes = await db
+      .select()
+      .from(fiberNetworkNodes)
+      .where(
+        and(
+          eq(fiberNetworkNodes.id, nodeId),
+          eq(fiberNetworkNodes.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+    
+    if (nodes.length === 0) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+    
+    const node = nodes[0];
+    const currentFiberDetails = node.fiberDetails || {};
+    const currentConnections = currentFiberDetails.spliceConnections || [];
+    
+    let updatedConnections;
+    
+    if (operation === 'replace') {
+      // Replace all connections
+      updatedConnections = connections.map((conn: any) => ({
+        ...conn,
+        id: conn.id || `splice_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        createdBy: conn.createdBy || req.user.id,
+        createdAt: conn.createdAt || new Date().toISOString(),
+        verifiedBy: conn.verifiedBy,
+        verifiedAt: conn.verifiedAt
+      }));
+    } else if (operation === 'verify') {
+      // Verify specific connections by ID
+      const connectionIds = connections.map((c: any) => c.id);
+      updatedConnections = currentConnections.map((conn: any) => {
+        if (connectionIds.includes(conn.id)) {
+          return {
+            ...conn,
+            verificationStatus: 'verified',
+            verifiedBy: req.user.id,
+            verifiedAt: new Date().toISOString()
+          };
+        }
+        return conn;
+      });
+    } else {
+      // Add new connections
+      const newConnections = connections.map((conn: any) => ({
+        ...conn,
+        id: conn.id || `splice_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        createdBy: req.user.id,
+        createdAt: new Date().toISOString(),
+        verificationStatus: conn.verificationStatus || 'manual'
+      }));
+      updatedConnections = [...currentConnections, ...newConnections];
+    }
+    
+    // Update node with new connections
+    const updatedFiberDetails = {
+      ...currentFiberDetails,
+      spliceConnections: updatedConnections
+    };
+    
+    const result = await db
+      .update(fiberNetworkNodes)
+      .set({
+        fiberDetails: updatedFiberDetails,
+        updatedBy: req.user.id,
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(fiberNetworkNodes.id, nodeId),
+          eq(fiberNetworkNodes.organizationId, organizationId)
+        )
+      )
+      .returning();
+    
+    // Log the update
+    await db.insert(fiberNetworkActivityLogs).values({
+      organizationId,
+      userId: req.user.id,
+      userName: req.user.fullName || req.user.email,
+      actionType: 'update',
+      entityType: 'fiber_node',
+      entityId: nodeId,
+      changes: { 
+        operation,
+        connectionsCount: connections.length
+      },
+      ipAddress: req.ip
+    });
+    
+    res.json({ spliceConnections: updatedConnections, node: result[0] });
+  } catch (error) {
+    console.error('Error updating splice connections:', error);
+    res.status(500).json({ error: 'Failed to update splice connections' });
+  }
+});
+
+// ========================================
+// AI PROCESSING ENDPOINTS
+// ========================================
+
+// Transcribe audio for splice documentation
+router.post('/transcribe-splice', authenticateToken, async (req: any, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    const { audioBase64, language, prompt } = req.body;
+    
+    if (!audioBase64) {
+      return res.status(400).json({ error: 'Audio data is required' });
+    }
+    
+    // Import OpenAI service
+    const { default: OpenAIService } = await import('../services/integrations/openaiService');
+    const openaiService = new OpenAIService(organizationId);
+    await openaiService.initialize();
+    
+    // Transcribe the audio
+    const transcription = await openaiService.transcribeAudioFromBase64(audioBase64, {
+      language,
+      prompt: prompt || 'Fiber optic splice connection documentation'
+    });
+    
+    res.json({ transcription });
+  } catch (error: any) {
+    console.error('Error transcribing audio:', error);
+    res.status(500).json({ 
+      error: 'Failed to transcribe audio',
+      details: error.message 
+    });
+  }
+});
+
+// Extract splice connections from transcription
+router.post('/extract-splice-data', authenticateToken, async (req: any, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    const { transcription, nodeId, nodeName, availableCables } = req.body;
+    
+    if (!transcription) {
+      return res.status(400).json({ error: 'Transcription is required' });
+    }
+    
+    // Import OpenAI service
+    const { default: OpenAIService } = await import('../services/integrations/openaiService');
+    const openaiService = new OpenAIService(organizationId);
+    await openaiService.initialize();
+    
+    // Extract splice connections
+    const connections = await openaiService.extractSpliceConnections(transcription, {
+      nodeName,
+      availableCables
+    });
+    
+    // Add metadata to connections
+    const enrichedConnections = connections.map(conn => ({
+      ...conn,
+      verificationStatus: 'ai_generated',
+      transcriptionText: transcription,
+      createdAt: new Date().toISOString()
+    }));
+    
+    // If nodeId is provided, optionally save to the node
+    if (nodeId) {
+      const nodes = await db
+        .select()
+        .from(fiberNetworkNodes)
+        .where(
+          and(
+            eq(fiberNetworkNodes.id, parseInt(nodeId)),
+            eq(fiberNetworkNodes.organizationId, organizationId)
+          )
+        )
+        .limit(1);
+      
+      if (nodes.length > 0) {
+        const node = nodes[0];
+        const currentFiberDetails = node.fiberDetails || {};
+        const currentConnections = currentFiberDetails.spliceConnections || [];
+        
+        const newConnections = enrichedConnections.map(conn => ({
+          ...conn,
+          id: `splice_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+          createdBy: req.user.id
+        }));
+        
+        const updatedFiberDetails = {
+          ...currentFiberDetails,
+          spliceConnections: [...currentConnections, ...newConnections]
+        };
+        
+        await db
+          .update(fiberNetworkNodes)
+          .set({
+            fiberDetails: updatedFiberDetails,
+            updatedBy: req.user.id,
+            updatedAt: new Date()
+          })
+          .where(
+            and(
+              eq(fiberNetworkNodes.id, parseInt(nodeId)),
+              eq(fiberNetworkNodes.organizationId, organizationId)
+            )
+          );
+        
+        // Log the AI extraction
+        await db.insert(fiberNetworkActivityLogs).values({
+          organizationId,
+          userId: req.user.id,
+          userName: req.user.fullName || req.user.email,
+          actionType: 'update',
+          entityType: 'fiber_node',
+          entityId: parseInt(nodeId),
+          changes: { 
+            aiExtracted: {
+              connectionsCount: newConnections.length,
+              method: 'whisper_gpt4'
+            }
+          },
+          ipAddress: req.ip
+        });
+      }
+    }
+    
+    res.json({ connections: enrichedConnections });
+  } catch (error: any) {
+    console.error('Error extracting splice data:', error);
+    res.status(500).json({ 
+      error: 'Failed to extract splice data',
+      details: error.message 
+    });
   }
 });
 
