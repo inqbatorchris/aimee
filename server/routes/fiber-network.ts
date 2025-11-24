@@ -1516,6 +1516,9 @@ router.post('/nodes/:nodeId/splice-trays', authenticateToken, async (req: any, r
     const { nodeId } = req.params;
     const organizationId = req.user.organizationId;
     const userId = req.user.id;
+    
+    // Extract frontend fields
+    const { trayIdentifier, description, connections } = req.body;
 
     // Verify node exists and belongs to organization
     const node = await db
@@ -1533,35 +1536,56 @@ router.post('/nodes/:nodeId/splice-trays', authenticateToken, async (req: any, r
       return res.status(404).json({ error: 'Node not found' });
     }
 
-    // Validate request body
-    const createTraySchema = insertFiberSpliceTraySchema.omit({
-      organizationId: true,
-      nodeId: true,
-      createdBy: true,
-      updatedBy: true
-    });
+    // Get next tray number for this node
+    const existingTrays = await db
+      .select({ trayNumber: fiberSpliceTrays.trayNumber })
+      .from(fiberSpliceTrays)
+      .where(eq(fiberSpliceTrays.nodeId, parseInt(nodeId)))
+      .orderBy(sql`${fiberSpliceTrays.trayNumber} DESC`)
+      .limit(1);
+    
+    const nextTrayNumber = existingTrays.length > 0 ? existingTrays[0].trayNumber + 1 : 1;
 
-    const validation = createTraySchema.safeParse(req.body);
-    if (!validation.success) {
-      return res.status(400).json({ 
-        error: 'Validation failed', 
-        details: validation.error.format() 
-      });
-    }
-
-    // Create splice tray
+    // Create splice tray with mapped fields
     const result = await db
       .insert(fiberSpliceTrays)
       .values({
-        ...validation.data,
         organizationId,
         nodeId: parseInt(nodeId),
+        trayNumber: nextTrayNumber,
+        enclosureType: 'dome',
+        capacity: 24,
+        notes: description || `Tray: ${trayIdentifier}`,
         createdBy: userId,
         updatedBy: userId
       })
       .returning();
 
     const tray = result[0];
+
+    // Insert fiber connections if provided
+    let insertedConnections: any[] = [];
+    if (connections && Array.isArray(connections) && connections.length > 0) {
+      const connectionValues = connections.map((conn: any) => ({
+        organizationId,
+        trayId: tray.id,
+        nodeId: parseInt(nodeId),
+        cableAId: conn.leftCableId,
+        cableAFiberNumber: conn.leftFiberNumber,
+        cableAFiberColor: conn.leftFiberColor || 'unknown',
+        cableBId: conn.rightCableId,
+        cableBFiberNumber: conn.rightFiberNumber,
+        cableBFiberColor: conn.rightFiberColor || 'unknown',
+        createdByUserId: userId,
+        createdVia: conn.createdVia || 'manual',
+        isDeleted: false
+      }));
+
+      insertedConnections = await db
+        .insert(fiberConnections)
+        .values(connectionValues)
+        .returning();
+    }
 
     // Log activity
     await db.insert(fiberNetworkActivityLogs).values({
@@ -1575,13 +1599,18 @@ router.post('/nodes/:nodeId/splice-trays', authenticateToken, async (req: any, r
         added: {
           trayId: tray.id,
           trayNumber: tray.trayNumber,
-          enclosureType: tray.enclosureType
+          trayIdentifier,
+          connectionCount: insertedConnections.length
         }
       },
       ipAddress: req.ip
     });
 
-    res.status(201).json({ tray });
+    res.status(201).json({ 
+      tray,
+      connections: insertedConnections,
+      message: `Created tray with ${insertedConnections.length} connections`
+    });
   } catch (error: any) {
     console.error('Error creating splice tray:', error);
     res.status(500).json({ error: 'Failed to create splice tray', details: error.message });
