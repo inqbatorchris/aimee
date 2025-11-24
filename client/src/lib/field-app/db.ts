@@ -65,7 +65,7 @@ interface FieldAppDB extends DBSchema {
         title?: string;
         label?: string;
         description?: string;
-        type: 'checklist' | 'form' | 'photo' | 'signature' | 'measurement' | 'notes' | 'text_input' | 'fiber_network_node';
+        type: 'checklist' | 'form' | 'photo' | 'signature' | 'measurement' | 'notes' | 'text_input' | 'fiber_network_node' | 'audio_recording' | 'geolocation';
         required: boolean;
         order: number;
         config?: any;
@@ -123,11 +123,31 @@ interface FieldAppDB extends DBSchema {
     };
   };
   
+  audioRecordings: {
+    key: string; // uuid
+    value: {
+      id: string;
+      workItemId: number;
+      stepId?: string;
+      arrayBuffer: ArrayBuffer;
+      fileName: string;
+      mimeType: string;
+      size: number;
+      duration: number;
+      capturedAt: Date;
+      uploadedAt?: Date;
+      uploadedBy?: number;
+    };
+    indexes: {
+      'by-work-item': number;
+    };
+  };
+  
   syncQueue: {
     key: number;
     value: {
       id?: number;
-      type: 'workItem' | 'workflowStep' | 'photo' | 'fiberNetworkNode';
+      type: 'workItem' | 'workflowStep' | 'photo' | 'audio' | 'fiberNetworkNode';
       action: 'update' | 'create';
       entityId: string | number;
       data: any;
@@ -168,7 +188,7 @@ interface FieldAppDB extends DBSchema {
 }
 
 const DB_NAME = 'FieldAppDB';
-const DB_VERSION = 3; // Incremented for fiber network nodes store
+const DB_VERSION = 4; // Incremented for audio recordings store
 
 class FieldDatabase {
   private db: IDBPDatabase<FieldAppDB> | null = null;
@@ -212,6 +232,12 @@ class FieldDatabase {
         if (!db.objectStoreNames.contains('photos')) {
           const photoStore = db.createObjectStore('photos', { keyPath: 'id' });
           photoStore.createIndex('by-work-item', 'workItemId');
+        }
+        
+        // Audio recordings store
+        if (!db.objectStoreNames.contains('audioRecordings')) {
+          const audioStore = db.createObjectStore('audioRecordings', { keyPath: 'id' });
+          audioStore.createIndex('by-work-item', 'workItemId');
         }
         
         // Sync queue store
@@ -478,6 +504,65 @@ class FieldDatabase {
   async getPhoto(id: string): Promise<FieldAppDB['photos']['value'] | undefined> {
     const db = await this.ensureDB();
     return db.get('photos', id);
+  }
+
+  async saveAudio(
+    workItemId: number,
+    blob: Blob,
+    fileName: string,
+    duration: number,
+    stepId?: string,
+    uploadedAt?: Date,
+    uploadedBy?: number,
+    skipSyncQueue: boolean = false
+  ): Promise<string> {
+    const db = await this.ensureDB();
+    
+    // Generate unique ID
+    const id = `audio-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Convert Blob to ArrayBuffer for reliable IndexedDB storage
+    const arrayBuffer = await blob.arrayBuffer();
+    
+    const audio: FieldAppDB['audioRecordings']['value'] = {
+      id,
+      workItemId,
+      stepId,
+      arrayBuffer,
+      fileName,
+      mimeType: blob.type,
+      size: blob.size,
+      duration,
+      capturedAt: new Date(),
+      uploadedAt,
+      uploadedBy
+    };
+    
+    await db.put('audioRecordings', audio);
+    
+    // Only add to sync queue if this is a newly captured audio (not downloaded from server)
+    if (!skipSyncQueue) {
+      await this.addToSyncQueue('audio', 'create', id, {
+        workItemId,
+        stepId,
+        fileName,
+        mimeType: blob.type,
+        size: blob.size,
+        duration
+      });
+    }
+    
+    return id;
+  }
+  
+  async getAudioRecordings(workItemId: number): Promise<FieldAppDB['audioRecordings']['value'][]> {
+    const db = await this.ensureDB();
+    return db.getAllFromIndex('audioRecordings', 'by-work-item', workItemId);
+  }
+  
+  async getAudioRecording(id: string): Promise<FieldAppDB['audioRecordings']['value'] | undefined> {
+    const db = await this.ensureDB();
+    return db.get('audioRecordings', id);
   }
   
   // Sync queue management

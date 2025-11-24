@@ -2682,7 +2682,7 @@ export const workflowStepSchema = z.object({
   title: z.string().optional(),
   label: z.string().optional(),
   description: z.string().optional(),
-  type: z.enum(['checklist', 'form', 'photo', 'signature', 'measurement', 'notes', 'checkbox', 'text_input', 'file_upload', 'approval', 'kb_link', 'comment', 'geolocation', 'fiber_network_node', 'splynx_ticket']),
+  type: z.enum(['checklist', 'form', 'photo', 'signature', 'measurement', 'notes', 'checkbox', 'text_input', 'file_upload', 'approval', 'kb_link', 'comment', 'geolocation', 'fiber_network_node', 'splynx_ticket', 'audio_recording', 'splice_documentation']),
   required: z.boolean().default(false),
   order: z.number(),
   config: z.any().optional(),
@@ -3238,6 +3238,39 @@ export const fiberNetworkNodes = pgTable("fiber_network_nodes", {
       bufferTubeColors?: string[];
       lossDb?: number;
       testDate?: string;
+    }>;
+    cables?: Array<{
+      id: string;
+      connectedNodeId: number;
+      connectedNodeName?: string;
+      fiberCount: number;
+      cableIdentifier: string;
+      cableType?: string;
+      installDate?: string;
+      direction: 'incoming' | 'outgoing';
+      routeGeometry?: Array<[number, number]>;
+      notes?: string;
+      createdBy: number;
+      createdAt: string;
+    }>;
+    spliceConnections?: Array<{
+      id: string;
+      workItemId?: number;
+      incomingCable: string;
+      incomingFiber: number;
+      incomingBufferTube?: string;
+      outgoingCable: string;
+      outgoingFiber: number;
+      outgoingBufferTube?: string;
+      verificationStatus: 'ai_generated' | 'manual' | 'verified';
+      transcriptionText?: string;
+      audioReference?: string;
+      photoReference?: string;
+      notes?: string;
+      createdBy: number;
+      createdAt: string;
+      verifiedBy?: number;
+      verifiedAt?: string;
     }>;
     installations?: Array<any>;
     inspections?: Array<any>;
