@@ -149,7 +149,36 @@ export class FieldManagerService {
   }
 
   /**
+   * Map field names to real database columns
+   * Returns the database column name if it exists, otherwise null
+   */
+  private getColumnName(tableName: string, fieldName: string): string | null {
+    // Address records have specific OCR columns
+    if (tableName === 'address_records') {
+      const fieldMap: Record<string, string> = {
+        'RouterSerial': 'routerSerial',
+        'router_serial': 'routerSerial',
+        'Mac': 'routerMac',
+        'router_mac': 'routerMac',
+        'ModelNumber': 'routerModel',
+        'router_model': 'routerModel',
+        'ONUSerial': 'onuSerial',
+        'onu_serial': 'onuSerial',
+        'ONUMac': 'onuMac',
+        'onu_mac': 'onuMac',
+        'ONUModel': 'onuModel',
+        'onu_model': 'onuModel',
+      };
+      return fieldMap[fieldName] || null;
+    }
+    
+    // Add support for other tables here as needed
+    return null;
+  }
+
+  /**
    * Generic method to update extractedData field in any supported table
+   * NOW WRITES TO REAL COLUMNS when available, falls back to JSONB for unknown fields
    */
   private async updateExtractedDataField(
     tableName: string,
@@ -185,24 +214,40 @@ export class FieldManagerService {
       throw new Error(`${tableName} record not found: ID ${recordId}`);
     }
 
-    // Update the extractedData JSONB field
-    const currentExtractedData = (record.extractedData as Record<string, any>) || {};
-    const updatedExtractedData = {
-      ...currentExtractedData,
-      [fieldName]: value,
-    };
+    // Check if this field maps to a real database column
+    const columnName = this.getColumnName(tableName, fieldName);
+    
+    if (columnName) {
+      // Write to real column
+      console.log(`[FieldManagerService] Writing ${fieldName} → ${columnName} on ${tableName}#${recordId}`);
+      const updated = await db
+        .update(table)
+        .set({
+          [columnName]: value,
+          updatedAt: new Date(),
+        })
+        .where(eq(table.id, recordId))
+        .returning();
+      return updated[0];
+    } else {
+      // Fallback to JSONB for unknown fields
+      console.log(`[FieldManagerService] Writing ${fieldName} to extractedDataExtras JSONB on ${tableName}#${recordId}`);
+      const currentExtras = (record.extractedDataExtras as Record<string, any>) || {};
+      const updatedExtras = {
+        ...currentExtras,
+        [fieldName]: value,
+      };
 
-    // Update the record
-    const updated = await db
-      .update(table)
-      .set({
-        extractedData: updatedExtractedData,
-        updatedAt: new Date(),
-      })
-      .where(eq(table.id, recordId))
-      .returning();
-
-    return updated[0];
+      const updated = await db
+        .update(table)
+        .set({
+          extractedDataExtras: updatedExtras,
+          updatedAt: new Date(),
+        })
+        .where(eq(table.id, recordId))
+        .returning();
+      return updated[0];
+    }
   }
 
   /**
@@ -219,6 +264,7 @@ export class FieldManagerService {
 
   /**
    * Generic method to batch update extractedData fields
+   * NOW WRITES TO REAL COLUMNS when available, falls back to JSONB for unknown fields
    */
   private async batchUpdateExtractedData(
     tableName: string,
@@ -253,20 +299,42 @@ export class FieldManagerService {
       throw new Error(`${tableName} record not found: ID ${recordId}`);
     }
 
-    // Merge new fields with existing extractedData
-    const currentExtractedData = (record.extractedData as Record<string, any>) || {};
-    const updatedExtractedData = {
-      ...currentExtractedData,
-      ...fields,
+    // Split fields into real columns and JSONB extras
+    const columnUpdates: Record<string, any> = {};
+    const jsonbExtras: Record<string, any> = {};
+
+    for (const [fieldName, value] of Object.entries(fields)) {
+      const columnName = this.getColumnName(tableName, fieldName);
+      if (columnName) {
+        // Map to real column
+        columnUpdates[columnName] = value;
+        console.log(`[FieldManagerService] Batch mapping ${fieldName} → ${columnName}`);
+      } else {
+        // Store in JSONB
+        jsonbExtras[fieldName] = value;
+        console.log(`[FieldManagerService] Batch storing ${fieldName} in extractedDataExtras`);
+      }
+    }
+
+    // Build update object
+    const updateData: any = {
+      ...columnUpdates,
+      updatedAt: new Date(),
     };
+
+    // If we have JSONB extras, merge with existing
+    if (Object.keys(jsonbExtras).length > 0) {
+      const currentExtras = (record.extractedDataExtras as Record<string, any>) || {};
+      updateData.extractedDataExtras = {
+        ...currentExtras,
+        ...jsonbExtras,
+      };
+    }
 
     // Update the record
     const updated = await db
       .update(table)
-      .set({
-        extractedData: updatedExtractedData,
-        updatedAt: new Date(),
-      })
+      .set(updateData)
       .where(eq(table.id, recordId))
       .returning();
 
