@@ -75,9 +75,26 @@ export default function Sync({ session, onComplete }: SyncProps) {
       // Prepare sync payload
       const updates = [];
       const photoUploads = [];
+      const audioUploads = [];
 
       for (const item of queue) {
-        if (item.type === 'photo') {
+        if (item.type === 'audio') {
+          // Handle audio uploads separately
+          const audio = await fieldDB.getAudioRecording(item.entityId as string);
+          if (audio) {
+            const blob = new Blob([audio.arrayBuffer], { type: audio.mimeType });
+            
+            audioUploads.push({
+              id: audio.id,
+              workItemId: audio.workItemId,
+              stepId: audio.stepId,
+              blob,
+              fileName: audio.fileName,
+              mimeType: audio.mimeType,
+              duration: audio.duration
+            });
+          }
+        } else if (item.type === 'photo') {
           // Handle photo uploads separately
           const photo = await fieldDB.getPhoto(item.entityId as string);
           if (photo) {
@@ -222,6 +239,44 @@ export default function Sync({ session, onComplete }: SyncProps) {
         for (let i = 0; i < compressedPhotos.length; i += CONCURRENT_UPLOADS) {
           const batch = compressedPhotos.slice(i, i + CONCURRENT_UPLOADS);
           await Promise.all(batch.map(photo => uploadPhoto(photo)));
+        }
+      }
+
+      // Upload audio files if any
+      if (audioUploads.length > 0) {
+        setStatus(`Uploading ${audioUploads.length} audio recordings...`);
+        
+        let audioUploadedCount = 0;
+        
+        const uploadAudio = async (audio: any) => {
+          const formData = new FormData();
+          formData.append('workItemId', audio.workItemId.toString());
+          formData.append('stepId', audio.stepId || '');
+          formData.append('duration', audio.duration.toString());
+          formData.append('file', audio.blob, audio.fileName);
+
+          const response = await fetch('/api/field-app/upload-audio', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.token}`
+            },
+            body: formData
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Failed to upload ${audio.fileName}`);
+          }
+          
+          audioUploadedCount++;
+          setStatus(`Uploading audio ${audioUploadedCount} of ${audioUploads.length}...`);
+          setProgress(Math.round(80 + (10 * audioUploadedCount / audioUploads.length)));
+          
+          return response.json();
+        };
+        
+        // Upload audio files sequentially (audio files can be large)
+        for (const audio of audioUploads) {
+          await uploadAudio(audio);
         }
       }
 

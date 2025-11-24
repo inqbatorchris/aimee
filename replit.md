@@ -5,6 +5,37 @@ Aimee.works is a Strategy Operating System (Strategy OS) designed to integrate s
 
 ## Recent Changes
 
+### November 2025 - AI-Powered Splice Documentation Workflow
+**Feature**: Complete AI-powered fiber splice documentation system using voice transcription and structured data extraction for field engineers.
+
+**Implementation**:
+- **Audio Recording in Field App**: New `audio_recording` workflow step type with MediaRecorder API for field voice memos
+- **IndexedDB Audio Storage**: Audio files stored in IndexedDB (similar to photos) with IDs in stepData to prevent JSON serialization issues
+- **Field App Sync**: Audio recordings uploaded to server via FormData, stored as base64 in workflow step evidence
+- **OpenAI Whisper Integration**: `transcribeAudioFromBase64()` method in OpenAI service for speech-to-text transcription ($0.003 per minute)
+- **GPT-4 Data Extraction**: `extractSpliceConnections()` method extracts structured splice connection data from transcriptions ($0.01 per request)
+- **Database Schema Extensions**: `fiberDetails` JSONB field extended with `cables` and `spliceConnections` arrays for cable routes and splice documentation
+- **Backend API Routes**: `/api/fiber-network/nodes/:id/cables`, `/api/fiber-network/nodes/:id/splice-connections`, `/api/fiber-network/transcribe-splice`, `/api/fiber-network/extract-splice-data`
+- **Workflow Template**: "Document Splice Tray" template with photo capture, audio recording, and notes steps for comprehensive field documentation
+- **Cost Efficiency**: ~$0.013 per splice documentation (Whisper + GPT-4o-mini), highly affordable for large-scale field operations
+
+**Technical Details**:
+- Files: `client/src/pages/field-app/components/WorkflowStep.tsx`, `client/src/lib/field-app/db.ts`, `client/src/pages/field-app/Sync.tsx`, `server/routes/field-app.ts`, `server/routes/fiber-network.ts`, `server/services/integrations/openaiService.ts`, `shared/schema.ts`
+- Audio storage: ArrayBuffer format in IndexedDB `audioRecordings` store with metadata (duration, size, capturedAt)
+- Sync queue: Extended to include 'audio' type for offline-first audio upload handling
+- Database fields: `cables` array stores {id, startNodeId, endNodeId, cableType, fiberCount, length, status}, `spliceConnections` array stores {id, cableId, tubeNumber, fiberPosition, connectedTo, spliceLoss, notes}
+- Cleanup: Component unmount properly stops MediaRecorder and releases microphone resources
+- **Bug Fix** (Nov 24): Audio persistence bug where Blobs were stored directly in stepData causing data loss during JSON serialization. Fixed by implementing IndexedDB storage with saveAudio() method mirroring photo storage pattern.
+
+**Workflow**:
+1. Field engineer captures splice tray photos
+2. Records voice memo describing connections (e.g., "tube 1 fiber 3 blue to tube 2 fiber 5 green")
+3. Audio saved to IndexedDB with metadata
+4. On sync, audio uploaded to server and stored in workflow evidence
+5. (Future) Desktop user triggers transcription via API → Whisper converts speech to text
+6. (Future) GPT-4 extracts structured splice connections from transcription
+7. (Future) Splice connections saved to fiber node `fiberDetails.spliceConnections` for visualization and reporting
+
 ### November 2025 - AI Ticket Drafting Integration
 **Feature**: Complete AI-powered support ticket response drafting system integrated with Agent Builder workflows and workflow template execution.
 
