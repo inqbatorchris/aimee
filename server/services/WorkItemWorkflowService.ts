@@ -180,11 +180,16 @@ export class WorkItemWorkflowService {
       
       const template = await this.getWorkflowTemplate(execution[0].workflowTemplateId, organizationId);
       
-      // Execute completion callbacks if configured
-      if (template?.completionCallbacks && Array.isArray(template.completionCallbacks)) {
-        console.log(`[Workflow Completion] Found ${template.completionCallbacks.length} completion callback(s)`);
+      // Process OCR for photo steps with photoAnalysisConfig enabled
+      await this.processWorkflowOCR(executionId, organizationId, execution[0].workItemId, template);
+      
+      // FIX: Database column is completion_callbacks (snake_case), not completionCallbacks (camelCase)
+      const callbacks = (template as any)?.completion_callbacks;
+      
+      if (callbacks && Array.isArray(callbacks)) {
+        console.log(`[Workflow Completion] Found ${callbacks.length} completion callback(s)`);
         
-        for (const callback of template.completionCallbacks) {
+        for (const callback of callbacks) {
           try {
             await this.executeCompletionCallback(callback, executionId, organizationId, execution[0].workItemId);
           } catch (error) {
@@ -793,6 +798,155 @@ export class WorkItemWorkflowService {
       );
 
     return executions;
+  }
+
+  /**
+   * Process OCR for photo steps with photoAnalysisConfig enabled
+   */
+  private async processWorkflowOCR(
+    executionId: number,
+    organizationId: number,
+    workItemId: number,
+    template: any
+  ) {
+    try {
+      console.log('[OCR] Checking workflow for photo analysis steps');
+      
+      // Get template steps
+      const templateSteps = template?.steps || [];
+      if (!Array.isArray(templateSteps)) {
+        console.log('[OCR] No template steps found');
+        return;
+      }
+
+      // Get execution steps
+      const executionSteps = await db
+        .select()
+        .from(workItemWorkflowExecutionSteps)
+        .where(
+          and(
+            eq(workItemWorkflowExecutionSteps.executionId, executionId),
+            eq(workItemWorkflowExecutionSteps.organizationId, organizationId)
+          )
+        )
+        .orderBy(workItemWorkflowExecutionSteps.stepIndex);
+
+      console.log(`[OCR] Processing ${executionSteps.length} execution steps`);
+
+      // Find photo steps with OCR enabled
+      for (const templateStep of templateSteps) {
+        const stepConfig = templateStep.config || {};
+        const photoAnalysisConfig = stepConfig.photoAnalysisConfig;
+        
+        // Check if OCR is enabled for this step
+        if (templateStep.type === 'photo' && photoAnalysisConfig?.enabled && photoAnalysisConfig?.extractions) {
+          console.log(`[OCR] Found OCR-enabled photo step: ${templateStep.label || templateStep.id}`);
+          
+          // Find the corresponding execution step
+          const executionStep = executionSteps.find((es: any) => {
+            const evidence = es.evidence as any;
+            return evidence?.stepId === templateStep.id;
+          });
+
+          if (!executionStep) {
+            console.log(`[OCR] No execution step found for ${templateStep.id}`);
+            continue;
+          }
+
+          // Collect photos from this step
+          const evidence = executionStep.evidence as any;
+          const photos = evidence?.photos || [];
+          
+          console.log(`[OCR] Step ${templateStep.id} has ${photos.length} photos`);
+
+          if (photos.length === 0) {
+            console.log(`[OCR] No photos to process for step ${templateStep.id}`);
+            continue;
+          }
+
+          // Process each extraction configuration
+          for (const extraction of photoAnalysisConfig.extractions) {
+            const { targetField, targetTable, extractionPrompt } = extraction;
+            
+            console.log(`[OCR] Processing extraction: ${extractionPrompt} -> ${targetTable}.${targetField}`);
+
+            // Get target record ID from work_item_sources
+            const [source] = await db
+              .select()
+              .from(workItemSources)
+              .where(
+                and(
+                  eq(workItemSources.workItemId, workItemId),
+                  eq(workItemSources.organizationId, organizationId)
+                )
+              )
+              .limit(1);
+
+            if (!source || source.sourceTable !== targetTable) {
+              console.log(`[OCR] No matching source record found for ${targetTable}`);
+              continue;
+            }
+
+            const targetRecordId = source.sourceId;
+            console.log(`[OCR] Target record: ${targetTable}#${targetRecordId}`);
+
+            // Run OCR extraction
+            const { OCRService } = await import('./ocr/OCRService');
+            const ocrService = new OCRService();
+
+            const extractedValue = await ocrService.extractFieldFromPhotos({
+              photos,
+              fieldPrompt: extractionPrompt,
+              organizationId,
+            });
+
+            console.log(`[OCR] Extracted value for ${extractionPrompt}: ${extractedValue}`);
+
+            if (!extractedValue) {
+              console.log(`[OCR] No value extracted for ${extractionPrompt}`);
+              continue;
+            }
+
+            // Write extracted value to target record
+            const { FieldManagerService } = await import('./ocr/FieldManagerService');
+            const fieldManager = new FieldManagerService();
+
+            await fieldManager.updateDynamicField({
+              organizationId,
+              tableName: targetTable,
+              recordId: targetRecordId,
+              fieldName: targetField,
+              value: extractedValue,
+            });
+
+            console.log(`[OCR] Successfully updated ${targetTable}#${targetRecordId}.${targetField} = ${extractedValue}`);
+
+            // Log activity
+            await db.insert(activityLogs).values({
+              organizationId,
+              userId: null,
+              actionType: 'ocr_extraction',
+              entityType: targetTable,
+              entityId: targetRecordId,
+              description: `OCR extracted ${extractionPrompt}: ${extractedValue}`,
+              metadata: {
+                workItemId,
+                executionId,
+                stepId: templateStep.id,
+                fieldName: targetField,
+                extractedValue,
+                photoCount: photos.length,
+              },
+            });
+          }
+        }
+      }
+
+      console.log('[OCR] Workflow OCR processing complete');
+    } catch (error) {
+      console.error('[OCR] Error processing workflow OCR:', error);
+      // Don't throw - allow workflow completion to continue even if OCR fails
+    }
   }
 
   async getWorkflowTemplate(templateId: string, organizationId: number) {
