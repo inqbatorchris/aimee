@@ -1052,4 +1052,120 @@ router.post('/extract-splice-data', authenticateToken, async (req: any, res) => 
   }
 });
 
+// Workflow callback endpoint to save verified splice connections from voice memo workflow
+router.post('/save-splice-connections', authenticateToken, async (req: any, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+    const userId = req.user.id;
+    const { fiberNodeId, spliceConnections, workItemId, transcriptionText, audioReference, photos } = req.body;
+
+    console.log('[Save Splice Connections] Workflow callback received:', {
+      fiberNodeId,
+      workItemId,
+      connectionsCount: spliceConnections?.length || 0
+    });
+
+    if (!fiberNodeId) {
+      return res.status(400).json({ error: 'fiberNodeId is required' });
+    }
+
+    if (!spliceConnections || !Array.isArray(spliceConnections)) {
+      return res.status(400).json({ error: 'spliceConnections array is required' });
+    }
+
+    // Get the fiber node
+    const [node] = await db
+      .select()
+      .from(fiberNetworkNodes)
+      .where(
+        and(
+          eq(fiberNetworkNodes.id, fiberNodeId),
+          eq(fiberNetworkNodes.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+
+    if (!node) {
+      return res.status(404).json({ error: 'Fiber node not found' });
+    }
+
+    // Map connections to schema format
+    const newConnections = spliceConnections.map((conn: any) => ({
+      id: conn.id || `splice-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      workItemId: workItemId || conn.workItemId,
+      incomingCable: conn.incomingCable,
+      incomingFiber: parseInt(conn.incomingFiber),
+      incomingBufferTube: conn.incomingBufferTube || undefined,
+      outgoingCable: conn.outgoingCable,
+      outgoingFiber: parseInt(conn.outgoingFiber),
+      outgoingBufferTube: conn.outgoingBufferTube || undefined,
+      verificationStatus: 'verified',
+      transcriptionText: conn.transcriptionText || transcriptionText,
+      audioReference: conn.audioReference || audioReference,
+      photoReference: conn.photoReference || (photos && photos[0]),
+      notes: conn.notes || undefined,
+      createdBy: userId,
+      createdAt: new Date().toISOString(),
+      verifiedBy: userId,
+      verifiedAt: new Date().toISOString()
+    }));
+
+    // Append to node's splice connections
+    const currentFiberDetails = node.fiberDetails || {};
+    const existingSplices = currentFiberDetails.spliceConnections || [];
+
+    const updatedFiberDetails = {
+      ...currentFiberDetails,
+      spliceConnections: [...existingSplices, ...newConnections]
+    };
+
+    await db
+      .update(fiberNetworkNodes)
+      .set({
+        fiberDetails: updatedFiberDetails,
+        updatedBy: userId,
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(fiberNetworkNodes.id, fiberNodeId),
+          eq(fiberNetworkNodes.organizationId, organizationId)
+        )
+      );
+
+    // Log the activity
+    await db.insert(fiberNetworkActivityLogs).values({
+      organizationId,
+      userId,
+      userName: req.user.fullName || req.user.email,
+      actionType: 'update',
+      entityType: 'fiber_node',
+      entityId: fiberNodeId,
+      workItemId,
+      changes: {
+        added: {
+          spliceConnections: newConnections.length,
+          method: 'voice_memo_workflow'
+        }
+      },
+      ipAddress: req.ip
+    });
+
+    console.log('[Save Splice Connections] Successfully saved', newConnections.length, 'connections to node', fiberNodeId);
+
+    res.json({ 
+      success: true, 
+      connectionsAdded: newConnections.length,
+      fiberNodeId,
+      fiberNodeName: node.name
+    });
+  } catch (error: any) {
+    console.error('[Save Splice Connections] Error:', error);
+    res.status(500).json({ 
+      error: 'Failed to save splice connections',
+      details: error.message 
+    });
+  }
+});
+
 export default router;
