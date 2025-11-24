@@ -1762,10 +1762,10 @@ export default function FiberNetwork() {
                       
                       apiRequest(`/api/fiber-network/cables/${editingCable.id}/route`, {
                         method: 'PATCH',
-                        body: JSON.stringify({
+                        body: {
                           nodeId: editingCable.startNodeId,
                           waypoints: editingCableWaypoints,
-                        }),
+                        },
                       }).then(() => {
                         // Clear edit state
                         setCableEditMode(false);
