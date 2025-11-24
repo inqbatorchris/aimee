@@ -964,6 +964,176 @@ router.post('/upload-photo', authenticateToken, upload.single('file'), async (re
   }
 });
 
+// Upload audio from field app
+router.post('/upload-audio', authenticateToken, upload.single('file'), async (req: any, res) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    const userId = req.user?.id;
+    const { workItemId, stepId, duration } = req.body;
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    if (!workItemId) {
+      return res.status(400).json({ error: 'workItemId is required' });
+    }
+
+    console.log('[Upload Audio] Processing upload:', {
+      workItemId,
+      stepId,
+      fileName: file.filename,
+      size: file.size,
+      duration
+    });
+
+    // Convert uploaded file to base64 for database storage
+    const audioPath = file.path;
+    const audioBuffer = await fs.promises.readFile(audioPath);
+    const base64Data = `data:${file.mimetype};base64,${audioBuffer.toString('base64')}`;
+
+    // If stepId provided, update the step evidence in database
+    if (stepId) {
+      const execution = await db.select()
+        .from(workItemWorkflowExecutions)
+        .where(
+          and(
+            eq(workItemWorkflowExecutions.workItemId, parseInt(workItemId)),
+            eq(workItemWorkflowExecutions.organizationId, organizationId)
+          )
+        )
+        .limit(1);
+
+      if (execution && execution.length > 0) {
+        const workItem = await db.select()
+          .from(workItems)
+          .where(eq(workItems.id, parseInt(workItemId)))
+          .limit(1);
+
+        if (workItem && workItem.length > 0 && workItem[0].workflowTemplateId) {
+          const template = await storage.getWorkflowTemplate(organizationId, workItem[0].workflowTemplateId);
+          if (!template) {
+            console.warn('[Upload Audio] Template not found');
+            return res.json({ success: false, error: 'Template not found' });
+          }
+          
+          const templateStep = template.steps.find((s: any) => s.id === stepId);
+          const stepIndex = templateStep ? template.steps.indexOf(templateStep) : -1;
+
+          if (stepIndex >= 0) {
+            const stepRecord = await db.select()
+              .from(workItemWorkflowExecutionSteps)
+              .where(
+                and(
+                  eq(workItemWorkflowExecutionSteps.executionId, execution[0].id),
+                  eq(workItemWorkflowExecutionSteps.stepIndex, stepIndex)
+                )
+              )
+              .limit(1);
+
+            if (stepRecord && stepRecord.length > 0) {
+              const existingEvidence = (stepRecord[0].evidence as any) || {};
+              const existingAudio = existingEvidence.audioRecordings || [];
+              
+              // Check for duplicate audio
+              const isDuplicate = existingAudio.some((audio: any) => 
+                audio.fileName === file.filename && audio.size === file.size
+              );
+              
+              if (isDuplicate) {
+                console.log('[Upload Audio] Duplicate audio detected, skipping:', {
+                  fileName: file.filename,
+                  size: file.size
+                });
+                
+                fs.unlink(file.path, (err) => {
+                  if (err) console.error('Failed to delete duplicate file:', err);
+                });
+                
+                return res.json({
+                  success: true,
+                  duplicate: true,
+                  audioId: `existing-${file.filename}`,
+                  fileName: file.filename,
+                  size: file.size,
+                  workItemId,
+                  stepId,
+                  message: 'Audio already exists'
+                });
+              }
+              
+              const newAudio = {
+                data: base64Data,
+                fileName: file.filename,
+                size: file.size,
+                duration: parseInt(duration) || 0,
+                uploadedAt: new Date().toISOString(),
+                uploadedBy: userId
+              };
+
+              await db.update(workItemWorkflowExecutionSteps)
+                .set({
+                  evidence: {
+                    ...existingEvidence,
+                    audioRecordings: [...existingAudio, newAudio]
+                  },
+                  updatedAt: new Date()
+                })
+                .where(eq(workItemWorkflowExecutionSteps.id, stepRecord[0].id));
+
+              console.log('[Upload Audio] Audio saved to database evidence');
+              
+              // Log audio upload in activity logs
+              await storage.logActivity({
+                organizationId,
+                userId,
+                actionType: 'file_upload',
+                entityType: 'work_item',
+                entityId: parseInt(workItemId),
+                description: `Audio recording uploaded from field app: ${file.filename}`,
+                metadata: {
+                  action: 'audio_uploaded',
+                  fileName: file.filename,
+                  fileSize: file.size,
+                  duration: parseInt(duration) || 0,
+                  stepId,
+                  stepIndex
+                }
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Clean up uploaded file after storing in database
+    fs.unlink(file.path, (err) => {
+      if (err) console.error('Failed to delete uploaded audio file:', err);
+    });
+
+    res.json({
+      success: true,
+      audioId: `audio-${Date.now()}`,
+      fileName: file.filename,
+      size: file.size,
+      duration: parseInt(duration) || 0,
+      workItemId,
+      stepId
+    });
+  } catch (error) {
+    console.error('Error uploading audio:', error);
+    
+    if (req.file) {
+      fs.unlink(req.file.path, (err) => {
+        if (err) console.error('Failed to delete uploaded file:', err);
+      });
+    }
+    
+    res.status(500).json({ error: 'Failed to upload audio' });
+  }
+});
+
 // Delete photo from workflow step evidence
 router.delete('/delete-photo', authenticateToken, async (req: any, res) => {
   try {
