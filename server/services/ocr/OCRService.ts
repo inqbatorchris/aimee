@@ -23,16 +23,23 @@ export class OCRService {
     // Use AI Integrations key if available (from Replit AI Integrations)
     const apiKey = config.apiKey || process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
     
-    if (!apiKey) {
-      throw new Error('OpenAI API key not configured. Set AI_INTEGRATIONS_OPENAI_API_KEY or OPENAI_API_KEY environment variable.');
+    // Allow initialization without API key if in mock mode
+    if (!apiKey && process.env.MOCK_OCR !== 'true') {
+      throw new Error('OpenAI API key not configured. Set AI_INTEGRATIONS_OPENAI_API_KEY or OPENAI_API_KEY environment variable, or set MOCK_OCR=true for testing.');
     }
 
-    this.openai = new OpenAI({ 
-      apiKey,
-      baseURL: process.env.AI_INTEGRATIONS_OPENAI_API_KEY 
-        ? 'https://api.replit.com/v1' 
-        : undefined 
-    });
+    // Initialize OpenAI client only if we have an API key (not needed in mock mode)
+    if (apiKey) {
+      this.openai = new OpenAI({ 
+        apiKey,
+        baseURL: process.env.AI_INTEGRATIONS_OPENAI_API_KEY 
+          ? 'https://api.replit.com/v1' 
+          : undefined 
+      });
+    } else {
+      // Mock mode - no OpenAI client needed
+      this.openai = null as any;
+    }
     this.model = config.model || 'gpt-4o'; // gpt-4o supports vision
   }
 
