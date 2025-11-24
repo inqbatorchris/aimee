@@ -58,6 +58,18 @@ export default function WorkflowStep({
   const recordingStartTimeRef = useRef<number>(0);
   const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // Sync data prop changes to local state
+  useEffect(() => {
+    if (data) {
+      setStepData(data);
+      setPhotos(data.photos || []);
+      setFiberNodes(data.fiberNodes || []);
+      setAudioId(data.audioId || null);
+      setAudioDuration(data.audioDuration || 0);
+      setAudioSize(data.audioSize || 0);
+    }
+  }, [data]);
+
   // Load audio blob if audioId exists
   useEffect(() => {
     const loadAudio = async () => {
