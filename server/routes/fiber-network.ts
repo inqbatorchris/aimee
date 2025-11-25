@@ -1507,6 +1507,233 @@ router.delete('/cables/:cableId', authenticateToken, async (req: any, res) => {
 });
 
 // ========================================
+// FIBER STATUS ENDPOINTS
+// ========================================
+
+// Get fiber status for a cable at a node - shows which fibers are used/available/live
+router.get('/cables/:cableId/fiber-status', authenticateToken, async (req: any, res) => {
+  try {
+    const { cableId } = req.params;
+    const { nodeId } = req.query; // Optional: which node's perspective
+    const organizationId = req.user.organizationId;
+
+    console.log('[FIBER-STATUS] Getting status for cable:', cableId, 'at node:', nodeId);
+
+    // 1. Get the cable's fiber count from any node that has it
+    const cableNodesResult = await db.execute(sql`
+      SELECT id, name, fiber_details
+      FROM fiber_network_nodes
+      WHERE organization_id = ${organizationId}
+        AND fiber_details IS NOT NULL
+    `);
+
+    let fiberCount = 12; // Default
+    let cableIdentifier = cableId;
+    
+    // Find the cable in any node's fiber_details
+    for (const node of cableNodesResult.rows) {
+      const fiberDetails = node.fiber_details as any;
+      const cables = fiberDetails?.cables || [];
+      const cable = cables.find((c: any) => c.id === cableId);
+      if (cable) {
+        fiberCount = cable.fiberCount || 12;
+        cableIdentifier = cable.cableIdentifier || cableId;
+        break;
+      }
+    }
+
+    // 2. Get all splice connections that use this cable (as left or right)
+    const spliceConnectionsResult = await db.execute(sql`
+      SELECT 
+        fc.id,
+        fc.splice_tray_id,
+        fc.left_fiber_number,
+        fc.left_fiber_color,
+        fc.right_fiber_number,
+        fc.right_fiber_color,
+        fst.tray_identifier,
+        fst.fiber_node_id,
+        fnn.name as node_name
+      FROM fiber_connections fc
+      JOIN fiber_splice_trays fst ON fc.splice_tray_id = fst.id
+      JOIN fiber_network_nodes fnn ON fst.fiber_node_id = fnn.id
+      WHERE fc.organization_id = ${organizationId}
+    `);
+
+    // 3. Get all terminations that use this cable
+    const terminationsResult = await db.execute(sql`
+      SELECT 
+        ft.id,
+        ft.fiber_number,
+        ft.fiber_color,
+        ft.is_live,
+        ft.service_name,
+        ft.termination_type,
+        ft.termination_identifier,
+        ft.status,
+        fnn.name as customer_node_name,
+        fnn.id as customer_node_id
+      FROM fiber_terminations ft
+      JOIN fiber_network_nodes fnn ON ft.customer_node_id = fnn.id
+      WHERE ft.organization_id = ${organizationId}
+        AND ft.cable_id = ${cableId}
+    `);
+
+    // 4. Build fiber status array
+    const fibers: Array<{
+      fiberNumber: number;
+      color: string;
+      colorHex: string;
+      status: 'available' | 'used' | 'live' | 'reserved';
+      usageType?: 'splice' | 'termination' | 'reserved';
+      endpoint?: {
+        type: 'node' | 'customer';
+        nodeId?: number;
+        nodeName?: string;
+        trayId?: number;
+        trayIdentifier?: string;
+        fiberNumber?: number;
+        serviceName?: string;
+        terminationType?: string;
+      };
+    }> = [];
+
+    // Import color function
+    const { getColorForFiberNumber } = await import('../../shared/fiberColorStandards');
+
+    for (let i = 1; i <= fiberCount; i++) {
+      const colorInfo = getColorForFiberNumber(i, fiberCount);
+      
+      // Check if used in termination
+      const termination = terminationsResult.rows.find((t: any) => t.fiber_number === i);
+      if (termination) {
+        fibers.push({
+          fiberNumber: i,
+          color: colorInfo.color,
+          colorHex: colorInfo.colorHex,
+          status: (termination as any).is_live ? 'live' : 'used',
+          usageType: 'termination',
+          endpoint: {
+            type: 'customer',
+            nodeId: (termination as any).customer_node_id,
+            nodeName: (termination as any).customer_node_name,
+            serviceName: (termination as any).service_name,
+            terminationType: (termination as any).termination_type
+          }
+        });
+        continue;
+      }
+
+      // Check if used in splice (we need to match by checking node's cable data)
+      // For now, mark as available - we'll enhance this in the next iteration
+      // The splice connections use left_cable_id/right_cable_id which are integers, not the cable string ID
+      // This is a known mismatch we need to address
+      
+      fibers.push({
+        fiberNumber: i,
+        color: colorInfo.color,
+        colorHex: colorInfo.colorHex,
+        status: 'available'
+      });
+    }
+
+    // 5. Calculate summary stats
+    const summary = {
+      totalFibers: fiberCount,
+      available: fibers.filter(f => f.status === 'available').length,
+      used: fibers.filter(f => f.status === 'used').length,
+      live: fibers.filter(f => f.status === 'live').length,
+      reserved: fibers.filter(f => f.status === 'reserved').length,
+      utilizationPercent: Math.round((fibers.filter(f => f.status !== 'available').length / fiberCount) * 100)
+    };
+
+    res.json({
+      cableId,
+      cableIdentifier,
+      fiberCount,
+      summary,
+      fibers
+    });
+
+  } catch (error: any) {
+    console.error('[FIBER-STATUS] Error:', error);
+    res.status(500).json({ error: 'Failed to get fiber status', details: error.message });
+  }
+});
+
+// Get fiber status for all cables at a node
+router.get('/nodes/:nodeId/fiber-status', authenticateToken, async (req: any, res) => {
+  try {
+    const { nodeId } = req.params;
+    const organizationId = req.user.organizationId;
+
+    // Get the node and its cables
+    const nodeResult = await db
+      .select()
+      .from(fiberNetworkNodes)
+      .where(
+        and(
+          eq(fiberNetworkNodes.id, parseInt(nodeId)),
+          eq(fiberNetworkNodes.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+
+    if (nodeResult.length === 0) {
+      return res.status(404).json({ error: 'Node not found' });
+    }
+
+    const node = nodeResult[0];
+    const fiberDetails = (node.fiberDetails as any) || {};
+    const cables = fiberDetails.cables || [];
+
+    // For each cable, get basic status info
+    const cableStatuses = [];
+    
+    for (const cable of cables) {
+      // Count terminations for this cable
+      const terminationsResult = await db.execute(sql`
+        SELECT COUNT(*) as count, 
+               SUM(CASE WHEN is_live THEN 1 ELSE 0 END) as live_count
+        FROM fiber_terminations
+        WHERE organization_id = ${organizationId}
+          AND cable_id = ${cable.id}
+      `);
+
+      const termCount = parseInt((terminationsResult.rows[0] as any)?.count || '0');
+      const liveCount = parseInt((terminationsResult.rows[0] as any)?.live_count || '0');
+      const fiberCount = cable.fiberCount || 12;
+
+      cableStatuses.push({
+        cableId: cable.id,
+        cableIdentifier: cable.cableIdentifier,
+        fiberCount,
+        connectedNodeId: cable.connectedNodeId,
+        connectedNodeName: cable.connectedNodeName,
+        direction: cable.direction || 'outgoing',
+        summary: {
+          totalFibers: fiberCount,
+          used: termCount,
+          live: liveCount,
+          available: fiberCount - termCount,
+          utilizationPercent: Math.round((termCount / fiberCount) * 100)
+        }
+      });
+    }
+
+    res.json({
+      nodeId: parseInt(nodeId),
+      nodeName: node.name,
+      cables: cableStatuses
+    });
+
+  } catch (error: any) {
+    console.error('[FIBER-STATUS] Error getting node fiber status:', error);
+    res.status(500).json({ error: 'Failed to get node fiber status', details: error.message });
+  }
+});
+
+// ========================================
 // SPLICE DOCUMENTATION ENDPOINTS
 // ========================================
 
