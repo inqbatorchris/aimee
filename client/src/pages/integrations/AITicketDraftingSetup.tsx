@@ -440,7 +440,7 @@ export default function AITicketDraftingSetup() {
                 </div>
               </CardContent>
             </Card>
-          )
+          )}
 
           {/* Step 2: Knowledge Base Selection */}
           {currentStep === 'knowledge' && (
