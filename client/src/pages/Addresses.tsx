@@ -391,67 +391,71 @@ export default function Addresses() {
   
   // Initialize column order and visibility with first 6 Airtable columns + system columns
   useEffect(() => {
-    // Re-initialize when allColumns changes significantly (e.g., addresses loaded)
-    if (allColumns.length > systemColumns.length && columnOrder.length !== allColumns.length) {
-      // Try to load from localStorage first
-      const savedOrder = localStorage.getItem(STORAGE_KEY_ORDER);
-      const savedVisible = localStorage.getItem(STORAGE_KEY_VISIBLE);
-      const savedWidths = localStorage.getItem(STORAGE_KEY_WIDTHS);
-      
-      if (savedOrder && savedVisible) {
-        try {
-          const parsedOrder = JSON.parse(savedOrder);
-          const parsedVisible = JSON.parse(savedVisible);
-          
-          // Validate that saved columns are still valid (in case schema changed)
-          const validOrder = parsedOrder.filter((col: string) => allColumns.includes(col));
-          const newColumns = allColumns.filter(col => !validOrder.includes(col));
-          const finalOrder = [...validOrder, ...newColumns];
-          
-          setColumnOrder(finalOrder);
-          setVisibleColumns(new Set(parsedVisible.filter((col: string) => allColumns.includes(col))));
-          
-          // Load column widths
-          if (savedWidths) {
-            try {
-              const parsedWidths = JSON.parse(savedWidths);
-              setColumnWidths(parsedWidths);
-            } catch (e) {
-              console.error('Error loading column widths:', e);
-            }
+    // Skip if columns haven't loaded yet or already initialized with same columns
+    if (allColumns.length === 0) return;
+    
+    // Check if we need to reinitialize (columns changed or not yet initialized)
+    const needsInit = columnOrder.length === 0 || columnOrder.length !== allColumns.length;
+    if (!needsInit) return;
+    
+    // Try to load from localStorage first
+    const savedOrder = localStorage.getItem(STORAGE_KEY_ORDER);
+    const savedVisible = localStorage.getItem(STORAGE_KEY_VISIBLE);
+    const savedWidths = localStorage.getItem(STORAGE_KEY_WIDTHS);
+    
+    if (savedOrder && savedVisible) {
+      try {
+        const parsedOrder = JSON.parse(savedOrder);
+        const parsedVisible = JSON.parse(savedVisible);
+        
+        // Validate that saved columns are still valid (in case schema changed)
+        const validOrder = parsedOrder.filter((col: string) => allColumns.includes(col));
+        const newColumns = allColumns.filter(col => !validOrder.includes(col));
+        const finalOrder = [...validOrder, ...newColumns];
+        
+        setColumnOrder(finalOrder);
+        setVisibleColumns(new Set(parsedVisible.filter((col: string) => allColumns.includes(col))));
+        
+        // Load column widths
+        if (savedWidths) {
+          try {
+            const parsedWidths = JSON.parse(savedWidths);
+            setColumnWidths(parsedWidths);
+          } catch (e) {
+            console.error('Error loading column widths:', e);
           }
-          
-          console.log('Loaded saved column preferences:', {
-            total: allColumns.length,
-            visible: parsedVisible.length,
-            order: finalOrder.length
-          });
-          return;
-        } catch (error) {
-          console.error('Error loading saved column preferences:', error);
         }
+        
+        console.log('Loaded saved column preferences:', {
+          total: allColumns.length,
+          visible: parsedVisible.length,
+          order: finalOrder.length
+        });
+        return;
+      } catch (error) {
+        console.error('Error loading saved column preferences:', error);
       }
-      
-      // Default initialization if no saved preferences
-      const defaultOrder = [...allColumns];
-      setColumnOrder(defaultOrder);
-      
-      const defaultVisible = new Set([
-        ...airtableColumns.slice(0, Math.min(6, airtableColumns.length)),
-        ...systemColumns
-      ]);
-      setVisibleColumns(defaultVisible);
-      
-      // Save defaults to localStorage
-      localStorage.setItem(STORAGE_KEY_ORDER, JSON.stringify(defaultOrder));
-      localStorage.setItem(STORAGE_KEY_VISIBLE, JSON.stringify(Array.from(defaultVisible)));
-      
-      console.log('Initialized columns with defaults:', {
-        total: allColumns.length,
-        visible: defaultVisible.size,
-        airtable: airtableColumns.length
-      });
     }
+    
+    // Default initialization if no saved preferences
+    const defaultOrder = [...allColumns];
+    setColumnOrder(defaultOrder);
+    
+    const defaultVisible = new Set([
+      ...airtableColumns.slice(0, Math.min(6, airtableColumns.length)),
+      ...systemColumns
+    ]);
+    setVisibleColumns(defaultVisible);
+    
+    // Save defaults to localStorage
+    localStorage.setItem(STORAGE_KEY_ORDER, JSON.stringify(defaultOrder));
+    localStorage.setItem(STORAGE_KEY_VISIBLE, JSON.stringify(Array.from(defaultVisible)));
+    
+    console.log('Initialized columns with defaults:', {
+      total: allColumns.length,
+      visible: defaultVisible.size,
+      airtable: airtableColumns.length
+    });
   }, [allColumns.length]);
   
   // Get ordered visible columns
