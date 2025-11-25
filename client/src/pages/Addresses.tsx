@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Download, RefreshCw, Eye, Loader2, Check, X, Settings, Filter, GripVertical, ArrowUpDown, Wrench, FileText, Activity, User, Bot } from 'lucide-react';
+import { Download, RefreshCw, Eye, Loader2, Check, X, Settings, Filter, GripVertical, ArrowUpDown, Wrench, FileText, Activity, User, Bot, Pencil, Save } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { queryClient } from '@/lib/queryClient';
 import { createWorkItem } from '@/lib/workItems.api';
@@ -264,6 +264,18 @@ export default function Addresses() {
   const [resizeStartX, setResizeStartX] = useState<number>(0);
   const [resizeStartWidth, setResizeStartWidth] = useState<number>(0);
   
+  // Equipment editing state
+  const [isEditingEquipment, setIsEditingEquipment] = useState(false);
+  const [equipmentEditValues, setEquipmentEditValues] = useState<Record<string, string>>({});
+  const [savingField, setSavingField] = useState<string | null>(null);
+  
+  // Reset equipment editing state when selected address changes
+  useEffect(() => {
+    setIsEditingEquipment(false);
+    setEquipmentEditValues({});
+    setSavingField(null);
+  }, [selectedAddress?.id]);
+  
   // Storage keys for persistence
   const STORAGE_KEY_VISIBLE = 'addresses_visible_columns';
   const STORAGE_KEY_ORDER = 'addresses_column_order';
@@ -495,6 +507,39 @@ export default function Addresses() {
     },
   });
   
+  // Equipment field update mutation
+  const updateEquipmentMutation = useMutation({
+    mutationFn: async ({ addressId, fieldName, value }: { addressId: number; fieldName: string; value: string }) => {
+      const response = await fetch(`/api/addresses/${addressId}/equipment-data`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ fieldName, value }),
+      });
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to update field');
+      }
+      return response.json();
+    },
+    onSuccess: (data, variables) => {
+      toast({
+        title: 'Field Updated',
+        description: data.message || 'Equipment field updated successfully',
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/addresses'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/addresses/${variables.addressId}`] });
+      queryClient.invalidateQueries({ queryKey: [`/api/addresses/${variables.addressId}/activity`] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: 'Update Failed',
+        description: error.message,
+        variant: 'destructive',
+      });
+    },
+  });
+
   const handleSyncClick = () => {
     setShowSyncConfirm(true);
   };
@@ -1609,159 +1654,214 @@ export default function Addresses() {
                   </div>
                 </div>
 
-                {/* OCR-Extracted Equipment Data */}
-                {(selectedAddress.routerSerial || selectedAddress.routerMac || selectedAddress.routerModel || 
-                  selectedAddress.onuSerial || selectedAddress.onuMac || selectedAddress.onuModel) && (
-                  <Card>
-                    <CardContent className="pt-4">
-                      <h3 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                {/* OCR-Extracted Equipment Data - Editable */}
+                <Card>
+                  <CardContent className="pt-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <h3 className="text-sm font-semibold flex items-center gap-2">
                         <Bot className="h-4 w-4 text-blue-500" />
-                        Equipment Data (OCR Extracted)
+                        Equipment Data
                       </h3>
+                      {!isEditingEquipment ? (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            setIsEditingEquipment(true);
+                            setEquipmentEditValues({
+                              routerSerial: selectedAddress.routerSerial || '',
+                              routerMac: selectedAddress.routerMac || '',
+                              routerModel: selectedAddress.routerModel || '',
+                              onuSerial: selectedAddress.onuSerial || '',
+                              onuMac: selectedAddress.onuMac || '',
+                              onuModel: selectedAddress.onuModel || '',
+                            });
+                          }}
+                          data-testid="button-edit-equipment"
+                        >
+                          <Pencil className="h-3 w-3 mr-1" />
+                          Edit
+                        </Button>
+                      ) : (
+                        <div className="flex gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => {
+                              setIsEditingEquipment(false);
+                              setEquipmentEditValues({});
+                            }}
+                            data-testid="button-cancel-equipment"
+                          >
+                            <X className="h-3 w-3 mr-1" />
+                            Cancel
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                    <div className="space-y-4">
+                      {/* Router Information */}
                       <div className="space-y-2">
-                        {/* Router Information */}
-                        {(selectedAddress.routerSerial || selectedAddress.routerMac || selectedAddress.routerModel) && (
-                          <div className="space-y-2">
-                            <div className="text-xs font-semibold text-muted-foreground">Router</div>
-                            {selectedAddress.routerSerial && (
-                              <div className="flex gap-2 bg-blue-50 dark:bg-blue-950/20 -mx-2 px-2 py-1.5 rounded">
-                                <div className="text-sm font-medium text-gray-600 w-1/3">Serial:</div>
-                                <div className="text-sm flex-1 font-mono">{selectedAddress.routerSerial}</div>
-                                <Popover>
-                                  <PopoverTrigger asChild>
-                                    <button className="text-blue-500 hover:text-blue-700">
-                                      <Bot className="h-3 w-3" />
-                                    </button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-80">
-                                    <div className="space-y-2 text-xs">
-                                      <div className="font-semibold text-sm">OCR Extraction Details</div>
-                                      <div className="text-muted-foreground">
-                                        This field was automatically extracted from a photo using AI-powered OCR.
-                                      </div>
-                                    </div>
-                                  </PopoverContent>
-                                </Popover>
-                              </div>
-                            )}
-                            {selectedAddress.routerMac && (
-                              <div className="flex gap-2 bg-blue-50 dark:bg-blue-950/20 -mx-2 px-2 py-1.5 rounded">
-                                <div className="text-sm font-medium text-gray-600 w-1/3">MAC:</div>
-                                <div className="text-sm flex-1 font-mono">{selectedAddress.routerMac}</div>
-                                <Popover>
-                                  <PopoverTrigger asChild>
-                                    <button className="text-blue-500 hover:text-blue-700">
-                                      <Bot className="h-3 w-3" />
-                                    </button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-80">
-                                    <div className="space-y-2 text-xs">
-                                      <div className="font-semibold text-sm">OCR Extraction Details</div>
-                                      <div className="text-muted-foreground">
-                                        This field was automatically extracted from a photo using AI-powered OCR.
-                                      </div>
-                                    </div>
-                                  </PopoverContent>
-                                </Popover>
-                              </div>
-                            )}
-                            {selectedAddress.routerModel && (
-                              <div className="flex gap-2 bg-blue-50 dark:bg-blue-950/20 -mx-2 px-2 py-1.5 rounded">
-                                <div className="text-sm font-medium text-gray-600 w-1/3">Model:</div>
-                                <div className="text-sm flex-1">{selectedAddress.routerModel}</div>
-                                <Popover>
-                                  <PopoverTrigger asChild>
-                                    <button className="text-blue-500 hover:text-blue-700">
-                                      <Bot className="h-3 w-3" />
-                                    </button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-80">
-                                    <div className="space-y-2 text-xs">
-                                      <div className="font-semibold text-sm">OCR Extraction Details</div>
-                                      <div className="text-muted-foreground">
-                                        This field was automatically extracted from a photo using AI-powered OCR.
-                                      </div>
-                                    </div>
-                                  </PopoverContent>
-                                </Popover>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* ONU Information */}
-                        {(selectedAddress.onuSerial || selectedAddress.onuMac || selectedAddress.onuModel) && (
-                          <div className="space-y-2 mt-4">
-                            <div className="text-xs font-semibold text-muted-foreground">ONU</div>
-                            {selectedAddress.onuSerial && (
-                              <div className="flex gap-2 bg-blue-50 dark:bg-blue-950/20 -mx-2 px-2 py-1.5 rounded">
-                                <div className="text-sm font-medium text-gray-600 w-1/3">Serial:</div>
-                                <div className="text-sm flex-1 font-mono">{selectedAddress.onuSerial}</div>
-                                <Popover>
-                                  <PopoverTrigger asChild>
-                                    <button className="text-blue-500 hover:text-blue-700">
-                                      <Bot className="h-3 w-3" />
-                                    </button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-80">
-                                    <div className="space-y-2 text-xs">
-                                      <div className="font-semibold text-sm">OCR Extraction Details</div>
-                                      <div className="text-muted-foreground">
-                                        This field was automatically extracted from a photo using AI-powered OCR.
-                                      </div>
-                                    </div>
-                                  </PopoverContent>
-                                </Popover>
-                              </div>
-                            )}
-                            {selectedAddress.onuMac && (
-                              <div className="flex gap-2 bg-blue-50 dark:bg-blue-950/20 -mx-2 px-2 py-1.5 rounded">
-                                <div className="text-sm font-medium text-gray-600 w-1/3">MAC:</div>
-                                <div className="text-sm flex-1 font-mono">{selectedAddress.onuMac}</div>
-                                <Popover>
-                                  <PopoverTrigger asChild>
-                                    <button className="text-blue-500 hover:text-blue-700">
-                                      <Bot className="h-3 w-3" />
-                                    </button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-80">
-                                    <div className="space-y-2 text-xs">
-                                      <div className="font-semibold text-sm">OCR Extraction Details</div>
-                                      <div className="text-muted-foreground">
-                                        This field was automatically extracted from a photo using AI-powered OCR.
-                                      </div>
-                                    </div>
-                                  </PopoverContent>
-                                </Popover>
-                              </div>
-                            )}
-                            {selectedAddress.onuModel && (
-                              <div className="flex gap-2 bg-blue-50 dark:bg-blue-950/20 -mx-2 px-2 py-1.5 rounded">
-                                <div className="text-sm font-medium text-gray-600 w-1/3">Model:</div>
-                                <div className="text-sm flex-1">{selectedAddress.onuModel}</div>
-                                <Popover>
-                                  <PopoverTrigger asChild>
-                                    <button className="text-blue-500 hover:text-blue-700">
-                                      <Bot className="h-3 w-3" />
-                                    </button>
-                                  </PopoverTrigger>
-                                  <PopoverContent className="w-80">
-                                    <div className="space-y-2 text-xs">
-                                      <div className="font-semibold text-sm">OCR Extraction Details</div>
-                                      <div className="text-muted-foreground">
-                                        This field was automatically extracted from a photo using AI-powered OCR.
-                                      </div>
-                                    </div>
-                                  </PopoverContent>
-                                </Popover>
-                              </div>
-                            )}
-                          </div>
-                        )}
+                        <div className="text-xs font-semibold text-muted-foreground">Router</div>
+                        {(['routerSerial', 'routerMac', 'routerModel'] as const).map((fieldName) => {
+                          const labels: Record<string, string> = {
+                            routerSerial: 'Serial',
+                            routerMac: 'MAC',
+                            routerModel: 'Model',
+                          };
+                          const currentValue = selectedAddress[fieldName] || '';
+                          const editValue = equipmentEditValues[fieldName] ?? currentValue;
+                          const hasChanged = isEditingEquipment && editValue !== currentValue;
+                          
+                          return (
+                            <div key={fieldName} className={`flex gap-2 items-center -mx-2 px-2 py-1.5 rounded ${currentValue ? 'bg-blue-50 dark:bg-blue-950/20' : ''}`}>
+                              <div className="text-sm font-medium text-gray-600 w-1/4">{labels[fieldName]}:</div>
+                              {isEditingEquipment ? (
+                                <div className="flex-1 flex gap-2">
+                                  <Input
+                                    value={editValue}
+                                    onChange={(e) => setEquipmentEditValues(prev => ({ ...prev, [fieldName]: e.target.value }))}
+                                    className={`h-7 text-sm font-mono ${hasChanged ? 'border-orange-400' : ''}`}
+                                    placeholder={`Enter ${labels[fieldName].toLowerCase()}`}
+                                    data-testid={`input-${fieldName}`}
+                                  />
+                                  {hasChanged && (
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                      className="h-7 px-2"
+                                      disabled={savingField === fieldName}
+                                      onClick={() => {
+                                        setSavingField(fieldName);
+                                        updateEquipmentMutation.mutate(
+                                          { addressId: selectedAddress.id, fieldName, value: editValue },
+                                          {
+                                            onSettled: () => setSavingField(null),
+                                            onSuccess: () => {
+                                              setSelectedAddress({ ...selectedAddress, [fieldName]: editValue || null });
+                                            }
+                                          }
+                                        );
+                                      }}
+                                      data-testid={`button-save-${fieldName}`}
+                                    >
+                                      {savingField === fieldName ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        <Save className="h-3 w-3" />
+                                      )}
+                                    </Button>
+                                  )}
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="text-sm flex-1 font-mono">{currentValue || <span className="text-muted-foreground italic">Not set</span>}</div>
+                                  {currentValue && (
+                                    <Popover>
+                                      <PopoverTrigger asChild>
+                                        <button className="text-blue-500 hover:text-blue-700">
+                                          <Bot className="h-3 w-3" />
+                                        </button>
+                                      </PopoverTrigger>
+                                      <PopoverContent className="w-80">
+                                        <div className="space-y-2 text-xs">
+                                          <div className="font-semibold text-sm">OCR Extraction Details</div>
+                                          <div className="text-muted-foreground">
+                                            This field was automatically extracted from a photo using AI-powered OCR.
+                                          </div>
+                                        </div>
+                                      </PopoverContent>
+                                    </Popover>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
-                    </CardContent>
-                  </Card>
-                )}
+
+                      {/* ONU Information */}
+                      <div className="space-y-2">
+                        <div className="text-xs font-semibold text-muted-foreground">ONU</div>
+                        {(['onuSerial', 'onuMac', 'onuModel'] as const).map((fieldName) => {
+                          const labels: Record<string, string> = {
+                            onuSerial: 'Serial',
+                            onuMac: 'MAC',
+                            onuModel: 'Model',
+                          };
+                          const currentValue = selectedAddress[fieldName] || '';
+                          const editValue = equipmentEditValues[fieldName] ?? currentValue;
+                          const hasChanged = isEditingEquipment && editValue !== currentValue;
+                          
+                          return (
+                            <div key={fieldName} className={`flex gap-2 items-center -mx-2 px-2 py-1.5 rounded ${currentValue ? 'bg-blue-50 dark:bg-blue-950/20' : ''}`}>
+                              <div className="text-sm font-medium text-gray-600 w-1/4">{labels[fieldName]}:</div>
+                              {isEditingEquipment ? (
+                                <div className="flex-1 flex gap-2">
+                                  <Input
+                                    value={editValue}
+                                    onChange={(e) => setEquipmentEditValues(prev => ({ ...prev, [fieldName]: e.target.value }))}
+                                    className={`h-7 text-sm font-mono ${hasChanged ? 'border-orange-400' : ''}`}
+                                    placeholder={`Enter ${labels[fieldName].toLowerCase()}`}
+                                    data-testid={`input-${fieldName}`}
+                                  />
+                                  {hasChanged && (
+                                    <Button
+                                      variant="default"
+                                      size="sm"
+                                      className="h-7 px-2"
+                                      disabled={savingField === fieldName}
+                                      onClick={() => {
+                                        setSavingField(fieldName);
+                                        updateEquipmentMutation.mutate(
+                                          { addressId: selectedAddress.id, fieldName, value: editValue },
+                                          {
+                                            onSettled: () => setSavingField(null),
+                                            onSuccess: () => {
+                                              setSelectedAddress({ ...selectedAddress, [fieldName]: editValue || null });
+                                            }
+                                          }
+                                        );
+                                      }}
+                                      data-testid={`button-save-${fieldName}`}
+                                    >
+                                      {savingField === fieldName ? (
+                                        <Loader2 className="h-3 w-3 animate-spin" />
+                                      ) : (
+                                        <Save className="h-3 w-3" />
+                                      )}
+                                    </Button>
+                                  )}
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="text-sm flex-1 font-mono">{currentValue || <span className="text-muted-foreground italic">Not set</span>}</div>
+                                  {currentValue && (
+                                    <Popover>
+                                      <PopoverTrigger asChild>
+                                        <button className="text-blue-500 hover:text-blue-700">
+                                          <Bot className="h-3 w-3" />
+                                        </button>
+                                      </PopoverTrigger>
+                                      <PopoverContent className="w-80">
+                                        <div className="space-y-2 text-xs">
+                                          <div className="font-semibold text-sm">OCR Extraction Details</div>
+                                          <div className="text-muted-foreground">
+                                            This field was automatically extracted from a photo using AI-powered OCR.
+                                          </div>
+                                        </div>
+                                      </PopoverContent>
+                                    </Popover>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
                 
                 {/* Local Management Fields */}
                 <div>
