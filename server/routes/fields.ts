@@ -75,6 +75,74 @@ router.post('/create', authenticateToken, async (req: any, res) => {
   }
 });
 
+// Get available tables and their columns for callback configuration
+router.get('/tables', authenticateToken, async (req: any, res) => {
+  try {
+    // Return list of available tables with their writable columns
+    const tables = [
+      {
+        id: 'work_item_source',
+        name: 'Same as Work Item Source (Dynamic)',
+        description: 'Writes to whatever table the work item is linked to',
+        isDynamic: true,
+        columns: [] // Columns determined at runtime based on actual source
+      },
+      {
+        id: 'address_records',
+        name: 'Address Records',
+        description: 'Equipment installation and address data',
+        isDynamic: false,
+        columns: fieldManager.getKnownColumns('address_records').map(col => ({
+          id: col,
+          name: col,
+          label: formatColumnLabel(col)
+        }))
+      }
+    ];
+
+    res.json({ tables });
+  } catch (error: any) {
+    console.error('Error fetching tables:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get columns for a specific table
+router.get('/tables/:tableName/columns', authenticateToken, async (req: any, res) => {
+  try {
+    const { tableName } = req.params;
+    
+    if (tableName === 'work_item_source') {
+      // Dynamic - return all possible columns from all supported tables
+      const columns = fieldManager.getKnownColumns('address_records').map(col => ({
+        id: col,
+        name: col,
+        label: formatColumnLabel(col)
+      }));
+      res.json({ columns, isDynamic: true });
+    } else {
+      const columns = fieldManager.getKnownColumns(tableName).map(col => ({
+        id: col,
+        name: col,
+        label: formatColumnLabel(col)
+      }));
+      res.json({ columns, isDynamic: false });
+    }
+  } catch (error: any) {
+    console.error('Error fetching columns:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Helper to format column names nicely
+function formatColumnLabel(columnName: string): string {
+  // routerSerial → Router Serial
+  return columnName
+    .replace(/([A-Z])/g, ' $1')
+    .replace(/^./, str => str.toUpperCase())
+    .trim();
+}
+
 // Check if field exists
 router.post('/verify', authenticateToken, async (req: any, res) => {
   try {
