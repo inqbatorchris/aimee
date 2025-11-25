@@ -331,6 +331,91 @@ router.get('/:id/activity', authenticateToken, async (req: any, res) => {
   }
 });
 
+// Update equipment data fields with activity logging
+const EQUIPMENT_FIELDS = {
+  routerSerial: 'Router Serial',
+  routerMac: 'Router MAC',
+  routerModel: 'Router Model',
+  onuSerial: 'ONU Serial',
+  onuMac: 'ONU MAC',
+  onuModel: 'ONU Model',
+} as const;
+
+type EquipmentFieldKey = keyof typeof EQUIPMENT_FIELDS;
+
+router.patch('/:id/equipment-data', authenticateToken, async (req: any, res) => {
+  try {
+    const addressId = parseInt(req.params.id);
+    const { fieldName, value } = req.body;
+    
+    // Validate field name is an allowed equipment field
+    if (!fieldName || !(fieldName in EQUIPMENT_FIELDS)) {
+      return res.status(400).json({ 
+        error: `Invalid field name. Allowed fields: ${Object.keys(EQUIPMENT_FIELDS).join(', ')}` 
+      });
+    }
+    
+    // Get current address to capture old value
+    const currentAddress = await storage.getAddressRecord(addressId, req.user.organizationId);
+    if (!currentAddress) {
+      return res.status(404).json({ error: 'Address not found' });
+    }
+    
+    const oldValue = currentAddress[fieldName as EquipmentFieldKey] || null;
+    const newValue = value?.trim() || null;
+    
+    // Skip update if value hasn't changed
+    if (oldValue === newValue) {
+      return res.json({ address: currentAddress, message: 'No change detected' });
+    }
+    
+    // Update the field
+    const updateData: Partial<typeof currentAddress> = {
+      [fieldName]: newValue
+    };
+    
+    const updated = await storage.updateAddressRecord(
+      addressId,
+      req.user.organizationId,
+      updateData
+    );
+    
+    if (!updated) {
+      return res.status(500).json({ error: 'Failed to update address' });
+    }
+    
+    // Log the activity
+    const fieldLabel = EQUIPMENT_FIELDS[fieldName as EquipmentFieldKey];
+    const addressLabel = currentAddress.summary || currentAddress.address || currentAddress.airtableRecordId || `Address #${addressId}`;
+    
+    await logActivity(
+      req.user.organizationId,
+      req.user.userId,
+      'kpi_update', // Using kpi_update as a general "field update" type
+      'address',
+      addressId,
+      `Manually updated ${fieldLabel} for "${addressLabel}"`,
+      {
+        editType: 'equipment_manual_edit',
+        fieldName,
+        fieldLabel,
+        oldValue: oldValue || '(empty)',
+        newValue: newValue || '(empty)',
+        addressLabel,
+        airtableRecordId: currentAddress.airtableRecordId
+      }
+    );
+    
+    res.json({ 
+      address: updated,
+      message: `${fieldLabel} updated successfully`
+    });
+  } catch (error: any) {
+    console.error('Error updating equipment data:', error);
+    res.status(500).json({ error: 'Failed to update equipment data' });
+  }
+});
+
 // Delete an address
 router.delete('/:id', authenticateToken, async (req: any, res) => {
   try {
