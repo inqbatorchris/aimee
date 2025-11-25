@@ -609,6 +609,25 @@ export default function FiberNetwork() {
     enabled: !!selectedNode?.id,
   });
 
+  // Fetch cable utilization for table view (batch endpoint)
+  const { data: cableUtilization } = useQuery<{
+    utilization: Record<string, {
+      used: number;
+      live: number;
+      available: number;
+      utilizationPercent: number;
+    }>;
+  }>({
+    queryKey: ['/api/fiber-network/cables/utilization'],
+    queryFn: async () => {
+      const response = await fetch('/api/fiber-network/cables/utilization', {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Failed to fetch cable utilization');
+      return response.json();
+    },
+  });
+
   // Create node type mutation
   const createNodeTypeMutation = useMutation({
     mutationFn: async (data: { value: string; label: string }) => {
@@ -2729,6 +2748,7 @@ export default function FiberNetwork() {
                       <TableHead>Cable ID</TableHead>
                       <TableHead>Route</TableHead>
                       <TableHead>Fibers</TableHead>
+                      <TableHead>Utilization</TableHead>
                       <TableHead>Type</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="w-[100px]">Actions</TableHead>
@@ -2737,12 +2757,15 @@ export default function FiberNetwork() {
                   <TableBody>
                     {allCables.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={6} className="text-center py-8 text-gray-500">
+                        <TableCell colSpan={7} className="text-center py-8 text-gray-500">
                           No cables found
                         </TableCell>
                       </TableRow>
                     ) : (
-                      allCables.map((cable) => (
+                      allCables.map((cable) => {
+                        const util = cableUtilization?.utilization?.[cable.id];
+                        const utilizationPercent = util?.utilizationPercent ?? 0;
+                        return (
                         <TableRow 
                           key={cable.id}
                           className="hover:bg-gray-50"
@@ -2757,6 +2780,24 @@ export default function FiberNetwork() {
                             </div>
                           </TableCell>
                           <TableCell>{cable.fiberCount}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2 min-w-[100px]">
+                              <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full transition-all ${
+                                    utilizationPercent > 80 
+                                      ? 'bg-red-500' 
+                                      : utilizationPercent > 50 
+                                      ? 'bg-amber-500' 
+                                      : 'bg-green-500'
+                                  }`}
+                                  style={{ width: `${utilizationPercent}%` }}
+                                  title={`${util?.used || 0} used, ${util?.live || 0} live, ${util?.available || cable.fiberCount} available`}
+                                />
+                              </div>
+                              <span className="text-xs text-gray-500 w-8">{utilizationPercent}%</span>
+                            </div>
+                          </TableCell>
                           <TableCell className="capitalize text-xs">{cable.cableType?.replace('_', ' ')}</TableCell>
                           <TableCell>
                             <Badge variant={cable.status === 'active' ? 'default' : 'secondary'} className="text-xs">
@@ -2781,7 +2822,7 @@ export default function FiberNetwork() {
                             </Button>
                           </TableCell>
                         </TableRow>
-                      ))
+                      );})
                     )}
                   </TableBody>
                 </Table>
