@@ -1606,40 +1606,33 @@ router.get('/nodes/:nodeId/splice-trays', authenticateToken, async (req: any, re
     const { nodeId } = req.params;
     const organizationId = req.user.organizationId;
 
-    const trays = await db
-      .select()
-      .from(fiberSpliceTrays)
-      .where(
-        and(
-          eq(fiberSpliceTrays.nodeId, parseInt(nodeId)),
-          eq(fiberSpliceTrays.organizationId, organizationId)
-        )
-      )
-      .orderBy(fiberSpliceTrays.trayNumber);
+    // Use raw SQL matching actual database columns
+    const traysResult = await db.execute(sql`
+      SELECT t.*, 
+             COALESCE(c.connection_count, 0) as connection_count
+      FROM fiber_splice_trays t
+      LEFT JOIN (
+        SELECT splice_tray_id, COUNT(*) as connection_count
+        FROM fiber_connections
+        GROUP BY splice_tray_id
+      ) c ON c.splice_tray_id = t.id
+      WHERE t.fiber_node_id = ${parseInt(nodeId)}
+        AND t.organization_id = ${organizationId}
+      ORDER BY t.tray_identifier
+    `);
 
-    // Get connection counts for each tray
-    const connectionCounts = await db
-      .select({
-        trayId: fiberConnections.trayId,
-        count: sql<number>`COUNT(*)::int`
-      })
-      .from(fiberConnections)
-      .where(
-        and(
-          inArray(fiberConnections.trayId, trays.map(t => t.id)),
-          eq(fiberConnections.isDeleted, false)
-        )
-      )
-      .groupBy(fiberConnections.trayId);
-
-    const countsByTray = new Map(connectionCounts.map(c => [c.trayId, c.count]));
-
-    const traysWithCounts = trays.map(tray => ({
-      ...tray,
-      connectionCount: countsByTray.get(tray.id) || 0
+    const trays = traysResult.rows.map((row: any) => ({
+      id: row.id,
+      organizationId: row.organization_id,
+      nodeId: row.fiber_node_id,
+      trayIdentifier: row.tray_identifier,
+      description: row.description,
+      createdAt: row.created_at,
+      createdBy: row.created_by,
+      connectionCount: parseInt(row.connection_count) || 0
     }));
 
-    res.json({ trays: traysWithCounts });
+    res.json({ trays });
   } catch (error: any) {
     console.error('Error fetching splice trays:', error);
     res.status(500).json({ error: 'Failed to fetch splice trays', details: error.message });
