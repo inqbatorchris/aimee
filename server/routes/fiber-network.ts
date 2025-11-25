@@ -1550,7 +1550,7 @@ router.post('/nodes/:nodeId/splice-trays', authenticateToken, async (req: any, r
     console.log('[SPLICE] Created tray:', tray);
 
     // Insert fiber connections if provided
-    // Actual table: fiber_connections with columns: id, organization_id, splice_tray_id, left_cable_id (int), left_fiber_number, right_cable_id (int), right_fiber_number, created_via, work_item_id, created_at, created_by
+    // Actual table: fiber_connections with columns: id, organization_id, splice_tray_id, left_cable_id (int), left_fiber_number, right_cable_id (int), right_fiber_number, created_via, work_item_id, created_at, created_by + color columns
     let insertedConnections: any[] = [];
     if (connections && Array.isArray(connections) && connections.length > 0) {
       for (const conn of connections) {
@@ -1560,8 +1560,20 @@ router.post('/nodes/:nodeId/splice-trays', authenticateToken, async (req: any, r
         const rightCableNumericId = 0;
         
         const connResult = await db.execute(sql`
-          INSERT INTO fiber_connections (organization_id, splice_tray_id, left_cable_id, left_fiber_number, right_cable_id, right_fiber_number, created_via, created_by, created_at)
-          VALUES (${organizationId}, ${tray.id}, ${leftCableNumericId}, ${conn.leftFiberNumber}, ${rightCableNumericId}, ${conn.rightFiberNumber}, ${conn.createdVia || 'manual'}, ${userId}, NOW())
+          INSERT INTO fiber_connections (
+            organization_id, splice_tray_id, left_cable_id, left_fiber_number, 
+            left_fiber_color, left_fiber_color_hex,
+            right_cable_id, right_fiber_number,
+            right_fiber_color, right_fiber_color_hex,
+            created_via, created_by, created_at
+          )
+          VALUES (
+            ${organizationId}, ${tray.id}, ${leftCableNumericId}, ${conn.leftFiberNumber},
+            ${conn.leftFiberColor || null}, ${conn.leftFiberColorHex || null},
+            ${rightCableNumericId}, ${conn.rightFiberNumber},
+            ${conn.rightFiberColor || null}, ${conn.rightFiberColorHex || null},
+            ${conn.createdVia || 'manual'}, ${userId}, NOW()
+          )
           RETURNING *
         `);
         insertedConnections.push(connResult.rows[0]);

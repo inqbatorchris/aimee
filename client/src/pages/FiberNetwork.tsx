@@ -4132,6 +4132,55 @@ export default function FiberNetwork() {
               )}
 
               {/* Fiber Connection Interface */}
+              {/* Show existing connections when editing */}
+              {selectedSpliceTray && fiberConnections.length > 0 && (
+                <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-900">
+                  <div className="text-sm font-medium mb-3">Saved Connections ({fiberConnections.length})</div>
+                  <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                    {fiberConnections.map((conn: any, index: number) => (
+                      <div key={index} className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 rounded border text-sm">
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-4 h-4 rounded-full border-2"
+                              style={{
+                                backgroundColor: conn.leftFiberColorHex || '#ccc',
+                                borderColor: conn.leftFiberColor === 'White' ? '#999' : (conn.leftFiberColorHex || '#ccc')
+                              }}
+                            />
+                            <span className="font-medium">F{conn.leftFiberNumber}</span>
+                            <span className="text-xs text-gray-500">{conn.leftFiberColor || 'Unknown'}</span>
+                          </div>
+                          <span className="text-gray-400">→</span>
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-4 h-4 rounded-full border-2"
+                              style={{
+                                backgroundColor: conn.rightFiberColorHex || '#ccc',
+                                borderColor: conn.rightFiberColor === 'White' ? '#999' : (conn.rightFiberColorHex || '#ccc')
+                              }}
+                            />
+                            <span className="font-medium">F{conn.rightFiberNumber}</span>
+                            <span className="text-xs text-gray-500">{conn.rightFiberColor || 'Unknown'}</span>
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                          onClick={() => setFiberConnections(prev => prev.filter((_, i) => i !== index))}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-3">
+                    Select cables above to add more connections to this tray.
+                  </p>
+                </div>
+              )}
+
               {leftCableId && rightCableId ? (
                 <div className="border rounded-lg p-4">
                   <div className="space-y-4">
