@@ -1687,7 +1687,7 @@ router.get('/nodes/:nodeId/fiber-status', authenticateToken, async (req: any, re
     const fiberDetails = (node.fiberDetails as any) || {};
     const cables = fiberDetails.cables || [];
 
-    // For each cable, get basic status info
+    // For each cable, get basic status info including terminations and splices
     const cableStatuses = [];
     
     for (const cable of cables) {
@@ -1700,9 +1700,25 @@ router.get('/nodes/:nodeId/fiber-status', authenticateToken, async (req: any, re
           AND cable_id = ${cable.id}
       `);
 
+      // Count splice connections for this cable (using new varchar cable ID columns)
+      const spliceResult = await db.execute(sql`
+        SELECT COUNT(DISTINCT fiber_number) as splice_count
+        FROM (
+          SELECT left_fiber_number as fiber_number FROM fiber_connections 
+          WHERE organization_id = ${organizationId} AND cable_a_id = ${cable.id}
+          UNION ALL
+          SELECT right_fiber_number as fiber_number FROM fiber_connections 
+          WHERE organization_id = ${organizationId} AND cable_b_id = ${cable.id}
+        ) splices
+      `);
+
       const termCount = parseInt((terminationsResult.rows[0] as any)?.count || '0');
       const liveCount = parseInt((terminationsResult.rows[0] as any)?.live_count || '0');
+      const spliceCount = parseInt((spliceResult.rows[0] as any)?.splice_count || '0');
       const fiberCount = cable.fiberCount || 12;
+      
+      // Total used = max of terminated and spliced (they may overlap)
+      const totalUsed = Math.max(termCount, spliceCount);
 
       cableStatuses.push({
         cableId: cable.id,
@@ -1713,10 +1729,11 @@ router.get('/nodes/:nodeId/fiber-status', authenticateToken, async (req: any, re
         direction: cable.direction || 'outgoing',
         summary: {
           totalFibers: fiberCount,
-          used: termCount,
+          used: totalUsed,
           live: liveCount,
-          available: fiberCount - termCount,
-          utilizationPercent: Math.round((termCount / fiberCount) * 100)
+          spliced: spliceCount,
+          available: Math.max(0, fiberCount - totalUsed),
+          utilizationPercent: Math.round((totalUsed / fiberCount) * 100)
         }
       });
     }
@@ -1744,24 +1761,18 @@ router.get('/cables/utilization', authenticateToken, async (req: any, res) => {
       .from(fiberNetworkNodes)
       .where(eq(fiberNetworkNodes.organizationId, organizationId));
 
-    // Collect all cables with their node info
-    const allCables: Array<{
-      id: string;
-      cableIdentifier: string;
-      fiberCount: number;
-      nodeId: number;
-    }> = [];
-
+    // Collect all cables with their node info (deduplicated by cable ID)
+    const cableMap = new Map<string, { id: string; fiberCount: number }>();
     for (const node of nodes) {
       const fiberDetails = (node.fiberDetails as any) || {};
       const cables = fiberDetails.cables || [];
       for (const cable of cables) {
-        allCables.push({
-          id: cable.id,
-          cableIdentifier: cable.cableIdentifier,
-          fiberCount: cable.fiberCount || 12,
-          nodeId: node.id
-        });
+        if (!cableMap.has(cable.id)) {
+          cableMap.set(cable.id, {
+            id: cable.id,
+            fiberCount: cable.fiberCount || 12
+          });
+        }
       }
     }
 
@@ -1775,7 +1786,22 @@ router.get('/cables/utilization', authenticateToken, async (req: any, res) => {
       GROUP BY cable_id
     `);
 
-    // Build a map of cable_id -> utilization
+    // Get splice connection counts for all cables (using new varchar cable ID columns)
+    const spliceResult = await db.execute(sql`
+      SELECT cable_id, COUNT(DISTINCT fiber_number) as splice_count
+      FROM (
+        SELECT cable_a_id as cable_id, left_fiber_number as fiber_number
+        FROM fiber_connections 
+        WHERE organization_id = ${organizationId} AND cable_a_id IS NOT NULL
+        UNION ALL
+        SELECT cable_b_id as cable_id, right_fiber_number as fiber_number
+        FROM fiber_connections 
+        WHERE organization_id = ${organizationId} AND cable_b_id IS NOT NULL
+      ) splices
+      GROUP BY cable_id
+    `);
+
+    // Build maps for terminations and splices
     const termMap = new Map<string, { termCount: number; liveCount: number }>();
     for (const row of terminationsResult.rows as any[]) {
       termMap.set(row.cable_id, {
@@ -1784,23 +1810,34 @@ router.get('/cables/utilization', authenticateToken, async (req: any, res) => {
       });
     }
 
+    const spliceMap = new Map<string, number>();
+    for (const row of spliceResult.rows as any[]) {
+      spliceMap.set(row.cable_id, parseInt(row.splice_count || '0'));
+    }
+
     // Build response with utilization for each cable
     const cableUtilization: Record<string, {
       used: number;
       live: number;
+      spliced: number;
       available: number;
       utilizationPercent: number;
     }> = {};
 
-    for (const cable of allCables) {
-      const term = termMap.get(cable.id) || { termCount: 0, liveCount: 0 };
+    for (const [cableId, cable] of cableMap) {
+      const term = termMap.get(cableId) || { termCount: 0, liveCount: 0 };
+      const spliceCount = spliceMap.get(cableId) || 0;
       const fiberCount = cable.fiberCount;
       
-      cableUtilization[cable.id] = {
-        used: term.termCount,
+      // Total used = terminated fibers + spliced fibers (may overlap, take max for safety)
+      const totalUsed = Math.max(term.termCount, spliceCount);
+      
+      cableUtilization[cableId] = {
+        used: totalUsed,
         live: term.liveCount,
-        available: fiberCount - term.termCount,
-        utilizationPercent: Math.round((term.termCount / fiberCount) * 100)
+        spliced: spliceCount,
+        available: Math.max(0, fiberCount - totalUsed),
+        utilizationPercent: Math.round((totalUsed / fiberCount) * 100)
       };
     }
 
@@ -1856,14 +1893,13 @@ router.post('/nodes/:nodeId/splice-trays', authenticateToken, async (req: any, r
     console.log('[SPLICE] Created tray:', tray);
 
     // Insert fiber connections if provided
-    // Actual table: fiber_connections with columns: id, organization_id, splice_tray_id, left_cable_id (int), left_fiber_number, right_cable_id (int), right_fiber_number, created_via, work_item_id, created_at, created_by + color columns
+    // Now storing both legacy integer IDs (0) and new string cable IDs for proper tracking
     let insertedConnections: any[] = [];
     if (connections && Array.isArray(connections) && connections.length > 0) {
       for (const conn of connections) {
-        // Extract numeric cable IDs from string format like "cable_1732442410974_7x4v49"
-        // For now, we'll store 0 since the actual DB expects integers
-        const leftCableNumericId = 0; // DB column is integer, but frontend uses string IDs
-        const rightCableNumericId = 0;
+        // Store string cable IDs in new varchar columns for proper utilization tracking
+        const cableAId = conn.leftCableId || null;
+        const cableBId = conn.rightCableId || null;
         
         const connResult = await db.execute(sql`
           INSERT INTO fiber_connections (
@@ -1871,13 +1907,15 @@ router.post('/nodes/:nodeId/splice-trays', authenticateToken, async (req: any, r
             left_fiber_color, left_fiber_color_hex,
             right_cable_id, right_fiber_number,
             right_fiber_color, right_fiber_color_hex,
+            cable_a_id, cable_b_id,
             created_via, created_by, created_at
           )
           VALUES (
-            ${organizationId}, ${tray.id}, ${leftCableNumericId}, ${conn.leftFiberNumber},
+            ${organizationId}, ${tray.id}, 0, ${conn.leftFiberNumber},
             ${conn.leftFiberColor || null}, ${conn.leftFiberColorHex || null},
-            ${rightCableNumericId}, ${conn.rightFiberNumber},
+            0, ${conn.rightFiberNumber},
             ${conn.rightFiberColor || null}, ${conn.rightFiberColorHex || null},
+            ${cableAId}, ${cableBId},
             ${conn.createdVia || 'manual'}, ${userId}, NOW()
           )
           RETURNING *
