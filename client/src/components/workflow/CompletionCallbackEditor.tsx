@@ -121,17 +121,34 @@ export default function CompletionCallbackEditor({
 
   useEffect(() => {
     if (editingCallback?.databaseConfig?.targetTable && tables.length > 0) {
-      const targetTable = tables.find(t => t.id === editingCallback.databaseConfig?.targetTable);
-      if (targetTable) {
-        setAvailableColumns(targetTable.columns);
-      } else if (editingCallback.databaseConfig.targetTable === 'work_item_source') {
+      const selectedTableId = editingCallback.databaseConfig.targetTable;
+      const targetTable = tables.find(t => t.id === selectedTableId);
+      
+      // For dynamic "work_item_source", use address_records columns as they're the most common
+      if (selectedTableId === 'work_item_source' || targetTable?.isDynamic) {
         const addressTable = tables.find(t => t.id === 'address_records');
         if (addressTable) {
+          console.log('[CompletionCallbackEditor] Using address_records columns for dynamic source:', addressTable.columns);
           setAvailableColumns(addressTable.columns);
         }
+      } else if (targetTable && targetTable.columns.length > 0) {
+        console.log('[CompletionCallbackEditor] Using columns from:', selectedTableId, targetTable.columns);
+        setAvailableColumns(targetTable.columns);
       }
     }
   }, [editingCallback?.databaseConfig?.targetTable, tables]);
+
+  // Also update columns when tables data first loads
+  useEffect(() => {
+    if (tables.length > 0 && availableColumns.length === 0) {
+      // Default to address_records columns
+      const addressTable = tables.find(t => t.id === 'address_records');
+      if (addressTable) {
+        console.log('[CompletionCallbackEditor] Initial load - setting columns from address_records');
+        setAvailableColumns(addressTable.columns);
+      }
+    }
+  }, [tables, availableColumns.length]);
 
   const handleAddCallback = () => {
     const newCallback: CompletionCallback = {
