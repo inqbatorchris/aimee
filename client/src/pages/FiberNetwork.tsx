@@ -575,10 +575,13 @@ export default function FiberNetwork() {
         createdVia: 'manual' | 'workflow_step';
       }>;
     }) => {
-      return apiRequest(`/api/fiber-network/nodes/${data.nodeId}/splice-trays`, {
+      console.log('[SPLICE UI] Creating tray with data:', data);
+      const result = await apiRequest(`/api/fiber-network/nodes/${data.nodeId}/splice-trays`, {
         method: 'POST',
         body: data,
       });
+      console.log('[SPLICE UI] API response:', result);
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
@@ -4295,6 +4298,11 @@ export default function FiberNetwork() {
             </Button>
             <Button
               onClick={() => {
+                console.log('[SPLICE UI] Create Tray button clicked');
+                console.log('[SPLICE UI] selectedNode:', selectedNode);
+                console.log('[SPLICE UI] spliceTrayFormData:', spliceTrayFormData);
+                console.log('[SPLICE UI] fiberConnections:', fiberConnections);
+                
                 if (!selectedNode?.id) {
                   toast({
                     title: 'Error',
