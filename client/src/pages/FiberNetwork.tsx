@@ -614,6 +614,7 @@ export default function FiberNetwork() {
     utilization: Record<string, {
       used: number;
       live: number;
+      spliced: number;
       available: number;
       utilizationPercent: number;
     }>;
@@ -2792,7 +2793,7 @@ export default function FiberNetwork() {
                                       : 'bg-green-500'
                                   }`}
                                   style={{ width: `${utilizationPercent}%` }}
-                                  title={`${util?.used || 0} used, ${util?.live || 0} live, ${util?.available || cable.fiberCount} available`}
+                                  title={`${util?.used || 0} used (${util?.spliced || 0} spliced), ${util?.live || 0} live, ${util?.available || cable.fiberCount} available`}
                                 />
                               </div>
                               <span className="text-xs text-gray-500 w-8">{utilizationPercent}%</span>
