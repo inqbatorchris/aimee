@@ -1606,6 +1606,8 @@ router.get('/nodes/:nodeId/splice-trays', authenticateToken, async (req: any, re
     const { nodeId } = req.params;
     const organizationId = req.user.organizationId;
 
+    console.log('[SPLICE GET] Fetching trays for node:', nodeId, 'org:', organizationId);
+
     // Use raw SQL matching actual database columns
     const traysResult = await db.execute(sql`
       SELECT t.*, 
@@ -1621,16 +1623,43 @@ router.get('/nodes/:nodeId/splice-trays', authenticateToken, async (req: any, re
       ORDER BY t.tray_identifier
     `);
 
-    const trays = traysResult.rows.map((row: any) => ({
-      id: row.id,
-      organizationId: row.organization_id,
-      nodeId: row.fiber_node_id,
-      trayIdentifier: row.tray_identifier,
-      description: row.description,
-      createdAt: row.created_at,
-      createdBy: row.created_by,
-      connectionCount: parseInt(row.connection_count) || 0
+    console.log('[SPLICE GET] Found trays:', traysResult.rows.length);
+
+    // Fetch connections for each tray
+    const trays = await Promise.all(traysResult.rows.map(async (row: any) => {
+      const connectionsResult = await db.execute(sql`
+        SELECT * FROM fiber_connections
+        WHERE splice_tray_id = ${row.id}
+        ORDER BY left_fiber_number
+      `);
+
+      const connections = connectionsResult.rows.map((conn: any) => ({
+        id: conn.id,
+        leftCableId: conn.left_cable_id,
+        leftFiberNumber: conn.left_fiber_number,
+        leftFiberColor: conn.left_fiber_color,
+        leftFiberColorHex: conn.left_fiber_color_hex,
+        rightCableId: conn.right_cable_id,
+        rightFiberNumber: conn.right_fiber_number,
+        rightFiberColor: conn.right_fiber_color,
+        rightFiberColorHex: conn.right_fiber_color_hex,
+        createdVia: conn.created_via
+      }));
+
+      return {
+        id: row.id,
+        organizationId: row.organization_id,
+        nodeId: row.fiber_node_id,
+        trayIdentifier: row.tray_identifier,
+        description: row.description,
+        createdAt: row.created_at,
+        createdBy: row.created_by,
+        connectionCount: parseInt(row.connection_count) || 0,
+        connections
+      };
     }));
+
+    console.log('[SPLICE GET] Returning trays with connections:', trays.length);
 
     res.json({ trays });
   } catch (error: any) {

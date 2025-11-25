@@ -349,6 +349,14 @@ export default function FiberNetwork() {
     queryKey: ['/api/workflows/templates'],
   });
 
+  // Fetch splice trays for selected node
+  const { data: spliceTraysData, isLoading: spliceTraysLoading } = useQuery<{ trays: any[] }>({
+    queryKey: selectedNode?.id 
+      ? [`/api/fiber-network/nodes/${selectedNode.id}/splice-trays`]
+      : ['disabled-splice-trays'],
+    enabled: !!selectedNode?.id,
+  });
+
   // Update node mutation
   const updateNodeMutation = useMutation({
     mutationFn: async (data: { id: number; updates: Partial<FiberNode> }) => {
@@ -583,8 +591,9 @@ export default function FiberNetwork() {
       console.log('[SPLICE UI] API response:', result);
       return result;
     },
-    onSuccess: () => {
+    onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/fiber-network/nodes/${variables.nodeId}/splice-trays`] });
       setSpliceTrayEditorOpen(false);
       setSelectedSpliceTray(null);
       setSpliceTrayFormData({ trayIdentifier: '', description: '' });
@@ -2854,7 +2863,7 @@ export default function FiberNetwork() {
                           const network = selectedNode?.network || 'NETWORK';
                           const nodeName = selectedNode?.name || 'NODE';
                           // Count existing trays for this node to determine next number
-                          const existingTrays = selectedNode?.fiberDetails?.spliceTrays || [];
+                          const existingTrays = spliceTraysData?.trays || [];
                           const nextNumber = (existingTrays.length + 1).toString().padStart(3, '0');
                           const autoTrayId = `${network}-${nodeName}-TRAY-${nextNumber}`;
                           
@@ -2872,15 +2881,82 @@ export default function FiberNetwork() {
                       </Button>
                     </div>
                     
-                    <div className="text-center py-8 text-sm text-gray-500">
-                      Splice documentation feature coming soon. This will allow you to:
-                      <ul className="mt-2 space-y-1 text-left max-w-md mx-auto">
-                        <li>• Document splice trays at this node</li>
-                        <li>• Record fiber-to-fiber connections</li>
-                        <li>• Track which cables connect to which fibers</li>
-                        <li>• Trace customer connections through the network</li>
-                      </ul>
-                    </div>
+                    {spliceTraysLoading ? (
+                      <div className="text-center py-8 text-sm text-gray-500">
+                        Loading splice trays...
+                      </div>
+                    ) : spliceTraysData?.trays && spliceTraysData.trays.length > 0 ? (
+                      <div className="space-y-3">
+                        {spliceTraysData.trays.map((tray: any) => (
+                          <div
+                            key={tray.id}
+                            className="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer"
+                            onClick={() => {
+                              setSelectedSpliceTray(tray);
+                              setSpliceTrayFormData({
+                                trayIdentifier: tray.tray_identifier || tray.trayIdentifier || '',
+                                description: tray.description || '',
+                              });
+                              setFiberConnections(tray.connections || []);
+                              setSpliceTrayEditorOpen(true);
+                            }}
+                            data-testid={`splice-tray-${tray.id}`}
+                          >
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <h4 className="font-medium text-sm">
+                                  {tray.tray_identifier || tray.trayIdentifier}
+                                </h4>
+                                {tray.description && (
+                                  <p className="text-xs text-gray-500 mt-1">{tray.description}</p>
+                                )}
+                              </div>
+                              <Badge variant="outline" className="text-xs">
+                                {(tray.connections?.length || tray.connectionCount || 0)} connections
+                              </Badge>
+                            </div>
+                            {tray.connections && tray.connections.length > 0 && (
+                              <div className="mt-3 pt-2 border-t">
+                                <div className="text-xs text-gray-500 mb-2">Connections:</div>
+                                <div className="space-y-1">
+                                  {tray.connections.slice(0, 3).map((conn: any, idx: number) => (
+                                    <div key={idx} className="flex items-center gap-2 text-xs">
+                                      <span 
+                                        className="w-3 h-3 rounded-full border"
+                                        style={{ backgroundColor: conn.left_fiber_color_hex || conn.leftFiberColorHex }}
+                                      />
+                                      <span className="text-gray-600">
+                                        F{conn.left_fiber_number || conn.leftFiberNumber}
+                                      </span>
+                                      <span className="text-gray-400">→</span>
+                                      <span 
+                                        className="w-3 h-3 rounded-full border"
+                                        style={{ backgroundColor: conn.right_fiber_color_hex || conn.rightFiberColorHex }}
+                                      />
+                                      <span className="text-gray-600">
+                                        F{conn.right_fiber_number || conn.rightFiberNumber}
+                                      </span>
+                                    </div>
+                                  ))}
+                                  {tray.connections.length > 3 && (
+                                    <div className="text-xs text-gray-400">
+                                      +{tray.connections.length - 3} more
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-sm text-gray-500">
+                        No splice trays documented at this node yet.
+                        <p className="mt-2 text-xs">
+                          Click "Add Tray" to document fiber-to-fiber connections.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </TabsContent>
 
