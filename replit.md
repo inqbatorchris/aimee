@@ -11,20 +11,45 @@ Aimee.works is a Strategy Operating System (Strategy OS) designed to integrate s
 **Solution Implemented**:
 - **Photo Analysis Integration**: Added OCR capability to workflow photo steps via `photoAnalysisConfig` in template configuration
 - **Configurable Field Extraction**: Each photo step can define multiple fields to extract with custom prompts (e.g., "serial number", "MAC address")
-- **Dynamic Field Writing**: Extracted data automatically written to `extracted_data` JSONB column on source records (addresses, customers, etc.)
+- **Dynamic Field Writing**: Extracted data automatically written to dedicated equipment columns on source records (addresses, customers, etc.)
 - **Dual Activity Logging**: OCR events logged to both work item and source record activity feeds for full visibility
-- **Airtable Sync Safety**: `extracted_data` is local-only field, never overwritten during Airtable sync (like `localStatus`, `localNotes`)
+- **Airtable Sync Safety**: Equipment fields are local-only, never overwritten during Airtable sync (like `localStatus`, `localNotes`)
 - **Table Name Mapping**: Entity type mapper converts table names to proper entity types for activity logs (`address_records` → `address`)
+
+**Equipment Fields** (camelCase naming convention):
+- `routerSerial` - Router serial number
+- `routerMac` - Router MAC address  
+- `routerModel` - Router model number
+- `onuSerial` - ONU serial number
+- `onuMac` - ONU MAC address
+- `onuModel` - ONU model number
 
 **Technical Details**:
 - Files: `server/services/WorkItemWorkflowService.ts`, `server/services/ocr/OCRService.ts`, `server/services/ocr/FieldManagerService.ts`
-- UI: `client/src/components/ExtractedFieldsPanel.tsx` displays extracted fields with confidence scores and timestamps
-- Database: `address_records.extracted_data` JSONB column stores all OCR extractions
+- UI: Equipment Data card in Addresses page displays extracted fields with inline editing
+- Database: `address_records` table has dedicated columns for each equipment field
 - Configuration: Template photo steps define extraction targets via `photoAnalysisConfig.extractions[]`
 
 **UI Clarification**: Added prominent Database ID vs Airtable ID display in address detail panels to avoid confusion between database primary keys and Airtable sync data fields.
 
 **Impact**: Field workers can photograph equipment labels during installation, and serial numbers/MAC addresses/model numbers are automatically extracted and written to the correct address records without manual data entry.
+
+### November 2025 - Manual Equipment Data Editing
+**Problem Solved**: Need ability to manually correct or enter equipment data when OCR extraction is incorrect or unavailable.
+
+**Solution Implemented**:
+- **Inline Edit Mode**: Equipment Data card on Addresses page has Edit button to toggle inline editing
+- **Individual Field Save**: Each field saves independently with immediate feedback and optimistic UI updates
+- **Full Activity Tracking**: All manual edits logged to Activity tab with event_type `equipment_manual_edit`
+- **State Reset on Selection Change**: Edit state properly resets when navigating between addresses
+- **Field Validation**: Only allowed equipment fields (routerSerial, routerMac, etc.) can be modified
+
+**Technical Details**:
+- API Endpoint: `PATCH /api/addresses/:id/equipment-data` with field validation and activity logging
+- Activity Metadata: Records `fieldName`, `fieldLabel`, `oldValue`, `newValue`, `editedBy`, `editedAt`
+- Files: `server/routes/addresses.ts`, `client/src/pages/Addresses.tsx`
+
+**Impact**: Users can correct OCR errors or manually enter equipment data with full audit trail for compliance.
 
 ### November 2025 - Field App Chunked Download System
 **Problem Solved**: Field app downloads were failing when downloading large numbers of work items or items with many high-resolution photos due to mobile browser memory limitations.
