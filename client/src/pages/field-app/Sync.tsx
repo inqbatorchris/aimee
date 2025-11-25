@@ -6,6 +6,7 @@
 import { useState, useEffect } from 'react';
 import { fieldDB } from '@/lib/field-app/db';
 import { compressImageSafe } from '@/lib/field-app/imageUtils';
+import { queryClient } from '@/lib/queryClient';
 import { Button } from '@/components/ui/button';
 import { 
   RefreshCw, 
@@ -72,11 +73,29 @@ export default function Sync({ session, onComplete }: SyncProps) {
       setStatus(`Uploading ${queue.length} changes...`);
 
       // Prepare sync payload
+      const CONCURRENT_UPLOADS = 3;
       const updates = [];
       const photoUploads = [];
+      const audioUploads = [];
 
       for (const item of queue) {
-        if (item.type === 'photo') {
+        if (item.type === 'audio') {
+          // Handle audio uploads separately
+          const audio = await fieldDB.getAudioRecording(item.entityId as string);
+          if (audio) {
+            const blob = new Blob([audio.arrayBuffer], { type: audio.mimeType });
+            
+            audioUploads.push({
+              id: audio.id,
+              workItemId: audio.workItemId,
+              stepId: audio.stepId,
+              blob,
+              fileName: audio.fileName,
+              mimeType: audio.mimeType,
+              duration: audio.duration
+            });
+          }
+        } else if (item.type === 'photo') {
           // Handle photo uploads separately
           const photo = await fieldDB.getPhoto(item.entityId as string);
           if (photo) {
@@ -189,7 +208,6 @@ export default function Sync({ session, onComplete }: SyncProps) {
         }
         
         // Upload photos in parallel batches (3 at a time)
-        const CONCURRENT_UPLOADS = 3;
         let uploadedCount = 0;
         
         const uploadPhoto = async (photo: any) => {
@@ -221,6 +239,45 @@ export default function Sync({ session, onComplete }: SyncProps) {
         for (let i = 0; i < compressedPhotos.length; i += CONCURRENT_UPLOADS) {
           const batch = compressedPhotos.slice(i, i + CONCURRENT_UPLOADS);
           await Promise.all(batch.map(photo => uploadPhoto(photo)));
+        }
+      }
+
+      // Upload audio files if any
+      if (audioUploads.length > 0) {
+        setStatus(`Uploading ${audioUploads.length} audio recordings...`);
+        
+        let audioUploadedCount = 0;
+        
+        const uploadAudio = async (audio: any) => {
+          const formData = new FormData();
+          formData.append('workItemId', audio.workItemId.toString());
+          formData.append('stepId', audio.stepId || '');
+          formData.append('duration', audio.duration.toString());
+          formData.append('file', audio.blob, audio.fileName);
+
+          const response = await fetch('/api/field-app/upload-audio', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${session.token}`
+            },
+            body: formData
+          });
+          
+          if (!response.ok) {
+            throw new Error(`Failed to upload ${audio.fileName}`);
+          }
+          
+          audioUploadedCount++;
+          setStatus(`Uploading audio ${audioUploadedCount} of ${audioUploads.length}...`);
+          setProgress(Math.round(80 + (10 * audioUploadedCount / audioUploads.length)));
+          
+          return response.json();
+        };
+        
+        // Upload in batches with concurrency limit
+        for (let i = 0; i < audioUploads.length; i += CONCURRENT_UPLOADS) {
+          const batch = audioUploads.slice(i, i + CONCURRENT_UPLOADS);
+          await Promise.all(batch.map(audio => uploadAudio(audio)));
         }
       }
 
@@ -283,17 +340,72 @@ export default function Sync({ session, onComplete }: SyncProps) {
   };
 
   const handleClearCache = async () => {
-    if (!confirm('This will delete all downloaded work items and require re-downloading. Continue?')) {
+    // First confirmation
+    if (!confirm('This will delete all downloaded data:\n\n• Work Items\n• Photos\n• Templates\n• Fiber Network Nodes\n• Pending Sync Queue\n\nYou will need to re-download work items after clearing.\n\nContinue?')) {
       return;
     }
 
     try {
-      await fieldDB.clearCache();
+      // Show clearing status
+      setStatus('Clearing cache...');
+      setProgress(0);
+      
+      // Clear cache with improved error handling
+      const result = await fieldDB.clearCache();
+      
+      setProgress(100);
+      
+      // Reload stats and invalidate React Query caches
       await loadSyncStatus();
-      alert('Cache cleared successfully. Please download work items again.');
-    } catch (error) {
+      
+      // Invalidate all relevant React Query caches to update UI
+      queryClient.clear();
+      
+      // Check if all stores cleared successfully
+      if (result.failed.length === 0) {
+        // Full success
+        setStatus('Cache cleared successfully');
+        
+        // Second confirmation - ask to reload
+        const shouldReload = confirm(
+          '✅ Cache cleared successfully!\n\n' +
+          `Cleared: ${result.cleared.length} data stores\n\n` +
+          'For best results, reload the app now.\n\n' +
+          'Reload now?'
+        );
+        
+        if (shouldReload) {
+          window.location.reload();
+        } else {
+          // User declined reload - reset UI state so they can continue
+          setStatus('');
+          setProgress(0);
+        }
+      } else {
+        // Partial success
+        const clearedCount = result.cleared.length;
+        const failedCount = result.failed.length;
+        const failedStores = result.failed.join(', ');
+        
+        setStatus('Cache partially cleared');
+        
+        alert(
+          `⚠️ Cache partially cleared\n\n` +
+          `✅ Successfully cleared: ${clearedCount} stores\n` +
+          `❌ Failed to clear: ${failedCount} stores (${failedStores})\n\n` +
+          `Errors: ${JSON.stringify(result.errors, null, 2)}\n\n` +
+          'Try refreshing the app and clearing again.'
+        );
+        
+        // Reset UI state after user dismisses alert
+        setStatus('');
+        setProgress(0);
+      }
+    } catch (error: any) {
       console.error('Failed to clear cache:', error);
-      alert('Failed to clear cache');
+      setStatus('');
+      setProgress(0);
+      alert('❌ Failed to clear cache\n\n' + (error.message || 'Unknown error'));
     }
   };
 

@@ -23,15 +23,8 @@ import {
   FormDescription,
 } from "@/components/ui/form";
 import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
-import {
   Bot,
   CheckCircle,
-  XCircle,
   Loader2,
   BookOpen,
   Target,
@@ -116,8 +109,8 @@ export default function AITicketDraftingSetup() {
         temperature: existingConfig.modelConfig?.temperature || 0.7,
         maxTokens: existingConfig.modelConfig?.maxTokens || 1000,
         knowledgeDocumentIds: existingConfig.knowledgeDocumentIds || [],
-        objectiveId: existingConfig.objectiveId || 0,
-        keyResultIds: existingConfig.keyResultIds || [],
+        objectiveId: existingConfig.linkedObjectiveId || 0,
+        keyResultIds: existingConfig.linkedKeyResultIds || [],
       });
       setIsSaved(true);
     }
@@ -140,6 +133,7 @@ export default function AITicketDraftingSetup() {
       return await apiRequest('/api/ai-drafting/config', {
         method: 'POST',
         body: {
+          featureType: 'ticket_drafting',
           modelConfig: {
             model: data.model,
             systemPrompt: data.systemPrompt,
@@ -147,8 +141,8 @@ export default function AITicketDraftingSetup() {
             maxTokens: data.maxTokens,
           },
           knowledgeDocumentIds: data.knowledgeDocumentIds,
-          objectiveId: data.objectiveId,
-          keyResultIds: data.keyResultIds,
+          linkedObjectiveId: data.objectiveId,
+          linkedKeyResultIds: data.keyResultIds,
           isEnabled: true,
         },
       });
@@ -174,7 +168,6 @@ export default function AITicketDraftingSetup() {
   // Mutation to create workflows
   const createWorkflowsMutation = useMutation({
     mutationFn: async () => {
-      // This will be implemented with workflow templates
       return await apiRequest('/api/ai-drafting/initialize-workflows', {
         method: 'POST',
       });
@@ -200,7 +193,6 @@ export default function AITicketDraftingSetup() {
   };
 
   const handleNext = async () => {
-    // Prevent progression if currently saving
     if (saveMutation.isPending) {
       return;
     }
@@ -218,7 +210,6 @@ export default function AITicketDraftingSetup() {
     const isValid = await form.trigger(fieldsToValidate);
     
     if (isValid) {
-      // If moving from OKR step to Review, save the configuration first
       if (currentStep === 'okr') {
         const allValid = await form.trigger();
         if (allValid) {
@@ -228,7 +219,6 @@ export default function AITicketDraftingSetup() {
               setCurrentStep('review');
             },
             onError: () => {
-              // Stay on current step if save fails
               toast({
                 title: 'Cannot proceed',
                 description: 'Please resolve configuration errors before proceeding.',
@@ -251,8 +241,6 @@ export default function AITicketDraftingSetup() {
   };
 
   const handleComplete = async () => {
-    // Configuration should already be saved when entering Review step
-    // Now just create the workflows
     if (isSaved) {
       createWorkflowsMutation.mutate();
     } else {
@@ -452,7 +440,7 @@ export default function AITicketDraftingSetup() {
                 </div>
               </CardContent>
             </Card>
-          )}
+          )
 
           {/* Step 2: Knowledge Base Selection */}
           {currentStep === 'knowledge' && (

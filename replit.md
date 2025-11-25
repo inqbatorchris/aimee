@@ -1,73 +1,7 @@
 # aimee.works Platform
 
 ## Overview
-Aimee.works is a Strategy Operating System (Strategy OS) designed to integrate strategic planning with operational execution. It utilizes OKR-based strategy management and AI-powered automation agents to achieve measurable outcomes and automate repetitive tasks. The platform's core principle is "Connect Strategy → Work → Measurement" through governed AI agents under human oversight. It supports enterprise-grade multi-tenancy and self-hosting, aiming to enhance efficiency and strategic alignment through AI integration in daily operations.
-
-## Recent Changes
-
-### November 2025 - OCR Data Extraction System
-**Problem Solved**: Need to automatically extract text data (serial numbers, MAC addresses, model numbers, etc.) from equipment photos during field installations and write it directly to source records.
-
-**Solution Implemented**:
-- **Photo Analysis Integration**: Added OCR capability to workflow photo steps via `photoAnalysisConfig` in template configuration
-- **Configurable Field Extraction**: Each photo step can define multiple fields to extract with custom prompts (e.g., "serial number", "MAC address")
-- **Dynamic Field Writing**: Extracted data automatically written to dedicated equipment columns on source records (addresses, customers, etc.)
-- **Dual Activity Logging**: OCR events logged to both work item and source record activity feeds for full visibility
-- **Airtable Sync Safety**: Equipment fields are local-only, never overwritten during Airtable sync (like `localStatus`, `localNotes`)
-- **Table Name Mapping**: Entity type mapper converts table names to proper entity types for activity logs (`address_records` → `address`)
-
-**Equipment Fields** (camelCase naming convention):
-- `routerSerial` - Router serial number
-- `routerMac` - Router MAC address  
-- `routerModel` - Router model number
-- `onuSerial` - ONU serial number
-- `onuMac` - ONU MAC address
-- `onuModel` - ONU model number
-
-**Technical Details**:
-- Files: `server/services/WorkItemWorkflowService.ts`, `server/services/ocr/OCRService.ts`, `server/services/ocr/FieldManagerService.ts`
-- UI: Equipment Data card in Addresses page displays extracted fields with inline editing
-- Database: `address_records` table has dedicated columns for each equipment field
-- Configuration: Template photo steps define extraction targets via `photoAnalysisConfig.extractions[]`
-
-**UI Clarification**: Added prominent Database ID vs Airtable ID display in address detail panels to avoid confusion between database primary keys and Airtable sync data fields.
-
-**Impact**: Field workers can photograph equipment labels during installation, and serial numbers/MAC addresses/model numbers are automatically extracted and written to the correct address records without manual data entry.
-
-### November 2025 - Manual Equipment Data Editing
-**Problem Solved**: Need ability to manually correct or enter equipment data when OCR extraction is incorrect or unavailable.
-
-**Solution Implemented**:
-- **Inline Edit Mode**: Equipment Data card on Addresses page has Edit button to toggle inline editing
-- **Individual Field Save**: Each field saves independently with immediate feedback and optimistic UI updates
-- **Full Activity Tracking**: All manual edits logged to Activity tab with event_type `equipment_manual_edit`
-- **State Reset on Selection Change**: Edit state properly resets when navigating between addresses
-- **Field Validation**: Only allowed equipment fields (routerSerial, routerMac, etc.) can be modified
-
-**Technical Details**:
-- API Endpoint: `PATCH /api/addresses/:id/equipment-data` with field validation and activity logging
-- Activity Metadata: Records `fieldName`, `fieldLabel`, `oldValue`, `newValue`, `editedBy`, `editedAt`
-- Files: `server/routes/addresses.ts`, `client/src/pages/Addresses.tsx`
-
-**Impact**: Users can correct OCR errors or manually enter equipment data with full audit trail for compliance.
-
-### November 2025 - Field App Chunked Download System
-**Problem Solved**: Field app downloads were failing when downloading large numbers of work items or items with many high-resolution photos due to mobile browser memory limitations.
-
-**Solution Implemented**: 
-- **Batched Downloads**: Server endpoint now supports chunking via optional `offset`/`limit` parameters (backward compatible)
-- **Sequential Processing**: Photos are converted one-at-a-time instead of in parallel to prevent memory spikes
-- **Memory Management**: Automatic cleanup delays between batches (10ms per photo, 100ms between batches) to allow garbage collection
-- **Progress Tracking**: Real-time batch progress display ("Batch 2 of 5: 40%")
-- **Error Handling**: Detailed error messages showing which batch failed, with downloaded data preserved
-
-**Technical Details**:
-- Chunk size: 5 work items per batch
-- Files modified: `server/routes/field-app.ts`, `client/src/pages/field-app/Download.tsx`
-- All existing functionality preserved (filters, templates, execution states, photos)
-- No breaking changes to API
-
-**Impact**: Field workers can now reliably download 50+ work items with multiple photos each on mobile devices without crashes or memory issues.
+Aimee.works is a Strategy Operating System (Strategy OS) designed to integrate strategic planning with operational execution. It utilizes OKR-based strategy management and AI-powered automation agents to achieve measurable outcomes and automate repetitive tasks. The platform's core principle is "Connect Strategy → Work → Measurement" through governed AI agents under human oversight. It supports enterprise-grade multi-tenancy and self-hosting, aiming to enhance efficiency and strategic alignment through AI integration in daily operations. Key capabilities include AI-powered fiber splice documentation, AI-driven support ticket response drafting, and robust field app functionalities. The platform also includes an OCR data extraction system for equipment details and manual editing capabilities for extracted data, alongside a chunked download system for the field app to handle large data volumes reliably.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
@@ -100,21 +34,27 @@ Side Panels (canonical): Use Sheet from shadcn/ui for all slide-out detail/edit 
 
 ### Key System Components
 -   **Strategy Management System**: Centered around OKRs and Work Items with full offline support, bulk operations, and comprehensive filtering.
--   **AI Assistant System**: Context-aware business operations agent with chat interface, session management, function calling, and an action approval workflow. Supports work item management with human-readable action previews.
--   **Workflow Templates (Human Checklists)**: Reusable structured processes with offline photo capture and sync. Supports various step types (checklist, form, photo, signature, measurement, notes, kb_link, geolocation) and completion callbacks. Examples include a Chamber Record Workflow and Training Document Completion Workflow.
--   **AI Agent Workflows (Automation)**: Autonomous AI-driven automation with manual, webhook, and scheduled triggers. Includes Splynx integration for querying entities, creating tasks, and email campaign deployment. Features `for_each` loops for iterating over query results and creating dynamic work items or tasks, with UI support for variable selection and data inspection.
+-   **AI Assistant System**: Context-aware business operations agent with chat interface, session management, function calling, and an action approval workflow.
+-   **Workflow Templates (Human Checklists)**: Reusable structured processes with offline photo capture and sync, supporting various step types and completion callbacks.
+-   **AI Agent Workflows (Automation)**: Autonomous AI-driven automation with manual, webhook, and scheduled triggers, including integration for external systems.
 -   **Offline Sync System**: Manual synchronization using IndexedDB for data persistence, sync queue management, and conflict resolution.
--   **AI Assistant Action Approval System**: Implements an action approval workflow for AI write operations using OpenAI's function calling with a custom approval layer.
--   **Field App PWA**: A dedicated offline-first Progressive Web App at `/field-app` for field workers, featuring selective work item download, offline workflow execution, photo capture, and manual sync. Includes functionality for offline fiber network node creation with GPS, photo requirements, and automatic sign-off work item generation. **Chunked Download System** (Nov 2025): Implements batched downloads (5 items per batch) with sequential photo processing to prevent memory overflow on mobile devices. Supports downloading large datasets with many high-resolution photos without crashes, includes batch-level progress tracking ("Batch 2 of 5"), and graceful error handling with detailed failure reporting.
--   **Fiber Network Node Type Management**: Dynamic, organization-scoped node type system allowing administrators to add, remove, and manage fiber network node types (Chamber, Cabinet, Pole, Splice Closure, Customer Premise, plus custom types). Node types automatically sync between desktop and mobile field app, with full CRUD operations in desktop Settings and dropdown selection during node creation/editing.
--   **Xero Finance Integration**: Connects strategy execution to financial outcomes via OAuth 2.0, automatic transaction synchronization, AI-powered categorization, profit center tracking, and stakeholder-specific dashboards. Financial transactions are available as a queryable data source in Agent Builder workflows with aggregation support.
+-   **AI Assistant Action Approval System**: Implements an action approval workflow for AI write operations.
+-   **Field App PWA**: Offline-first Progressive Web App for field workers, supporting selective work item download, offline workflow execution, photo capture, manual sync, and offline fiber network node creation with batched downloads for memory management.
+-   **Fiber Network Node Type Management**: Dynamic, organization-scoped node type system with full CRUD operations.
+-   **Xero Finance Integration**: Connects strategy execution to financial outcomes via OAuth 2.0, transaction synchronization, AI categorization, and profit center tracking.
+-   **Manual Splice Documentation System**: Desktop interface for documenting fiber-to-fiber splice connections with a visual click-to-connect UI, splice tray management, and TIA-598-C color standards.
+-   **AI-Powered Splice Documentation Workflow**: Voice-to-data system for field splice documentation, utilizing AI for transcription and parsing, with desktop review and verification.
+-   **AI Ticket Drafting Integration**: AI-powered support ticket response drafting system integrated with Agent Builder workflows, including setup UI, KB selectors, and performance tracking.
+-   **Fiber Status Visibility System**: Real-time fiber utilization tracking across the network, aggregating data from terminations, connections, and work items, displayed with status badges and utilization progress bars.
+-   **OCR Data Extraction**: Automatically extracts equipment data (serial numbers, MAC addresses, models) from photos during field installations and writes to source records.
+-   **Manual Equipment Data Editing**: Allows manual correction or entry of equipment data with inline editing, individual field saves, and full activity tracking.
 
 ## External Dependencies
 
 ### Third-Party APIs
--   **OpenAI**: AI-powered features.
+-   **OpenAI**: AI-powered features for transcription, data extraction, and drafting.
 -   **Splynx**: ISP management system for customer data, email campaigns, and task management.
--   **Airtable**: External data source for addresses, statuses, and tariffs.
+-   **Airtable**: External data source.
 -   **Google Maps Geocoding API**: Address-to-coordinates conversion.
 -   **Xero**: Accounting and financial management integration.
 

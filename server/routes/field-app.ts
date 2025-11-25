@@ -8,11 +8,12 @@ import { z } from 'zod';
 import { storage } from '../storage';
 import { authenticateToken } from '../auth';
 import { db } from '../db';
-import { workItems, workItemWorkflowExecutions, workItemWorkflowExecutionSteps, fiberNetworkNodes, fiberNetworkActivityLogs } from '@shared/schema';
+import { workItems, workItemWorkflowExecutions, workItemWorkflowExecutionSteps, fiberNetworkNodes, fiberNetworkActivityLogs, audioRecordings } from '@shared/schema';
 import { and, eq, inArray, asc } from 'drizzle-orm';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { audioProcessingService } from '../services/audioProcessingService';
 
 const router = Router();
 
@@ -59,6 +60,37 @@ const upload = multer({
       return cb(null, true);
     } else {
       cb(new Error('Only image files (jpeg, jpg, png, heic, webp) are allowed'));
+    }
+  }
+});
+
+// Ensure audio upload directory exists
+const audioUploadDir = 'uploads/field-audio';
+if (!fs.existsSync(audioUploadDir)) {
+  fs.mkdirSync(audioUploadDir, { recursive: true });
+}
+
+// Configure multer for audio uploads
+const audioStorage = multer.diskStorage({
+  destination: audioUploadDir,
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, `audio-${uniqueSuffix}${path.extname(file.originalname)}`);
+  }
+});
+
+const audioUpload = multer({ 
+  storage: audioStorage,
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit for audio
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /webm|m4a|mp3|wav|ogg|aac/;
+    const mimetype = allowedTypes.test(file.mimetype);
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    
+    if (mimetype || extname) { // Allow if either matches (some browsers send wrong MIME types)
+      return cb(null, true);
+    } else {
+      cb(new Error('Only audio files (webm, m4a, mp3, wav, ogg, aac) are allowed'));
     }
   }
 });
@@ -961,6 +993,304 @@ router.post('/upload-photo', authenticateToken, upload.single('file'), async (re
     }
     
     res.status(500).json({ error: 'Failed to upload photo' });
+  }
+});
+
+// Upload audio from field app
+router.post('/upload-audio', authenticateToken, audioUpload.single('file'), async (req: any, res) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    const userId = req.user?.id;
+    const { workItemId, stepId, duration } = req.body;
+    const file = req.file;
+
+    if (!file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+
+    if (!workItemId) {
+      return res.status(400).json({ error: 'workItemId is required' });
+    }
+
+    console.log('[Upload Audio] Processing upload:', {
+      workItemId,
+      stepId,
+      fileName: file.filename,
+      size: file.size,
+      duration
+    });
+
+    // Generate unique audio ID
+    const audioId = `audio-${Date.now()}-${Math.round(Math.random() * 1E9)}`;
+
+    // Create audio_recordings database record
+    const [audioRecord] = await db.insert(audioRecordings).values({
+      id: audioId,
+      organizationId,
+      workItemId: parseInt(workItemId),
+      stepId: stepId || null,
+      filePath: file.path,
+      fileName: file.filename,
+      mimeType: file.mimetype,
+      size: file.size,
+      duration: parseInt(duration) || 0,
+      uploadedBy: userId,
+    }).returning();
+
+    console.log('[Upload Audio] Created audio_recordings record:', audioRecord.id);
+
+    // Trigger async AI processing in background
+    audioProcessingService.processAudioRecording(audioId, organizationId)
+      .catch(err => console.error('[Upload Audio] Processing failed:', err));
+
+    // Convert uploaded file to base64 for step evidence backward compatibility
+    const audioPath = file.path;
+    const audioBuffer = await fs.promises.readFile(audioPath);
+    const base64Data = `data:${file.mimetype};base64,${audioBuffer.toString('base64')}`;
+
+    // If stepId provided, update the step evidence in database
+    if (stepId) {
+      const execution = await db.select()
+        .from(workItemWorkflowExecutions)
+        .where(
+          and(
+            eq(workItemWorkflowExecutions.workItemId, parseInt(workItemId)),
+            eq(workItemWorkflowExecutions.organizationId, organizationId)
+          )
+        )
+        .limit(1);
+
+      if (execution && execution.length > 0) {
+        const workItem = await db.select()
+          .from(workItems)
+          .where(eq(workItems.id, parseInt(workItemId)))
+          .limit(1);
+
+        if (workItem && workItem.length > 0 && workItem[0].workflowTemplateId) {
+          const template = await storage.getWorkflowTemplate(organizationId, workItem[0].workflowTemplateId);
+          if (!template) {
+            console.warn('[Upload Audio] Template not found');
+            return res.json({ success: false, error: 'Template not found' });
+          }
+          
+          const templateStep = template.steps.find((s: any) => s.id === stepId);
+          const stepIndex = templateStep ? template.steps.indexOf(templateStep) : -1;
+
+          if (stepIndex >= 0) {
+            const stepRecord = await db.select()
+              .from(workItemWorkflowExecutionSteps)
+              .where(
+                and(
+                  eq(workItemWorkflowExecutionSteps.executionId, execution[0].id),
+                  eq(workItemWorkflowExecutionSteps.stepIndex, stepIndex)
+                )
+              )
+              .limit(1);
+
+            if (stepRecord && stepRecord.length > 0) {
+              const existingEvidence = (stepRecord[0].evidence as any) || {};
+              const existingAudio = existingEvidence.audioRecordings || [];
+              
+              // Check for duplicate audio
+              const isDuplicate = existingAudio.some((audio: any) => 
+                audio.fileName === file.filename && audio.size === file.size
+              );
+              
+              if (isDuplicate) {
+                console.log('[Upload Audio] Duplicate audio detected, skipping:', {
+                  fileName: file.filename,
+                  size: file.size
+                });
+                
+                fs.unlink(file.path, (err) => {
+                  if (err) console.error('Failed to delete duplicate file:', err);
+                });
+                
+                return res.json({
+                  success: true,
+                  duplicate: true,
+                  audioId: `existing-${file.filename}`,
+                  fileName: file.filename,
+                  size: file.size,
+                  workItemId,
+                  stepId,
+                  message: 'Audio already exists'
+                });
+              }
+              
+              const newAudio = {
+                audioId,
+                data: base64Data,
+                fileName: file.filename,
+                size: file.size,
+                duration: parseInt(duration) || 0,
+                uploadedAt: new Date().toISOString(),
+                uploadedBy: userId
+              };
+
+              await db.update(workItemWorkflowExecutionSteps)
+                .set({
+                  evidence: {
+                    ...existingEvidence,
+                    audioRecordings: [...existingAudio, newAudio]
+                  },
+                  updatedAt: new Date()
+                })
+                .where(eq(workItemWorkflowExecutionSteps.id, stepRecord[0].id));
+
+              console.log('[Upload Audio] Audio saved to database evidence');
+              
+              // Log audio upload in activity logs
+              await storage.logActivity({
+                organizationId,
+                userId,
+                actionType: 'file_upload',
+                entityType: 'work_item',
+                entityId: parseInt(workItemId),
+                description: `Audio recording uploaded from field app: ${file.filename}`,
+                metadata: {
+                  action: 'audio_uploaded',
+                  fileName: file.filename,
+                  fileSize: file.size,
+                  duration: parseInt(duration) || 0,
+                  stepId,
+                  stepIndex
+                }
+              });
+            }
+          }
+        }
+      }
+    }
+
+    // Keep file on disk for AI processing (don't delete it)
+
+    res.json({
+      success: true,
+      audioId,
+      fileName: file.filename,
+      size: file.size,
+      duration: parseInt(duration) || 0,
+      workItemId,
+      stepId
+    });
+  } catch (error) {
+    console.error('Error uploading audio:', error);
+    
+    if (req.file) {
+      fs.unlink(req.file.path, (err) => {
+        if (err) console.error('Failed to delete uploaded file:', err);
+      });
+    }
+    
+    res.status(500).json({ error: 'Failed to upload audio' });
+  }
+});
+
+// Get audio recording with transcription and extracted data
+router.get('/audio-recordings/:id', authenticateToken, async (req: any, res) => {
+  try {
+    const audioId = req.params.id;
+    const organizationId = req.user?.organizationId;
+
+    const [audioRec] = await db
+      .select()
+      .from(audioRecordings)
+      .where(
+        and(
+          eq(audioRecordings.id, audioId),
+          eq(audioRecordings.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+
+    if (!audioRec) {
+      return res.status(404).json({ error: 'Audio recording not found' });
+    }
+
+    res.json({ audioRecording: audioRec });
+  } catch (error) {
+    console.error('Error fetching audio recording:', error);
+    res.status(500).json({ error: 'Failed to fetch audio recording' });
+  }
+});
+
+// Update audio recording (manual corrections to transcription/extracted data)
+router.patch('/audio-recordings/:id', authenticateToken, async (req: any, res) => {
+  try {
+    const audioId = req.params.id;
+    const organizationId = req.user?.organizationId;
+    const { transcription, extractedData } = req.body;
+
+    const updateData: any = {};
+    if (transcription !== undefined) {
+      updateData.transcription = transcription;
+    }
+    if (extractedData !== undefined) {
+      updateData.extractedData = extractedData;
+    }
+
+    const [updated] = await db
+      .update(audioRecordings)
+      .set(updateData)
+      .where(
+        and(
+          eq(audioRecordings.id, audioId),
+          eq(audioRecordings.organizationId, organizationId)
+        )
+      )
+      .returning();
+
+    if (!updated) {
+      return res.status(404).json({ error: 'Audio recording not found' });
+    }
+
+    console.log('[Audio Recording] Updated:', audioId);
+    res.json({ success: true, audioRecording: updated });
+  } catch (error) {
+    console.error('Error updating audio recording:', error);
+    res.status(500).json({ error: 'Failed to update audio recording' });
+  }
+});
+
+// Trigger re-processing of audio recording
+router.post('/audio-recordings/:id/reprocess', authenticateToken, async (req: any, res) => {
+  try {
+    const audioId = req.params.id;
+    const organizationId = req.user?.organizationId;
+
+    const [audioRec] = await db
+      .select()
+      .from(audioRecordings)
+      .where(
+        and(
+          eq(audioRecordings.id, audioId),
+          eq(audioRecordings.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+
+    if (!audioRec) {
+      return res.status(404).json({ error: 'Audio recording not found' });
+    }
+
+    // Reset processing status
+    await db
+      .update(audioRecordings)
+      .set({
+        processingStatus: 'pending',
+        processingError: null
+      })
+      .where(eq(audioRecordings.id, audioId));
+
+    // Trigger reprocessing
+    audioProcessingService.processAudioRecording(audioId, organizationId)
+      .catch(err => console.error('[Reprocess Audio] Processing failed:', err));
+
+    res.json({ success: true, message: 'Reprocessing started' });
+  } catch (error) {
+    console.error('Error reprocessing audio:', error);
+    res.status(500).json({ error: 'Failed to reprocess audio' });
   }
 });
 
