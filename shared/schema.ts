@@ -3494,6 +3494,55 @@ export const cableFiberDefinitions = pgTable("cable_fiber_definitions", {
   unique("unique_cable_per_node").on(table.cableId, table.nodeId),
 ]);
 
+// Fiber Terminations - Customer/endpoint connections (single-fiber drops)
+export const fiberTerminations = pgTable("fiber_terminations", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  
+  // The customer/endpoint node where the fiber terminates
+  customerNodeId: integer("customer_node_id").references(() => fiberNetworkNodes.id, { onDelete: "cascade" }).notNull(),
+  
+  // The network node where the cable originates (for reference)
+  sourceNodeId: integer("source_node_id").references(() => fiberNetworkNodes.id, { onDelete: "set null" }),
+  
+  // The cable carrying this fiber
+  cableId: varchar("cable_id", { length: 255 }).notNull(),
+  cableIdentifier: varchar("cable_identifier", { length: 255 }),
+  
+  // Which fiber from the cable
+  fiberNumber: integer("fiber_number").notNull(),
+  fiberColor: varchar("fiber_color", { length: 50 }),
+  fiberColorHex: varchar("fiber_color_hex", { length: 20 }),
+  
+  // Termination details
+  terminationType: varchar("termination_type", { length: 50 }).default('ont'), // ont, wall_outlet, patch_panel, splitter
+  terminationIdentifier: varchar("termination_identifier", { length: 255 }), // ONT serial, outlet ID, etc.
+  
+  // Service linkage
+  serviceId: varchar("service_id", { length: 255 }), // External service reference
+  serviceName: varchar("service_name", { length: 255 }), // Human-readable service name
+  isLive: boolean("is_live").default(false),
+  
+  // Work item integration
+  workItemId: integer("work_item_id").references(() => workItems.id),
+  
+  // Status
+  status: varchar("status", { length: 50 }).default('active'), // active, reserved, decommissioned
+  notes: text("notes"),
+  
+  // Audit
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_fiber_term_org").on(table.organizationId),
+  index("idx_fiber_term_customer").on(table.customerNodeId),
+  index("idx_fiber_term_source").on(table.sourceNodeId),
+  index("idx_fiber_term_cable").on(table.cableId),
+  // Prevent double-allocation: one fiber per cable can only terminate once
+  unique("unique_fiber_per_cable").on(table.organizationId, table.cableId, table.fiberNumber),
+]);
+
 // ========================================
 // AIRTABLE INTEGRATION MODULE
 // ========================================
@@ -3898,6 +3947,16 @@ export type InsertFiberConnection = z.infer<typeof insertFiberConnectionSchema>;
 
 export type CableFiberDefinition = typeof cableFiberDefinitions.$inferSelect;
 export type InsertCableFiberDefinition = z.infer<typeof insertCableFiberDefinitionSchema>;
+
+// Insert schema for Fiber Terminations
+export const insertFiberTerminationSchema = createInsertSchema(fiberTerminations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type FiberTermination = typeof fiberTerminations.$inferSelect;
+export type InsertFiberTermination = z.infer<typeof insertFiberTerminationSchema>;
 
 // Insert schemas for Airtable integration
 export const insertAirtableConnectionSchema = createInsertSchema(airtableConnections).omit({
