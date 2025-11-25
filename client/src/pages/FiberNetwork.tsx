@@ -19,7 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { MapPin, Search, X, FileText, Activity, Plus, Image as ImageIcon, Wrench, Trash2, Upload, Camera, Map, Table as TableIcon, Download, Settings, Eye, EyeOff, GripVertical, Square, CheckCircle, Hand, Pencil, Cable, Link2, Edit, Save } from 'lucide-react';
+import { MapPin, Search, X, FileText, Activity, Plus, Image as ImageIcon, Wrench, Trash2, Upload, Camera, Map, Table as TableIcon, Download, Settings, Eye, EyeOff, GripVertical, Square, CheckCircle, Hand, Pencil, Cable, Link2, Edit, Save, BarChart3, Circle, AlertTriangle } from 'lucide-react';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
@@ -515,6 +515,99 @@ export default function FiberNetwork() {
   });
 
   const nodeCables = nodeCablesData?.cables || [];
+
+  // Fetch fiber status for left cable when selected
+  const { data: leftCableFiberStatus } = useQuery<{
+    cableId: string;
+    cableIdentifier: string;
+    fiberCount: number;
+    summary: { totalFibers: number; available: number; used: number; live: number };
+    fibers: Array<{
+      fiberNumber: number;
+      color: string;
+      colorHex: string;
+      status: 'available' | 'used' | 'live' | 'reserved';
+      usageType?: 'splice' | 'termination' | 'reserved';
+      endpoint?: {
+        type: 'node' | 'customer';
+        nodeName?: string;
+        trayIdentifier?: string;
+        serviceName?: string;
+      };
+    }>;
+  }>({
+    queryKey: ['/api/fiber-network/cables', leftCableId, 'fiber-status'],
+    queryFn: async () => {
+      const response = await fetch(`/api/fiber-network/cables/${leftCableId}/fiber-status?nodeId=${selectedNode?.id}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Failed to fetch fiber status');
+      return response.json();
+    },
+    enabled: !!leftCableId && spliceTrayEditorOpen,
+  });
+
+  // Fetch fiber status for right cable when selected
+  const { data: rightCableFiberStatus } = useQuery<{
+    cableId: string;
+    cableIdentifier: string;
+    fiberCount: number;
+    summary: { totalFibers: number; available: number; used: number; live: number };
+    fibers: Array<{
+      fiberNumber: number;
+      color: string;
+      colorHex: string;
+      status: 'available' | 'used' | 'live' | 'reserved';
+      usageType?: 'splice' | 'termination' | 'reserved';
+      endpoint?: {
+        type: 'node' | 'customer';
+        nodeName?: string;
+        trayIdentifier?: string;
+        serviceName?: string;
+      };
+    }>;
+  }>({
+    queryKey: ['/api/fiber-network/cables', rightCableId, 'fiber-status'],
+    queryFn: async () => {
+      const response = await fetch(`/api/fiber-network/cables/${rightCableId}/fiber-status?nodeId=${selectedNode?.id}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Failed to fetch fiber status');
+      return response.json();
+    },
+    enabled: !!rightCableId && spliceTrayEditorOpen,
+  });
+
+  // Fetch fiber status for all cables at the selected node (for Fiber Status tab)
+  const { data: nodeFiberStatus, isLoading: nodeFiberStatusLoading } = useQuery<{
+    nodeId: number;
+    nodeName: string;
+    cables: Array<{
+      cableId: string;
+      cableIdentifier: string;
+      fiberCount: number;
+      connectedNodeId: number;
+      connectedNodeName: string;
+      direction: 'incoming' | 'outgoing';
+      summary: {
+        totalFibers: number;
+        used: number;
+        live: number;
+        available: number;
+        utilizationPercent: number;
+      };
+    }>;
+  }>({
+    queryKey: ['/api/fiber-network/nodes', selectedNode?.id, 'fiber-status'],
+    queryFn: async () => {
+      const response = await fetch(`/api/fiber-network/nodes/${selectedNode?.id}/fiber-status`, {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Failed to fetch node fiber status');
+      return response.json();
+    },
+    enabled: !!selectedNode?.id,
+  });
 
   // Create node type mutation
   const createNodeTypeMutation = useMutation({
@@ -2635,9 +2728,8 @@ export default function FiberNetwork() {
                     <TableRow>
                       <TableHead>Cable ID</TableHead>
                       <TableHead>Route</TableHead>
-                      <TableHead>Fiber Count</TableHead>
-                      <TableHead>Cable Type</TableHead>
-                      <TableHead>Length (m)</TableHead>
+                      <TableHead>Fibers</TableHead>
+                      <TableHead>Type</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead className="w-[100px]">Actions</TableHead>
                     </TableRow>
@@ -2645,7 +2737,7 @@ export default function FiberNetwork() {
                   <TableBody>
                     {allCables.length === 0 ? (
                       <TableRow>
-                        <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                        <TableCell colSpan={6} className="text-center py-8 text-gray-500">
                           No cables found
                         </TableCell>
                       </TableRow>
@@ -2658,17 +2750,16 @@ export default function FiberNetwork() {
                         >
                           <TableCell className="font-medium">{cable.cableIdentifier}</TableCell>
                           <TableCell>
-                            <div className="flex items-center gap-1">
+                            <div className="flex items-center gap-1 text-xs">
                               <span>{cable.startNodeName}</span>
                               <span className="text-gray-400">→</span>
                               <span>{cable.endNodeName}</span>
                             </div>
                           </TableCell>
                           <TableCell>{cable.fiberCount}</TableCell>
-                          <TableCell className="capitalize">{cable.cableType?.replace('_', ' ')}</TableCell>
-                          <TableCell>{cable.lengthMeters || 0}</TableCell>
+                          <TableCell className="capitalize text-xs">{cable.cableType?.replace('_', ' ')}</TableCell>
                           <TableCell>
-                            <Badge variant={cable.status === 'active' ? 'default' : 'secondary'}>
+                            <Badge variant={cable.status === 'active' ? 'default' : 'secondary'} className="text-xs">
                               {cable.status}
                             </Badge>
                           </TableCell>
@@ -2719,25 +2810,29 @@ export default function FiberNetwork() {
               </SheetHeader>
 
               <Tabs defaultValue="details" className="mt-6">
-                <TabsList className="grid w-full grid-cols-5">
+                <TabsList className="grid w-full grid-cols-6">
                   <TabsTrigger value="details" data-testid="tab-details">
-                    <FileText className="w-4 h-4 mr-2" />
+                    <FileText className="w-4 h-4 mr-1" />
                     Details
                   </TabsTrigger>
+                  <TabsTrigger value="fiber-status" data-testid="tab-fiber-status">
+                    <BarChart3 className="w-4 h-4 mr-1" />
+                    Fibers
+                  </TabsTrigger>
                   <TabsTrigger value="splice-trays" data-testid="tab-splice-trays">
-                    <Cable className="w-4 h-4 mr-2" />
+                    <Cable className="w-4 h-4 mr-1" />
                     Splices
                   </TabsTrigger>
                   <TabsTrigger value="photos" data-testid="tab-photos">
-                    <ImageIcon className="w-4 h-4 mr-2" />
+                    <ImageIcon className="w-4 h-4 mr-1" />
                     Photos
                   </TabsTrigger>
                   <TabsTrigger value="work-items" data-testid="tab-work-items">
-                    <Wrench className="w-4 h-4 mr-2" />
-                    Work Items
+                    <Wrench className="w-4 h-4 mr-1" />
+                    Tasks
                   </TabsTrigger>
                   <TabsTrigger value="activity" data-testid="tab-activity">
-                    <Activity className="w-4 h-4 mr-2" />
+                    <Activity className="w-4 h-4 mr-1" />
                     Activity
                   </TabsTrigger>
                 </TabsList>
@@ -2850,6 +2945,101 @@ export default function FiberNetwork() {
                     <Wrench className="w-4 h-4 mr-2" />
                     Create Work Item
                   </Button>
+                </TabsContent>
+
+                <TabsContent value="fiber-status" className="space-y-4">
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-medium">Cable Fiber Utilization</h3>
+                    
+                    {nodeFiberStatusLoading ? (
+                      <div className="text-center py-8 text-sm text-gray-500">
+                        Loading fiber status...
+                      </div>
+                    ) : nodeFiberStatus?.cables && nodeFiberStatus.cables.length > 0 ? (
+                      <div className="space-y-4">
+                        {nodeFiberStatus.cables.map((cable: any) => (
+                          <div 
+                            key={cable.cableId} 
+                            className="p-4 border rounded-lg bg-gray-50 dark:bg-gray-900"
+                          >
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <div className="font-medium text-sm">{cable.cableIdentifier}</div>
+                                <div className="text-xs text-gray-500">
+                                  → {cable.connectedNodeName}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-lg font-bold">
+                                  {cable.summary.utilizationPercent}%
+                                </div>
+                                <div className="text-xs text-gray-500">utilization</div>
+                              </div>
+                            </div>
+                            
+                            {/* Utilization Bar */}
+                            <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden mb-3">
+                              <div 
+                                className={`h-full transition-all ${
+                                  cable.summary.utilizationPercent > 80 
+                                    ? 'bg-red-500' 
+                                    : cable.summary.utilizationPercent > 50 
+                                    ? 'bg-amber-500' 
+                                    : 'bg-green-500'
+                                }`}
+                                style={{ width: `${cable.summary.utilizationPercent}%` }}
+                              />
+                            </div>
+                            
+                            {/* Stats */}
+                            <div className="grid grid-cols-4 gap-2 text-xs">
+                              <div className="text-center p-2 bg-white dark:bg-gray-800 rounded">
+                                <div className="font-bold text-lg">{cable.summary.totalFibers}</div>
+                                <div className="text-gray-500">Total</div>
+                              </div>
+                              <div className="text-center p-2 bg-green-50 dark:bg-green-900/30 rounded">
+                                <div className="font-bold text-lg text-green-600">{cable.summary.available}</div>
+                                <div className="text-gray-500">Available</div>
+                              </div>
+                              <div className="text-center p-2 bg-amber-50 dark:bg-amber-900/30 rounded">
+                                <div className="font-bold text-lg text-amber-600">{cable.summary.used}</div>
+                                <div className="text-gray-500">Used</div>
+                              </div>
+                              <div className="text-center p-2 bg-red-50 dark:bg-red-900/30 rounded">
+                                <div className="font-bold text-lg text-red-600">{cable.summary.live}</div>
+                                <div className="text-gray-500">Live</div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-sm text-gray-500 border-2 border-dashed rounded-lg">
+                        <Cable className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                        <p>No cables connected to this node yet.</p>
+                        <p className="text-xs mt-1">Add cables to see fiber utilization.</p>
+                      </div>
+                    )}
+
+                    {/* Legend */}
+                    <div className="pt-4 border-t">
+                      <div className="text-xs text-gray-500 mb-2">Legend</div>
+                      <div className="flex flex-wrap gap-4 text-xs">
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-green-500" />
+                          <span>Available - Ready to use</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-amber-500" />
+                          <span>Used - Spliced/Connected</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-red-500" />
+                          <span>Live - Active service</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </TabsContent>
 
                 <TabsContent value="splice-trays" className="space-y-4">
@@ -4231,6 +4421,11 @@ export default function FiberNetwork() {
                           <span className="text-blue-600">●</span>
                           {nodeCables.find((c: any) => c.id === leftCableId)?.cableIdentifier}
                           <span className="text-gray-400 font-normal">(Click to select)</span>
+                          {leftCableFiberStatus?.summary && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700">
+                              {leftCableFiberStatus.summary.available}/{leftCableFiberStatus.summary.totalFibers} available
+                            </span>
+                          )}
                         </div>
                         <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1">
                           {Array.from({ length: nodeCables.find((c: any) => c.id === leftCableId)?.fiberCount || 0 }, (_, i) => i + 1).map(fiberNum => {
@@ -4240,18 +4435,28 @@ export default function FiberNetwork() {
                             );
                             const isSelected = selectedLeftFiber === fiberNum;
                             
+                            // Get fiber status from API
+                            const fiberStatus = leftCableFiberStatus?.fibers?.find(f => f.fiberNumber === fiberNum);
+                            const isUsedUpstream = fiberStatus?.status === 'used' || fiberStatus?.status === 'live';
+                            const isLive = fiberStatus?.status === 'live';
+                            const endpointInfo = fiberStatus?.endpoint;
+                            
                             return (
                               <div
                                 key={fiberNum}
-                                className={`flex items-center gap-2 p-2 text-xs border rounded cursor-pointer transition-all ${
+                                className={`flex items-center gap-2 p-2 text-xs border rounded transition-all ${
                                   hasConnection
                                     ? 'bg-green-100 dark:bg-green-900/50 border-green-400 dark:border-green-600 cursor-not-allowed opacity-60'
+                                    : isUsedUpstream
+                                    ? isLive
+                                      ? 'bg-red-50 dark:bg-red-900/30 border-red-300 dark:border-red-700 cursor-not-allowed opacity-70'
+                                      : 'bg-amber-50 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 cursor-not-allowed opacity-70'
                                     : isSelected
-                                    ? 'bg-blue-100 dark:bg-blue-900 border-blue-500 ring-2 ring-blue-400 ring-offset-1'
-                                    : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border-gray-200 dark:border-gray-600'
+                                    ? 'bg-blue-100 dark:bg-blue-900 border-blue-500 ring-2 ring-blue-400 ring-offset-1 cursor-pointer'
+                                    : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border-gray-200 dark:border-gray-600 cursor-pointer'
                                 }`}
                                 onClick={() => {
-                                  if (!hasConnection) {
+                                  if (!hasConnection && !isUsedUpstream) {
                                     if (isSelected) {
                                       setSelectedLeftFiber(null);
                                     } else {
@@ -4259,6 +4464,7 @@ export default function FiberNetwork() {
                                     }
                                   }
                                 }}
+                                title={isUsedUpstream ? `Used: ${endpointInfo?.nodeName || 'Unknown'}${endpointInfo?.serviceName ? ` (${endpointInfo.serviceName})` : ''}` : undefined}
                                 data-testid={`fiber-left-${fiberNum}`}
                               >
                                 <div
@@ -4276,6 +4482,16 @@ export default function FiberNetwork() {
                                   )}
                                 </span>
                                 {hasConnection && <CheckCircle className="w-3 h-3 text-green-600" />}
+                                {isLive && !hasConnection && (
+                                  <span className="text-[9px] px-1 py-0.5 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded font-medium">
+                                    LIVE
+                                  </span>
+                                )}
+                                {isUsedUpstream && !isLive && !hasConnection && (
+                                  <span className="text-[9px] px-1 py-0.5 bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 rounded font-medium">
+                                    USED
+                                  </span>
+                                )}
                               </div>
                             );
                           })}
@@ -4288,6 +4504,11 @@ export default function FiberNetwork() {
                           <span className="text-orange-600">●</span>
                           {nodeCables.find((c: any) => c.id === rightCableId)?.cableIdentifier}
                           {selectedLeftFiber && <span className="text-gray-400 font-normal">(Click to connect)</span>}
+                          {rightCableFiberStatus?.summary && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700">
+                              {rightCableFiberStatus.summary.available}/{rightCableFiberStatus.summary.totalFibers} available
+                            </span>
+                          )}
                         </div>
                         <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1">
                           {Array.from({ length: nodeCables.find((c: any) => c.id === rightCableId)?.fiberCount || 0 }, (_, i) => i + 1).map(fiberNum => {
@@ -4300,12 +4521,22 @@ export default function FiberNetwork() {
                               : null;
                             const isMatchingColor = leftFiberInfo && leftFiberInfo.color === fiberInfo.color;
                             
+                            // Get fiber status from API
+                            const fiberStatus = rightCableFiberStatus?.fibers?.find(f => f.fiberNumber === fiberNum);
+                            const isUsedUpstream = fiberStatus?.status === 'used' || fiberStatus?.status === 'live';
+                            const isLive = fiberStatus?.status === 'live';
+                            const endpointInfo = fiberStatus?.endpoint;
+                            
                             return (
                               <div
                                 key={fiberNum}
                                 className={`flex items-center gap-2 p-2 text-xs border rounded transition-all ${
                                   hasConnection
                                     ? 'bg-green-100 dark:bg-green-900/50 border-green-400 dark:border-green-600 cursor-not-allowed opacity-60'
+                                    : isUsedUpstream
+                                    ? isLive
+                                      ? 'bg-red-50 dark:bg-red-900/30 border-red-300 dark:border-red-700 cursor-not-allowed opacity-70'
+                                      : 'bg-amber-50 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 cursor-not-allowed opacity-70'
                                     : selectedLeftFiber
                                     ? isMatchingColor
                                       ? 'bg-yellow-50 dark:bg-yellow-900/30 border-yellow-400 cursor-pointer hover:bg-yellow-100 dark:hover:bg-yellow-900/50 ring-1 ring-yellow-300'
@@ -4313,7 +4544,7 @@ export default function FiberNetwork() {
                                     : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600'
                                 }`}
                                 onClick={() => {
-                                  if (!hasConnection && selectedLeftFiber && leftCableId && rightCableId) {
+                                  if (!hasConnection && !isUsedUpstream && selectedLeftFiber && leftCableId && rightCableId) {
                                     const leftFiber = getColorForFiberNumber(selectedLeftFiber, nodeCables.find((c: any) => c.id === leftCableId)?.fiberCount || 12);
                                     setFiberConnections(prev => [...prev, {
                                       leftCableId,
@@ -4329,6 +4560,7 @@ export default function FiberNetwork() {
                                     setSelectedLeftFiber(null);
                                   }
                                 }}
+                                title={isUsedUpstream ? `Used: ${endpointInfo?.nodeName || 'Unknown'}${endpointInfo?.serviceName ? ` (${endpointInfo.serviceName})` : ''}` : undefined}
                                 data-testid={`fiber-right-${fiberNum}`}
                               >
                                 <div
@@ -4346,7 +4578,17 @@ export default function FiberNetwork() {
                                   )}
                                 </span>
                                 {hasConnection && <CheckCircle className="w-3 h-3 text-green-600" />}
-                                {isMatchingColor && !hasConnection && selectedLeftFiber && (
+                                {isLive && !hasConnection && (
+                                  <span className="text-[9px] px-1 py-0.5 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded font-medium">
+                                    LIVE
+                                  </span>
+                                )}
+                                {isUsedUpstream && !isLive && !hasConnection && (
+                                  <span className="text-[9px] px-1 py-0.5 bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 rounded font-medium">
+                                    USED
+                                  </span>
+                                )}
+                                {isMatchingColor && !hasConnection && !isUsedUpstream && selectedLeftFiber && (
                                   <span className="text-yellow-600 text-[10px]">Match!</span>
                                 )}
                               </div>
