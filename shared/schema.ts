@@ -1784,14 +1784,14 @@ export const aiAgentConfigurations = pgTable("ai_agent_configurations", {
   isEnabled: boolean("is_enabled").default(false).notNull(),
   
   // Knowledge base configuration
+  systemPromptDocumentIds: jsonb("system_prompt_document_ids").default([]).$type<number[]>(), // KB docs to use as system prompt
   knowledgeDocumentIds: jsonb("knowledge_document_ids").default([]).$type<number[]>(), // Which KB docs to use for context
   
   // AI model configuration
   modelConfig: jsonb("model_config").default({
-    model: 'gpt-4',
+    model: 'gpt-4o-mini',
     temperature: 0.7,
-    maxTokens: 500,
-    systemPrompt: 'You are a helpful support agent assistant.'
+    maxTokens: 1000
   }).notNull(),
   
   // Feature-specific settings
@@ -2811,13 +2811,18 @@ export const fiberNodeStatusEnum = pgEnum('fiber_node_status', ['active', 'plann
 export const fiberNetworkEnum = pgEnum('fiber_network', ['CCNet', 'FibreLtd', 'S&MFibre']);
 export const fiberActivityTypeEnum = pgEnum('fiber_activity_type', ['create', 'update', 'delete', 'view', 'work_item_created', 'workflow_completed']);
 
+// Splice Documentation Enums
+export const spliceEnclosureTypeEnum = pgEnum('splice_enclosure_type', ['dome', 'inline', 'rack', 'wall_box']);
+export const cableTypeEnum = pgEnum('cable_type', ['single_mode', 'multi_mode', 'hybrid']);
+export const createdViaEnum = pgEnum('created_via', ['manual', 'workflow_step']);
+
 // Zod schemas for JSONB validation (type-safe workflow definitions)
 export const workflowStepSchema = z.object({
   id: z.string(),
   title: z.string().optional(),
   label: z.string().optional(),
   description: z.string().optional(),
-  type: z.enum(['checklist', 'form', 'photo', 'signature', 'measurement', 'notes', 'checkbox', 'text_input', 'file_upload', 'approval', 'kb_link', 'comment', 'geolocation', 'fiber_network_node', 'splynx_ticket']),
+  type: z.enum(['checklist', 'form', 'photo', 'signature', 'measurement', 'notes', 'checkbox', 'text_input', 'file_upload', 'approval', 'kb_link', 'comment', 'geolocation', 'fiber_network_node', 'splynx_ticket', 'audio_recording', 'splice_documentation']),
   required: z.boolean().default(false),
   order: z.number(),
   config: z.any().optional(),
@@ -3393,6 +3398,39 @@ export const fiberNetworkNodes = pgTable("fiber_network_nodes", {
       lossDb?: number;
       testDate?: string;
     }>;
+    cables?: Array<{
+      id: string;
+      connectedNodeId: number;
+      connectedNodeName?: string;
+      fiberCount: number;
+      cableIdentifier: string;
+      cableType?: string;
+      installDate?: string;
+      direction: 'incoming' | 'outgoing';
+      routeGeometry?: Array<[number, number]>;
+      notes?: string;
+      createdBy: number;
+      createdAt: string;
+    }>;
+    spliceConnections?: Array<{
+      id: string;
+      workItemId?: number;
+      incomingCable: string;
+      incomingFiber: number;
+      incomingBufferTube?: string;
+      outgoingCable: string;
+      outgoingFiber: number;
+      outgoingBufferTube?: string;
+      verificationStatus: 'ai_generated' | 'manual' | 'verified';
+      transcriptionText?: string;
+      audioReference?: string;
+      photoReference?: string;
+      notes?: string;
+      createdBy: number;
+      createdAt: string;
+      verifiedBy?: number;
+      verifiedAt?: string;
+    }>;
     installations?: Array<any>;
     inspections?: Array<any>;
   }>().default({}),
@@ -3465,6 +3503,198 @@ export const fiberNodeTypes = pgTable("fiber_node_types", {
 }, (table) => [
   index("idx_fiber_node_types_org").on(table.organizationId),
   unique("unique_node_type_per_org").on(table.organizationId, table.value),
+]);
+
+// Audio Recordings - Voice memos for splice documentation
+export const audioRecordings = pgTable("audio_recordings", {
+  id: varchar("id", { length: 100 }).primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  workItemId: integer("work_item_id").references(() => workItems.id).notNull(),
+  stepId: varchar("step_id", { length: 100 }),
+  
+  // File metadata
+  filePath: varchar("file_path", { length: 500 }).notNull(),
+  fileName: varchar("file_name", { length: 255 }).notNull(),
+  mimeType: varchar("mime_type", { length: 100 }).notNull(),
+  size: integer("size").notNull(),
+  duration: integer("duration").notNull(),
+  
+  // AI Processing
+  transcription: text("transcription"),
+  extractedData: jsonb("extracted_data").$type<{
+    connections: Array<{
+      incomingCable: string;
+      incomingFiber: number;
+      incomingBufferTube?: string;
+      outgoingCable: string;
+      outgoingFiber: number;
+      outgoingBufferTube?: string;
+      notes?: string;
+    }>;
+  }>(),
+  processingStatus: varchar("processing_status", { length: 20 }).default('pending').notNull(),
+  processingError: text("processing_error"),
+  processedAt: timestamp("processed_at"),
+  
+  // Upload tracking
+  uploadedBy: integer("uploaded_by").references(() => users.id),
+  uploadedAt: timestamp("uploaded_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_audio_org").on(table.organizationId),
+  index("idx_audio_work_item").on(table.workItemId),
+  index("idx_audio_status").on(table.processingStatus),
+]);
+
+// Fiber Splice Trays - Physical splice enclosures at nodes
+export const fiberSpliceTrays = pgTable("fiber_splice_trays", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  nodeId: integer("node_id").references(() => fiberNetworkNodes.id, { onDelete: "cascade" }).notNull(),
+  
+  // Tray details
+  trayNumber: integer("tray_number").notNull(),
+  enclosureType: spliceEnclosureTypeEnum("enclosure_type").default('dome').notNull(),
+  capacity: integer("capacity").default(12).notNull(),
+  installDate: timestamp("install_date"),
+  notes: text("notes"),
+  
+  // Audit
+  createdBy: integer("created_by").references(() => users.id),
+  updatedBy: integer("updated_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_splice_trays_org").on(table.organizationId),
+  index("idx_splice_trays_node").on(table.nodeId),
+  unique("unique_tray_per_node").on(table.nodeId, table.trayNumber),
+]);
+
+// Fiber Connections - Individual fiber-to-fiber splice mappings
+export const fiberConnections = pgTable("fiber_connections", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  trayId: integer("tray_id").references(() => fiberSpliceTrays.id, { onDelete: "cascade" }).notNull(),
+  nodeId: integer("node_id").references(() => fiberNetworkNodes.id, { onDelete: "cascade" }).notNull(),
+  
+  // Cable A (incoming)
+  cableAId: varchar("cable_a_id", { length: 255 }).notNull(),
+  cableAFiberNumber: integer("cable_a_fiber_number").notNull(),
+  cableAFiberColor: varchar("cable_a_fiber_color", { length: 50 }).notNull(),
+  cableABufferTube: integer("cable_a_buffer_tube"),
+  
+  // Cable B (outgoing)
+  cableBId: varchar("cable_b_id", { length: 255 }).notNull(),
+  cableBFiberNumber: integer("cable_b_fiber_number").notNull(),
+  cableBFiberColor: varchar("cable_b_fiber_color", { length: 50 }).notNull(),
+  cableBBufferTube: integer("cable_b_buffer_tube"),
+  
+  // Quality metrics (optional)
+  spliceLossDb: decimal("splice_loss_db", { precision: 5, scale: 2 }),
+  testPassed: boolean("test_passed"),
+  
+  // Integration with work items system
+  workItemId: integer("work_item_id").references(() => workItems.id),
+  createdByUserId: integer("created_by_user_id").references(() => users.id).notNull(),
+  createdVia: createdViaEnum("created_via").default('manual').notNull(),
+  
+  // Soft delete support
+  isDeleted: boolean("is_deleted").default(false).notNull(),
+  deletedAt: timestamp("deleted_at"),
+  deletedByUserId: integer("deleted_by_user_id").references(() => users.id),
+  
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_fiber_conn_org").on(table.organizationId),
+  index("idx_fiber_conn_tray").on(table.trayId),
+  index("idx_fiber_conn_node").on(table.nodeId),
+  index("idx_fiber_conn_work_item").on(table.workItemId),
+  index("idx_fiber_conn_cable_a").on(table.cableAId),
+  index("idx_fiber_conn_cable_b").on(table.cableBId),
+  index("idx_fiber_conn_deleted").on(table.isDeleted),
+]);
+
+// Cable Fiber Definitions - Metadata about each cable's fiber composition
+export const cableFiberDefinitions = pgTable("cable_fiber_definitions", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  cableId: varchar("cable_id", { length: 255 }).notNull(),
+  nodeId: integer("node_id").references(() => fiberNetworkNodes.id, { onDelete: "cascade" }).notNull(),
+  
+  // Fiber composition
+  fiberCount: integer("fiber_count").notNull(),
+  cableType: cableTypeEnum("cable_type").default('single_mode').notNull(),
+  bufferTubeCount: integer("buffer_tube_count"),
+  fibersPerTube: integer("fibers_per_tube"),
+  
+  // Color scheme (TIA-598-C standard)
+  colorScheme: jsonb("color_scheme").$type<Array<{
+    fiberNumber: number;
+    color: string;
+    bufferTube?: number;
+    tracerColor?: string;
+  }>>().default([]),
+  
+  // Audit
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_cable_fiber_org").on(table.organizationId),
+  index("idx_cable_fiber_cable").on(table.cableId),
+  index("idx_cable_fiber_node").on(table.nodeId),
+  unique("unique_cable_per_node").on(table.cableId, table.nodeId),
+]);
+
+// Fiber Terminations - Customer/endpoint connections (single-fiber drops)
+export const fiberTerminations = pgTable("fiber_terminations", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  
+  // The customer/endpoint node where the fiber terminates
+  customerNodeId: integer("customer_node_id").references(() => fiberNetworkNodes.id, { onDelete: "cascade" }).notNull(),
+  
+  // The network node where the cable originates (for reference)
+  sourceNodeId: integer("source_node_id").references(() => fiberNetworkNodes.id, { onDelete: "set null" }),
+  
+  // The cable carrying this fiber
+  cableId: varchar("cable_id", { length: 255 }).notNull(),
+  cableIdentifier: varchar("cable_identifier", { length: 255 }),
+  
+  // Which fiber from the cable
+  fiberNumber: integer("fiber_number").notNull(),
+  fiberColor: varchar("fiber_color", { length: 50 }),
+  fiberColorHex: varchar("fiber_color_hex", { length: 20 }),
+  
+  // Termination details
+  terminationType: varchar("termination_type", { length: 50 }).default('ont'), // ont, wall_outlet, patch_panel, splitter
+  terminationIdentifier: varchar("termination_identifier", { length: 255 }), // ONT serial, outlet ID, etc.
+  
+  // Service linkage
+  serviceId: varchar("service_id", { length: 255 }), // External service reference
+  serviceName: varchar("service_name", { length: 255 }), // Human-readable service name
+  isLive: boolean("is_live").default(false),
+  
+  // Work item integration
+  workItemId: integer("work_item_id").references(() => workItems.id),
+  
+  // Status
+  status: varchar("status", { length: 50 }).default('active'), // active, reserved, decommissioned
+  notes: text("notes"),
+  
+  // Audit
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_fiber_term_org").on(table.organizationId),
+  index("idx_fiber_term_customer").on(table.customerNodeId),
+  index("idx_fiber_term_source").on(table.sourceNodeId),
+  index("idx_fiber_term_cable").on(table.cableId),
+  // Prevent double-allocation: one fiber per cable can only terminate once
+  unique("unique_fiber_per_cable").on(table.organizationId, table.cableId, table.fiberNumber),
 ]);
 
 // ========================================
@@ -3877,6 +4107,53 @@ export type InsertFiberNetworkActivityLog = z.infer<typeof insertFiberNetworkAct
 
 export type FiberNodeType = typeof fiberNodeTypes.$inferSelect;
 export type InsertFiberNodeType = z.infer<typeof insertFiberNodeTypeSchema>;
+
+// Insert schema for Audio Recordings
+export const insertAudioRecordingSchema = createInsertSchema(audioRecordings).omit({
+  createdAt: true,
+});
+
+export type AudioRecording = typeof audioRecordings.$inferSelect;
+export type InsertAudioRecording = z.infer<typeof insertAudioRecordingSchema>;
+
+// Insert schemas for Fiber Splice Documentation
+export const insertFiberSpliceTraySchema = createInsertSchema(fiberSpliceTrays).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertFiberConnectionSchema = createInsertSchema(fiberConnections).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertCableFiberDefinitionSchema = createInsertSchema(cableFiberDefinitions).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Types for Fiber Splice Documentation
+export type FiberSpliceTray = typeof fiberSpliceTrays.$inferSelect;
+export type InsertFiberSpliceTray = z.infer<typeof insertFiberSpliceTraySchema>;
+
+export type FiberConnection = typeof fiberConnections.$inferSelect;
+export type InsertFiberConnection = z.infer<typeof insertFiberConnectionSchema>;
+
+export type CableFiberDefinition = typeof cableFiberDefinitions.$inferSelect;
+export type InsertCableFiberDefinition = z.infer<typeof insertCableFiberDefinitionSchema>;
+
+// Insert schema for Fiber Terminations
+export const insertFiberTerminationSchema = createInsertSchema(fiberTerminations).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export type FiberTermination = typeof fiberTerminations.$inferSelect;
+export type InsertFiberTermination = z.infer<typeof insertFiberTerminationSchema>;
 
 // Insert schemas for Airtable integration
 export const insertAirtableConnectionSchema = createInsertSchema(airtableConnections).omit({

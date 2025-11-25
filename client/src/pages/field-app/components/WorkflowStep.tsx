@@ -3,7 +3,7 @@
  * Handles all step types: checklist, photo, form, notes, etc.
  */
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { fieldDB } from '@/lib/field-app/db';
 import { compressImageSafe } from '@/lib/field-app/imageUtils';
 import { Button } from '@/components/ui/button';
@@ -11,7 +11,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Camera, Check, X, Image as ImageIcon, MapPin, Navigation, Plus, Trash2 } from 'lucide-react';
+import { Camera, Check, X, Image as ImageIcon, MapPin, Navigation, Plus, Trash2, Mic, Square } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 
 interface WorkflowStepProps {
@@ -46,6 +46,113 @@ export default function WorkflowStep({
     address: '',
     notes: '',
   });
+  
+  // Audio recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [audioId, setAudioId] = useState<string | null>(data?.audioId || null);
+  const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
+  const [audioDuration, setAudioDuration] = useState<number>(data?.audioDuration || 0);
+  const [audioSize, setAudioSize] = useState<number>(data?.audioSize || 0);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingStartTimeRef = useRef<number>(0);
+  const durationIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Splice documentation state (for AI-extracted splice data)
+  const [spliceConnections, setSpliceConnections] = useState<any[]>(data?.spliceConnections || []);
+  const [transcriptionText, setTranscriptionText] = useState<string>(data?.transcriptionText || '');
+  const [loadingAudioData, setLoadingAudioData] = useState(false);
+
+  // Sync data prop changes to local state
+  useEffect(() => {
+    if (data) {
+      setStepData(data);
+      setPhotos(data.photos || []);
+      setFiberNodes(data.fiberNodes || []);
+      setAudioId(data.audioId || null);
+      setAudioDuration(data.audioDuration || 0);
+      setAudioSize(data.audioSize || 0);
+      setSpliceConnections(data.spliceConnections || []);
+      setTranscriptionText(data.transcriptionText || '');
+    }
+  }, [data]);
+
+  // Load splice documentation data from audio recording API
+  useEffect(() => {
+    const loadSpliceData = async () => {
+      if (step.type === 'fiber_splice_documentation' && audioId && !loadingAudioData) {
+        setLoadingAudioData(true);
+        try {
+          const response = await fetch(`/api/field-app/audio-recordings/${audioId}`, {
+            headers: {
+              'Authorization': `Bearer ${localStorage.getItem('token')}`
+            }
+          });
+          
+          if (response.ok) {
+            const { audioRecording } = await response.json();
+            
+            // Update state with extracted data
+            if (audioRecording.transcription) {
+              setTranscriptionText(audioRecording.transcription);
+            }
+            if (audioRecording.extractedData?.connections) {
+              setSpliceConnections(audioRecording.extractedData.connections);
+            }
+            
+            // Update step data using functional setState to avoid closure issues
+            setStepData(prev => ({
+              ...prev,
+              transcriptionText: audioRecording.transcription || '',
+              spliceConnections: audioRecording.extractedData?.connections || [],
+              audioReference: audioId,
+              audioId,
+              audioDuration,
+              audioSize
+            }));
+          }
+        } catch (error) {
+          console.error('Failed to load splice documentation data:', error);
+        } finally {
+          setLoadingAudioData(false);
+        }
+      }
+    };
+    
+    loadSpliceData();
+  }, [step.type, audioId, audioDuration, audioSize]);
+
+  // Load audio blob if audioId exists
+  useEffect(() => {
+    const loadAudio = async () => {
+      if (audioId) {
+        const audio = await fieldDB.getAudioRecording(audioId);
+        if (audio && audio.arrayBuffer) {
+          const blob = new Blob([audio.arrayBuffer], { type: audio.mimeType });
+          setAudioBlob(blob);
+          setAudioDuration(audio.duration);
+          setAudioSize(audio.size);
+        }
+      }
+    };
+    loadAudio();
+  }, [audioId]);
+
+  // Cleanup: stop recording and release resources on unmount
+  useEffect(() => {
+    return () => {
+      // Stop any active recording
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        mediaRecorderRef.current.stop();
+        mediaRecorderRef.current.stream?.getTracks().forEach(track => track.stop());
+      }
+      
+      // Clear duration interval
+      if (durationIntervalRef.current) {
+        clearInterval(durationIntervalRef.current);
+      }
+    };
+  }, []);
 
   // Load photo blobs and create object URLs
   useEffect(() => {
@@ -156,6 +263,94 @@ export default function WorkflowStep({
     } finally {
       setCapturing(false);
     }
+  };
+
+  const handleStartRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm'
+      });
+      
+      audioChunksRef.current = [];
+      
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+      
+      mediaRecorder.onstop = async () => {
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        setAudioBlob(blob);
+        
+        // Save to IndexedDB and get ID
+        const id = await fieldDB.saveAudio(
+          workItemId,
+          blob,
+          `audio-${Date.now()}.webm`,
+          audioDuration,
+          step.id
+        );
+        
+        setAudioId(id);
+        setAudioSize(blob.size);
+        
+        const newData = {
+          ...stepData,
+          audioId: id,
+          audioDuration,
+          audioSize: blob.size
+        };
+        setStepData(newData);
+        
+        // Stop all tracks to release microphone
+        stream.getTracks().forEach(track => track.stop());
+        
+        // Clear duration interval
+        if (durationIntervalRef.current) {
+          clearInterval(durationIntervalRef.current);
+          durationIntervalRef.current = null;
+        }
+      };
+      
+      mediaRecorderRef.current = mediaRecorder;
+      recordingStartTimeRef.current = Date.now();
+      setAudioDuration(0);
+      
+      // Update duration every second
+      durationIntervalRef.current = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - recordingStartTimeRef.current) / 1000);
+        setAudioDuration(elapsed);
+      }, 1000);
+      
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (error) {
+      console.error('Failed to start recording:', error);
+      alert('Failed to access microphone. Please check permissions.');
+    }
+  };
+  
+  const handleStopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+  
+  const handleClearAudio = () => {
+    setAudioId(null);
+    setAudioBlob(null);
+    setAudioDuration(0);
+    setAudioSize(0);
+    const newData = {
+      ...stepData,
+      audioId: null,
+      audioDuration: 0,
+      audioSize: 0
+    };
+    setStepData(newData);
   };
 
   const handleComplete = () => {
@@ -304,6 +499,13 @@ export default function WorkflowStep({
 
       case 'fiber_network_node':
         return fiberNodes.length > 0;
+
+      case 'audio_recording':
+        return audioId !== null;
+
+      case 'fiber_splice_documentation':
+        // Step is complete if we have splice connections data (human has reviewed)
+        return spliceConnections && spliceConnections.length > 0;
 
       default:
         return true;
@@ -570,6 +772,215 @@ export default function WorkflowStep({
                     Recapture Location
                   </Button>
                 )}
+              </div>
+            )}
+          </div>
+        );
+
+      case 'audio_recording':
+        const formatDuration = (seconds: number) => {
+          const mins = Math.floor(seconds / 60);
+          const secs = seconds % 60;
+          return `${mins}:${secs.toString().padStart(2, '0')}`;
+        };
+
+        return (
+          <div className="space-y-4">
+            {!audioBlob && !isRecording && (
+              <div className="text-center py-8">
+                <Mic className="h-16 w-16 mx-auto text-zinc-600 mb-4" />
+                <p className="text-sm text-zinc-400 mb-4">
+                  {step.description || 'Record a voice memo'}
+                </p>
+                <Button
+                  onClick={handleStartRecording}
+                  disabled={disabled}
+                  className="bg-red-600 hover:bg-red-700"
+                  data-testid="button-start-recording"
+                >
+                  <Mic className="h-4 w-4 mr-2" />
+                  Start Recording
+                </Button>
+              </div>
+            )}
+
+            {isRecording && (
+              <div className="text-center py-8 bg-red-950/20 border border-red-900/50 rounded-lg">
+                <div className="flex justify-center items-center mb-4">
+                  <div className="h-4 w-4 bg-red-500 rounded-full animate-pulse mr-3"></div>
+                  <span className="text-2xl font-mono text-white">
+                    {formatDuration(audioDuration)}
+                  </span>
+                </div>
+                <p className="text-sm text-zinc-400 mb-4">Recording...</p>
+                <Button
+                  onClick={handleStopRecording}
+                  className="bg-zinc-700 hover:bg-zinc-600"
+                  data-testid="button-stop-recording"
+                >
+                  <Square className="h-4 w-4 mr-2" />
+                  Stop Recording
+                </Button>
+              </div>
+            )}
+
+            {audioBlob && !isRecording && (
+              <div className="space-y-3">
+                <div className="bg-emerald-950/20 border border-emerald-900/50 rounded-lg p-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="h-10 w-10 bg-emerald-900/50 rounded-full flex items-center justify-center">
+                        <Mic className="h-5 w-5 text-emerald-400" />
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium text-white">Voice Memo Recorded</div>
+                        <div className="text-xs text-zinc-400">
+                          Duration: {formatDuration(audioDuration)} • Size: {Math.round(audioSize / 1024)}KB
+                        </div>
+                      </div>
+                    </div>
+                    {!disabled && (
+                      <Button
+                        onClick={handleClearAudio}
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-400 hover:text-red-300 hover:bg-red-950/30"
+                        data-testid="button-clear-audio"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </div>
+                {!disabled && (
+                  <Button
+                    onClick={handleStartRecording}
+                    variant="outline"
+                    className="w-full border-zinc-700 hover:bg-zinc-800"
+                    data-testid="button-re-record"
+                  >
+                    <Mic className="h-4 w-4 mr-2" />
+                    Record Again
+                  </Button>
+                )}
+              </div>
+            )}
+          </div>
+        );
+
+      case 'fiber_splice_documentation':
+        return (
+          <div className="space-y-4">
+            {/* Audio Player Section */}
+            {audioId && (
+              <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="h-10 w-10 bg-blue-900/50 rounded-full flex items-center justify-center">
+                    <Mic className="h-5 w-5 text-blue-400" />
+                  </div>
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-white">Voice Memo</div>
+                    <div className="text-xs text-zinc-400">
+                      {audioDuration > 0 ? `Duration: ${Math.floor(audioDuration / 60)}:${(audioDuration % 60).toString().padStart(2, '0')}` : 'Audio recorded'}
+                    </div>
+                  </div>
+                </div>
+                {audioBlob && (
+                  <audio 
+                    controls 
+                    className="w-full mt-2"
+                    src={URL.createObjectURL(audioBlob)}
+                  />
+                )}
+              </div>
+            )}
+
+            {/* Loading State */}
+            {loadingAudioData && (
+              <div className="flex items-center justify-center py-8">
+                <div className="animate-spin rounded-full h-8 w-8 border-t-2 border-b-2 border-blue-500"></div>
+                <span className="ml-3 text-zinc-400">Processing audio...</span>
+              </div>
+            )}
+
+            {/* Transcription Section */}
+            {transcriptionText && (
+              <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
+                <Label className="text-sm font-medium text-white mb-2 block">Transcription</Label>
+                <div className="text-sm text-zinc-300 whitespace-pre-wrap bg-zinc-800 rounded p-3">
+                  {transcriptionText}
+                </div>
+              </div>
+            )}
+
+            {/* Splice Connections Table */}
+            {spliceConnections && spliceConnections.length > 0 && (
+              <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-4">
+                <Label className="text-sm font-medium text-white mb-3 block">
+                  Splice Connections ({spliceConnections.length})
+                </Label>
+                <div className="space-y-2 max-h-96 overflow-y-auto">
+                  {spliceConnections.map((conn, idx) => (
+                    <div 
+                      key={idx} 
+                      className="bg-zinc-800 border border-zinc-700 rounded-lg p-3 text-sm"
+                    >
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <div className="text-xs text-zinc-500 mb-1">Incoming</div>
+                          <div className="text-white font-medium">
+                            {conn.incomingCable || 'N/A'}
+                          </div>
+                          <div className="text-zinc-400 text-xs mt-1">
+                            Fiber: {conn.incomingFiber || 'N/A'}
+                            {conn.incomingBufferTube && ` • Tube: ${conn.incomingBufferTube}`}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-xs text-zinc-500 mb-1">Outgoing</div>
+                          <div className="text-white font-medium">
+                            {conn.outgoingCable || 'N/A'}
+                          </div>
+                          <div className="text-zinc-400 text-xs mt-1">
+                            Fiber: {conn.outgoingFiber || 'N/A'}
+                            {conn.outgoingBufferTube && ` • Tube: ${conn.outgoingBufferTube}`}
+                          </div>
+                        </div>
+                      </div>
+                      {conn.notes && (
+                        <div className="mt-2 pt-2 border-t border-zinc-700">
+                          <div className="text-xs text-zinc-500">Notes</div>
+                          <div className="text-zinc-300 text-xs mt-1">{conn.notes}</div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* No Data State */}
+            {!loadingAudioData && (!spliceConnections || spliceConnections.length === 0) && !transcriptionText && (
+              <div className="text-center py-8 bg-zinc-900 border border-zinc-700 rounded-lg">
+                <p className="text-sm text-zinc-400">
+                  No splice documentation data available yet.
+                </p>
+                <p className="text-xs text-zinc-500 mt-1">
+                  Audio will be processed automatically after upload.
+                </p>
+              </div>
+            )}
+
+            {/* Human Review Status */}
+            {spliceConnections && spliceConnections.length > 0 && (
+              <div className="bg-emerald-950/20 border border-emerald-900/50 rounded-lg p-3 flex items-start gap-2">
+                <Check className="h-5 w-5 text-emerald-400 flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <div className="font-medium text-emerald-400">Ready for Verification</div>
+                  <div className="text-xs text-zinc-400 mt-1">
+                    Review the extracted connections above. When satisfied, complete this step to save them to the fiber node.
+                  </div>
+                </div>
               </div>
             )}
           </div>

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -6,6 +6,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { Loader2, ExternalLink, Calendar, User, MessageSquare, CheckCircle2 } from 'lucide-react';
@@ -290,7 +291,7 @@ export default function SplynxTicketStep({ workItemId, ticketId, taskId, onSave 
               placeholder="Type your response to the customer..."
               value={response}
               onChange={(e) => setResponse(e.target.value)}
-              rows={3}
+              rows={6}
               className="text-sm"
               data-testid="input-ticket-response"
             />

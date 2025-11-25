@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMap, Polygon, useMapEvents } from 'react-leaflet';
+import { MapContainer, TileLayer, Marker, Popup, useMap, Polygon, Polyline, useMapEvents } from 'react-leaflet';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import { booleanPointInPolygon, point, polygon } from '@turf/turf';
@@ -17,14 +17,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
-import { MapPin, Search, X, FileText, Activity, Plus, Image as ImageIcon, Wrench, Trash2, Upload, Camera, Map, Table as TableIcon, Download, Settings, Eye, EyeOff, GripVertical, Square, CheckCircle, Hand, Pencil } from 'lucide-react';
+import { MapPin, Search, X, FileText, Activity, Plus, Image as ImageIcon, Wrench, Trash2, Upload, Camera, Map, Table as TableIcon, Download, Settings, Eye, EyeOff, GripVertical, Square, CheckCircle, Hand, Pencil, Cable, Link2, Edit, Save, BarChart3, Circle, AlertTriangle } from 'lucide-react';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest, queryClient } from '@/lib/queryClient';
 import { createWorkItem } from '@/lib/workItems.api';
 import { useLocation } from 'wouter';
 import { useAuth } from '@/contexts/AuthContext';
+import { getColorForFiberNumber, FiberInfo } from '@shared/fiberColorStandards';
 
 // Fix Leaflet icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -206,12 +208,32 @@ function MapClickHandler({
   return null;
 }
 
+// Component to handle adding waypoints to cable paths
+function WaypointAdder({
+  enabled,
+  onWaypointAdd
+}: {
+  enabled: boolean;
+  onWaypointAdd: (lat: number, lng: number) => void;
+}) {
+  useMapEvents({
+    click: (e) => {
+      if (enabled) {
+        onWaypointAdd(e.latlng.lat, e.latlng.lng);
+      }
+    },
+  });
+  
+  return null;
+}
+
 export default function FiberNetwork() {
   const { toast } = useToast();
   const { currentUser } = useAuth();
   const [selectedNode, setSelectedNode] = useState<FiberNode | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [viewMode, setViewMode] = useState<'map' | 'table'>('map');
+  const [tableTab, setTableTab] = useState<'nodes' | 'cables'>('nodes'); // Tab selection for table view
   const [photoUploadOpen, setPhotoUploadOpen] = useState(false);
   const [viewPhotoUrl, setViewPhotoUrl] = useState<string | null>(null);
   const [workItemDialogOpen, setWorkItemDialogOpen] = useState(false);
@@ -248,12 +270,13 @@ export default function FiberNetwork() {
   const [selectedNodes, setSelectedNodes] = useState<number[]>([]);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const [bulkStatusValue, setBulkStatusValue] = useState<string>('');
+  const [showNodes, setShowNodes] = useState(true);
+  const [showCables, setShowCables] = useState(true);
 
-  // Selection mode state
-  const [selectionMode, setSelectionMode] = useState<'polygon' | 'click' | null>(null);
+  // Unified map mode state - only one mode can be active at a time
+  const [mapMode, setMapMode] = useState<'idle' | 'addNode' | 'cableRouting' | 'polygonSelect' | 'clickSelect'>('idle');
   
   // Polygon drawing state
-  const [isDrawing, setIsDrawing] = useState(false);
   const [currentPolygon, setCurrentPolygon] = useState<[number, number][]>([]);
   const [selectedPolygon, setSelectedPolygon] = useState<[number, number][]>([]);
 
@@ -272,6 +295,30 @@ export default function FiberNetwork() {
   });
   const [createWorkItemForNewNode, setCreateWorkItemForNewNode] = useState(false);
   const [newNodeTemplate, setNewNodeTemplate] = useState<any>(null);
+
+  // Cable routing state
+  const [cableStartNode, setCableStartNode] = useState<FiberNode | null>(null);
+  const [cableEndNode, setCableEndNode] = useState<FiberNode | null>(null);
+  const [cableDialogOpen, setCableDialogOpen] = useState(false);
+  const [newCableData, setNewCableData] = useState({
+    cableId: '',
+    fiberCount: 24,
+    cableType: 'single_mode',
+    lengthMeters: 0,
+    status: 'planned',
+    notes: '',
+  });
+  const [selectedCable, setSelectedCable] = useState<any>(null);
+  const [cableEditMode, setCableEditMode] = useState(false);
+  const [editingCable, setEditingCable] = useState<any>(null);
+  const [editingCableWaypoints, setEditingCableWaypoints] = useState<Array<[number, number]>>([]);
+  const [originalCableWaypoints, setOriginalCableWaypoints] = useState<Array<[number, number]>>([]);
+  const [addingWaypoint, setAddingWaypoint] = useState(false);
+
+  // Derived states for backward compatibility
+  const cableRoutingMode = mapMode === 'cableRouting';
+  const selectionMode = mapMode === 'polygonSelect' ? 'polygon' : mapMode === 'clickSelect' ? 'click' : null;
+  const isDrawing = mapMode === 'polygonSelect'; // Activate drawing immediately when mode is set
 
   // Fetch all fiber nodes
   const { data: nodesData, isLoading } = useQuery<{ nodes: FiberNode[] }>({
@@ -300,6 +347,14 @@ export default function FiberNetwork() {
   // Fetch workflow templates
   const { data: templates } = useQuery<any[]>({
     queryKey: ['/api/workflows/templates'],
+  });
+
+  // Fetch splice trays for selected node
+  const { data: spliceTraysData, isLoading: spliceTraysLoading } = useQuery<{ trays: any[] }>({
+    queryKey: selectedNode?.id 
+      ? [`/api/fiber-network/nodes/${selectedNode.id}/splice-trays`]
+      : ['disabled-splice-trays'],
+    enabled: !!selectedNode?.id,
   });
 
   // Update node mutation
@@ -369,6 +424,30 @@ export default function FiberNetwork() {
     },
   });
 
+  // Create cable mutation
+  const createCableMutation = useMutation({
+    mutationFn: async (data: { startNodeId: number; endNodeId: number; cableData: typeof newCableData }) => {
+      return apiRequest('/api/fiber-network/cables', {
+        method: 'POST',
+        body: data,
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
+      toast({
+        title: 'Success',
+        description: 'Cable created successfully',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to create cable',
+        variant: 'destructive',
+      });
+    },
+  });
+
   // Create node mutation
   const createNodeMutation = useMutation({
     mutationFn: async (nodeData: typeof newNodeData) => {
@@ -392,12 +471,163 @@ export default function FiberNetwork() {
   const [newNodeTypeName, setNewNodeTypeName] = useState('');
   const [newNodeTypeLabel, setNewNodeTypeLabel] = useState('');
 
+  // Splice tray editor state
+  const [spliceTrayEditorOpen, setSpliceTrayEditorOpen] = useState(false);
+  const [selectedSpliceTray, setSelectedSpliceTray] = useState<any>(null);
+  const [spliceTrayFormData, setSpliceTrayFormData] = useState({
+    trayIdentifier: '',
+    description: '',
+  });
+  const [leftCableId, setLeftCableId] = useState<string | null>(null);
+  const [rightCableId, setRightCableId] = useState<string | null>(null);
+  const [selectedLeftFiber, setSelectedLeftFiber] = useState<number | null>(null);
+  const [fiberConnections, setFiberConnections] = useState<Array<{
+    id?: number;
+    leftCableId: string;
+    leftFiberNumber: number;
+    leftFiberColor: string;
+    leftFiberColorHex: string;
+    rightCableId: string;
+    rightFiberNumber: number;
+    rightFiberColor: string;
+    rightFiberColorHex: string;
+    createdVia: 'manual' | 'workflow_step';
+  }>>([]);
+
   // Fetch node types
   const { data: nodeTypesData } = useQuery<{ nodeTypes: any[] }>({
     queryKey: ['/api/fiber-network/node-types'],
   });
 
   const nodeTypes = nodeTypesData?.nodeTypes || [];
+
+  // Fetch cables for selected node when splice tray editor is open
+  const { data: nodeCablesData, isLoading: cablesLoading } = useQuery<{ cables: any[] }>({
+    queryKey: ['/api/fiber-network/nodes', selectedNode?.id, 'cables'],
+    queryFn: async () => {
+      const response = await fetch(`/api/fiber-network/nodes/${selectedNode?.id}/cables`, {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Failed to fetch cables');
+      return response.json();
+    },
+    enabled: !!selectedNode?.id && spliceTrayEditorOpen,
+  });
+
+  const nodeCables = nodeCablesData?.cables || [];
+
+  // Fetch fiber status for left cable when selected
+  const { data: leftCableFiberStatus } = useQuery<{
+    cableId: string;
+    cableIdentifier: string;
+    fiberCount: number;
+    summary: { totalFibers: number; available: number; used: number; live: number };
+    fibers: Array<{
+      fiberNumber: number;
+      color: string;
+      colorHex: string;
+      status: 'available' | 'used' | 'live' | 'reserved';
+      usageType?: 'splice' | 'termination' | 'reserved';
+      endpoint?: {
+        type: 'node' | 'customer';
+        nodeName?: string;
+        trayIdentifier?: string;
+        serviceName?: string;
+      };
+    }>;
+  }>({
+    queryKey: ['/api/fiber-network/cables', leftCableId, 'fiber-status'],
+    queryFn: async () => {
+      const response = await fetch(`/api/fiber-network/cables/${leftCableId}/fiber-status?nodeId=${selectedNode?.id}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Failed to fetch fiber status');
+      return response.json();
+    },
+    enabled: !!leftCableId && spliceTrayEditorOpen,
+  });
+
+  // Fetch fiber status for right cable when selected
+  const { data: rightCableFiberStatus } = useQuery<{
+    cableId: string;
+    cableIdentifier: string;
+    fiberCount: number;
+    summary: { totalFibers: number; available: number; used: number; live: number };
+    fibers: Array<{
+      fiberNumber: number;
+      color: string;
+      colorHex: string;
+      status: 'available' | 'used' | 'live' | 'reserved';
+      usageType?: 'splice' | 'termination' | 'reserved';
+      endpoint?: {
+        type: 'node' | 'customer';
+        nodeName?: string;
+        trayIdentifier?: string;
+        serviceName?: string;
+      };
+    }>;
+  }>({
+    queryKey: ['/api/fiber-network/cables', rightCableId, 'fiber-status'],
+    queryFn: async () => {
+      const response = await fetch(`/api/fiber-network/cables/${rightCableId}/fiber-status?nodeId=${selectedNode?.id}`, {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Failed to fetch fiber status');
+      return response.json();
+    },
+    enabled: !!rightCableId && spliceTrayEditorOpen,
+  });
+
+  // Fetch fiber status for all cables at the selected node (for Fiber Status tab)
+  const { data: nodeFiberStatus, isLoading: nodeFiberStatusLoading } = useQuery<{
+    nodeId: number;
+    nodeName: string;
+    cables: Array<{
+      cableId: string;
+      cableIdentifier: string;
+      fiberCount: number;
+      connectedNodeId: number;
+      connectedNodeName: string;
+      direction: 'incoming' | 'outgoing';
+      summary: {
+        totalFibers: number;
+        used: number;
+        live: number;
+        available: number;
+        utilizationPercent: number;
+      };
+    }>;
+  }>({
+    queryKey: ['/api/fiber-network/nodes', selectedNode?.id, 'fiber-status'],
+    queryFn: async () => {
+      const response = await fetch(`/api/fiber-network/nodes/${selectedNode?.id}/fiber-status`, {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Failed to fetch node fiber status');
+      return response.json();
+    },
+    enabled: !!selectedNode?.id,
+  });
+
+  // Fetch cable utilization for table view (batch endpoint)
+  const { data: cableUtilization } = useQuery<{
+    utilization: Record<string, {
+      used: number;
+      live: number;
+      spliced: number;
+      available: number;
+      utilizationPercent: number;
+    }>;
+  }>({
+    queryKey: ['/api/fiber-network/cables/utilization'],
+    queryFn: async () => {
+      const response = await fetch('/api/fiber-network/cables/utilization', {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Failed to fetch cable utilization');
+      return response.json();
+    },
+  });
 
   // Create node type mutation
   const createNodeTypeMutation = useMutation({
@@ -448,7 +678,134 @@ export default function FiberNetwork() {
     },
   });
 
+  // Create splice tray mutation
+  const createSpliceTrayMutation = useMutation({
+    mutationFn: async (data: {
+      nodeId: number;
+      trayIdentifier: string;
+      description?: string;
+      connections: Array<{
+        leftCableId: string;
+        leftFiberNumber: number;
+        leftFiberColor: string;
+        leftFiberColorHex: string;
+        rightCableId: string;
+        rightFiberNumber: number;
+        rightFiberColor: string;
+        rightFiberColorHex: string;
+        createdVia: 'manual' | 'workflow_step';
+      }>;
+    }) => {
+      console.log('[SPLICE UI] Creating tray with data:', data);
+      const result = await apiRequest(`/api/fiber-network/nodes/${data.nodeId}/splice-trays`, {
+        method: 'POST',
+        body: data,
+      });
+      console.log('[SPLICE UI] API response:', result);
+      return result;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
+      queryClient.invalidateQueries({ queryKey: [`/api/fiber-network/nodes/${variables.nodeId}/splice-trays`] });
+      setSpliceTrayEditorOpen(false);
+      setSelectedSpliceTray(null);
+      setSpliceTrayFormData({ trayIdentifier: '', description: '' });
+      setFiberConnections([]);
+      setLeftCableId(null);
+      setRightCableId(null);
+      setSelectedLeftFiber(null);
+      toast({
+        title: 'Success',
+        description: 'Splice tray created successfully',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to create splice tray',
+        variant: 'destructive',
+      });
+    },
+  });
+
   const nodes = nodesData?.nodes || [];
+  
+  // Extract all cables from nodes (for cable table view)
+  const allCables = (() => {
+    const renderedCables = new Set<string>();
+    const cables: any[] = [];
+    
+    nodes.forEach((node) => {
+      const nodeCables = node.fiberDetails?.cables || [];
+      nodeCables.forEach((cable: any) => {
+        // Only include each cable once (check both directions)
+        const cableKey = [node.id, cable.connectedNodeId].sort().join('-');
+        if (!renderedCables.has(cableKey) && cable.direction === 'outgoing') {
+          renderedCables.add(cableKey);
+          cables.push({
+            ...cable,
+            startNodeId: node.id,
+            startNodeName: node.name,
+            endNodeId: cable.connectedNodeId,
+            endNodeName: cable.connectedNodeName,
+          });
+        }
+      });
+    });
+    
+    return cables;
+  })();
+  
+  // Mode management helpers - ensures clean transitions between modes
+  const enterAddNodeMode = () => {
+    setMapMode('addNode');
+    // Clear conflicting state
+    setCableStartNode(null);
+    setCableEndNode(null);
+    setSelectedNodes([]);
+    setSelectedPolygon([]);
+    setCurrentPolygon([]);
+    toast({
+      title: 'Add Node Mode',
+      description: 'Click on the map to place a new node',
+    });
+  };
+
+  const enterCableRoutingMode = () => {
+    setMapMode('cableRouting');
+    // Clear conflicting state
+    setSelectedNodes([]);
+    setSelectedPolygon([]);
+    setCurrentPolygon([]);
+    toast({
+      title: 'Cable Routing Mode',
+      description: 'Click two nodes to create a cable connection',
+    });
+  };
+
+  const enterPolygonSelectMode = () => {
+    setMapMode('polygonSelect');
+    // Clear conflicting state
+    setCableStartNode(null);
+    setCableEndNode(null);
+  };
+
+  const enterClickSelectMode = () => {
+    setMapMode('clickSelect');
+    // Clear conflicting state
+    setCableStartNode(null);
+    setCableEndNode(null);
+  };
+
+  const exitMode = () => {
+    setMapMode('idle');
+    // Clear all mode-related state
+    setCableStartNode(null);
+    setCableEndNode(null);
+    setSelectedNodes([]);
+    setSelectedPolygon([]);
+    setCurrentPolygon([]);
+  };
   
   // Check if filters are active
   const hasActiveFilters = !!(selectedNetwork || selectedStatus || selectedType || workItemFilter !== 'all');
@@ -779,42 +1136,18 @@ export default function FiberNetwork() {
     }
   };
 
-  // Selection mode functions
-  const startPolygonMode = () => {
-    setSelectionMode('polygon');
-    setIsDrawing(true);
+  // Polygon drawing functions - updated to use new mode system
+  const startDrawing = () => {
+    setMapMode('polygonSelect');
     setCurrentPolygon([]);
     setSelectedPolygon([]);
     setSelectedNodes([]);
+    setCableStartNode(null);
+    setCableEndNode(null);
     toast({
       title: "Polygon Mode",
       description: "Click on the map to create polygon points. Click finish when done.",
     });
-  };
-
-  const startClickMode = () => {
-    setSelectionMode('click');
-    setIsDrawing(false);
-    setCurrentPolygon([]);
-    setSelectedPolygon([]);
-    setSelectedNodes([]);
-    toast({
-      title: "Click Selection Mode",
-      description: "Click on markers to select/deselect chambers for bulk operations.",
-    });
-  };
-
-  const clearSelectionMode = () => {
-    setSelectionMode(null);
-    setSelectedPolygon([]);
-    setCurrentPolygon([]);
-    setIsDrawing(false);
-    setSelectedNodes([]);
-  };
-
-  // Polygon drawing functions
-  const startDrawing = () => {
-    startPolygonMode();
   };
 
   const addPolygonPoint = (point: [number, number]) => {
@@ -842,7 +1175,7 @@ export default function FiberNetwork() {
     }
 
     setSelectedPolygon(closedPolygon);
-    setIsDrawing(false);
+    setCurrentPolygon([]); // Clear drawing polygon
 
     // Find nodes within the polygon using Turf.js
     // Note: Uses filteredNodes to only select from currently visible/filtered chambers
@@ -866,11 +1199,43 @@ export default function FiberNetwork() {
   };
 
   const clearPolygon = () => {
-    clearSelectionMode();
+    exitMode();
   };
 
   // Click selection handler for markers
   const handleMarkerClick = (nodeId: number) => {
+    // Handle cable routing mode clicks
+    if (cableRoutingMode) {
+      const node = nodes.find(n => n.id === nodeId);
+      if (!node) return;
+      
+      if (!cableStartNode) {
+        // First click - select start node
+        setCableStartNode(node);
+        toast({
+          title: 'Start node selected',
+          description: `Now click on the end node to create cable from ${node.name}`,
+        });
+      } else if (cableStartNode.id === nodeId) {
+        // Clicked same node - deselect
+        setCableStartNode(null);
+        toast({
+          title: 'Selection cleared',
+          description: 'Click a node to start cable routing',
+        });
+      } else {
+        // Second click - select end node and open dialog
+        setCableEndNode(node);
+        setCableDialogOpen(true);
+        // Auto-generate cable ID
+        setNewCableData(prev => ({
+          ...prev,
+          cableId: `CBL-${cableStartNode.id}-${nodeId}`,
+        }));
+      }
+      return;
+    }
+    
     if (selectionMode !== 'click') return;
     
     setSelectedNodes(prev => {
@@ -1491,11 +1856,271 @@ export default function FiberNetwork() {
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
             
-            {/* Map click handler for adding nodes (disabled during selection modes) */}
+            {/* Map click handler for adding nodes (only enabled in add node mode) */}
             <MapClickHandler 
               onMapClick={handleMapClick} 
-              disabled={!!selectionMode || isDrawing}
+              disabled={mapMode !== 'addNode'}
             />
+            
+            {/* Waypoint adder for cable path editing */}
+            <WaypointAdder
+              enabled={cableEditMode && addingWaypoint}
+              onWaypointAdd={(lat, lng) => {
+                // Add the waypoint to the array at the end (before the last point which is the end node)
+                const newWaypoints = [...editingCableWaypoints];
+                // Insert before the last waypoint (which is the end node)
+                newWaypoints.splice(newWaypoints.length - 1, 0, [lat, lng]);
+                setEditingCableWaypoints(newWaypoints);
+                setAddingWaypoint(false); // Exit add waypoint mode after adding one
+                toast({
+                  title: 'Waypoint Added',
+                  description: 'A new waypoint has been added to the cable path. Drag it to adjust.',
+                });
+              }}
+            />
+            
+            {/* Cable Polylines */}
+            {showCables && (() => {
+              // Collect all cables from nodes (avoid duplicates by tracking cable IDs)
+              const renderedCables = new Set<string>();
+              const cables: any[] = [];
+              
+              nodes.forEach((node) => {
+                const nodeCables = node.fiberDetails?.cables || [];
+                nodeCables.forEach((cable: any) => {
+                  // Only render each cable once (check both directions)
+                  const cableKey = [node.id, cable.connectedNodeId].sort().join('-');
+                  if (!renderedCables.has(cableKey) && cable.direction === 'outgoing') {
+                    renderedCables.add(cableKey);
+                    cables.push({
+                      ...cable,
+                      startNodeId: node.id,
+                      startNodeName: node.name
+                    });
+                  }
+                });
+              });
+              
+              // Color coding function
+              const getCableColor = (status: string) => {
+                switch (status) {
+                  case 'active': return '#10B981'; // green
+                  case 'planned': return '#3B82F6'; // blue
+                  case 'under_construction': return '#F59E0B'; // orange
+                  case 'decommissioned': return '#6B7280'; // gray
+                  default: return '#3B82F6';
+                }
+              };
+              
+              return cables.map((cable) => (
+                <Polyline
+                  key={`cable-${cable.id}`}
+                  positions={cable.routeGeometry || []}
+                  pathOptions={{
+                    color: getCableColor(cable.status),
+                    weight: 5,
+                    opacity: 0.8,
+                  }}
+                  eventHandlers={{
+                    click: () => {
+                      if (!cableRoutingMode && !selectionMode) {
+                        // Open cable detail sheet
+                        setSelectedCable(cable);
+                        toast({
+                          title: `Cable: ${cable.cableIdentifier}`,
+                          description: `${cable.startNodeName} → ${cable.connectedNodeName} (${cable.fiberCount} fibers)`,
+                        });
+                      }
+                    },
+                  }}
+                />
+              ));
+            })()}
+            
+            {/* Cable edit mode - draggable waypoints */}
+            {cableEditMode && editingCable && editingCableWaypoints.length > 0 && (
+              <>
+                {/* Render the cable being edited */}
+                <Polyline
+                  positions={editingCableWaypoints}
+                  pathOptions={{
+                    color: '#F59E0B',
+                    weight: 5,
+                    opacity: 0.8,
+                    dashArray: '10, 5',
+                  }}
+                />
+                
+                {/* Draggable waypoint markers */}
+                {editingCableWaypoints.map((waypoint, index) => {
+                  const isFirstOrLast = index === 0 || index === editingCableWaypoints.length - 1;
+                  return (
+                    <Marker
+                      key={`waypoint-${index}`}
+                      position={waypoint}
+                      draggable={true}
+                      eventHandlers={{
+                        dragend: (e) => {
+                          const marker = e.target;
+                          const position = marker.getLatLng();
+                          const newWaypoints = [...editingCableWaypoints];
+                          newWaypoints[index] = [position.lat, position.lng];
+                          setEditingCableWaypoints(newWaypoints);
+                        },
+                      }}
+                      icon={L.divIcon({
+                        className: 'custom-waypoint-icon',
+                        html: `<div style="
+                          width: 12px;
+                          height: 12px;
+                          border-radius: 50%;
+                          background: #F59E0B;
+                          border: 2px solid white;
+                          cursor: move;
+                          box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+                        "></div>`,
+                        iconSize: [12, 12],
+                        iconAnchor: [6, 6],
+                      })}
+                    >
+                      {!isFirstOrLast && (
+                        <Popup>
+                          <div className="p-2">
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => {
+                                const newWaypoints = [...editingCableWaypoints];
+                                newWaypoints.splice(index, 1);
+                                setEditingCableWaypoints(newWaypoints);
+                                toast({
+                                  title: 'Waypoint Removed',
+                                  description: 'The waypoint has been deleted from the cable path.',
+                                });
+                              }}
+                              data-testid={`button-delete-waypoint-${index}`}
+                            >
+                              <Trash2 className="w-4 h-4 mr-2" />
+                              Delete Waypoint
+                            </Button>
+                          </div>
+                        </Popup>
+                      )}
+                    </Marker>
+                  );
+                })}
+              </>
+            )}
+            
+            {/* Cable edit mode - Save/Cancel buttons */}
+            {cableEditMode && editingCable && (
+              <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1000] bg-white p-4 rounded-lg shadow-lg">
+                <div className="flex items-center gap-2 mb-3">
+                  <Cable className="w-4 h-4" />
+                  <span className="font-semibold">Editing: {editingCable.cableIdentifier}</span>
+                </div>
+                {addingWaypoint && (
+                  <div className="mb-3 text-sm text-blue-600 bg-blue-50 p-2 rounded">
+                    Click on the map to add a waypoint
+                  </div>
+                )}
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    variant={addingWaypoint ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setAddingWaypoint(!addingWaypoint);
+                      if (!addingWaypoint) {
+                        toast({
+                          title: 'Add Waypoint Mode',
+                          description: 'Click on the map to add a waypoint to the cable path.',
+                        });
+                      }
+                    }}
+                    data-testid="button-add-waypoint"
+                  >
+                    <Plus className="w-4 h-4 mr-2" />
+                    {addingWaypoint ? 'Adding...' : 'Add Waypoint'}
+                  </Button>
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => {
+                      // Save the cable path
+                      if (!editingCable?.startNodeId) {
+                        toast({
+                          title: 'Error',
+                          description: 'Missing node information. Cannot save cable path.',
+                          variant: 'destructive',
+                        });
+                        return;
+                      }
+                      
+                      apiRequest(`/api/fiber-network/cables/${editingCable.id}/route`, {
+                        method: 'PATCH',
+                        body: {
+                          nodeId: editingCable.startNodeId,
+                          waypoints: editingCableWaypoints,
+                        },
+                      }).then(() => {
+                        // Clear edit state
+                        setCableEditMode(false);
+                        setEditingCable(null);
+                        setEditingCableWaypoints([]);
+                        setOriginalCableWaypoints([]);
+                        setAddingWaypoint(false);
+                        // Refresh data
+                        queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
+                        toast({
+                          title: 'Cable Path Updated',
+                          description: 'The cable route has been saved successfully.',
+                        });
+                      }).catch((error) => {
+                        console.error('Failed to update cable path:', error);
+                        toast({
+                          title: 'Error',
+                          description: error.message || 'Failed to update cable path.',
+                          variant: 'destructive',
+                        });
+                      });
+                    }}
+                    data-testid="button-save-cable-path"
+                  >
+                    <Save className="w-4 h-4 mr-2" />
+                    Save
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      // Restore original state
+                      setCableEditMode(false);
+                      setEditingCable(null);
+                      setEditingCableWaypoints([]);
+                      setOriginalCableWaypoints([]);
+                      setAddingWaypoint(false);
+                      // Refresh data to show original cable path
+                      queryClient.invalidateQueries({ queryKey: ['/api/fiber-network/nodes'] });
+                      toast({
+                        title: 'Edit Cancelled',
+                        description: 'Cable path changes have been discarded.',
+                      });
+                    }}
+                    data-testid="button-cancel-cable-edit"
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+            
+            {/* Highlight cable being created */}
+            {cableRoutingMode && cableStartNode && !cableDialogOpen && (
+              <div className="absolute top-4 left-1/2 transform -translate-x-1/2 z-[1000] bg-blue-600 text-white px-4 py-2 rounded-lg shadow-lg">
+                <Cable className="w-4 h-4 inline mr-2" />
+                From: {cableStartNode.name} - Click end node
+              </div>
+            )}
             
             {filteredNodes.length === 0 && nodes.length > 0 && (
               <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 z-[1000] bg-white p-4 rounded-lg shadow-lg text-center">
@@ -1510,8 +2135,9 @@ export default function FiberNetwork() {
               }
               return null;
             })()}
-            {filteredNodes.map((node) => {
+            {showNodes && filteredNodes.map((node) => {
               const isSelected = selectedNodes.includes(node.id);
+              const isCableStartNode = cableStartNode?.id === node.id;
               
               return (
                 <Marker
@@ -1520,14 +2146,17 @@ export default function FiberNetwork() {
                   icon={getMarkerIcon(node.nodeType)}
                   eventHandlers={{
                     click: () => {
-                      if (selectionMode === 'click') {
+                      if (selectionMode === 'click' || cableRoutingMode) {
                         handleMarkerClick(node.id);
                       } else {
                         setSelectedNode(node);
                       }
                     },
                   }}
-                  opacity={selectionMode === 'click' && !isSelected ? 0.5 : 1}
+                  opacity={
+                    isCableStartNode ? 1 :
+                    (selectionMode === 'click' || cableRoutingMode) && !isSelected ? 0.5 : 1
+                  }
                 >
                 <Popup>
                   <div className="p-2">
@@ -1709,6 +2338,112 @@ export default function FiberNetwork() {
                   </div>
                 )}
 
+                {/* Visibility Controls */}
+                <div className="space-y-1 pt-2 border-t mt-2">
+                  <Label className="text-[10px] font-medium">Visibility</Label>
+                  
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-[11px] text-gray-700">Show Nodes</span>
+                    <Switch
+                      checked={showNodes}
+                      onCheckedChange={setShowNodes}
+                      data-testid="switch-show-nodes"
+                    />
+                  </div>
+                  
+                  <div className="flex items-center justify-between py-1">
+                    <span className="text-[11px] text-gray-700">Show Cables</span>
+                    <Switch
+                      checked={showCables}
+                      onCheckedChange={setShowCables}
+                      data-testid="switch-show-cables"
+                    />
+                  </div>
+                  
+                  {/* Quick preset buttons */}
+                  <div className="flex gap-1 pt-1">
+                    <Button 
+                      onClick={() => {
+                        setShowNodes(false);
+                        setShowCables(true);
+                      }} 
+                      variant="outline"
+                      className="flex-1 h-6 text-[10px] px-1"
+                      data-testid="button-cables-only"
+                    >
+                      Cables Only
+                    </Button>
+                    <Button 
+                      onClick={() => {
+                        setShowNodes(true);
+                        setShowCables(true);
+                      }} 
+                      variant="outline"
+                      className="flex-1 h-6 text-[10px] px-1"
+                      data-testid="button-show-all"
+                    >
+                      Show All
+                    </Button>
+                  </div>
+                </div>
+
+                {/* Map Tools */}
+                {filteredNodes.length > 0 && (
+                  <div className="space-y-1 pt-2 border-t mt-2">
+                    <Label className="text-[10px] font-medium">Map Tools</Label>
+                    
+                    <Button 
+                      onClick={() => {
+                        if (mapMode === 'addNode') {
+                          // Turn off add node mode
+                          exitMode();
+                        } else {
+                          // Turn on add node mode
+                          enterAddNodeMode();
+                        }
+                      }} 
+                      variant={mapMode === 'addNode' ? 'default' : 'outline'}
+                      className="w-full h-8 text-[11px] px-2"
+                      data-testid="button-add-node-mode"
+                    >
+                      <Plus className="w-3 h-3 mr-1" />
+                      {mapMode === 'addNode' ? 'Add Node Active' : 'Add Node'}
+                    </Button>
+                    
+                    <Button 
+                      onClick={() => {
+                        if (cableRoutingMode) {
+                          // Turn off cable routing mode
+                          exitMode();
+                        } else {
+                          // Turn on cable routing mode
+                          enterCableRoutingMode();
+                        }
+                      }} 
+                      variant={cableRoutingMode ? 'default' : 'outline'}
+                      className="w-full h-8 text-[11px] px-2"
+                      data-testid="button-cable-routing-mode"
+                    >
+                      <Cable className="w-3 h-3 mr-1" />
+                      {cableRoutingMode ? 'Cable Mode Active' : 'Cable Routing'}
+                    </Button>
+                    
+                    {mapMode === 'addNode' && (
+                      <div className="text-[10px] text-gray-600 p-2 bg-green-50 dark:bg-green-900/20 rounded">
+                        Click on the map to place a new node
+                      </div>
+                    )}
+                    
+                    {cableRoutingMode && cableStartNode && (
+                      <div className="text-[10px] text-gray-600 p-2 bg-blue-50 dark:bg-blue-900/20 rounded">
+                        Start: {cableStartNode.name}
+                        <br />
+                        Click end node...
+                      </div>
+                    )}
+                  </div>
+                )}
+
                 {/* Selection Tools */}
                 {filteredNodes.length > 0 && (
                   <div className="space-y-1 pt-2 border-t mt-2">
@@ -1718,7 +2453,7 @@ export default function FiberNetwork() {
                     {!isDrawing && selectedPolygon.length === 0 && (
                       <div className="flex gap-1">
                         <Button 
-                          onClick={startPolygonMode} 
+                          onClick={startDrawing} 
                           variant={selectionMode === 'polygon' ? 'default' : 'outline'}
                           className="flex-1 h-8 text-[11px] px-2"
                           data-testid="button-polygon-mode"
@@ -1727,7 +2462,7 @@ export default function FiberNetwork() {
                           Draw
                         </Button>
                         <Button 
-                          onClick={startClickMode} 
+                          onClick={enterClickSelectMode} 
                           variant={selectionMode === 'click' ? 'default' : 'outline'}
                           className="flex-1 h-8 text-[11px] px-2"
                           data-testid="button-click-mode"
@@ -1763,7 +2498,7 @@ export default function FiberNetwork() {
 
                     {(selectedPolygon.length > 0 || (selectionMode === 'click' && selectedNodes.length > 0)) && !isDrawing && (
                       <Button 
-                        onClick={clearSelectionMode} 
+                        onClick={exitMode} 
                         variant="outline" 
                         className="w-full h-7 text-[11px] px-2"
                         data-testid="button-clear-selection-mode"
@@ -1854,6 +2589,13 @@ export default function FiberNetwork() {
             </div>
           )}
           <div className="flex-1 overflow-auto">
+            <Tabs value={tableTab} onValueChange={(value) => setTableTab(value as 'nodes' | 'cables')} className="h-full flex flex-col">
+              <TabsList className="mx-4 mt-2">
+                <TabsTrigger value="nodes" data-testid="tab-nodes">Nodes</TabsTrigger>
+                <TabsTrigger value="cables" data-testid="tab-cables">Cables ({allCables.length})</TabsTrigger>
+              </TabsList>
+              
+              <TabsContent value="nodes" className="flex-1 overflow-auto m-0 p-0">
             <Table>
             <TableHeader>
               <TableRow>
@@ -1998,6 +2740,95 @@ export default function FiberNetwork() {
               )}
             </TableBody>
           </Table>
+              </TabsContent>
+              
+              <TabsContent value="cables" className="flex-1 overflow-auto m-0 p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Cable ID</TableHead>
+                      <TableHead>Route</TableHead>
+                      <TableHead>Fibers</TableHead>
+                      <TableHead>Utilization</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="w-[100px]">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {allCables.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center py-8 text-gray-500">
+                          No cables found
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      allCables.map((cable) => {
+                        const util = cableUtilization?.utilization?.[cable.id];
+                        const utilizationPercent = util?.utilizationPercent ?? 0;
+                        return (
+                        <TableRow 
+                          key={cable.id}
+                          className="hover:bg-gray-50"
+                          data-testid={`cable-row-${cable.id}`}
+                        >
+                          <TableCell className="font-medium">{cable.cableIdentifier}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-1 text-xs">
+                              <span>{cable.startNodeName}</span>
+                              <span className="text-gray-400">→</span>
+                              <span>{cable.endNodeName}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell>{cable.fiberCount}</TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2 min-w-[100px]">
+                              <div className="flex-1 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                                <div 
+                                  className={`h-full transition-all ${
+                                    utilizationPercent > 80 
+                                      ? 'bg-red-500' 
+                                      : utilizationPercent > 50 
+                                      ? 'bg-amber-500' 
+                                      : 'bg-green-500'
+                                  }`}
+                                  style={{ width: `${utilizationPercent}%` }}
+                                  title={`${util?.used || 0} used (${util?.spliced || 0} spliced), ${util?.live || 0} live, ${util?.available || cable.fiberCount} available`}
+                                />
+                              </div>
+                              <span className="text-xs text-gray-500 w-8">{utilizationPercent}%</span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="capitalize text-xs">{cable.cableType?.replace('_', ' ')}</TableCell>
+                          <TableCell>
+                            <Badge variant={cable.status === 'active' ? 'default' : 'secondary'} className="text-xs">
+                              {cable.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => {
+                                // Navigate to map and highlight cable
+                                setViewMode('map');
+                                toast({
+                                  title: 'Cable Selected',
+                                  description: `${cable.cableIdentifier}: ${cable.startNodeName} → ${cable.endNodeName}`,
+                                });
+                              }}
+                              data-testid={`button-view-cable-${cable.id}`}
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      );})
+                    )}
+                  </TableBody>
+                </Table>
+              </TabsContent>
+            </Tabs>
           </div>
         </div>
       )}
@@ -2021,21 +2852,29 @@ export default function FiberNetwork() {
               </SheetHeader>
 
               <Tabs defaultValue="details" className="mt-6">
-                <TabsList className="grid w-full grid-cols-4">
+                <TabsList className="grid w-full grid-cols-6">
                   <TabsTrigger value="details" data-testid="tab-details">
-                    <FileText className="w-4 h-4 mr-2" />
+                    <FileText className="w-4 h-4 mr-1" />
                     Details
                   </TabsTrigger>
+                  <TabsTrigger value="fiber-status" data-testid="tab-fiber-status">
+                    <BarChart3 className="w-4 h-4 mr-1" />
+                    Fibers
+                  </TabsTrigger>
+                  <TabsTrigger value="splice-trays" data-testid="tab-splice-trays">
+                    <Cable className="w-4 h-4 mr-1" />
+                    Splices
+                  </TabsTrigger>
                   <TabsTrigger value="photos" data-testid="tab-photos">
-                    <ImageIcon className="w-4 h-4 mr-2" />
+                    <ImageIcon className="w-4 h-4 mr-1" />
                     Photos
                   </TabsTrigger>
                   <TabsTrigger value="work-items" data-testid="tab-work-items">
-                    <Wrench className="w-4 h-4 mr-2" />
-                    Work Items
+                    <Wrench className="w-4 h-4 mr-1" />
+                    Tasks
                   </TabsTrigger>
                   <TabsTrigger value="activity" data-testid="tab-activity">
-                    <Activity className="w-4 h-4 mr-2" />
+                    <Activity className="w-4 h-4 mr-1" />
                     Activity
                   </TabsTrigger>
                 </TabsList>
@@ -2148,6 +2987,209 @@ export default function FiberNetwork() {
                     <Wrench className="w-4 h-4 mr-2" />
                     Create Work Item
                   </Button>
+                </TabsContent>
+
+                <TabsContent value="fiber-status" className="space-y-4">
+                  <div className="space-y-4">
+                    <h3 className="text-sm font-medium">Cable Fiber Utilization</h3>
+                    
+                    {nodeFiberStatusLoading ? (
+                      <div className="text-center py-8 text-sm text-gray-500">
+                        Loading fiber status...
+                      </div>
+                    ) : nodeFiberStatus?.cables && nodeFiberStatus.cables.length > 0 ? (
+                      <div className="space-y-4">
+                        {nodeFiberStatus.cables.map((cable: any) => (
+                          <div 
+                            key={cable.cableId} 
+                            className="p-4 border rounded-lg bg-gray-50 dark:bg-gray-900"
+                          >
+                            <div className="flex justify-between items-start mb-3">
+                              <div>
+                                <div className="font-medium text-sm">{cable.cableIdentifier}</div>
+                                <div className="text-xs text-gray-500">
+                                  → {cable.connectedNodeName}
+                                </div>
+                              </div>
+                              <div className="text-right">
+                                <div className="text-lg font-bold">
+                                  {cable.summary.utilizationPercent}%
+                                </div>
+                                <div className="text-xs text-gray-500">utilization</div>
+                              </div>
+                            </div>
+                            
+                            {/* Utilization Bar */}
+                            <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden mb-3">
+                              <div 
+                                className={`h-full transition-all ${
+                                  cable.summary.utilizationPercent > 80 
+                                    ? 'bg-red-500' 
+                                    : cable.summary.utilizationPercent > 50 
+                                    ? 'bg-amber-500' 
+                                    : 'bg-green-500'
+                                }`}
+                                style={{ width: `${cable.summary.utilizationPercent}%` }}
+                              />
+                            </div>
+                            
+                            {/* Stats */}
+                            <div className="grid grid-cols-4 gap-2 text-xs">
+                              <div className="text-center p-2 bg-white dark:bg-gray-800 rounded">
+                                <div className="font-bold text-lg">{cable.summary.totalFibers}</div>
+                                <div className="text-gray-500">Total</div>
+                              </div>
+                              <div className="text-center p-2 bg-green-50 dark:bg-green-900/30 rounded">
+                                <div className="font-bold text-lg text-green-600">{cable.summary.available}</div>
+                                <div className="text-gray-500">Available</div>
+                              </div>
+                              <div className="text-center p-2 bg-amber-50 dark:bg-amber-900/30 rounded">
+                                <div className="font-bold text-lg text-amber-600">{cable.summary.used}</div>
+                                <div className="text-gray-500">Used</div>
+                              </div>
+                              <div className="text-center p-2 bg-red-50 dark:bg-red-900/30 rounded">
+                                <div className="font-bold text-lg text-red-600">{cable.summary.live}</div>
+                                <div className="text-gray-500">Live</div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-sm text-gray-500 border-2 border-dashed rounded-lg">
+                        <Cable className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                        <p>No cables connected to this node yet.</p>
+                        <p className="text-xs mt-1">Add cables to see fiber utilization.</p>
+                      </div>
+                    )}
+
+                    {/* Legend */}
+                    <div className="pt-4 border-t">
+                      <div className="text-xs text-gray-500 mb-2">Legend</div>
+                      <div className="flex flex-wrap gap-4 text-xs">
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-green-500" />
+                          <span>Available - Ready to use</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-amber-500" />
+                          <span>Used - Spliced/Connected</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <div className="w-3 h-3 rounded-full bg-red-500" />
+                          <span>Live - Active service</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="splice-trays" className="space-y-4">
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <h3 className="text-sm font-medium">Splice Trays at this Node</h3>
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          // Generate automatic tray identifier: {NETWORK}-{NODE_NAME}-TRAY-{NUMBER}
+                          const network = selectedNode?.network || 'NETWORK';
+                          const nodeName = selectedNode?.name || 'NODE';
+                          // Count existing trays for this node to determine next number
+                          const existingTrays = spliceTraysData?.trays || [];
+                          const nextNumber = (existingTrays.length + 1).toString().padStart(3, '0');
+                          const autoTrayId = `${network}-${nodeName}-TRAY-${nextNumber}`;
+                          
+                          setSpliceTrayFormData({
+                            trayIdentifier: autoTrayId,
+                            description: '',
+                          });
+                          setSelectedSpliceTray(null);
+                          setSpliceTrayEditorOpen(true);
+                        }}
+                        data-testid="button-add-splice-tray"
+                      >
+                        <Plus className="w-4 h-4 mr-2" />
+                        Add Tray
+                      </Button>
+                    </div>
+                    
+                    {spliceTraysLoading ? (
+                      <div className="text-center py-8 text-sm text-gray-500">
+                        Loading splice trays...
+                      </div>
+                    ) : spliceTraysData?.trays && spliceTraysData.trays.length > 0 ? (
+                      <div className="space-y-3">
+                        {spliceTraysData.trays.map((tray: any) => (
+                          <div
+                            key={tray.id}
+                            className="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer"
+                            onClick={() => {
+                              setSelectedSpliceTray(tray);
+                              setSpliceTrayFormData({
+                                trayIdentifier: tray.tray_identifier || tray.trayIdentifier || '',
+                                description: tray.description || '',
+                              });
+                              setFiberConnections(tray.connections || []);
+                              setSpliceTrayEditorOpen(true);
+                            }}
+                            data-testid={`splice-tray-${tray.id}`}
+                          >
+                            <div className="flex justify-between items-start">
+                              <div>
+                                <h4 className="font-medium text-sm">
+                                  {tray.tray_identifier || tray.trayIdentifier}
+                                </h4>
+                                {tray.description && (
+                                  <p className="text-xs text-gray-500 mt-1">{tray.description}</p>
+                                )}
+                              </div>
+                              <Badge variant="outline" className="text-xs">
+                                {(tray.connections?.length || tray.connectionCount || 0)} connections
+                              </Badge>
+                            </div>
+                            {tray.connections && tray.connections.length > 0 && (
+                              <div className="mt-3 pt-2 border-t">
+                                <div className="text-xs text-gray-500 mb-2">Connections:</div>
+                                <div className="space-y-1">
+                                  {tray.connections.slice(0, 3).map((conn: any, idx: number) => (
+                                    <div key={idx} className="flex items-center gap-2 text-xs">
+                                      <span 
+                                        className="w-3 h-3 rounded-full border"
+                                        style={{ backgroundColor: conn.left_fiber_color_hex || conn.leftFiberColorHex }}
+                                      />
+                                      <span className="text-gray-600">
+                                        F{conn.left_fiber_number || conn.leftFiberNumber}
+                                      </span>
+                                      <span className="text-gray-400">→</span>
+                                      <span 
+                                        className="w-3 h-3 rounded-full border"
+                                        style={{ backgroundColor: conn.right_fiber_color_hex || conn.rightFiberColorHex }}
+                                      />
+                                      <span className="text-gray-600">
+                                        F{conn.right_fiber_number || conn.rightFiberNumber}
+                                      </span>
+                                    </div>
+                                  ))}
+                                  {tray.connections.length > 3 && (
+                                    <div className="text-xs text-gray-400">
+                                      +{tray.connections.length - 3} more
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-sm text-gray-500">
+                        No splice trays documented at this node yet.
+                        <p className="mt-2 text-xs">
+                          Click "Add Tray" to document fiber-to-fiber connections.
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 </TabsContent>
 
                 <TabsContent value="photos" className="space-y-4">
@@ -2263,6 +3305,120 @@ export default function FiberNetwork() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Cable Detail Sheet */}
+      <Sheet open={!!selectedCable} onOpenChange={(open) => !open && setSelectedCable(null)}>
+        <SheetContent className="sm:w-[640px] overflow-y-auto">
+          {selectedCable && (
+            <>
+              <SheetHeader>
+                <SheetTitle className="flex items-center gap-2">
+                  <Cable className="w-5 h-5" />
+                  {selectedCable.cableIdentifier}
+                </SheetTitle>
+                <SheetDescription>
+                  <Badge variant={selectedCable.status === 'active' ? 'default' : 'secondary'}>
+                    {selectedCable.status}
+                  </Badge>
+                  {' • '}
+                  <span className="capitalize">{selectedCable.cableType}</span>
+                </SheetDescription>
+              </SheetHeader>
+
+              <div className="mt-6 space-y-4">
+                <div>
+                  <Label>Cable ID</Label>
+                  <p className="text-sm text-gray-900">{selectedCable.cableIdentifier}</p>
+                </div>
+
+                <div>
+                  <Label>Route</Label>
+                  <p className="text-sm text-gray-900">
+                    {selectedCable.startNodeName} → {selectedCable.connectedNodeName}
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Cable Type</Label>
+                    <p className="text-sm text-gray-900 capitalize">{selectedCable.cableType}</p>
+                  </div>
+                  <div>
+                    <Label>Fiber Count</Label>
+                    <p className="text-sm text-gray-900">{selectedCable.fiberCount} fibers</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Length</Label>
+                    <p className="text-sm text-gray-900">
+                      {selectedCable.lengthMeters ? `${selectedCable.lengthMeters}m` : 'Not specified'}
+                    </p>
+                  </div>
+                  <div>
+                    <Label>Status</Label>
+                    <Badge variant={selectedCable.status === 'active' ? 'default' : 'secondary'}>
+                      {selectedCable.status}
+                    </Badge>
+                  </div>
+                </div>
+
+                {selectedCable.notes && (
+                  <div>
+                    <Label>Notes</Label>
+                    <p className="text-sm text-gray-600">{selectedCable.notes}</p>
+                  </div>
+                )}
+
+                <div className="border-t pt-4 mt-6 space-y-2">
+                  {!cableEditMode ? (
+                    <>
+                      <Button
+                        variant="default"
+                        className="w-full"
+                        onClick={() => {
+                          if (!selectedCable.startNodeId) {
+                            toast({
+                              title: 'Error',
+                              description: 'Cannot edit this cable - missing node information.',
+                              variant: 'destructive',
+                            });
+                            return;
+                          }
+                          const waypoints = selectedCable.routeGeometry || [];
+                          setCableEditMode(true);
+                          setEditingCable(selectedCable);
+                          setEditingCableWaypoints(waypoints);
+                          setOriginalCableWaypoints(waypoints);
+                          setSelectedCable(null);
+                          toast({
+                            title: 'Edit Mode Active',
+                            description: 'Drag the waypoints to adjust the cable path. Click Save when done.',
+                          });
+                        }}
+                        data-testid="button-edit-cable-path"
+                      >
+                        <Edit className="w-4 h-4 mr-2" />
+                        Edit Path
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="w-full"
+                        onClick={() => setSelectedCable(null)}
+                        data-testid="button-close-cable-sheet"
+                      >
+                        Close
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
+
       {/* Photo Upload Dialog */}
       <Dialog open={photoUploadOpen} onOpenChange={setPhotoUploadOpen}>
         <DialogContent className="sm:max-w-[500px]" data-testid="photo-upload-dialog">
@@ -2815,6 +3971,192 @@ export default function FiberNetwork() {
         </DialogContent>
       </Dialog>
 
+      {/* Add Cable Dialog */}
+      <Dialog open={cableDialogOpen} onOpenChange={(open) => {
+        if (!open) {
+          setCableDialogOpen(false);
+          setCableStartNode(null);
+          setCableEndNode(null);
+          setNewCableData({
+            cableId: '',
+            fiberCount: 24,
+            cableType: 'single_mode',
+            lengthMeters: 0,
+            status: 'planned',
+            notes: '',
+          });
+        }
+      }}>
+        <DialogContent className="sm:max-w-[500px]" data-testid="add-cable-dialog">
+          <DialogHeader>
+            <DialogTitle>
+              <Cable className="w-5 h-5 inline mr-2" />
+              Create Cable Route
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg text-sm">
+              <div className="flex items-center gap-2 text-blue-900 dark:text-blue-100">
+                <Link2 className="w-4 h-4" />
+                <span className="font-medium">Connection:</span>
+              </div>
+              <div className="mt-1 text-xs text-blue-800 dark:text-blue-200">
+                {cableStartNode?.name} → {cableEndNode?.name}
+              </div>
+            </div>
+
+            <div>
+              <Label>Cable ID *</Label>
+              <Input
+                value={newCableData.cableId}
+                onChange={(e) => setNewCableData({ ...newCableData, cableId: e.target.value })}
+                placeholder="e.g., CBL-001"
+                data-testid="input-cable-id"
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Fiber Count</Label>
+                <Select
+                  value={newCableData.fiberCount.toString()}
+                  onValueChange={(value) => setNewCableData({ ...newCableData, fiberCount: parseInt(value) })}
+                >
+                  <SelectTrigger data-testid="select-fiber-count">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="12">12 fibers</SelectItem>
+                    <SelectItem value="24">24 fibers</SelectItem>
+                    <SelectItem value="48">48 fibers</SelectItem>
+                    <SelectItem value="96">96 fibers</SelectItem>
+                    <SelectItem value="144">144 fibers</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div>
+                <Label>Cable Type</Label>
+                <Select
+                  value={newCableData.cableType}
+                  onValueChange={(value) => setNewCableData({ ...newCableData, cableType: value })}
+                >
+                  <SelectTrigger data-testid="select-cable-type">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="single_mode">Single Mode</SelectItem>
+                    <SelectItem value="multi_mode">Multi Mode</SelectItem>
+                    <SelectItem value="armored">Armored</SelectItem>
+                    <SelectItem value="aerial">Aerial</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Length (meters)</Label>
+                <Input
+                  type="number"
+                  value={newCableData.lengthMeters || ''}
+                  onChange={(e) => setNewCableData({ ...newCableData, lengthMeters: parseFloat(e.target.value) || 0 })}
+                  placeholder="0"
+                  data-testid="input-cable-length"
+                />
+              </div>
+
+              <div>
+                <Label>Status</Label>
+                <Select
+                  value={newCableData.status}
+                  onValueChange={(value) => setNewCableData({ ...newCableData, status: value })}
+                >
+                  <SelectTrigger data-testid="select-cable-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="planned">Planned</SelectItem>
+                    <SelectItem value="active">Active</SelectItem>
+                    <SelectItem value="under_construction">Under Construction</SelectItem>
+                    <SelectItem value="decommissioned">Decommissioned</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <div>
+              <Label>Notes</Label>
+              <Textarea
+                value={newCableData.notes}
+                onChange={(e) => setNewCableData({ ...newCableData, notes: e.target.value })}
+                placeholder="Add notes about this cable..."
+                rows={3}
+                data-testid="textarea-cable-notes"
+              />
+            </div>
+
+            <div className="flex gap-2 pt-4 border-t">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setCableDialogOpen(false);
+                  setCableStartNode(null);
+                  setCableEndNode(null);
+                  setNewCableData({
+                    cableId: '',
+                    fiberCount: 24,
+                    cableType: 'single_mode',
+                    lengthMeters: 0,
+                    status: 'planned',
+                    notes: '',
+                  });
+                }}
+                data-testid="button-cancel-add-cable"
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={async () => {
+                  if (!newCableData.cableId || !cableStartNode || !cableEndNode) {
+                    toast({
+                      title: 'Validation Error',
+                      description: 'Please provide a cable ID',
+                      variant: 'destructive',
+                    });
+                    return;
+                  }
+
+                  await createCableMutation.mutateAsync({
+                    startNodeId: cableStartNode.id,
+                    endNodeId: cableEndNode.id,
+                    cableData: newCableData,
+                  });
+
+                  setCableDialogOpen(false);
+                  setCableStartNode(null);
+                  setCableEndNode(null);
+                  exitMode();
+                  setNewCableData({
+                    cableId: '',
+                    fiberCount: 24,
+                    cableType: 'single_mode',
+                    lengthMeters: 0,
+                    status: 'planned',
+                    notes: '',
+                  });
+                }}
+                disabled={!newCableData.cableId || createCableMutation.isPending}
+                data-testid="button-confirm-add-cable"
+              >
+                {createCableMutation.isPending ? 'Creating...' : 'Create Cable'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
       {/* Settings Dialog - Manage Node Types */}
       <Dialog open={settingsDialogOpen} onOpenChange={setSettingsDialogOpen}>
         <DialogContent className="sm:max-w-[600px]" data-testid="settings-dialog">
@@ -2913,6 +4255,484 @@ export default function FiberNetwork() {
                 </Button>
               </div>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Splice Tray Editor Dialog */}
+      <Dialog open={spliceTrayEditorOpen} onOpenChange={(open) => {
+        if (!open) {
+          setSpliceTrayEditorOpen(false);
+          setSelectedSpliceTray(null);
+          setSpliceTrayFormData({ trayIdentifier: '', description: '' });
+        }
+      }}>
+        <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto" data-testid="splice-tray-editor-dialog">
+          <DialogHeader>
+            <DialogTitle>
+              {selectedSpliceTray ? 'Edit Splice Tray' : 'Create Splice Tray'}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="space-y-6 py-4">
+            {/* Tray Information */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium">Tray Information</h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="tray-identifier">Tray Identifier*</Label>
+                  <Input
+                    id="tray-identifier"
+                    value={spliceTrayFormData.trayIdentifier}
+                    onChange={(e) => setSpliceTrayFormData(prev => ({
+                      ...prev,
+                      trayIdentifier: e.target.value
+                    }))}
+                    placeholder="e.g., TRAY-001, Tray A"
+                    data-testid="input-tray-identifier"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="tray-description">Description</Label>
+                  <Input
+                    id="tray-description"
+                    value={spliceTrayFormData.description || ''}
+                    onChange={(e) => setSpliceTrayFormData(prev => ({
+                      ...prev,
+                      description: e.target.value
+                    }))}
+                    placeholder="Optional description"
+                    data-testid="input-tray-description"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Fiber Connections Section */}
+            <div className="space-y-4">
+              <h3 className="text-sm font-medium">Fiber Connections</h3>
+              
+              {/* Cable Selection - Only show cables from selected node */}
+              {cablesLoading ? (
+                <div className="text-center py-4 text-sm text-gray-500">
+                  Loading cables...
+                </div>
+              ) : nodeCables.length === 0 ? (
+                <div className="text-center py-4 text-sm text-amber-600 bg-amber-50 rounded-lg border border-amber-200">
+                  <p className="font-medium">No cables connected to this node</p>
+                  <p className="text-xs mt-1">Add cables to this node first before creating splice connections.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Left Cable</Label>
+                    <Select
+                      value={leftCableId || ''}
+                      onValueChange={(value) => setLeftCableId(value || null)}
+                    >
+                      <SelectTrigger data-testid="select-left-cable">
+                        <SelectValue placeholder="Select cable..." />
+                      </SelectTrigger>
+                      <SelectContent className="z-[9999]" position="popper" sideOffset={4}>
+                        {nodeCables.map((cable: any) => (
+                          <SelectItem key={cable.id} value={cable.id}>
+                            {cable.cableIdentifier} ({cable.fiberCount || 0} fibers)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Right Cable</Label>
+                    <Select
+                      value={rightCableId || ''}
+                      onValueChange={(value) => setRightCableId(value || null)}
+                    >
+                      <SelectTrigger data-testid="select-right-cable">
+                        <SelectValue placeholder="Select cable..." />
+                      </SelectTrigger>
+                      <SelectContent className="z-[9999]" position="popper" sideOffset={4}>
+                        {nodeCables.map((cable: any) => (
+                          <SelectItem key={cable.id} value={cable.id}>
+                            {cable.cableIdentifier} ({cable.fiberCount || 0} fibers)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
+
+              {/* Fiber Connection Interface */}
+              {/* Show existing connections when editing */}
+              {selectedSpliceTray && fiberConnections.length > 0 && (
+                <div className="border rounded-lg p-4 bg-gray-50 dark:bg-gray-900">
+                  <div className="text-sm font-medium mb-3">Saved Connections ({fiberConnections.length})</div>
+                  <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                    {fiberConnections.map((conn: any, index: number) => (
+                      <div key={index} className="flex items-center justify-between p-2 bg-white dark:bg-gray-800 rounded border text-sm">
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-4 h-4 rounded-full border-2"
+                              style={{
+                                backgroundColor: conn.leftFiberColorHex || '#ccc',
+                                borderColor: conn.leftFiberColor === 'White' ? '#999' : (conn.leftFiberColorHex || '#ccc')
+                              }}
+                            />
+                            <span className="font-medium">F{conn.leftFiberNumber}</span>
+                            <span className="text-xs text-gray-500">{conn.leftFiberColor || 'Unknown'}</span>
+                          </div>
+                          <span className="text-gray-400">→</span>
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-4 h-4 rounded-full border-2"
+                              style={{
+                                backgroundColor: conn.rightFiberColorHex || '#ccc',
+                                borderColor: conn.rightFiberColor === 'White' ? '#999' : (conn.rightFiberColorHex || '#ccc')
+                              }}
+                            />
+                            <span className="font-medium">F{conn.rightFiberNumber}</span>
+                            <span className="text-xs text-gray-500">{conn.rightFiberColor || 'Unknown'}</span>
+                          </div>
+                        </div>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 text-red-500 hover:text-red-700"
+                          onClick={() => setFiberConnections(prev => prev.filter((_, i) => i !== index))}
+                        >
+                          <X className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-500 mt-3">
+                    Select cables above to add more connections to this tray.
+                  </p>
+                </div>
+              )}
+
+              {leftCableId && rightCableId ? (
+                <div className="border rounded-lg p-4">
+                  <div className="space-y-4">
+                    {/* Connection Stats & Instructions */}
+                    <div className="flex justify-between items-center pb-2 border-b">
+                      <div>
+                        <span className="text-sm text-gray-600 dark:text-gray-400">
+                          {fiberConnections.length} connection(s) created
+                        </span>
+                        {selectedLeftFiber && (
+                          <span className="ml-2 text-sm text-blue-600 dark:text-blue-400">
+                            — Now click a fiber on the right to connect
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex gap-2">
+                        {selectedLeftFiber && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSelectedLeftFiber(null)}
+                            data-testid="button-cancel-selection"
+                          >
+                            Cancel Selection
+                          </Button>
+                        )}
+                        {fiberConnections.length > 0 && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              setFiberConnections([]);
+                              setSelectedLeftFiber(null);
+                            }}
+                            data-testid="button-clear-connections"
+                          >
+                            Clear All
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Color-Based Click-to-Connect Interface */}
+                    <div className="grid grid-cols-2 gap-6">
+                      {/* Left Cable Fibers */}
+                      <div>
+                        <div className="text-xs font-medium mb-2 flex items-center gap-2">
+                          <span className="text-blue-600">●</span>
+                          {nodeCables.find((c: any) => c.id === leftCableId)?.cableIdentifier}
+                          <span className="text-gray-400 font-normal">(Click to select)</span>
+                          {leftCableFiberStatus?.summary && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700">
+                              {leftCableFiberStatus.summary.available}/{leftCableFiberStatus.summary.totalFibers} available
+                            </span>
+                          )}
+                        </div>
+                        <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1">
+                          {Array.from({ length: nodeCables.find((c: any) => c.id === leftCableId)?.fiberCount || 0 }, (_, i) => i + 1).map(fiberNum => {
+                            const fiberInfo = getColorForFiberNumber(fiberNum, nodeCables.find((c: any) => c.id === leftCableId)?.fiberCount || 12);
+                            const hasConnection = fiberConnections.some(
+                              conn => conn.leftCableId === leftCableId && conn.leftFiberNumber === fiberNum
+                            );
+                            const isSelected = selectedLeftFiber === fiberNum;
+                            
+                            // Get fiber status from API
+                            const fiberStatus = leftCableFiberStatus?.fibers?.find(f => f.fiberNumber === fiberNum);
+                            const isUsedUpstream = fiberStatus?.status === 'used' || fiberStatus?.status === 'live';
+                            const isLive = fiberStatus?.status === 'live';
+                            const endpointInfo = fiberStatus?.endpoint;
+                            
+                            return (
+                              <div
+                                key={fiberNum}
+                                className={`flex items-center gap-2 p-2 text-xs border rounded transition-all ${
+                                  hasConnection
+                                    ? 'bg-green-100 dark:bg-green-900/50 border-green-400 dark:border-green-600 cursor-not-allowed opacity-60'
+                                    : isUsedUpstream
+                                    ? isLive
+                                      ? 'bg-red-50 dark:bg-red-900/30 border-red-300 dark:border-red-700 cursor-not-allowed opacity-70'
+                                      : 'bg-amber-50 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 cursor-not-allowed opacity-70'
+                                    : isSelected
+                                    ? 'bg-blue-100 dark:bg-blue-900 border-blue-500 ring-2 ring-blue-400 ring-offset-1 cursor-pointer'
+                                    : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 border-gray-200 dark:border-gray-600 cursor-pointer'
+                                }`}
+                                onClick={() => {
+                                  if (!hasConnection && !isUsedUpstream) {
+                                    if (isSelected) {
+                                      setSelectedLeftFiber(null);
+                                    } else {
+                                      setSelectedLeftFiber(fiberNum);
+                                    }
+                                  }
+                                }}
+                                title={isUsedUpstream ? `Used: ${endpointInfo?.nodeName || 'Unknown'}${endpointInfo?.serviceName ? ` (${endpointInfo.serviceName})` : ''}` : undefined}
+                                data-testid={`fiber-left-${fiberNum}`}
+                              >
+                                <div
+                                  className="w-4 h-4 rounded-full border-2 flex-shrink-0"
+                                  style={{
+                                    backgroundColor: fiberInfo.colorHex,
+                                    borderColor: fiberInfo.color === 'white' ? '#999' : fiberInfo.colorHex
+                                  }}
+                                  title={`${fiberInfo.color}${fiberInfo.tracerColor !== 'none' ? ` (${fiberInfo.tracerColor} tracer)` : ''}`}
+                                />
+                                <span className="flex-1">
+                                  #{fiberNum} {fiberInfo.color.charAt(0).toUpperCase() + fiberInfo.color.slice(1)}
+                                  {fiberInfo.tracerColor !== 'none' && (
+                                    <span className="text-gray-400 ml-1">({fiberInfo.tracerColor})</span>
+                                  )}
+                                </span>
+                                {hasConnection && <CheckCircle className="w-3 h-3 text-green-600" />}
+                                {isLive && !hasConnection && (
+                                  <span className="text-[9px] px-1 py-0.5 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded font-medium">
+                                    LIVE
+                                  </span>
+                                )}
+                                {isUsedUpstream && !isLive && !hasConnection && (
+                                  <span className="text-[9px] px-1 py-0.5 bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 rounded font-medium">
+                                    USED
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Right Cable Fibers */}
+                      <div>
+                        <div className="text-xs font-medium mb-2 flex items-center gap-2">
+                          <span className="text-orange-600">●</span>
+                          {nodeCables.find((c: any) => c.id === rightCableId)?.cableIdentifier}
+                          {selectedLeftFiber && <span className="text-gray-400 font-normal">(Click to connect)</span>}
+                          {rightCableFiberStatus?.summary && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700">
+                              {rightCableFiberStatus.summary.available}/{rightCableFiberStatus.summary.totalFibers} available
+                            </span>
+                          )}
+                        </div>
+                        <div className="space-y-1 max-h-[300px] overflow-y-auto pr-1">
+                          {Array.from({ length: nodeCables.find((c: any) => c.id === rightCableId)?.fiberCount || 0 }, (_, i) => i + 1).map(fiberNum => {
+                            const fiberInfo = getColorForFiberNumber(fiberNum, nodeCables.find((c: any) => c.id === rightCableId)?.fiberCount || 12);
+                            const hasConnection = fiberConnections.some(
+                              conn => conn.rightCableId === rightCableId && conn.rightFiberNumber === fiberNum
+                            );
+                            const leftFiberInfo = selectedLeftFiber 
+                              ? getColorForFiberNumber(selectedLeftFiber, nodeCables.find((c: any) => c.id === leftCableId)?.fiberCount || 12)
+                              : null;
+                            const isMatchingColor = leftFiberInfo && leftFiberInfo.color === fiberInfo.color;
+                            
+                            // Get fiber status from API
+                            const fiberStatus = rightCableFiberStatus?.fibers?.find(f => f.fiberNumber === fiberNum);
+                            const isUsedUpstream = fiberStatus?.status === 'used' || fiberStatus?.status === 'live';
+                            const isLive = fiberStatus?.status === 'live';
+                            const endpointInfo = fiberStatus?.endpoint;
+                            
+                            return (
+                              <div
+                                key={fiberNum}
+                                className={`flex items-center gap-2 p-2 text-xs border rounded transition-all ${
+                                  hasConnection
+                                    ? 'bg-green-100 dark:bg-green-900/50 border-green-400 dark:border-green-600 cursor-not-allowed opacity-60'
+                                    : isUsedUpstream
+                                    ? isLive
+                                      ? 'bg-red-50 dark:bg-red-900/30 border-red-300 dark:border-red-700 cursor-not-allowed opacity-70'
+                                      : 'bg-amber-50 dark:bg-amber-900/30 border-amber-300 dark:border-amber-700 cursor-not-allowed opacity-70'
+                                    : selectedLeftFiber
+                                    ? isMatchingColor
+                                      ? 'bg-yellow-50 dark:bg-yellow-900/30 border-yellow-400 cursor-pointer hover:bg-yellow-100 dark:hover:bg-yellow-900/50 ring-1 ring-yellow-300'
+                                      : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700'
+                                    : 'bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-600'
+                                }`}
+                                onClick={() => {
+                                  if (!hasConnection && !isUsedUpstream && selectedLeftFiber && leftCableId && rightCableId) {
+                                    const leftFiber = getColorForFiberNumber(selectedLeftFiber, nodeCables.find((c: any) => c.id === leftCableId)?.fiberCount || 12);
+                                    setFiberConnections(prev => [...prev, {
+                                      leftCableId,
+                                      leftFiberNumber: selectedLeftFiber,
+                                      leftFiberColor: leftFiber.color,
+                                      leftFiberColorHex: leftFiber.colorHex,
+                                      rightCableId,
+                                      rightFiberNumber: fiberNum,
+                                      rightFiberColor: fiberInfo.color,
+                                      rightFiberColorHex: fiberInfo.colorHex,
+                                      createdVia: 'manual'
+                                    }]);
+                                    setSelectedLeftFiber(null);
+                                  }
+                                }}
+                                title={isUsedUpstream ? `Used: ${endpointInfo?.nodeName || 'Unknown'}${endpointInfo?.serviceName ? ` (${endpointInfo.serviceName})` : ''}` : undefined}
+                                data-testid={`fiber-right-${fiberNum}`}
+                              >
+                                <div
+                                  className="w-4 h-4 rounded-full border-2 flex-shrink-0"
+                                  style={{
+                                    backgroundColor: fiberInfo.colorHex,
+                                    borderColor: fiberInfo.color === 'white' ? '#999' : fiberInfo.colorHex
+                                  }}
+                                  title={`${fiberInfo.color}${fiberInfo.tracerColor !== 'none' ? ` (${fiberInfo.tracerColor} tracer)` : ''}`}
+                                />
+                                <span className="flex-1">
+                                  #{fiberNum} {fiberInfo.color.charAt(0).toUpperCase() + fiberInfo.color.slice(1)}
+                                  {fiberInfo.tracerColor !== 'none' && (
+                                    <span className="text-gray-400 ml-1">({fiberInfo.tracerColor})</span>
+                                  )}
+                                </span>
+                                {hasConnection && <CheckCircle className="w-3 h-3 text-green-600" />}
+                                {isLive && !hasConnection && (
+                                  <span className="text-[9px] px-1 py-0.5 bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 rounded font-medium">
+                                    LIVE
+                                  </span>
+                                )}
+                                {isUsedUpstream && !isLive && !hasConnection && (
+                                  <span className="text-[9px] px-1 py-0.5 bg-amber-100 dark:bg-amber-900 text-amber-700 dark:text-amber-300 rounded font-medium">
+                                    USED
+                                  </span>
+                                )}
+                                {isMatchingColor && !hasConnection && !isUsedUpstream && selectedLeftFiber && (
+                                  <span className="text-yellow-600 text-[10px]">Match!</span>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Connection List with Colors */}
+                    {fiberConnections.length > 0 && (
+                      <div className="mt-4 pt-4 border-t">
+                        <div className="text-xs font-medium mb-2">Splice Connections</div>
+                        <div className="space-y-2 max-h-[150px] overflow-y-auto">
+                          {fiberConnections.map((conn, index) => (
+                            <div key={index} className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-900 rounded text-xs">
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className="w-3 h-3 rounded-full border"
+                                  style={{
+                                    backgroundColor: conn.leftFiberColorHex,
+                                    borderColor: conn.leftFiberColor === 'white' ? '#999' : conn.leftFiberColorHex
+                                  }}
+                                />
+                                <span>#{conn.leftFiberNumber} {conn.leftFiberColor}</span>
+                                <span className="text-gray-400">⟷</span>
+                                <div
+                                  className="w-3 h-3 rounded-full border"
+                                  style={{
+                                    backgroundColor: conn.rightFiberColorHex,
+                                    borderColor: conn.rightFiberColor === 'white' ? '#999' : conn.rightFiberColorHex
+                                  }}
+                                />
+                                <span>#{conn.rightFiberNumber} {conn.rightFiberColor}</span>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 w-6 p-0"
+                                onClick={() => setFiberConnections(prev => prev.filter((_, i) => i !== index))}
+                                data-testid={`button-delete-connection-${index}`}
+                              >
+                                <X className="h-3 w-3" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : (
+                <div className="border rounded-lg p-8 text-center text-sm text-gray-500">
+                  <Cable className="w-12 h-12 mx-auto mb-2 text-gray-400" />
+                  <p>Select two cables to begin creating fiber connections</p>
+                  <p className="text-xs mt-1 text-gray-400">Fibers will be shown with TIA-598-C color coding</p>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Dialog Actions */}
+          <div className="flex justify-end gap-2 pt-4 border-t">
+            <Button
+              variant="outline"
+              onClick={() => {
+                setSpliceTrayEditorOpen(false);
+                setSelectedSpliceTray(null);
+                setSpliceTrayFormData({ trayIdentifier: '', description: '' });
+              }}
+              data-testid="button-cancel-splice-tray"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => {
+                console.log('[SPLICE UI] Create Tray button clicked');
+                console.log('[SPLICE UI] selectedNode:', selectedNode);
+                console.log('[SPLICE UI] spliceTrayFormData:', spliceTrayFormData);
+                console.log('[SPLICE UI] fiberConnections:', fiberConnections);
+                
+                if (!selectedNode?.id) {
+                  toast({
+                    title: 'Error',
+                    description: 'No node selected',
+                    variant: 'destructive',
+                  });
+                  return;
+                }
+                
+                createSpliceTrayMutation.mutate({
+                  nodeId: selectedNode.id,
+                  trayIdentifier: spliceTrayFormData.trayIdentifier,
+                  description: spliceTrayFormData.description,
+                  connections: fiberConnections,
+                });
+              }}
+              disabled={!spliceTrayFormData.trayIdentifier.trim() || createSpliceTrayMutation.isPending}
+              data-testid="button-save-splice-tray"
+            >
+              {createSpliceTrayMutation.isPending ? 'Creating...' : (selectedSpliceTray ? 'Update' : 'Create')} Tray
+            </Button>
           </div>
         </DialogContent>
       </Dialog>

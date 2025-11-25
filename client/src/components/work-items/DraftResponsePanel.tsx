@@ -53,8 +53,8 @@ export function DraftResponsePanel({ workItemId, workItemType }: DraftResponsePa
 
   // Fetch the draft for this work item
   const { data: draft, isLoading, error } = useQuery<TicketDraftResponse>({
-    queryKey: ['/api/ai-drafting/drafts/by-work-item', workItemId],
-    enabled: workItemType === 'support_ticket',
+    queryKey: ['/api/ai-drafting/drafts/work-item', workItemId],
+    enabled: workItemType === 'support_ticket' && !!workItemId,
   });
 
   // Mutation to regenerate draft
@@ -69,7 +69,7 @@ export function DraftResponsePanel({ workItemId, workItemType }: DraftResponsePa
         title: 'Draft regenerated',
         description: 'A new draft response has been generated.',
       });
-      queryClient.invalidateQueries({ queryKey: ['/api/ai-drafting/drafts/by-work-item', workItemId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/ai-drafting/drafts/work-item', workItemId] });
     },
     onError: (error: any) => {
       toast({
@@ -97,7 +97,7 @@ export function DraftResponsePanel({ workItemId, workItemType }: DraftResponsePa
         description: 'The response has been marked as sent and performance metrics will be updated.',
       });
       setIsEditing(false);
-      queryClient.invalidateQueries({ queryKey: ['/api/ai-drafting/drafts/by-work-item', workItemId] });
+      queryClient.invalidateQueries({ queryKey: ['/api/ai-drafting/drafts/work-item', workItemId] });
     },
     onError: (error: any) => {
       toast({

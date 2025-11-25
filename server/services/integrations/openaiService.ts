@@ -338,6 +338,142 @@ export class OpenAIService {
     
     return response.data;
   }
+
+  // Fiber Network Specific Methods
+  
+  /**
+   * Transcribe audio from base64 string (for field app voice memos)
+   * @param audioBase64 Base64 encoded audio file
+   * @param options Transcription options (language, prompt, etc.)
+   * @returns Transcription text
+   */
+  async transcribeAudioFromBase64(
+    audioBase64: string, 
+    options: { language?: string; prompt?: string } = {}
+  ): Promise<string> {
+    this.ensureInitialized();
+    
+    // Convert base64 to buffer
+    const audioBuffer = Buffer.from(audioBase64.replace(/^data:audio\/\w+;base64,/, ''), 'base64');
+    
+    // Create a blob-like object for the API
+    const formData = new FormData();
+    formData.append('file', audioBuffer, 'voice_memo.webm');
+    formData.append('model', 'whisper-1');
+    formData.append('response_format', 'text');
+    
+    if (options.language) {
+      formData.append('language', options.language);
+    }
+    
+    if (options.prompt) {
+      formData.append('prompt', options.prompt);
+    }
+    
+    const response = await this.client!.post('/audio/transcriptions', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    
+    return response.data.text || response.data;
+  }
+
+  /**
+   * Extract structured splice connection data from transcription text using GPT-4
+   * @param transcription Voice memo transcription
+   * @param context Additional context (node name, cables present, etc.)
+   * @returns Array of splice connections
+   */
+  async extractSpliceConnections(
+    transcription: string,
+    context?: {
+      nodeName?: string;
+      availableCables?: string[];
+      photoDescription?: string;
+    }
+  ): Promise<Array<{
+    incomingCable: string;
+    incomingFiber: number;
+    incomingBufferTube?: string;
+    outgoingCable: string;
+    outgoingFiber: number;
+    outgoingBufferTube?: string;
+    confidence?: 'high' | 'medium' | 'low';
+    notes?: string;
+  }>> {
+    this.ensureInitialized();
+    
+    const systemPrompt = `You are a fiber optic network engineer assistant specializing in splice documentation.
+Your task is to extract structured splice connection data from voice transcriptions made by field engineers.
+
+Engineers typically describe splices in formats like:
+- "Cable A blue tube fiber 1 to Cable B orange tube fiber 3"
+- "A1 to B3, A2 to B4, A3 to B5"
+- "Blue one goes to orange three"
+
+Extract each connection and return as JSON array. If you're uncertain about any detail, mark confidence as 'medium' or 'low'.
+
+Return ONLY valid JSON array, no markdown or explanation.`;
+
+    let userPrompt = `Extract splice connections from this transcription:\n\n"${transcription}"`;
+    
+    if (context) {
+      if (context.nodeName) {
+        userPrompt += `\n\nSplice point: ${context.nodeName}`;
+      }
+      if (context.availableCables && context.availableCables.length > 0) {
+        userPrompt += `\n\nCables at this location: ${context.availableCables.join(', ')}`;
+      }
+      if (context.photoDescription) {
+        userPrompt += `\n\nPhoto shows: ${context.photoDescription}`;
+      }
+    }
+    
+    userPrompt += `\n\nReturn JSON array with this structure:
+[
+  {
+    "incomingCable": "Cable identifier",
+    "incomingFiber": fiber_number,
+    "incomingBufferTube": "color (optional)",
+    "outgoingCable": "Cable identifier", 
+    "outgoingFiber": fiber_number,
+    "outgoingBufferTube": "color (optional)",
+    "confidence": "high|medium|low",
+    "notes": "any additional info (optional)"
+  }
+]`;
+
+    const response = await this.createChatCompletion(
+      [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      {
+        model: 'gpt-4o-mini',
+        temperature: 0.3, // Lower temperature for more consistent extraction
+        max_tokens: 2000,
+      }
+    );
+    
+    const content = response.choices[0]?.message?.content || '[]';
+    
+    // Parse JSON response, handling markdown code blocks if present
+    let jsonStr = content.trim();
+    if (jsonStr.startsWith('```json')) {
+      jsonStr = jsonStr.replace(/```json\n?/, '').replace(/\n?```$/, '');
+    } else if (jsonStr.startsWith('```')) {
+      jsonStr = jsonStr.replace(/```\n?/, '').replace(/\n?```$/, '');
+    }
+    
+    try {
+      const connections = JSON.parse(jsonStr);
+      return Array.isArray(connections) ? connections : [];
+    } catch (error) {
+      console.error('Failed to parse GPT-4 response:', content);
+      throw new Error('Invalid JSON response from GPT-4');
+    }
+  }
 }
 
 export default OpenAIService;
