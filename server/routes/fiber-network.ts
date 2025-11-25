@@ -1733,6 +1733,85 @@ router.get('/nodes/:nodeId/fiber-status', authenticateToken, async (req: any, re
   }
 });
 
+// Get fiber utilization for all cables in the organization (batch endpoint for table view)
+router.get('/cables/utilization', authenticateToken, async (req: any, res) => {
+  try {
+    const organizationId = req.user.organizationId;
+
+    // Get all nodes with their cables
+    const nodes = await db
+      .select()
+      .from(fiberNetworkNodes)
+      .where(eq(fiberNetworkNodes.organizationId, organizationId));
+
+    // Collect all cables with their node info
+    const allCables: Array<{
+      id: string;
+      cableIdentifier: string;
+      fiberCount: number;
+      nodeId: number;
+    }> = [];
+
+    for (const node of nodes) {
+      const fiberDetails = (node.fiberDetails as any) || {};
+      const cables = fiberDetails.cables || [];
+      for (const cable of cables) {
+        allCables.push({
+          id: cable.id,
+          cableIdentifier: cable.cableIdentifier,
+          fiberCount: cable.fiberCount || 12,
+          nodeId: node.id
+        });
+      }
+    }
+
+    // Get termination counts for all cables in one query
+    const terminationsResult = await db.execute(sql`
+      SELECT cable_id, 
+             COUNT(*) as term_count,
+             SUM(CASE WHEN is_live THEN 1 ELSE 0 END) as live_count
+      FROM fiber_terminations
+      WHERE organization_id = ${organizationId}
+      GROUP BY cable_id
+    `);
+
+    // Build a map of cable_id -> utilization
+    const termMap = new Map<string, { termCount: number; liveCount: number }>();
+    for (const row of terminationsResult.rows as any[]) {
+      termMap.set(row.cable_id, {
+        termCount: parseInt(row.term_count || '0'),
+        liveCount: parseInt(row.live_count || '0')
+      });
+    }
+
+    // Build response with utilization for each cable
+    const cableUtilization: Record<string, {
+      used: number;
+      live: number;
+      available: number;
+      utilizationPercent: number;
+    }> = {};
+
+    for (const cable of allCables) {
+      const term = termMap.get(cable.id) || { termCount: 0, liveCount: 0 };
+      const fiberCount = cable.fiberCount;
+      
+      cableUtilization[cable.id] = {
+        used: term.termCount,
+        live: term.liveCount,
+        available: fiberCount - term.termCount,
+        utilizationPercent: Math.round((term.termCount / fiberCount) * 100)
+      };
+    }
+
+    res.json({ utilization: cableUtilization });
+
+  } catch (error: any) {
+    console.error('[FIBER-STATUS] Error getting all cables utilization:', error);
+    res.status(500).json({ error: 'Failed to get cables utilization', details: error.message });
+  }
+});
+
 // ========================================
 // SPLICE DOCUMENTATION ENDPOINTS
 // ========================================
