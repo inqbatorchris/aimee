@@ -166,14 +166,14 @@ WHERE id = 'bordon-commissioning';
 -- ============================================================================
 -- VERIFICATION: Run this after the update to confirm changes
 -- ============================================================================
--- SELECT 
---   id, 
---   name,
---   jsonb_array_length(steps) as step_count,
---   completion_callbacks IS NOT NULL as has_callbacks,
---   jsonb_array_length(completion_callbacks) as callback_count
--- FROM workflow_templates 
--- WHERE id = 'bordon-commissioning';
+SELECT 
+  id, 
+  name,
+  jsonb_array_length(steps) as step_count,
+   completion_callbacks IS NOT NULL as has_callbacks,
+   jsonb_array_length(completion_callbacks) as callback_count
+ FROM workflow_templates 
+ WHERE id = 'bordon-commissioning';
 
 -- ============================================================================
 -- IMPORTANT: After running this SQL, you need to REINITIALIZE existing work items
