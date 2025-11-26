@@ -434,7 +434,9 @@ class FieldDatabase {
         checklistState: data.checklist || {},
         photos: photoData,
         formData: data.form || {},
-        ...data.evidence
+        ...(data.evidence ? Object.fromEntries(
+          Object.entries(data.evidence).filter(([key]) => key !== 'photos')
+        ) : {})
       }
     });
   }

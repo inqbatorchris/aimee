@@ -14,6 +14,7 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { audioProcessingService } from '../services/audioProcessingService';
+import { workItemWorkflowService } from '../services/WorkItemWorkflowService';
 
 const router = Router();
 
@@ -577,6 +578,34 @@ router.post('/sync', authenticateToken, async (req: any, res) => {
               .where(
                 eq(workItemWorkflowExecutionSteps.id, stepRecord[0].id)
               );
+            
+            // Auto-complete workflow when all steps are completed (triggers OCR processing)
+            if (status === 'completed') {
+              console.log(`[Sync] Step marked as completed. Checking if all steps are complete for work item ${numericWorkItemId}...`);
+              
+              const allSteps = await db.select()
+                .from(workItemWorkflowExecutionSteps)
+                .where(
+                  and(
+                    eq(workItemWorkflowExecutionSteps.executionId, execution[0].id),
+                    eq(workItemWorkflowExecutionSteps.organizationId, organizationId)
+                  )
+                );
+              
+              const allCompleted = allSteps.every(s => s.status === 'completed');
+              console.log(`[Sync] All steps completed:`, allCompleted, `(${allSteps.filter(s => s.status === 'completed').length}/${allSteps.length})`);
+              
+              if (allCompleted && allSteps.length > 0) {
+                console.log(`[Sync] All steps completed! Triggering workflow completion for work item ${numericWorkItemId}...`);
+                try {
+                  await workItemWorkflowService.completeWorkflow(execution[0].id, organizationId);
+                  console.log(`[Sync] Workflow completion successful - OCR and callbacks triggered`);
+                } catch (completionError) {
+                  console.error('[Sync] Error completing workflow:', completionError);
+                  // Continue even if completion fails - step update was successful
+                }
+              }
+            }
             
             results.push({ type: 'workflowStep', id: update.entityId, success: true });
             break;
