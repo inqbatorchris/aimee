@@ -4527,6 +4527,7 @@ export class CleanDatabaseStorage implements ICleanStorage {
       const [updated] = await db.update(addressRecords)
         .set({
           ...searchableFields,
+          airtableFields: fields || {}, // Store complete Airtable data (required field)
           lastSyncedAt: new Date(),
           updatedAt: new Date(),
           // CRITICAL: Preserve local-only fields (never overwrite with Airtable data)
@@ -4553,6 +4554,7 @@ export class CleanDatabaseStorage implements ICleanStorage {
           organizationId,
           airtableConnectionId: connectionId,
           airtableRecordId,
+          airtableFields: fields || {}, // Store complete Airtable data (required field)
           ...searchableFields,
           lastSyncedAt: new Date(),
           ...existingLocalFields,
