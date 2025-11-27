@@ -1511,9 +1511,9 @@ export default function Addresses() {
                         <TableCell>
                           {log.duration ? `${(log.duration / 1000).toFixed(1)}s` : '-'}
                         </TableCell>
-                        <TableCell>{log.recordsTotal.toLocaleString()}</TableCell>
-                        <TableCell>{log.recordsCreated.toLocaleString()}</TableCell>
-                        <TableCell>{log.recordsUpdated.toLocaleString()}</TableCell>
+                        <TableCell>{log.recordsTotal?.toLocaleString() ?? '-'}</TableCell>
+                        <TableCell>{log.recordsCreated?.toLocaleString() ?? '-'}</TableCell>
+                        <TableCell>{log.recordsUpdated?.toLocaleString() ?? '-'}</TableCell>
                         <TableCell>
                           {log.status === 'completed' && (
                             <Badge variant="default" className="bg-green-500">
