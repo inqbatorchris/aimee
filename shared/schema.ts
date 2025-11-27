@@ -3824,6 +3824,9 @@ export const addressRecords = pgTable("address_records", {
   airtableRecordId: varchar("airtable_record_id", { length: 100 }).notNull(),
   airtableConnectionId: integer("airtable_connection_id").references(() => airtableConnections.id, { onDelete: "cascade" }).notNull(),
   
+  // Complete Airtable record data (includes resolved status/tariff names)
+  airtableFields: jsonb("airtable_fields").default({}).$type<Record<string, any>>(),
+  
   // Searchable Airtable fields (copied from snapshots for query performance)
   postcode: varchar("postcode", { length: 20 }),
   summary: text("summary"),

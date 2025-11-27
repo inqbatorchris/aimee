@@ -47,6 +47,8 @@ interface AddressRecord {
   id: number;
   airtableRecordId: string;
   airtableConnectionId: number;
+  // Complete Airtable data with resolved field names
+  airtableFields?: Record<string, any>;
   // Real searchable Airtable columns
   postcode?: string | null;
   summary?: string | null;
@@ -699,10 +701,17 @@ export default function Addresses() {
       // Filter by network (using real column)
       const networkMatch = filterNetwork === 'all' || (addr.network === filterNetwork);
       
-      // Disable legacy airtableFields-based filters
-      const cityMatch = true; // Legacy filter disabled
-      const resolvedStatusMatch = true; // Legacy filter disabled
-      const tariffMatch = true; // Legacy filter disabled
+      // Filter by city (from airtableFields)
+      const addrCity = addr.airtableFields?.city || addr.airtableFields?.City;
+      const cityMatch = filterCity === 'all' || addrCity === filterCity;
+      
+      // Filter by resolved RAG status (from airtableFields._resolved_status)
+      const addrResolvedStatus = addr.airtableFields?._resolved_status;
+      const resolvedStatusMatch = filterResolvedStatus === 'all' || addrResolvedStatus === filterResolvedStatus;
+      
+      // Filter by resolved tariff (from airtableFields._resolved_tariff)
+      const addrTariff = addr.airtableFields?._resolved_tariff;
+      const tariffMatch = filterTariff === 'all' || addrTariff === filterTariff;
       
       // Apply advanced filters (using real columns)
       const advancedFilterMatch = advancedFilters.every(filter => {
@@ -756,10 +765,26 @@ export default function Addresses() {
     addresses.map(a => a.network).filter(Boolean)
   )).sort();
   
-  // Legacy filters disabled - using simple network filter only
-  const uniqueCities: string[] = [];
-  const uniqueResolvedStatuses: string[] = [];
-  const uniqueTariffs: string[] = [];
+  // Extract unique resolved statuses from airtableFields._resolved_status
+  const uniqueResolvedStatuses = Array.from(new Set(
+    addresses
+      .map(a => a.airtableFields?._resolved_status)
+      .filter(Boolean)
+  )).sort() as string[];
+  
+  // Extract unique resolved tariffs from airtableFields._resolved_tariff
+  const uniqueTariffs = Array.from(new Set(
+    addresses
+      .map(a => a.airtableFields?._resolved_tariff)
+      .filter(Boolean)
+  )).sort() as string[];
+  
+  // Extract unique cities (from address field or city field if present)
+  const uniqueCities = Array.from(new Set(
+    addresses
+      .map(a => a.airtableFields?.city || a.airtableFields?.City)
+      .filter(Boolean)
+  )).sort() as string[];
   
   // Check if any filters are active
   const hasActiveFilters = filterStatus !== 'all' || filterHasWorkItems !== 'all' || 
