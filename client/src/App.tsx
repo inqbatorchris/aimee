@@ -432,12 +432,22 @@ function AppContent() {
     return (
       <div className="min-h-screen">
         <Switch>
-          <Route path="/" component={MarketingLanding} />
+          <Route path="/">
+            {() => {
+              setLocation('/login');
+              return null;
+            }}
+          </Route>
           <Route path="/login" component={Login} />
           <Route path="/forgot-password" component={ForgotPassword} />
           <Route path="/reset-password/:token" component={ResetPassword} />
-          {/* Default fallback shows marketing page */}
-          <Route component={MarketingLanding} />
+          {/* Default fallback redirects to login */}
+          <Route>
+            {() => {
+              setLocation('/login');
+              return null;
+            }}
+          </Route>
         </Switch>
       </div>
     );

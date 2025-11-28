@@ -55,30 +55,30 @@ export function ObjectiveDetailsTab({ objective, canEdit, onEdit }: ObjectiveDet
   const getPriorityColor = (priority?: string) => {
     switch (priority?.toLowerCase()) {
       case 'critical':
-        return 'bg-red-100 text-red-800';
+        return 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300';
       case 'high':
-        return 'bg-orange-100 text-orange-800';
+        return 'bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300';
       case 'medium':
-        return 'bg-yellow-100 text-yellow-800';
+        return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300';
       case 'low':
-        return 'bg-green-100 text-green-800';
+        return 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-muted text-muted-foreground';
     }
   };
 
   const getCategoryColor = (category?: string) => {
     switch (category?.toLowerCase()) {
       case 'strategic':
-        return 'bg-purple-100 text-purple-800';
+        return 'bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300';
       case 'operational':
-        return 'bg-blue-100 text-blue-800';
+        return 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300';
       case 'financial':
-        return 'bg-green-100 text-green-800';
+        return 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300';
       case 'customer':
-        return 'bg-pink-100 text-pink-800';
+        return 'bg-pink-100 dark:bg-pink-900/30 text-pink-800 dark:text-pink-300';
       default:
-        return 'bg-gray-100 text-gray-800';
+        return 'bg-muted text-muted-foreground';
     }
   };
 
@@ -88,7 +88,7 @@ export function ObjectiveDetailsTab({ objective, canEdit, onEdit }: ObjectiveDet
       <Card>
         <CardContent className="p-4">
           <div className="flex items-start justify-between mb-4">
-            <h3 className="text-sm font-semibold text-gray-900">Objective Details</h3>
+            <h3 className="text-sm font-semibold text-foreground">Objective Details</h3>
             {canEdit && (
               <Button
                 variant="ghost"
@@ -104,8 +104,8 @@ export function ObjectiveDetailsTab({ objective, canEdit, onEdit }: ObjectiveDet
           
           {/* Description */}
           <div className="mb-6">
-            <label className="text-xs font-medium text-gray-500 block mb-1">Description</label>
-            <p className="text-sm text-gray-900 whitespace-pre-wrap">
+            <label className="text-xs font-medium text-muted-foreground block mb-1">Description</label>
+            <p className="text-sm text-foreground whitespace-pre-wrap">
               {objective.description || 'No description provided'}
             </p>
           </div>
@@ -113,7 +113,7 @@ export function ObjectiveDetailsTab({ objective, canEdit, onEdit }: ObjectiveDet
           {/* Key Metrics */}
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="text-xs font-medium text-gray-500 flex items-center gap-1 mb-1">
+              <label className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-1">
                 <Tag className="h-3 w-3" />
                 Category
               </label>
@@ -123,7 +123,7 @@ export function ObjectiveDetailsTab({ objective, canEdit, onEdit }: ObjectiveDet
             </div>
 
             <div>
-              <label className="text-xs font-medium text-gray-500 flex items-center gap-1 mb-1">
+              <label className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-1">
                 <AlertCircle className="h-3 w-3" />
                 Priority
               </label>
@@ -133,19 +133,19 @@ export function ObjectiveDetailsTab({ objective, canEdit, onEdit }: ObjectiveDet
             </div>
 
             <div>
-              <label className="text-xs font-medium text-gray-500 flex items-center gap-1 mb-1">
+              <label className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-1">
                 <Calendar className="h-3 w-3" />
                 Start Date
               </label>
-              <p className="text-sm text-gray-900">{formatDate(objective.startDate)}</p>
+              <p className="text-sm text-foreground">{formatDate(objective.startDate)}</p>
             </div>
 
             <div>
-              <label className="text-xs font-medium text-gray-500 flex items-center gap-1 mb-1">
+              <label className="text-xs font-medium text-muted-foreground flex items-center gap-1 mb-1">
                 <Target className="h-3 w-3" />
                 Target Date
               </label>
-              <p className="text-sm text-gray-900">{formatDate(objective.targetDate)}</p>
+              <p className="text-sm text-foreground">{formatDate(objective.targetDate)}</p>
             </div>
           </div>
         </CardContent>
@@ -155,7 +155,7 @@ export function ObjectiveDetailsTab({ objective, canEdit, onEdit }: ObjectiveDet
       {(objective.primaryKpi || objective.targetValue) && (
         <Card>
           <CardContent className="p-4">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-1">
+            <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-1">
               <TrendingUp className="h-4 w-4" />
               Key Performance Indicator
             </h3>
@@ -163,20 +163,20 @@ export function ObjectiveDetailsTab({ objective, canEdit, onEdit }: ObjectiveDet
             <div className="space-y-3">
               {objective.primaryKpi && (
                 <div>
-                  <label className="text-xs font-medium text-gray-500 block mb-1">Primary KPI</label>
-                  <p className="text-sm text-gray-900">{objective.primaryKpi}</p>
+                  <label className="text-xs font-medium text-muted-foreground block mb-1">Primary KPI</label>
+                  <p className="text-sm text-foreground">{objective.primaryKpi}</p>
                 </div>
               )}
 
               {objective.targetValue && (
                 <div className="grid grid-cols-2 gap-4">
                   <div>
-                    <label className="text-xs font-medium text-gray-500 block mb-1">Target Value</label>
-                    <p className="text-lg font-semibold text-gray-900">{objective.targetValue}</p>
+                    <label className="text-xs font-medium text-muted-foreground block mb-1">Target Value</label>
+                    <p className="text-lg font-semibold text-foreground">{objective.targetValue}</p>
                   </div>
                   <div>
-                    <label className="text-xs font-medium text-gray-500 block mb-1">Current Value</label>
-                    <p className="text-lg font-semibold text-gray-900">{objective.currentValue || '0'}</p>
+                    <label className="text-xs font-medium text-muted-foreground block mb-1">Current Value</label>
+                    <p className="text-lg font-semibold text-foreground">{objective.currentValue || '0'}</p>
                   </div>
                 </div>
               )}
@@ -188,23 +188,23 @@ export function ObjectiveDetailsTab({ objective, canEdit, onEdit }: ObjectiveDet
       {/* Owner Card */}
       <Card>
         <CardContent className="p-4">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-1">
+          <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-1">
             <User className="h-4 w-4" />
             Ownership
           </h3>
           
           {objective.owner ? (
             <div className="flex items-center gap-3">
-              <div className="h-8 w-8 rounded-full bg-gray-200 flex items-center justify-center">
-                <User className="h-4 w-4 text-gray-600" />
+              <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
+                <User className="h-4 w-4 text-muted-foreground" />
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-900">{objective.owner.fullName}</p>
-                <p className="text-xs text-gray-500">{objective.owner.email}</p>
+                <p className="text-sm font-medium text-foreground">{objective.owner.fullName}</p>
+                <p className="text-xs text-muted-foreground">{objective.owner.email}</p>
               </div>
             </div>
           ) : (
-            <p className="text-sm text-gray-500">No owner assigned</p>
+            <p className="text-sm text-muted-foreground">No owner assigned</p>
           )}
         </CardContent>
       </Card>
@@ -212,24 +212,24 @@ export function ObjectiveDetailsTab({ objective, canEdit, onEdit }: ObjectiveDet
       {/* Timeline Card */}
       <Card>
         <CardContent className="p-4">
-          <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-1">
+          <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-1">
             <Clock className="h-4 w-4" />
             Timeline
           </h3>
           
           <div className="space-y-2">
             <div className="flex justify-between items-center">
-              <span className="text-xs text-gray-500">Created</span>
-              <span className="text-sm text-gray-900">{formatDate(objective.createdAt)}</span>
+              <span className="text-xs text-muted-foreground">Created</span>
+              <span className="text-sm text-foreground">{formatDate(objective.createdAt)}</span>
             </div>
             <div className="flex justify-between items-center">
-              <span className="text-xs text-gray-500">Last Updated</span>
-              <span className="text-sm text-gray-900">{formatDate(objective.updatedAt)}</span>
+              <span className="text-xs text-muted-foreground">Last Updated</span>
+              <span className="text-sm text-foreground">{formatDate(objective.updatedAt)}</span>
             </div>
             {objective.startDate && objective.targetDate && (
-              <div className="flex justify-between items-center pt-2 border-t">
-                <span className="text-xs text-gray-500">Duration</span>
-                <span className="text-sm text-gray-900">
+              <div className="flex justify-between items-center pt-2 border-t border-border">
+                <span className="text-xs text-muted-foreground">Duration</span>
+                <span className="text-sm text-foreground">
                   {(() => {
                     try {
                       const start = new Date(objective.startDate);

@@ -432,19 +432,19 @@ export default function Objectives() {
       case 'on track':
       case 'on_track':
       case 'progressing':
-        return 'bg-green-50 text-green-700 text-[10px] px-2 py-0.5';
+        return 'bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 text-[10px] px-2 py-0.5';
       case 'at risk':
       case 'at_risk':
       case 'off track':
-        return 'bg-amber-50 text-amber-700 text-[10px] px-2 py-0.5';
+        return 'bg-amber-50 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 text-[10px] px-2 py-0.5';
       case 'completed':
       case 'achieved':
-        return 'bg-emerald-50 text-emerald-700 text-[10px] px-2 py-0.5';
+        return 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 text-[10px] px-2 py-0.5';
       case 'draft':
       case 'not started':
-        return 'bg-gray-50 text-gray-700 text-[10px] px-2 py-0.5';
+        return 'bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 text-[10px] px-2 py-0.5';
       default:
-        return 'bg-gray-50 text-gray-600 text-[10px] px-2 py-0.5';
+        return 'bg-gray-50 dark:bg-gray-800 text-gray-600 dark:text-gray-400 text-[10px] px-2 py-0.5';
     }
   };
 
@@ -569,8 +569,8 @@ export default function Objectives() {
     const objProgress = calculateProgress(objective.currentValue, objective.targetValue);
 
     return (
-      <TableRow ref={setNodeRef} style={style} className="hover:bg-gray-50/30 border-b border-gray-100">
-        <TableCell className="py-0.5 px-3 border-r border-gray-100">
+      <TableRow ref={setNodeRef} style={style} className="hover:bg-muted/30 border-b border-border">
+        <TableCell className="py-0.5 px-3 border-r border-border">
           {editingCell?.id === objective.id && editingCell.field === 'title' ? (
             <Input
               value={editValue}
@@ -588,16 +588,16 @@ export default function Objectives() {
               <button
                 {...attributes}
                 {...listeners}
-                className="mr-1 hover:bg-gray-100 rounded p-0.5 inline-flex flex-shrink-0 cursor-grab active:cursor-grabbing"
+                className="mr-1 hover:bg-muted rounded p-0.5 inline-flex flex-shrink-0 cursor-grab active:cursor-grabbing"
                 data-testid={`drag-handle-objective-${objective.id}`}
               >
-                <GripVertical className="h-[18px] w-[18px] text-gray-400" />
+                <GripVertical className="h-[18px] w-[18px] text-muted-foreground" />
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); toggleObjective(objective.id); }}
-                className="mr-1 hover:bg-gray-100 rounded p-0.5 inline-flex flex-shrink-0"
+                className="mr-1 hover:bg-muted rounded p-0.5 inline-flex flex-shrink-0"
               >
-                {isExpanded ? <ChevronDown className="h-[18px] w-[18px] text-gray-400" /> : <ChevronRight className="h-[18px] w-[18px] text-gray-400" />}
+                {isExpanded ? <ChevronDown className="h-[18px] w-[18px] text-muted-foreground" /> : <ChevronRight className="h-[18px] w-[18px] text-muted-foreground" />}
               </button>
               <span 
                 className="mr-1.5 text-sm flex-shrink-0 flex items-center" 
@@ -616,7 +616,7 @@ export default function Objectives() {
           )}
         </TableCell>
         {visibleColumns.owner && (
-          <TableCell className="py-0.5 px-2 border-r border-gray-100">
+          <TableCell className="py-0.5 px-2 border-r border-border">
             {editingCell?.id === objective.id && editingCell.field === 'ownerId' ? (
               <Select
                 value={editValue}
@@ -642,7 +642,7 @@ export default function Objectives() {
                 className="cursor-pointer"
                 onClick={() => handleCellEdit(objective.id, 'ownerId', 'objective', objective.ownerId?.toString() || 'none')}
               >
-                <span className="inline-block px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-medium whitespace-nowrap">
+                <span className="inline-block px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-[10px] font-medium whitespace-nowrap">
                   {objective.ownerName || objective.owner?.fullName || '-'}
                 </span>
               </div>
@@ -650,7 +650,7 @@ export default function Objectives() {
           </TableCell>
         )}
         {visibleColumns.team && (
-          <TableCell className="py-0.5 px-2 border-r border-gray-100">
+          <TableCell className="py-0.5 px-2 border-r border-border">
             {editingCell?.id === objective.id && editingCell.field === 'teamId' ? (
               <Select
                 value={editValue}
@@ -677,7 +677,7 @@ export default function Objectives() {
                 className="cursor-pointer"
                 onClick={() => handleCellEdit(objective.id, 'teamId', 'objective', objective.teamId?.toString() || 'none')}
               >
-                <span className="inline-block px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 text-[10px] font-medium whitespace-nowrap">
+                <span className="inline-block px-2 py-0.5 rounded-full bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-[10px] font-medium whitespace-nowrap">
                   {objective.team?.name || '-'}
                 </span>
               </div>
@@ -685,15 +685,15 @@ export default function Objectives() {
           </TableCell>
         )}
         {visibleColumns.progress && (
-          <TableCell className="py-0.5 px-2 border-r border-gray-100">
+          <TableCell className="py-0.5 px-2 border-r border-border">
             <div className="flex items-center gap-1">
               <Progress value={objProgress} className="flex-1 h-[3px]" />
-              <span className="text-[10px] text-gray-500 w-7 text-right">{objProgress}%</span>
+              <span className="text-[10px] text-muted-foreground w-7 text-right">{objProgress}%</span>
             </div>
           </TableCell>
         )}
         {visibleColumns.status && (
-          <TableCell className="py-0.5 px-2 border-r border-gray-100">
+          <TableCell className="py-0.5 px-2 border-r border-border">
             {editingCell?.id === objective.id && editingCell.field === 'status' ? (
               <Select
                 value={editValue}
@@ -860,14 +860,14 @@ export default function Objectives() {
   };
 
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full bg-background">
       <div className="flex justify-center">
         <div className="w-full max-w-7xl">
           {/* Header */}
           <div className="px-3 py-1 pt-8">
             <div className="mb-1">
               <h1 className="text-[14px] font-bold mt-[10px] mb-[10px]">Objectives and Key Results</h1>
-              <p className="text-xs text-gray-500">Track strategic goals and measurable outcomes</p>
+              <p className="text-xs text-muted-foreground">Track strategic goals and measurable outcomes</p>
             </div>
 
             {/* Filter Bar */}
@@ -877,7 +877,7 @@ export default function Objectives() {
                 <DropdownMenuTrigger asChild>
                   <Button 
                     variant="ghost" 
-                    className="flex sm:hidden h-6 px-2 py-0 text-[11px] font-normal hover:bg-gray-100 items-center gap-1"
+                    className="flex sm:hidden h-6 px-2 py-0 text-[11px] font-normal hover:bg-muted items-center gap-1"
                   >
                     <Filter className="h-3 w-3" />
                     <span>Filters</span>
@@ -1150,16 +1150,16 @@ export default function Objectives() {
       </div>
       {/* Content: Table or Mind Map */}
       <div className="flex-1 overflow-auto p-0 flex justify-center">
-        <div className="w-full max-w-7xl border-t border-gray-200">
+        <div className="w-full max-w-7xl border-t border-border">
         {isLoading ? (
           <div className="flex items-center justify-center h-64">
-            <div className="text-gray-500">Loading objectives...</div>
+            <div className="text-muted-foreground">Loading objectives...</div>
           </div>
         ) : filteredData.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 bg-white rounded-lg">
-            <Target className="h-12 w-12 text-gray-400 mb-4" />
+          <div className="flex flex-col items-center justify-center h-64 bg-background rounded-lg">
+            <Target className="h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-medium mb-2">No objectives created yet</h3>
-            <p className="text-gray-500 mb-4">Start by defining your first strategic objective</p>
+            <p className="text-muted-foreground mb-4">Start by defining your first strategic objective</p>
             <Button onClick={openCreateObjectiveDialog}>
               <Plus className="h-4 w-4 mr-2" />
               Create First Objective
@@ -1182,12 +1182,12 @@ export default function Objectives() {
         ) : (
           <Table className="border-collapse">
             <TableHeader>
-              <TableRow className="border-b border-gray-200 bg-gray-50">
-                <TableHead className="text-[11px] text-gray-600 font-normal py-1 px-3 border-r border-gray-100">Name</TableHead>
-                {visibleColumns.owner && <TableHead className="text-[11px] text-gray-600 font-normal py-1 px-2 w-[100px] border-r border-gray-100">Owner</TableHead>}
-                {visibleColumns.team && <TableHead className="text-[11px] text-gray-600 font-normal py-1 px-2 w-[120px] border-r border-gray-100">Team</TableHead>}
-                {visibleColumns.progress && <TableHead className="text-[11px] text-gray-600 font-normal py-1 px-2 w-[80px] border-r border-gray-100">Progress</TableHead>}
-                {visibleColumns.status && <TableHead className="text-[11px] text-gray-600 font-normal py-1 px-2 w-[100px] border-r border-gray-100">Status</TableHead>}
+              <TableRow className="border-b border-border bg-muted/50">
+                <TableHead className="text-[11px] text-muted-foreground font-normal py-1 px-3 border-r border-border">Name</TableHead>
+                {visibleColumns.owner && <TableHead className="text-[11px] text-muted-foreground font-normal py-1 px-2 w-[100px] border-r border-border">Owner</TableHead>}
+                {visibleColumns.team && <TableHead className="text-[11px] text-muted-foreground font-normal py-1 px-2 w-[120px] border-r border-border">Team</TableHead>}
+                {visibleColumns.progress && <TableHead className="text-[11px] text-muted-foreground font-normal py-1 px-2 w-[80px] border-r border-border">Progress</TableHead>}
+                {visibleColumns.status && <TableHead className="text-[11px] text-muted-foreground font-normal py-1 px-2 w-[100px] border-r border-border">Status</TableHead>}
                 <TableHead className="w-6 py-1 px-1"></TableHead>
               </TableRow>
             </TableHeader>
@@ -1216,8 +1216,8 @@ export default function Objectives() {
                       
                       return (
                         <React.Fragment key={keyResult.id}>
-                        <TableRow className="hover:bg-gray-50/30 border-b border-gray-100">
-                          <TableCell className="py-0.5 px-3 pl-10 border-r border-gray-100">
+                        <TableRow className="hover:bg-muted/30 border-b border-border">
+                          <TableCell className="py-0.5 px-3 pl-10 border-r border-border">
                             {editingCell?.id === keyResult.id && editingCell.field === 'title' ? (
                               <Input
                                 value={editValue}
