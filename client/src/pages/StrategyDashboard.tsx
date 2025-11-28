@@ -390,23 +390,23 @@ export default function StrategyDashboard() {
   const getWorkItemBadge = (type: string) => {
     switch (type) {
       case "habit":
-        return <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">Habit</Badge>;
+        return <Badge variant="outline" className="text-xs bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800">Habit</Badge>;
       case "agent":
-        return <Badge variant="outline" className="text-xs bg-purple-50 text-purple-700 border-purple-200">Agent</Badge>;
+        return <Badge variant="outline" className="text-xs bg-purple-50 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800">Agent</Badge>;
       default:
-        return <Badge variant="outline" className="text-xs bg-gray-50 text-gray-700 border-gray-200">Task</Badge>;
+        return <Badge variant="outline" className="text-xs bg-gray-50 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700">Task</Badge>;
     }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "on-track": return "bg-green-100 text-green-800";
-      case "at-risk": return "bg-yellow-100 text-yellow-800";
-      case "off-track": return "bg-red-100 text-red-800";
-      case "completed": return "bg-blue-100 text-blue-800";
-      case "in-progress": return "bg-purple-100 text-purple-800";
-      case "pending": return "bg-gray-100 text-gray-800";
-      default: return "bg-gray-100 text-gray-800";
+      case "on-track": return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
+      case "at-risk": return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900/30 dark:text-yellow-300";
+      case "off-track": return "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300";
+      case "completed": return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300";
+      case "in-progress": return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300";
+      case "pending": return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300";
+      default: return "bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300";
     }
   };
 
@@ -445,15 +445,15 @@ export default function StrategyDashboard() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 flex">
+    <div className="min-h-screen bg-background flex">
       {/* Main Content Area */}
       <div className="flex-1 overflow-y-auto scrollbar-hide h-screen">
         <div className="p-4 lg:p-6 max-w-7xl mx-auto space-y-4 lg:space-y-6 pb-20 lg:pb-6">
       {/* Compact Header */}
       <div className="flex flex-col lg:flex-row lg:justify-between lg:items-center gap-4">
         <div>
-          <h1 className="text-xl lg:text-2xl font-bold text-gray-900">Objectives</h1>
-          <p className="text-sm text-gray-600">View and manage all objectives and key results</p>
+          <h1 className="text-xl lg:text-2xl font-bold text-foreground">Objectives</h1>
+          <p className="text-sm text-muted-foreground">View and manage all objectives and key results</p>
         </div>
         <div className="flex gap-2 flex-wrap">
           <Button 
@@ -487,7 +487,7 @@ export default function StrategyDashboard() {
               <Target className="h-5 w-5 text-primary flex-shrink-0" />
               <div className="min-w-0 flex-1">
                 <h2 className="text-base sm:text-lg font-semibold truncate">{strategyOverview.name}</h2>
-                <p className="text-xs text-gray-600">{strategyOverview.timeframe}</p>
+                <p className="text-xs text-muted-foreground">{strategyOverview.timeframe}</p>
               </div>
             </div>
             
@@ -496,11 +496,11 @@ export default function StrategyDashboard() {
               <div className="flex items-center gap-4">
                 <div className="text-center">
                   <span className="text-lg sm:text-xl font-bold text-primary">{strategyOverview.objectivesCount}</span>
-                  <span className="text-xs text-gray-600 ml-1">Objectives</span>
+                  <span className="text-xs text-muted-foreground ml-1">Objectives</span>
                 </div>
                 <div className="text-center border-l pl-4">
                   <span className="text-lg sm:text-xl font-bold text-primary">{strategyOverview.keyResultsCount}</span>
-                  <span className="text-xs text-gray-600 ml-1">Key Results</span>
+                  <span className="text-xs text-muted-foreground ml-1">Key Results</span>
                 </div>
               </div>
               
@@ -585,7 +585,7 @@ export default function StrategyDashboard() {
                     <React.Fragment key={`obj-${objective.id}`}>
                       {/* Objective Row */}
                       {shouldShowItem(objective, 'objective') && (
-                      <TableRow className="hover:bg-gray-50">
+                      <TableRow className="hover:bg-muted/50">
                         <TableCell>
                           <Button
                             variant="ghost"
@@ -602,7 +602,7 @@ export default function StrategyDashboard() {
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-2">
-                            <Badge variant="outline" className="text-xs bg-indigo-50 text-indigo-700 border-indigo-200">Objective</Badge>
+                            <Badge variant="outline" className="text-xs bg-indigo-50 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300 border-indigo-200 dark:border-indigo-800">Objective</Badge>
                             <button 
                               onClick={() => openDetailPanel(objective, 'objective')}
                               className="font-medium hover:text-primary hover:underline text-left"
@@ -640,7 +640,7 @@ export default function StrategyDashboard() {
                       {expandedObjectives.has(objective.id) && objective.keyResults?.map((kr) => (
                         <React.Fragment key={`kr-${kr.id}`}>
                           {shouldShowItem(kr, 'keyResult') && (
-                          <TableRow className="bg-gray-50/50 hover:bg-gray-100/50">
+                          <TableRow className="bg-muted/50 hover:bg-muted/70">
                             <TableCell className="pl-8">
                               <Button
                                 variant="ghost"
@@ -657,7 +657,7 @@ export default function StrategyDashboard() {
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2 pl-4">
-                                <Badge variant="outline" className="text-xs bg-green-50 text-green-700 border-green-200">Key Result</Badge>
+                                <Badge variant="outline" className="text-xs bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800">Key Result</Badge>
                                 <button 
                                   onClick={() => openDetailPanel(kr, 'keyResult')}
                                   className="text-sm hover:text-primary hover:underline text-left"
@@ -701,7 +701,7 @@ export default function StrategyDashboard() {
                           {/* Tasks */}
                           {expandedKeyResults.has(kr.id) && kr.tasks?.map((task) => (
                             shouldShowItem(task, task.type) && (
-                            <TableRow key={task.id} className="bg-gray-50/30 hover:bg-gray-100/30">
+                            <TableRow key={task.id} className="bg-muted/30 hover:bg-muted/50">
                               <TableCell></TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-2 pl-12">
@@ -709,13 +709,13 @@ export default function StrategyDashboard() {
                                   {getWorkItemBadge(task.type)}
                                   <button 
                                     onClick={() => openDetailPanel(task, 'work')}
-                                    className="text-xs text-gray-600 hover:text-primary hover:underline text-left"
+                                    className="text-xs text-muted-foreground hover:text-primary hover:underline text-left"
                                   >
                                     {task.title}
                                   </button>
                                 </div>
                               </TableCell>
-                              <TableCell className="text-xs text-gray-600">{task.assignee}</TableCell>
+                              <TableCell className="text-xs text-muted-foreground">{task.assignee}</TableCell>
                               <TableCell></TableCell>
                               <TableCell>
                                 <Badge variant="outline" className={`text-xs ${getStatusColor(task.status)}`}>
@@ -738,9 +738,9 @@ export default function StrategyDashboard() {
                   {objectives.length === 0 && (
                     <TableRow>
                       <TableCell colSpan={7} className="text-center py-12">
-                        <Target className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                        <h3 className="text-lg font-medium text-gray-900 mb-2">No objectives yet</h3>
-                        <p className="text-sm text-gray-600 mb-4">
+                        <Target className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                        <h3 className="text-lg font-medium text-foreground mb-2">No objectives yet</h3>
+                        <p className="text-sm text-muted-foreground mb-4">
                           Start by creating your first strategic objective
                         </p>
                         <Button onClick={() => setLocation('/strategy/objective-builder')}>
