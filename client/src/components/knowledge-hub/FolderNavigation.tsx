@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
+import { useDroppable } from "@dnd-kit/core";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -35,6 +36,7 @@ import {
   Edit2,
   Trash2,
   Library,
+  FolderInput,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -61,10 +63,11 @@ interface FolderNavigationProps {
   selectedFolderId: number | null;
   onFolderSelect: (folderId: number | null) => void;
   className?: string;
+  isDragging?: boolean;
 }
 
 
-export function FolderNavigation({ selectedFolderId, onFolderSelect, className }: FolderNavigationProps) {
+export function FolderNavigation({ selectedFolderId, onFolderSelect, className, isDragging = false }: FolderNavigationProps) {
   const { currentUser } = useAuth();
   const { toast } = useToast();
   const [expandedFolders, setExpandedFolders] = useState<Set<number>>(new Set());
@@ -212,19 +215,27 @@ export function FolderNavigation({ selectedFolderId, onFolderSelect, className }
   const rootFolders = folders.filter(f => !f.parentId);
   const getChildFolders = (parentId: number) => folders.filter(f => f.parentId === parentId);
 
-  const FolderItem = ({ folder, depth = 0 }: { folder: KnowledgeFolder; depth?: number }) => {
+  // Droppable folder item component
+  const DroppableFolderItem = ({ folder, depth = 0 }: { folder: KnowledgeFolder; depth?: number }) => {
     const children = getChildFolders(folder.id);
     const hasChildren = children.length > 0;
     const isExpanded = expandedFolders.has(folder.id);
     const isSelected = selectedFolderId === folder.id;
+    
+    const { isOver, setNodeRef } = useDroppable({
+      id: `folder-${folder.id}`,
+    });
 
     return (
       <div>
         <div
+          ref={setNodeRef}
           className={cn(
-            "group flex items-center gap-1 px-2 py-1.5 rounded-md cursor-pointer transition-colors",
+            "group flex items-center gap-1 px-2 py-1.5 rounded-md cursor-pointer transition-all",
             isSelected ? "bg-primary/10 text-primary" : "hover:bg-muted",
-            depth > 0 && "ml-4"
+            depth > 0 && "ml-4",
+            isDragging && "border border-dashed border-transparent",
+            isDragging && isOver && "border-primary bg-primary/5 ring-2 ring-primary/20"
           )}
           style={{ paddingLeft: `${8 + depth * 12}px` }}
           data-testid={`folder-item-${folder.id}`}
@@ -251,15 +262,20 @@ export function FolderNavigation({ selectedFolderId, onFolderSelect, className }
             className="flex-1 flex items-center gap-2 min-w-0"
             onClick={() => onFolderSelect(folder.id)}
           >
-            {isExpanded && hasChildren ? (
+            {isDragging && isOver ? (
+              <FolderInput className="h-4 w-4 flex-shrink-0 text-primary" />
+            ) : isExpanded && hasChildren ? (
               <FolderOpen className="h-4 w-4 flex-shrink-0" style={{ color: folder.color || undefined }} />
             ) : (
               <Folder className="h-4 w-4 flex-shrink-0" style={{ color: folder.color || undefined }} />
             )}
             <span className="text-sm truncate">{folder.name}</span>
+            {isDragging && isOver && (
+              <span className="text-xs text-primary ml-auto">Drop here</span>
+            )}
           </div>
 
-          {isAdmin && (
+          {!isDragging && isAdmin && (
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -298,10 +314,34 @@ export function FolderNavigation({ selectedFolderId, onFolderSelect, className }
         {hasChildren && isExpanded && (
           <div>
             {children.map((child) => (
-              <FolderItem key={child.id} folder={child} depth={depth + 1} />
+              <DroppableFolderItem key={child.id} folder={child} depth={depth + 1} />
             ))}
           </div>
         )}
+      </div>
+    );
+  };
+  
+  // Droppable root zone for moving documents out of folders
+  const RootDropZone = () => {
+    const { isOver, setNodeRef } = useDroppable({
+      id: 'folder-root',
+    });
+    
+    if (!isDragging) return null;
+    
+    return (
+      <div
+        ref={setNodeRef}
+        className={cn(
+          "flex items-center gap-2 px-2 py-2 rounded-md border border-dashed transition-all mb-2",
+          isOver ? "border-primary bg-primary/5 ring-2 ring-primary/20" : "border-muted-foreground/30"
+        )}
+      >
+        <Library className={cn("h-4 w-4", isOver ? "text-primary" : "text-muted-foreground")} />
+        <span className={cn("text-sm", isOver ? "text-primary font-medium" : "text-muted-foreground")}>
+          {isOver ? "Drop to remove from folder" : "Drop here for no folder"}
+        </span>
       </div>
     );
   };
@@ -339,6 +379,9 @@ export function FolderNavigation({ selectedFolderId, onFolderSelect, className }
         )}
       </div>
 
+      {/* Root drop zone - visible when dragging */}
+      <RootDropZone />
+
       <div
         className={cn(
           "flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer transition-colors mb-1",
@@ -353,7 +396,7 @@ export function FolderNavigation({ selectedFolderId, onFolderSelect, className }
 
       <div className="space-y-0.5">
         {rootFolders.map((folder) => (
-          <FolderItem key={folder.id} folder={folder} />
+          <DroppableFolderItem key={folder.id} folder={folder} />
         ))}
       </div>
 

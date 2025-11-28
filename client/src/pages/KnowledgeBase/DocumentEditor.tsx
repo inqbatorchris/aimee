@@ -9,11 +9,19 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { Save, ArrowLeft, Eye, X, Tag, Clock, Users } from 'lucide-react';
+import { Save, ArrowLeft, Eye, X, Tag, Clock, Users, Folder, FileText, GraduationCap, ExternalLink, FileCheck } from 'lucide-react';
 import { ModernDocumentEditor } from '@/components/DocumentEditor/ModernDocumentEditor';
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/contexts/AuthContext';
 import { DocumentFormWrapper } from '@/components/document-editor/DocumentFormWrapper';
+import type { KnowledgeFolder } from '@shared/schema';
+
+const DOCUMENT_TYPES = [
+  { value: 'internal_kb', label: 'Knowledge Article', icon: FileText, description: 'Standard knowledge base article' },
+  { value: 'training_module', label: 'Training Module', icon: GraduationCap, description: 'Step-based training with quizzes' },
+  { value: 'customer_document', label: 'Customer Document', icon: FileCheck, description: 'Customer-facing documentation' },
+  { value: 'external_file_link', label: 'External File', icon: ExternalLink, description: 'Link to external file' },
+] as const;
 
 export default function DocumentEditor() {
   const { id } = useParams<{ id?: string }>();
@@ -32,8 +40,15 @@ export default function DocumentEditor() {
   const [estimatedReadingTime, setEstimatedReadingTime] = useState<number>(5);
   const [newTag, setNewTag] = useState('');
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [documentType, setDocumentType] = useState<string>('internal_kb');
+  const [folderId, setFolderId] = useState<number | null>(null);
 
   const isEditing = !!id;
+
+  // Fetch folders for folder selector
+  const { data: folders = [] } = useQuery<KnowledgeFolder[]>({
+    queryKey: ['/api/knowledge-base/folders'],
+  });
 
   // Fetch existing document if editing
   const { data: document, isLoading, error } = useQuery({
@@ -71,7 +86,9 @@ export default function DocumentEditor() {
         setTags(Array.isArray(doc.tags) ? doc.tags : []);
         setStatus(doc.status || 'draft');
         setEstimatedReadingTime(doc.estimatedReadingTime || 5);
-        console.log('Document data loaded:', { title: doc.title, hasContent: !!doc.content });
+        setDocumentType(doc.documentType || 'internal_kb');
+        setFolderId(doc.folderId || null);
+        console.log('Document data loaded:', { title: doc.title, hasContent: !!doc.content, documentType: doc.documentType });
       }
     }
   }, [document, isLoading]);
@@ -85,6 +102,8 @@ export default function DocumentEditor() {
       setTags([]);
       setStatus('draft');
       setEstimatedReadingTime(5);
+      setDocumentType('internal_kb');
+      setFolderId(null);
     }
   }, [isEditing]);
 
@@ -97,6 +116,8 @@ export default function DocumentEditor() {
       tags: string[];
       status: string;
       estimatedReadingTime: number;
+      documentType: string;
+      folderId: number | null;
     }) => {
       const url = isEditing 
         ? `/api/knowledge-base/documents/${id}`
@@ -169,6 +190,8 @@ export default function DocumentEditor() {
       tags,
       status,
       estimatedReadingTime,
+      documentType,
+      folderId,
     });
   };
 
@@ -340,6 +363,61 @@ export default function DocumentEditor() {
                 <CardTitle className="text-sm">Document Settings</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                {/* Document Type Selector */}
+                <div>
+                  <Label className="text-sm">Document Type</Label>
+                  <Select value={documentType} onValueChange={setDocumentType}>
+                    <SelectTrigger className="text-sm" data-testid="document-type-selector">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {DOCUMENT_TYPES.map((type) => {
+                        const IconComponent = type.icon;
+                        return (
+                          <SelectItem key={type.value} value={type.value}>
+                            <div className="flex items-center gap-2">
+                              <IconComponent className="h-4 w-4" />
+                              <span>{type.label}</span>
+                            </div>
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {DOCUMENT_TYPES.find(t => t.value === documentType)?.description}
+                  </p>
+                </div>
+
+                {/* Folder Selector */}
+                <div>
+                  <Label className="text-sm">Folder</Label>
+                  <Select 
+                    value={folderId?.toString() || 'none'} 
+                    onValueChange={(value) => setFolderId(value === 'none' ? null : parseInt(value))}
+                  >
+                    <SelectTrigger className="text-sm" data-testid="folder-selector">
+                      <SelectValue placeholder="Select folder..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">
+                        <div className="flex items-center gap-2">
+                          <Folder className="h-4 w-4" />
+                          <span>No folder</span>
+                        </div>
+                      </SelectItem>
+                      {folders.map((folder) => (
+                        <SelectItem key={folder.id} value={folder.id.toString()}>
+                          <div className="flex items-center gap-2">
+                            <Folder className="h-4 w-4" style={{ color: folder.color || undefined }} />
+                            <span>{folder.name}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
                 <div className="space-y-3">
                   <Label htmlFor="category" className="text-sm">Categories</Label>
                   <div className="flex gap-2">

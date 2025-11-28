@@ -321,6 +321,90 @@ router.delete("/folders/:id", authenticateToken, requireRole(["admin", "super_ad
 });
 
 // ========================================
+// KNOWLEDGE HUB V3 - DOCUMENT MANAGEMENT
+// ========================================
+
+// Bulk move documents to folder
+router.patch("/documents/bulk-move", authenticateToken, requireRole(["admin", "super_admin", "manager"]), async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const { documentIds, folderId } = req.body;
+    
+    if (!Array.isArray(documentIds) || documentIds.length === 0) {
+      return res.status(400).json({ error: "documentIds must be a non-empty array" });
+    }
+    
+    // Validate all documents belong to this organization
+    const results = await Promise.all(
+      documentIds.map(async (docId: number) => {
+        const doc = await coreStorage.getKnowledgeDocument(docId);
+        if (!doc || doc.organizationId !== organizationId) {
+          return { id: docId, success: false, error: "Document not found" };
+        }
+        
+        const updated = await coreStorage.updateKnowledgeDocument(docId, { 
+          folderId: folderId || null 
+        }, req.user!.id);
+        
+        return { id: docId, success: !!updated };
+      })
+    );
+    
+    const successCount = results.filter(r => r.success).length;
+    res.json({ 
+      success: true, 
+      moved: successCount, 
+      total: documentIds.length,
+      results 
+    });
+  } catch (error) {
+    console.error("Error bulk moving documents:", error);
+    res.status(500).json({ error: "Failed to move documents" });
+  }
+});
+
+// Move single document to folder
+router.patch("/documents/:id/move", authenticateToken, requireRole(["admin", "super_admin", "manager"]), async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const documentId = parseInt(req.params.id);
+    if (isNaN(documentId)) {
+      return res.status(400).json({ error: "Invalid document ID" });
+    }
+    
+    const { folderId } = req.body;
+    
+    // Verify document ownership
+    const doc = await coreStorage.getKnowledgeDocument(documentId);
+    if (!doc || doc.organizationId !== organizationId) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+    
+    // If folderId provided, verify folder exists and belongs to org
+    if (folderId) {
+      const folders = await coreStorage.getKnowledgeFolders(organizationId);
+      const folder = folders.find(f => f.id === folderId);
+      if (!folder) {
+        return res.status(404).json({ error: "Folder not found" });
+      }
+    }
+    
+    const updated = await coreStorage.updateKnowledgeDocument(documentId, { 
+      folderId: folderId || null 
+    }, req.user!.id);
+    
+    if (!updated) {
+      return res.status(500).json({ error: "Failed to move document" });
+    }
+    
+    res.json(updated);
+  } catch (error) {
+    console.error("Error moving document:", error);
+    res.status(500).json({ error: "Failed to move document" });
+  }
+});
+
+// ========================================
 // KNOWLEDGE HUB V3 - TRAINING MODULE STEPS
 // ========================================
 
