@@ -111,7 +111,7 @@ export default function LoginPage() {
                 <button
                   type="button"
                   onClick={() => setLocation('/field-app')}
-                  className="text-emerald-400 hover:text-emerald-300 font-medium transition-colors"
+                  className="text-emerald-400 hover:text-emerald-300 font-medium transition-colors text-[16px]"
                   disabled={isLoading}
                   data-testid="link-field-app"
                 >
