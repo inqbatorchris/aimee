@@ -145,6 +145,10 @@ export default function KnowledgeBaseListing() {
     navigate('/knowledge-hub/training/modules/new');
   };
 
+  const handleCreateExternalLink = () => {
+    navigate('/knowledge-base/documents/new?type=external_file_link');
+  };
+
   const handleEditDocument = (document: ExtendedKnowledgeDocument) => {
     navigate(`/knowledge-base/documents/${document.id}/edit`);
   };
@@ -715,6 +719,10 @@ export default function KnowledgeBaseListing() {
                     <DropdownMenuItem onClick={handleCreateTrainingModule} data-testid="create-training-module-option">
                       <GraduationCap className="w-4 h-4 mr-2" />
                       Training Module
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleCreateExternalLink} data-testid="create-external-link-option">
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      External File Link
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
