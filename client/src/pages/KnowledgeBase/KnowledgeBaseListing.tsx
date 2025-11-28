@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { BookOpen, Users, Plus, FileText, Filter, Eye, Edit3, Trash2, Calendar, User, Tag, Search, X, UserPlus, Pencil, PanelLeftClose, PanelLeft } from "lucide-react";
+import { BookOpen, Users, Plus, FileText, Filter, Eye, Edit3, Trash2, Calendar, User, Tag, Search, X, UserPlus, Pencil, PanelLeftClose, PanelLeft, GraduationCap, ChevronDown } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
@@ -131,6 +132,10 @@ export default function KnowledgeBaseListing() {
 
   const handleCreateDocument = () => {
     navigate('/knowledge-base/documents/new');
+  };
+
+  const handleCreateTrainingModule = () => {
+    navigate('/knowledge-hub/training/modules/new');
   };
 
   const handleEditDocument = (document: ExtendedKnowledgeDocument) => {
@@ -481,17 +486,30 @@ export default function KnowledgeBaseListing() {
                     {selectedFolderId ? 'Documents in selected folder' : 'All documents'}
                   </p>
                 </div>
-                <Button 
-                  type="button" 
-                  size="sm" 
-                  onClick={handleCreateDocument} 
-                  className="flex items-center gap-1 h-7"
-                  data-testid="create-document-button"
-                >
-                  <Plus className="w-3 h-3" />
-                  <span className="hidden sm:inline">Create Document</span>
-                  <span className="sm:hidden">Create</span>
-                </Button>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button 
+                      type="button" 
+                      size="sm" 
+                      className="flex items-center gap-1 h-7"
+                      data-testid="create-document-button"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span className="hidden sm:inline">Create</span>
+                      <ChevronDown className="w-3 h-3 ml-0.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={handleCreateDocument} data-testid="create-document-option">
+                      <FileText className="w-4 h-4 mr-2" />
+                      Document
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleCreateTrainingModule} data-testid="create-training-module-option">
+                      <GraduationCap className="w-4 h-4 mr-2" />
+                      Training Module
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
           
           {/* Enhanced Filters with Search and Multi-Select Categories */}
