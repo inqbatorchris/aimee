@@ -33,7 +33,15 @@ import {
   Award,
   Clock,
   Sparkles,
+  Users,
+  CalendarDays,
+  UserCheck,
+  AlertCircle,
 } from 'lucide-react';
+import { Calendar } from '@/components/ui/calendar';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
+import { format } from 'date-fns';
 import type { TrainingModuleStep, TrainingQuizQuestion, KnowledgeDocument } from '@shared/schema';
 import {
   DndContext,
@@ -504,6 +512,10 @@ export default function TrainingModuleEditor() {
   const [expandedSteps, setExpandedSteps] = useState<Set<number>>(new Set());
   const [showAddStepDialog, setShowAddStepDialog] = useState(false);
   const [localSteps, setLocalSteps] = useState<TrainingModuleStep[]>([]);
+  const [documentStatus, setDocumentStatus] = useState<'draft' | 'published' | 'archived'>('draft');
+  const [showAssignDialog, setShowAssignDialog] = useState(false);
+  const [selectedUserId, setSelectedUserId] = useState<string>('');
+  const [selectedDueDate, setSelectedDueDate] = useState<Date | undefined>();
 
   const sensors = useSensors(
     useSensor(PointerSensor),
@@ -557,10 +569,21 @@ export default function TrainingModuleEditor() {
     queryKey: ['/api/knowledge-base/documents'],
   });
 
+  const { data: users = [] } = useQuery<any[]>({
+    queryKey: ['/api/core/users'],
+    enabled: showAssignDialog,
+  });
+
+  const { data: assignments = [], refetch: refetchAssignments } = useQuery<any[]>({
+    queryKey: [`/api/knowledge-base/documents/${documentId}/assignments`],
+    enabled: isEditing && !!documentId,
+  });
+
   useEffect(() => {
     if (document) {
       setTitle(document.title || '');
       setDescription(document.content || '');
+      setDocumentStatus((document.status as 'draft' | 'published' | 'archived') || 'draft');
       const metadata = (document.metadata || {}) as Record<string, any>;
       setPointsValue(metadata.pointsValue ?? 50);
       setCompletionRequirement(metadata.completionRequirement ?? 'both');
@@ -573,7 +596,7 @@ export default function TrainingModuleEditor() {
   }, [steps]);
 
   const saveDocumentMutation = useMutation({
-    mutationFn: async (data: { title: string; content: string; metadata: Record<string, any> }) => {
+    mutationFn: async (data: { title: string; content: string; metadata: Record<string, any>; status: string }) => {
       const url = isEditing
         ? `/api/knowledge-base/documents/${documentId}`
         : '/api/knowledge-base/documents';
@@ -582,7 +605,6 @@ export default function TrainingModuleEditor() {
         body: {
           ...data,
           documentType: 'training_module',
-          status: 'draft',
           categories: ['Training'],
           tags: [],
         },
@@ -758,12 +780,89 @@ export default function TrainingModuleEditor() {
     saveDocumentMutation.mutate({
       title,
       content: description,
+      status: documentStatus,
       metadata: {
         pointsValue,
         completionRequirement,
         issueCertificate,
       },
     });
+  };
+
+  const createAssignmentMutation = useMutation({
+    mutationFn: async ({ userId, dueDate }: { userId: number; dueDate?: Date }) => {
+      const response = await apiRequest(`/api/knowledge-base/documents/${documentId}/assignments`, {
+        method: 'POST',
+        body: { userId, dueDate }
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to assign user');
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({ title: 'User assigned successfully' });
+      queryClient.invalidateQueries({ queryKey: [`/api/knowledge-base/documents/${documentId}/assignments`] });
+      setShowAssignDialog(false);
+      setSelectedUserId('');
+      setSelectedDueDate(undefined);
+    },
+    onError: (error: any) => {
+      toast({ title: 'Failed to assign user', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const deleteAssignmentMutation = useMutation({
+    mutationFn: async (assignmentId: number) => {
+      const response = await apiRequest(`/api/knowledge-base/documents/${documentId}/assignments/${assignmentId}`, {
+        method: 'DELETE'
+      });
+      if (!response.ok) {
+        throw new Error('Failed to remove assignment');
+      }
+      return response;
+    },
+    onSuccess: () => {
+      toast({ title: 'Assignment removed' });
+      queryClient.invalidateQueries({ queryKey: [`/api/knowledge-base/documents/${documentId}/assignments`] });
+    },
+    onError: (error: any) => {
+      toast({ title: 'Failed to remove assignment', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const handleAssign = () => {
+    if (!selectedUserId) {
+      toast({ title: 'Please select a user', variant: 'destructive' });
+      return;
+    }
+    createAssignmentMutation.mutate({
+      userId: parseInt(selectedUserId),
+      dueDate: selectedDueDate,
+    });
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'published':
+        return <Badge className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">Published</Badge>;
+      case 'archived':
+        return <Badge className="bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-400">Archived</Badge>;
+      default:
+        return <Badge className="bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400">Draft</Badge>;
+    }
+  };
+
+  const getAssignmentStatusIcon = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <UserCheck className="h-3 w-3 text-green-600" />;
+      case 'in_progress':
+        return <Clock className="h-3 w-3 text-blue-600" />;
+      default:
+        return <AlertCircle className="h-3 w-3 text-yellow-600" />;
+    }
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -855,15 +954,48 @@ export default function TrainingModuleEditor() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div>
-              <Label htmlFor="title">Title</Label>
-              <Input
-                id="title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Enter module title..."
-                data-testid="input-module-title"
-              />
+            <div className="flex items-center justify-between">
+              <div className="flex-1">
+                <Label htmlFor="title">Title</Label>
+                <Input
+                  id="title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Enter module title..."
+                  data-testid="input-module-title"
+                />
+              </div>
+              <div className="ml-4 w-40">
+                <Label htmlFor="status">Status</Label>
+                <Select
+                  value={documentStatus}
+                  onValueChange={(value) => setDocumentStatus(value as 'draft' | 'published' | 'archived')}
+                >
+                  <SelectTrigger id="status" data-testid="select-document-status">
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="draft">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-yellow-500" />
+                        Draft
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="published">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-green-500" />
+                        Published
+                      </div>
+                    </SelectItem>
+                    <SelectItem value="archived">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-gray-500" />
+                        Archived
+                      </div>
+                    </SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
 
             <div>
@@ -937,6 +1069,73 @@ export default function TrainingModuleEditor() {
               />
               <Label htmlFor="issue-certificate">Issue certificate on completion</Label>
             </div>
+
+            {isEditing && documentId && (
+              <>
+                <Separator className="my-4" />
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <Label className="flex items-center gap-2">
+                      <Users className="h-4 w-4" />
+                      Team Assignments ({Array.isArray(assignments) ? assignments.length : 0})
+                    </Label>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowAssignDialog(true)}
+                      data-testid="button-assign-users"
+                    >
+                      <Plus className="h-4 w-4 mr-1" />
+                      Assign Users
+                    </Button>
+                  </div>
+                  
+                  {Array.isArray(assignments) && assignments.length > 0 ? (
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {assignments.map((assignment: any) => (
+                        <div 
+                          key={assignment.id}
+                          className="flex items-center justify-between p-2 bg-muted/50 rounded-lg"
+                        >
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-xs font-medium">
+                              {(assignment.user?.fullName || 'U').substring(0, 2).toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium">{assignment.user?.fullName || 'Unknown User'}</p>
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                {getAssignmentStatusIcon(assignment.status)}
+                                <span className="capitalize">{assignment.status}</span>
+                                {assignment.dueDate && (
+                                  <>
+                                    <span>•</span>
+                                    <CalendarDays className="h-3 w-3" />
+                                    <span>Due {format(new Date(assignment.dueDate), 'MMM d')}</span>
+                                  </>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 w-7 p-0"
+                            onClick={() => deleteAssignmentMutation.mutate(assignment.id)}
+                            data-testid={`button-remove-assignment-${assignment.id}`}
+                          >
+                            <X className="h-3 w-3 text-muted-foreground" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground text-center py-4">
+                      No users assigned. Click "Assign Users" to add team members to this training.
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
           </CardContent>
         </Card>
 
@@ -1042,6 +1241,58 @@ export default function TrainingModuleEditor() {
                 );
               }
             )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAssignDialog} onOpenChange={setShowAssignDialog}>
+        <DialogContent className="max-h-[90vh] max-w-[95vw] sm:max-w-[425px] p-0 overflow-hidden flex flex-col">
+          <DialogHeader className="px-6 pt-6">
+            <DialogTitle>Assign Training Module</DialogTitle>
+          </DialogHeader>
+          <ScrollArea className="flex-1 px-6 pb-2" style={{ maxHeight: 'calc(90vh - 120px)' }}>
+            <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label>Select User</Label>
+                <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+                  <SelectTrigger data-testid="select-assign-user">
+                    <SelectValue placeholder="Choose a user" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {Array.isArray(users) && users.map((user: any) => (
+                      <SelectItem key={user.id} value={user.id.toString()}>
+                        {user.fullName} ({user.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Due Date (Optional)</Label>
+                <div className="flex justify-center">
+                  <Calendar
+                    mode="single"
+                    selected={selectedDueDate}
+                    onSelect={setSelectedDueDate}
+                    className="rounded-md border"
+                    disabled={(date) => date < new Date()}
+                  />
+                </div>
+              </div>
+            </div>
+          </ScrollArea>
+          <div className="flex justify-end space-x-2 p-4 border-t bg-background">
+            <Button variant="outline" onClick={() => setShowAssignDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              onClick={handleAssign} 
+              disabled={createAssignmentMutation.isPending}
+              data-testid="button-confirm-assign"
+            >
+              {createAssignmentMutation.isPending ? 'Assigning...' : 'Assign'}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
