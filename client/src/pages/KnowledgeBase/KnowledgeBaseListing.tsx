@@ -150,7 +150,11 @@ export default function KnowledgeBaseListing() {
   };
 
   const handleEditDocument = (document: ExtendedKnowledgeDocument) => {
-    navigate(`/knowledge-base/documents/${document.id}/edit`);
+    if (document.documentType === 'training_module') {
+      navigate(`/knowledge-hub/training/modules/${document.id}/edit`);
+    } else {
+      navigate(`/knowledge-base/documents/${document.id}/edit`);
+    }
   };
 
   const handleViewDocument = (document: ExtendedKnowledgeDocument) => {

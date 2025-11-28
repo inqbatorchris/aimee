@@ -65,6 +65,8 @@ interface StepConfig {
   pointsPerQuestion?: number[];
   requiresSupervisorSignoff?: boolean;
   instructions?: string;
+  linkedDocumentId?: number;
+  linkedDocumentTitle?: string;
 }
 
 const STEP_TYPE_INFO: Record<StepType, { icon: typeof Video; label: string; color: string }> = {
@@ -85,6 +87,7 @@ interface SortableStepCardProps {
   onAddQuestion: (stepId: number) => void;
   onUpdateQuestion: (questionId: number, updates: Partial<TrainingQuizQuestion>) => void;
   onDeleteQuestion: (questionId: number) => void;
+  availableDocuments?: KnowledgeDocument[];
 }
 
 function SortableStepCard({
@@ -97,6 +100,7 @@ function SortableStepCard({
   onAddQuestion,
   onUpdateQuestion,
   onDeleteQuestion,
+  availableDocuments = [],
 }: SortableStepCardProps) {
   const {
     attributes,
@@ -280,16 +284,88 @@ function SortableStepCard({
           )}
 
           {step.stepType === 'resource' && (
-            <div className="space-y-3 p-3 bg-muted/50 rounded-lg">
-              <Label htmlFor={`step-content-${step.id}`}>Content (Rich Text)</Label>
-              <Textarea
-                id={`step-content-${step.id}`}
-                value={step.content || ''}
-                onChange={(e) => onUpdate(step.id, { content: e.target.value })}
-                placeholder="Enter resource content..."
-                className="min-h-[150px]"
-                data-testid={`textarea-step-content-${step.id}`}
-              />
+            <div className="space-y-4 p-3 bg-muted/50 rounded-lg">
+              <div>
+                <Label htmlFor={`step-content-${step.id}`}>Resource Content</Label>
+                <Textarea
+                  id={`step-content-${step.id}`}
+                  value={step.content || ''}
+                  onChange={(e) => onUpdate(step.id, { content: e.target.value })}
+                  placeholder="Enter the resource content, instructions, or reference material..."
+                  className="min-h-[120px]"
+                  data-testid={`textarea-step-content-${step.id}`}
+                />
+              </div>
+              
+              <div className="border-t pt-4">
+                <Label className="text-sm text-muted-foreground">Link to Existing Document (Optional)</Label>
+                <p className="text-xs text-muted-foreground mb-2">
+                  Optionally link to an existing Knowledge Base document for reference
+                </p>
+                
+                {availableDocuments.filter(doc => doc.documentType !== 'training_module').length > 0 ? (
+                  <Select
+                    value={config.linkedDocumentId?.toString() || 'none'}
+                    onValueChange={(value) => {
+                      if (!value || value === 'none') {
+                        const newConfig: StepConfig = { 
+                          ...config, 
+                          linkedDocumentId: undefined,
+                          linkedDocumentTitle: undefined
+                        };
+                        onUpdate(step.id, { config: newConfig as any });
+                        return;
+                      }
+                      const docId = parseInt(value);
+                      if (isNaN(docId)) return;
+                      const doc = availableDocuments.find(d => d.id === docId);
+                      const newConfig: StepConfig = { 
+                        ...config, 
+                        linkedDocumentId: docId,
+                        linkedDocumentTitle: doc?.title || ''
+                      };
+                      onUpdate(step.id, { config: newConfig as any });
+                    }}
+                  >
+                    <SelectTrigger data-testid={`select-linked-document-${step.id}`}>
+                      <SelectValue placeholder="Select a document to link..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">None</SelectItem>
+                      {availableDocuments
+                        .filter(doc => doc.documentType !== 'training_module')
+                        .map((doc) => (
+                          <SelectItem key={doc.id} value={doc.id.toString()}>
+                            {doc.title}
+                          </SelectItem>
+                        ))
+                      }
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <p className="text-sm text-muted-foreground italic">
+                    No other documents available to link.
+                  </p>
+                )}
+                
+                {config.linkedDocumentId && (
+                  <div className="flex items-center gap-2 p-2 mt-2 bg-green-50 dark:bg-green-900/20 rounded border border-green-200 dark:border-green-800">
+                    <FileText className="h-4 w-4 text-green-600" />
+                    <span className="text-sm font-medium text-green-700 dark:text-green-300">
+                      Linked: {config.linkedDocumentTitle || 'Document #' + config.linkedDocumentId}
+                    </span>
+                    <a 
+                      href={`/kb/documents/${config.linkedDocumentId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-auto text-xs text-green-600 hover:underline"
+                      data-testid={`link-view-document-${step.id}`}
+                    >
+                      View Document →
+                    </a>
+                  </div>
+                )}
+              </div>
             </div>
           )}
 
@@ -475,6 +551,10 @@ export default function TrainingModuleEditor() {
       return questionsMap;
     },
     enabled: isEditing && !!documentId && steps.length > 0,
+  });
+
+  const { data: availableDocuments = [] } = useQuery<KnowledgeDocument[]>({
+    queryKey: ['/api/knowledge-base/documents'],
   });
 
   useEffect(() => {
@@ -926,6 +1006,7 @@ export default function TrainingModuleEditor() {
                       onDeleteQuestion={(questionId) =>
                         deleteQuestionMutation.mutate(questionId)
                       }
+                      availableDocuments={availableDocuments}
                     />
                   ))}
                 </SortableContext>
