@@ -234,8 +234,8 @@ export default function Integrations() {
                         <div className={`p-1.5 rounded-lg ${config?.color || 'bg-gray-500'} bg-opacity-10`}>
                           <Icon className={`h-5 w-5 ${config?.color?.replace('bg-', 'text-')}`} />
                         </div>
-                        <Badge variant="outline" className="bg-green-50 text-xs">
-                          <CheckCircle className="h-3 w-3 mr-1 text-green-600" />
+                        <Badge variant="outline" className="bg-green-50 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800 text-xs">
+                          <CheckCircle className="h-3 w-3 mr-1" />
                           Active
                         </Badge>
                       </div>
