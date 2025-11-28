@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
-import { BookOpen, Users, Plus, FileText, Filter, Eye, Edit3, Trash2, Calendar, User, Tag, Search, X, UserPlus, Pencil, PanelLeftClose, PanelLeft, GraduationCap, ChevronDown, GripVertical, FolderInput, Folder } from "lucide-react";
+import { BookOpen, Users, Plus, FileText, Filter, Eye, Edit3, Trash2, Calendar, User, Tag, Search, X, UserPlus, Pencil, PanelLeftClose, PanelLeft, GraduationCap, ChevronDown, GripVertical, FolderInput, Folder, ExternalLink, FileCheck } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
@@ -490,8 +490,16 @@ export default function KnowledgeBaseListing() {
                   {document.status}
                 </Badge>
                 {document.documentType && document.documentType !== 'internal_kb' && (
-                  <Badge variant="secondary" className="px-1 py-0 text-[12px]">
-                    {document.documentType === 'training_module' ? 'Training' : document.documentType}
+                  <Badge 
+                    variant={document.documentType === 'external_file_link' ? 'outline' : 'secondary'} 
+                    className="px-1 py-0 text-[12px] flex items-center gap-1"
+                  >
+                    {document.documentType === 'training_module' && <GraduationCap className="h-3 w-3" />}
+                    {document.documentType === 'external_file_link' && <ExternalLink className="h-3 w-3" />}
+                    {document.documentType === 'customer_document' && <FileCheck className="h-3 w-3" />}
+                    {document.documentType === 'training_module' && 'Training'}
+                    {document.documentType === 'external_file_link' && 'External'}
+                    {document.documentType === 'customer_document' && 'Customer'}
                   </Badge>
                 )}
                 {document.categories && document.categories.length > 0 && (
@@ -513,6 +521,22 @@ export default function KnowledgeBaseListing() {
             </div>
             
             <div className="flex items-center gap-1">
+              {/* Open external link button for external file links */}
+              {document.documentType === 'external_file_link' && (document as any).externalFileUrl && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.open((document as any).externalFileUrl, '_blank');
+                  }}
+                  className="h-6 w-6 p-0 text-primary"
+                  data-testid={`open-external-${document.id}`}
+                  title="Open external file"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="sm"

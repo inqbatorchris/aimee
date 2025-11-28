@@ -1383,4 +1383,150 @@ router.post('/assignments/complete-from-workflow', async (req, res) => {
   }
 });
 
+// ========================================
+// AI COMPOSE ENDPOINTS
+// ========================================
+
+import { OpenAIService } from '../services/integrations/openaiService';
+
+// Generate document outline
+router.post("/documents/ai/generate-outline", authenticateToken, async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const { topic, documentType, audience } = req.body;
+
+    if (!topic) {
+      return res.status(400).json({ error: "Topic is required" });
+    }
+
+    const openai = new OpenAIService(organizationId);
+    await openai.initialize();
+
+    const systemPrompt = `You are a professional technical writer helping create knowledge base documentation. Generate a structured outline for the given topic. The outline should be practical, actionable, and appropriate for the specified audience.
+
+Format your response as a clean HTML structure that can be directly used in a rich text editor. Use proper heading hierarchy (h2, h3) and bullet points (ul, li).`;
+
+    const userPrompt = `Create a detailed outline for a ${documentType || 'knowledge article'} about: "${topic}"
+${audience ? `Target audience: ${audience}` : ''}
+
+The outline should include:
+- A clear introduction section
+- 3-5 main sections with subsections
+- Practical tips or best practices
+- A conclusion or summary section`;
+
+    const response = await openai.createChatCompletion([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ], {
+      model: 'gpt-4',
+      temperature: 0.7,
+      max_tokens: 1500
+    });
+
+    const outline = response.choices[0]?.message?.content || '';
+
+    res.json({ 
+      success: true, 
+      outline,
+      topic 
+    });
+  } catch (error: any) {
+    console.error("Error generating outline:", error);
+    if (error.message?.includes('integration not configured') || error.message?.includes('credentials not configured')) {
+      return res.status(400).json({ error: "OpenAI integration not configured. Please set up OpenAI in Integrations." });
+    }
+    res.status(500).json({ error: "Failed to generate outline" });
+  }
+});
+
+// Expand section with AI
+router.post("/documents/ai/expand-section", authenticateToken, async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const { section, context, tone } = req.body;
+
+    if (!section) {
+      return res.status(400).json({ error: "Section content is required" });
+    }
+
+    const openai = new OpenAIService(organizationId);
+    await openai.initialize();
+
+    const systemPrompt = `You are a professional technical writer. Expand the given section heading or brief content into detailed, well-written documentation. Write in a ${tone || 'professional'} tone. Format your response as clean HTML suitable for a rich text editor.`;
+
+    const userPrompt = `Expand this section into detailed content:
+"${section}"
+
+${context ? `Additional context: ${context}` : ''}
+
+Write 2-4 paragraphs with practical, actionable information. Include examples where relevant.`;
+
+    const response = await openai.createChatCompletion([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ], {
+      model: 'gpt-4',
+      temperature: 0.7,
+      max_tokens: 1000
+    });
+
+    const content = response.choices[0]?.message?.content || '';
+
+    res.json({ 
+      success: true, 
+      content 
+    });
+  } catch (error: any) {
+    console.error("Error expanding section:", error);
+    if (error.message?.includes('integration not configured') || error.message?.includes('credentials not configured')) {
+      return res.status(400).json({ error: "OpenAI integration not configured. Please set up OpenAI in Integrations." });
+    }
+    res.status(500).json({ error: "Failed to expand section" });
+  }
+});
+
+// Improve writing
+router.post("/documents/ai/improve-writing", authenticateToken, async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const { content, instruction } = req.body;
+
+    if (!content) {
+      return res.status(400).json({ error: "Content is required" });
+    }
+
+    const openai = new OpenAIService(organizationId);
+    await openai.initialize();
+
+    const systemPrompt = `You are an expert editor helping improve documentation quality. Apply the requested improvements while preserving the original meaning and key information. Return clean HTML suitable for a rich text editor.`;
+
+    const userPrompt = `${instruction || 'Improve the clarity and readability of this content'}:
+
+${content}`;
+
+    const response = await openai.createChatCompletion([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ], {
+      model: 'gpt-4',
+      temperature: 0.5,
+      max_tokens: 2000
+    });
+
+    const improved = response.choices[0]?.message?.content || '';
+
+    res.json({ 
+      success: true, 
+      content: improved 
+    });
+  } catch (error: any) {
+    console.error("Error improving writing:", error);
+    if (error.message?.includes('integration not configured') || error.message?.includes('credentials not configured')) {
+      return res.status(400).json({ error: "OpenAI integration not configured. Please set up OpenAI in Integrations." });
+    }
+    res.status(500).json({ error: "Failed to improve writing" });
+  }
+});
+
 export default router;
