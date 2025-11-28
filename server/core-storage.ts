@@ -20,6 +20,13 @@ import {
   keyResultTasks,
   workItems,
   pages,
+  knowledgeFolders,
+  trainingModuleSteps,
+  trainingQuizQuestions,
+  trainingProgress,
+  userPoints,
+  pointTransactions,
+  activityFeed,
   type User,
   type InsertUser,
   type Organization,
@@ -47,6 +54,20 @@ import {
   type InsertOnboardingPlan,
   type UserOnboardingProgress,
   type InsertUserOnboardingProgress,
+  type KnowledgeFolder,
+  type InsertKnowledgeFolder,
+  type TrainingModuleStep,
+  type InsertTrainingModuleStep,
+  type TrainingQuizQuestion,
+  type InsertTrainingQuizQuestion,
+  type TrainingProgress,
+  type InsertTrainingProgress,
+  type UserPoints,
+  type InsertUserPoints,
+  type PointTransaction,
+  type InsertPointTransaction,
+  type ActivityFeed,
+  type InsertActivityFeed,
 } from '../shared/schema';
 import { db } from './db';
 import { eq, desc, like, ilike, and, asc, isNull, gte, lte, not, inArray, isNotNull, count, sql, or } from 'drizzle-orm';
@@ -161,6 +182,39 @@ export interface ICoreStorage {
   createKnowledgeCategory(category: InsertKnowledgeCategory): Promise<KnowledgeCategory>;
   updateKnowledgeCategory(id: number, data: Partial<KnowledgeCategory>): Promise<KnowledgeCategory | undefined>;
   deleteKnowledgeCategory(id: number): Promise<boolean>;
+
+  // Knowledge Hub v3 - Folders
+  getKnowledgeFolders(organizationId: number, parentId?: number | null): Promise<KnowledgeFolder[]>;
+  getKnowledgeFolder(id: number): Promise<KnowledgeFolder | undefined>;
+  createKnowledgeFolder(folder: InsertKnowledgeFolder): Promise<KnowledgeFolder>;
+  updateKnowledgeFolder(id: number, data: Partial<KnowledgeFolder>): Promise<KnowledgeFolder | undefined>;
+  deleteKnowledgeFolder(id: number): Promise<boolean>;
+  getFolderWithDocuments(folderId: number): Promise<{ folder: KnowledgeFolder; documents: KnowledgeDocument[] } | undefined>;
+  
+  // Knowledge Hub v3 - Training Progress & Points
+  getTrainingProgress(userId: number, documentId: number): Promise<TrainingProgress | undefined>;
+  updateTrainingProgress(id: number, data: Partial<TrainingProgress>): Promise<TrainingProgress | undefined>;
+  createTrainingProgress(progress: InsertTrainingProgress): Promise<TrainingProgress>;
+  getUserPoints(userId: number): Promise<UserPoints | undefined>;
+  addPoints(userId: number, organizationId: number, points: number, sourceType: string, sourceId?: number, description?: string): Promise<PointTransaction>;
+  
+  // Knowledge Hub v3 - Training Module Steps
+  getTrainingModuleSteps(documentId: number): Promise<TrainingModuleStep[]>;
+  getTrainingModuleStep(id: number): Promise<TrainingModuleStep | undefined>;
+  createTrainingModuleStep(step: InsertTrainingModuleStep): Promise<TrainingModuleStep>;
+  updateTrainingModuleStep(id: number, data: Partial<TrainingModuleStep>): Promise<TrainingModuleStep | undefined>;
+  deleteTrainingModuleStep(id: number): Promise<boolean>;
+  reorderTrainingModuleSteps(documentId: number, stepIds: number[]): Promise<boolean>;
+  
+  // Knowledge Hub v3 - Quiz Questions  
+  getQuizQuestions(stepId: number): Promise<TrainingQuizQuestion[]>;
+  createQuizQuestion(question: InsertTrainingQuizQuestion): Promise<TrainingQuizQuestion>;
+  updateQuizQuestion(id: number, data: Partial<TrainingQuizQuestion>): Promise<TrainingQuizQuestion | undefined>;
+  deleteQuizQuestion(id: number): Promise<boolean>;
+  
+  // Knowledge Hub v3 - Activity Feed
+  createActivityFeedEntry(entry: InsertActivityFeed): Promise<ActivityFeed>;
+  getActivityFeed(organizationId: number, limit?: number): Promise<ActivityFeed[]>;
 }
 
 export class CoreDatabaseStorage implements ICoreStorage {
@@ -840,7 +894,7 @@ export class CoreDatabaseStorage implements ICoreStorage {
       .set({
         title: versionToRestore.title,
         content: versionToRestore.content,
-        lastModified: new Date()
+        updatedAt: new Date()
       })
       .where(eq(knowledgeDocuments.id, documentId))
       .returning();
@@ -1391,6 +1445,251 @@ export class CoreDatabaseStorage implements ICoreStorage {
       .returning();
     
     return updated;
+  }
+
+  // ========================================
+  // KNOWLEDGE HUB V3 - FOLDERS
+  // ========================================
+  
+  async getKnowledgeFolders(organizationId: number, parentId?: number | null): Promise<KnowledgeFolder[]> {
+    const conditions = [eq(knowledgeFolders.organizationId, organizationId)];
+    
+    if (parentId === null) {
+      conditions.push(isNull(knowledgeFolders.parentId));
+    } else if (parentId !== undefined) {
+      conditions.push(eq(knowledgeFolders.parentId, parentId));
+    }
+    
+    return await db.select()
+      .from(knowledgeFolders)
+      .where(and(...conditions))
+      .orderBy(asc(knowledgeFolders.sortOrder), asc(knowledgeFolders.name));
+  }
+
+  async getKnowledgeFolder(id: number, organizationId: number): Promise<KnowledgeFolder | undefined> {
+    const [folder] = await db.select()
+      .from(knowledgeFolders)
+      .where(and(
+        eq(knowledgeFolders.id, id),
+        eq(knowledgeFolders.organizationId, organizationId)
+      ))
+      .limit(1);
+    return folder;
+  }
+
+  async createKnowledgeFolder(folder: InsertKnowledgeFolder): Promise<KnowledgeFolder> {
+    const [created] = await db.insert(knowledgeFolders)
+      .values(folder)
+      .returning();
+    return created;
+  }
+
+  async updateKnowledgeFolder(id: number, organizationId: number, data: Partial<KnowledgeFolder>): Promise<KnowledgeFolder | undefined> {
+    const [updated] = await db.update(knowledgeFolders)
+      .set({ ...data, updatedAt: new Date() })
+      .where(and(
+        eq(knowledgeFolders.id, id),
+        eq(knowledgeFolders.organizationId, organizationId)
+      ))
+      .returning();
+    return updated;
+  }
+
+  async deleteKnowledgeFolder(id: number, organizationId: number): Promise<boolean> {
+    const result = await db.delete(knowledgeFolders)
+      .where(and(
+        eq(knowledgeFolders.id, id),
+        eq(knowledgeFolders.organizationId, organizationId)
+      ));
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  async getFolderWithDocuments(folderId: number, organizationId: number): Promise<{ folder: KnowledgeFolder; documents: KnowledgeDocument[] } | undefined> {
+    const folder = await this.getKnowledgeFolder(folderId, organizationId);
+    if (!folder) return undefined;
+    
+    const documents = await db.select()
+      .from(knowledgeDocuments)
+      .where(and(
+        eq(knowledgeDocuments.folderId, folderId),
+        eq(knowledgeDocuments.organizationId, organizationId)
+      ))
+      .orderBy(asc(knowledgeDocuments.title));
+    
+    return { folder, documents };
+  }
+
+  // ========================================
+  // KNOWLEDGE HUB V3 - TRAINING PROGRESS & POINTS
+  // ========================================
+  
+  async getTrainingProgress(userId: number, documentId: number): Promise<TrainingProgress | undefined> {
+    const [progress] = await db.select()
+      .from(trainingProgress)
+      .where(and(
+        eq(trainingProgress.userId, userId),
+        eq(trainingProgress.documentId, documentId)
+      ))
+      .limit(1);
+    return progress;
+  }
+
+  async createTrainingProgress(progress: InsertTrainingProgress): Promise<TrainingProgress> {
+    const [created] = await db.insert(trainingProgress)
+      .values(progress)
+      .returning();
+    return created;
+  }
+
+  async updateTrainingProgress(id: number, data: Partial<TrainingProgress>): Promise<TrainingProgress | undefined> {
+    const [updated] = await db.update(trainingProgress)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(trainingProgress.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getUserPoints(userId: number): Promise<UserPoints | undefined> {
+    const [points] = await db.select()
+      .from(userPoints)
+      .where(eq(userPoints.userId, userId))
+      .limit(1);
+    return points;
+  }
+
+  async addPoints(userId: number, organizationId: number, points: number, sourceType: string, sourceId?: number, description?: string): Promise<PointTransaction> {
+    const [transaction] = await db.insert(pointTransactions)
+      .values({
+        userId,
+        organizationId,
+        points,
+        sourceType,
+        sourceId,
+        description
+      })
+      .returning();
+    
+    const existingPoints = await this.getUserPoints(userId);
+    if (existingPoints) {
+      await db.update(userPoints)
+        .set({ 
+          totalPoints: existingPoints.totalPoints! + points,
+          updatedAt: new Date()
+        })
+        .where(eq(userPoints.userId, userId));
+    } else {
+      await db.insert(userPoints)
+        .values({
+          userId,
+          organizationId,
+          totalPoints: points
+        });
+    }
+    
+    return transaction;
+  }
+
+  // ========================================
+  // KNOWLEDGE HUB V3 - TRAINING MODULE STEPS
+  // ========================================
+  
+  async getTrainingModuleSteps(documentId: number): Promise<TrainingModuleStep[]> {
+    return await db.select()
+      .from(trainingModuleSteps)
+      .where(eq(trainingModuleSteps.documentId, documentId))
+      .orderBy(asc(trainingModuleSteps.stepOrder));
+  }
+
+  async getTrainingModuleStep(id: number): Promise<TrainingModuleStep | undefined> {
+    const [step] = await db.select()
+      .from(trainingModuleSteps)
+      .where(eq(trainingModuleSteps.id, id))
+      .limit(1);
+    return step;
+  }
+
+  async createTrainingModuleStep(step: InsertTrainingModuleStep): Promise<TrainingModuleStep> {
+    const [created] = await db.insert(trainingModuleSteps)
+      .values(step)
+      .returning();
+    return created;
+  }
+
+  async updateTrainingModuleStep(id: number, data: Partial<TrainingModuleStep>): Promise<TrainingModuleStep | undefined> {
+    const [updated] = await db.update(trainingModuleSteps)
+      .set({ ...data, updatedAt: new Date() })
+      .where(eq(trainingModuleSteps.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteTrainingModuleStep(id: number): Promise<boolean> {
+    const result = await db.delete(trainingModuleSteps)
+      .where(eq(trainingModuleSteps.id, id));
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  async reorderTrainingModuleSteps(documentId: number, stepIds: number[]): Promise<boolean> {
+    for (let i = 0; i < stepIds.length; i++) {
+      await db.update(trainingModuleSteps)
+        .set({ stepOrder: i + 1 })
+        .where(and(
+          eq(trainingModuleSteps.id, stepIds[i]),
+          eq(trainingModuleSteps.documentId, documentId)
+        ));
+    }
+    return true;
+  }
+
+  // ========================================
+  // KNOWLEDGE HUB V3 - QUIZ QUESTIONS
+  // ========================================
+  
+  async getQuizQuestions(stepId: number): Promise<TrainingQuizQuestion[]> {
+    return await db.select()
+      .from(trainingQuizQuestions)
+      .where(eq(trainingQuizQuestions.stepId, stepId))
+      .orderBy(asc(trainingQuizQuestions.questionOrder));
+  }
+
+  async createQuizQuestion(question: InsertTrainingQuizQuestion): Promise<TrainingQuizQuestion> {
+    const [created] = await db.insert(trainingQuizQuestions)
+      .values(question)
+      .returning();
+    return created;
+  }
+
+  async updateQuizQuestion(id: number, data: Partial<TrainingQuizQuestion>): Promise<TrainingQuizQuestion | undefined> {
+    const [updated] = await db.update(trainingQuizQuestions)
+      .set(data)
+      .where(eq(trainingQuizQuestions.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteQuizQuestion(id: number): Promise<boolean> {
+    const result = await db.delete(trainingQuizQuestions)
+      .where(eq(trainingQuizQuestions.id, id));
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  // ========================================
+  // KNOWLEDGE HUB V3 - ACTIVITY FEED
+  // ========================================
+  
+  async createActivityFeedEntry(entry: InsertActivityFeed): Promise<ActivityFeed> {
+    const [created] = await db.insert(activityFeed)
+      .values(entry)
+      .returning();
+    return created;
+  }
+
+  async getActivityFeed(organizationId: number, limit: number = 50): Promise<ActivityFeed[]> {
+    return await db.select()
+      .from(activityFeed)
+      .where(eq(activityFeed.organizationId, organizationId))
+      .orderBy(desc(activityFeed.createdAt))
+      .limit(limit);
   }
 }
 
