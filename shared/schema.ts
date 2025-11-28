@@ -621,8 +621,6 @@ export const checkInMeetings = pgTable("check_in_meetings", {
   index("idx_meetings_org_team").on(table.organizationId, table.teamId),
   index("idx_meetings_scheduled").on(table.scheduledDate),
   index("idx_meetings_status").on(table.status),
-  // Unique constraint to prevent duplicate meetings
-  sql`CONSTRAINT uq_meeting_org_team_date UNIQUE (organization_id, team_id, scheduled_date)`,
 ]);
 
 // Team Feedback table for post-meeting individual feedback (simplified)
@@ -644,8 +642,6 @@ export const teamFeedback = pgTable("team_feedback", {
 }, (table) => [
   index("idx_team_feedback_meeting").on(table.meetingId),
   index("idx_team_feedback_user").on(table.userId),
-  // Ensure one feedback per user per meeting
-  sql`CONSTRAINT uq_team_feedback_meeting_user UNIQUE (meeting_id, user_id)`,
 ]);
 
 // Migration 005: Work Items table (Phase-1 extended with target_meeting_id) - cleaned up
@@ -765,8 +761,6 @@ export const teams = pgTable("teams", {
 }, (table) => [
   index("idx_teams_org").on(table.organizationId),
   index("idx_teams_name").on(table.name),
-  // Unique constraint on org + name
-  sql`CONSTRAINT uq_teams_org_name UNIQUE (organization_id, name)`,
 ]);
 
 // Team Members table (migration 007)
@@ -778,8 +772,6 @@ export const teamMembers = pgTable("team_members", {
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
   index("idx_team_members_team").on(table.teamId),
-  // Unique constraint on team + user
-  sql`CONSTRAINT uq_team_member UNIQUE (team_id, user_id)`,
 ]);
 
 // Objectives Snapshots (migration 007)
@@ -870,8 +862,6 @@ export const meetingAttendees = pgTable("meeting_attendees", {
 }, (table) => [
   index("idx_attendees_meeting").on(table.meetingId),
   index("idx_attendees_user").on(table.userId),
-  // Unique constraint - one record per user per meeting
-  sql`CONSTRAINT uq_meeting_attendee UNIQUE (meeting_id, user_id)`,
 ]);
 
 // Meeting Item Updates (Phase-1)
@@ -3261,7 +3251,6 @@ export const integrationWorkflowMappings = pgTable("integration_workflow_mapping
   index("idx_int_workflow_org").on(table.organizationId),
   index("idx_int_workflow_integration").on(table.integrationName),
   index("idx_int_workflow_template").on(table.workflowTemplateId),
-  sql`CONSTRAINT uq_int_workflow_mapping UNIQUE (organization_id, integration_name, external_task_type)`,
 ]);
 
 // Sync Queue - Offline sync queue management
