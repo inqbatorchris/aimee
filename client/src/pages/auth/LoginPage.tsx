@@ -10,6 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { ThemeToggle } from '@/components/ThemeToggle';
 import logoUrl from '@/assets/CC_Future_proof_broadband.svg';
 import companyLogoUrl from '@/assets/Country_Connect_Logo_Tight_2024_White.png';
 import aimeeLogo from '@assets/aimeelogowhite_1759953200944.png';
@@ -100,6 +101,9 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-zinc-900 text-white flex flex-col">
+      <div className="absolute top-6 right-6">
+        <ThemeToggle />
+      </div>
       <div className="flex-1 flex flex-col justify-center px-6 py-12">
         <div className="w-full max-w-md mx-auto">
           <div className="mb-10">
