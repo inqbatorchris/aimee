@@ -2154,24 +2154,6 @@ export const agentWorkflows = pgTable("agent_workflows", {
   index("idx_agent_workflows_assigned_user").on(table.assignedUserId),
 ]);
 
-// Legacy workflow runs (preserving existing data)
-export const workflowRuns = pgTable("workflow_runs", {
-  id: serial("id").primaryKey(),
-  workflowId: integer("workflow_id"),
-  status: varchar("status", { length: 50 }),
-  triggerSource: varchar("trigger_source", { length: 255 }),
-  startedAt: timestamp("started_at"),
-  completedAt: timestamp("completed_at"),
-  executionLog: jsonb("execution_log"),
-  errorMessage: text("error_message"),
-  resultData: jsonb("result_data"),
-  executionDuration: integer("execution_duration"),
-  stepsCompleted: integer("steps_completed"),
-  totalSteps: integer("total_steps"),
-  retryCount: integer("retry_count"),
-  contextData: jsonb("context_data"),
-});
-
 // Agent workflow execution history
 export const agentWorkflowRuns = pgTable("agent_workflow_runs", {
   id: serial("id").primaryKey(),
