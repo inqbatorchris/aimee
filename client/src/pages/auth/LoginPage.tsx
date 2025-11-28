@@ -104,7 +104,21 @@ export default function LoginPage() {
         <div className="w-full max-w-md mx-auto">
           <div className="mb-10">
             <img src={logoUrl} alt="Country Connect - Future Proof Broadband" className="h-[49px]" />
-            <p className="mt-3 text-[#ffffff] text-[20px]">Desktop login.</p>
+            <p className="mt-3 text-[#ffffff] text-[20px] text-center">Desktop login.</p>
+            <div className="mt-3 text-center">
+              <span className="text-zinc-400 text-sm">
+                Field worker?{' '}
+                <button
+                  type="button"
+                  onClick={() => setLocation('/field-app')}
+                  className="text-emerald-400 hover:text-emerald-300 font-medium transition-colors"
+                  disabled={isLoading}
+                  data-testid="link-field-app"
+                >
+                  Use Field App
+                </button>
+              </span>
+            </div>
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
@@ -198,21 +212,6 @@ export default function LoginPage() {
             <p className="text-sm text-zinc-400">
               <strong className="text-zinc-300">Need help?</strong> Contact your administrator for login assistance or password reset.
             </p>
-          </div>
-
-          <div className="mt-4 text-center">
-            <span className="text-zinc-400 text-sm">
-              Field worker?{' '}
-              <button
-                type="button"
-                onClick={() => setLocation('/field-app')}
-                className="text-emerald-400 hover:text-emerald-300 font-medium transition-colors"
-                disabled={isLoading}
-                data-testid="link-field-app"
-              >
-                Use Field App
-              </button>
-            </span>
           </div>
 
           <div className="mt-10 text-center">
