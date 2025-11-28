@@ -3521,16 +3521,17 @@ async function createAgentWorkflow(payload: any, user: any): Promise<any> {
     const trigger = await db.query.integrationTriggers.findFirst({
       where: eq(integrationTriggers.id, trigger_config.triggerId),
     });
-    if (trigger) {
-      const integration = await db.query.integrations.findFirst({
-        where: and(
-          eq(integrations.id, trigger.integrationId),
-          eq(integrations.organizationId, user.organizationId)
-        ),
-      });
-      if (!integration) {
-        throw new Error(`Integration trigger ${trigger_config.triggerId} does not belong to your organization.`);
-      }
+    if (!trigger) {
+      throw new Error(`Integration trigger with ID ${trigger_config.triggerId} not found.`);
+    }
+    const integration = await db.query.integrations.findFirst({
+      where: and(
+        eq(integrations.id, trigger.integrationId),
+        eq(integrations.organizationId, user.organizationId)
+      ),
+    });
+    if (!integration) {
+      throw new Error(`Integration trigger ${trigger_config.triggerId} does not belong to your organization.`);
     }
   }
 
