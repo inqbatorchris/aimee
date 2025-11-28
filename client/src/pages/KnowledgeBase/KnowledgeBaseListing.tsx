@@ -440,7 +440,7 @@ export default function KnowledgeBaseListing() {
       <Card 
         ref={setNodeRef}
         style={style}
-        className={`hover:shadow-sm transition-shadow ${isDragging ? 'opacity-50 z-50' : ''} ${isSelected ? 'ring-2 ring-primary' : ''}`} 
+        className={`group hover:shadow-sm transition-shadow ${isDragging ? 'opacity-50 z-50' : ''} ${isSelected ? 'ring-2 ring-primary' : ''}`} 
         data-testid={`document-card-${document.id}`}
       >
         <CardContent className="p-3">
@@ -496,10 +496,10 @@ export default function KnowledgeBaseListing() {
                   >
                     {document.documentType === 'training_module' && <GraduationCap className="h-3 w-3" />}
                     {document.documentType === 'external_file_link' && <ExternalLink className="h-3 w-3" />}
-                    {document.documentType === 'customer_document' && <FileCheck className="h-3 w-3" />}
+                    {document.documentType === 'customer_kb' && <FileCheck className="h-3 w-3" />}
                     {document.documentType === 'training_module' && 'Training'}
                     {document.documentType === 'external_file_link' && 'External'}
-                    {document.documentType === 'customer_document' && 'Customer'}
+                    {document.documentType === 'customer_kb' && 'Customer'}
                   </Badge>
                 )}
                 {document.categories && document.categories.length > 0 && (

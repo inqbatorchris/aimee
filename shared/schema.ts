@@ -2755,7 +2755,7 @@ export const insertKnowledgeDocumentSchema = createInsertSchema(knowledgeDocumen
   title: z.string().min(1, "Title is required").max(255),
   content: z.string().optional(), // Made optional for external file links
   estimatedReadingTime: z.number().int().positive().max(240).optional(), // 1-240 minutes
-  documentType: z.enum(['internal_kb', 'training_module', 'customer_document', 'external_file_link']).optional(),
+  documentType: z.enum(['internal_kb', 'training_module', 'customer_kb', 'external_file_link', 'website_page', 'marketing_email', 'marketing_letter', 'attachment', 'contract', 'policy', 'public_report', 'quick_reference']).optional(),
   folderId: z.number().int().nullable().optional(),
   externalFileUrl: z.string().url().optional().nullable(),
   externalFileSource: z.string().max(50).optional().nullable(),
