@@ -742,7 +742,7 @@ export class WorkflowExecutor {
               userId: userId,
               actionType: 'agent_action',
               entityType: 'key_result',
-              entityId: targetId,
+              entityId: parseInt(processedTargetId),
               description: description,
               metadata: {
                 title: kr.title,
@@ -755,7 +755,7 @@ export class WorkflowExecutor {
                 runId: context.runId
               }
             });
-            console.log(`[WorkflowExecutor] ✓ Activity log created: "${description}"`);
+            console.log(`[WorkflowExecutor] ✓ Activity log created for key result ${processedTargetId}: "${description}"`);
           } catch (error) {
             console.error('[WorkflowExecutor] Failed to log activity:', error);
             // Don't throw - activity log failure shouldn't break the workflow
@@ -766,11 +766,11 @@ export class WorkflowExecutor {
         const [obj] = await db
           .select()
           .from(objectives)
-          .where(eq(objectives.id, targetId))
+          .where(eq(objectives.id, parseInt(processedTargetId)))
           .limit(1);
         
         if (!obj) {
-          throw new Error(`Objective ${targetId} not found`);
+          throw new Error(`Objective ${processedTargetId} not found`);
         }
         
         const oldValue = obj.currentValue;
@@ -785,7 +785,7 @@ export class WorkflowExecutor {
               lastCalculatedAt: new Date(),
               updatedAt: new Date()
             })
-            .where(eq(objectives.id, targetId));
+            .where(eq(objectives.id, parseInt(processedTargetId)));
         } else if (updateType === 'increment') {
           const currentVal = parseFloat(obj.currentValue || '0');
           const incrementBy = parseFloat(processedValue || '0');
@@ -797,7 +797,7 @@ export class WorkflowExecutor {
               lastCalculatedAt: new Date(),
               updatedAt: new Date()
             })
-            .where(eq(objectives.id, targetId));
+            .where(eq(objectives.id, parseInt(processedTargetId)));
         } else if (updateType === 'percentage') {
           if (obj.targetValue) {
             const targetVal = parseFloat(obj.targetValue || '100');
@@ -810,7 +810,7 @@ export class WorkflowExecutor {
                 lastCalculatedAt: new Date(),
                 updatedAt: new Date()
               })
-              .where(eq(objectives.id, targetId));
+              .where(eq(objectives.id, parseInt(processedTargetId)));
           }
         }
         
@@ -829,7 +829,7 @@ export class WorkflowExecutor {
               userId: userId,
               actionType: 'agent_action',
               entityType: 'objective',
-              entityId: targetId,
+              entityId: parseInt(processedTargetId),
               description: description,
               metadata: {
                 title: obj.title,
@@ -842,7 +842,7 @@ export class WorkflowExecutor {
                 runId: context.runId
               }
             });
-            console.log(`[WorkflowExecutor] ✓ Activity log created for objective: "${description}"`);
+            console.log(`[WorkflowExecutor] ✓ Activity log created for objective ${processedTargetId}: "${description}"`);
           } catch (error) {
             console.error('[WorkflowExecutor] Failed to log objective activity:', error);
             // Don't throw - activity log failure shouldn't break the workflow
