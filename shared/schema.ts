@@ -1516,7 +1516,6 @@ export const splynxLocations = pgTable("splynx_locations", {
 }, (table) => [
   index("idx_splynx_locations_org").on(table.organizationId),
   index("idx_splynx_locations_splynx_id").on(table.splynxLocationId),
-  unique("unique_splynx_location_per_org").on(table.organizationId, table.splynxLocationId),
 ]);
 
 // Customer geocoding cache - to avoid re-geocoding same addresses
