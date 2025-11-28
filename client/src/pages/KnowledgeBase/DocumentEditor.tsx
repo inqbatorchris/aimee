@@ -14,6 +14,7 @@ import { ModernDocumentEditor } from '@/components/DocumentEditor/ModernDocument
 import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/contexts/AuthContext';
 import { DocumentFormWrapper } from '@/components/document-editor/DocumentFormWrapper';
+import { AIComposePanel } from '@/components/knowledge-hub/AIComposePanel';
 import type { KnowledgeFolder } from '@shared/schema';
 
 const DOCUMENT_TYPES = [
@@ -42,6 +43,18 @@ export default function DocumentEditor() {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [documentType, setDocumentType] = useState<string>('internal_kb');
   const [folderId, setFolderId] = useState<number | null>(null);
+  
+  // External file link fields
+  const [externalFileUrl, setExternalFileUrl] = useState('');
+  const [externalFileSource, setExternalFileSource] = useState<string>('');
+
+  const EXTERNAL_FILE_SOURCES = [
+    { value: 'sharepoint', label: 'SharePoint' },
+    { value: 'onedrive', label: 'OneDrive' },
+    { value: 'google_drive', label: 'Google Drive' },
+    { value: 'dropbox', label: 'Dropbox' },
+    { value: 'other', label: 'Other URL' },
+  ] as const;
 
   const isEditing = !!id;
 
@@ -88,6 +101,8 @@ export default function DocumentEditor() {
         setEstimatedReadingTime(doc.estimatedReadingTime || 5);
         setDocumentType(doc.documentType || 'internal_kb');
         setFolderId(doc.folderId || null);
+        setExternalFileUrl(doc.externalFileUrl || '');
+        setExternalFileSource(doc.externalFileSource || '');
         console.log('Document data loaded:', { title: doc.title, hasContent: !!doc.content, documentType: doc.documentType });
       }
     }
@@ -104,6 +119,8 @@ export default function DocumentEditor() {
       setEstimatedReadingTime(5);
       setDocumentType('internal_kb');
       setFolderId(null);
+      setExternalFileUrl('');
+      setExternalFileSource('');
     }
   }, [isEditing]);
 
@@ -118,6 +135,8 @@ export default function DocumentEditor() {
       estimatedReadingTime: number;
       documentType: string;
       folderId: number | null;
+      externalFileUrl?: string;
+      externalFileSource?: string;
     }) => {
       const url = isEditing 
         ? `/api/knowledge-base/documents/${id}`
@@ -171,7 +190,17 @@ export default function DocumentEditor() {
       return;
     }
 
-    if (!content.trim()) {
+    // For external file links, require URL instead of content
+    if (documentType === 'external_file_link') {
+      if (!externalFileUrl.trim()) {
+        toast({
+          title: 'Validation Error',
+          description: 'Please enter the external file URL.',
+          variant: 'destructive',
+        });
+        return;
+      }
+    } else if (!content.trim()) {
       toast({
         title: 'Validation Error',
         description: 'Please add some content to the document.',
@@ -183,16 +212,24 @@ export default function DocumentEditor() {
     // Use categories array, default to ['General'] if empty
     const categoriesToSave = categories.length > 0 ? categories : ['General'];
 
-    saveDocumentMutation.mutate({
+    const saveData: any = {
       title,
-      content,
+      content: documentType === 'external_file_link' ? `External file: ${externalFileUrl}` : content,
       categories: categoriesToSave,
       tags,
       status,
       estimatedReadingTime,
       documentType,
       folderId,
-    });
+    };
+
+    // Add external file fields if external link type
+    if (documentType === 'external_file_link') {
+      saveData.externalFileUrl = externalFileUrl;
+      saveData.externalFileSource = externalFileSource || 'other';
+    }
+
+    saveDocumentMutation.mutate(saveData);
   };
 
   const handlePublish = () => {
@@ -343,14 +380,91 @@ export default function DocumentEditor() {
               />
             </div>
 
-            {/* Rich Text Editor */}
-            <div className="min-h-[300px] md:min-h-[500px]">
-              <ModernDocumentEditor
-                content={content}
-                onChange={setContent}
-                placeholder="Start writing your document content..."
-              />
-            </div>
+            {/* Conditional Editor based on Document Type */}
+            {documentType === 'external_file_link' ? (
+              <Card className="min-h-[300px] md:min-h-[500px]">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <ExternalLink className="h-5 w-5" />
+                    External File Link
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <Label htmlFor="externalSource" className="text-sm font-medium">
+                      File Source
+                    </Label>
+                    <Select value={externalFileSource || 'other'} onValueChange={setExternalFileSource}>
+                      <SelectTrigger className="text-sm" data-testid="external-source-selector">
+                        <SelectValue placeholder="Select source..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {EXTERNAL_FILE_SOURCES.map((source) => (
+                          <SelectItem key={source.value} value={source.value}>
+                            {source.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  
+                  <div>
+                    <Label htmlFor="externalUrl" className="text-sm font-medium">
+                      File URL
+                    </Label>
+                    <Input
+                      id="externalUrl"
+                      type="url"
+                      value={externalFileUrl}
+                      onChange={(e) => setExternalFileUrl(e.target.value)}
+                      placeholder="https://..."
+                      className="font-mono text-sm"
+                      autoComplete="off"
+                      data-form-type="other"
+                      data-testid="external-file-url-input"
+                    />
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Enter the full URL to the external file
+                    </p>
+                  </div>
+
+                  {externalFileUrl && (
+                    <div className="pt-4 border-t">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => window.open(externalFileUrl, '_blank')}
+                        data-testid="open-external-file-button"
+                      >
+                        <ExternalLink className="h-4 w-4 mr-2" />
+                        Open External File
+                      </Button>
+                    </div>
+                  )}
+
+                  <div className="pt-4">
+                    <Label htmlFor="description" className="text-sm font-medium">
+                      Description (Optional)
+                    </Label>
+                    <ModernDocumentEditor
+                      content={content}
+                      onChange={setContent}
+                      placeholder="Add a description of this external file..."
+                    />
+                  </div>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="min-h-[300px] md:min-h-[500px]">
+                <ModernDocumentEditor
+                  content={content}
+                  onChange={setContent}
+                  placeholder="Start writing your document content..."
+                />
+              </div>
+            )}
           </div>
         </div>
 
@@ -482,6 +596,16 @@ export default function DocumentEditor() {
                 </div>
               </CardContent>
             </Card>
+
+            {/* AI Writing Assistant - only show for content-based documents */}
+            {documentType !== 'external_file_link' && (
+              <AIComposePanel 
+                onInsertContent={(newContent) => {
+                  setContent(prev => prev ? `${prev}\n\n${newContent}` : newContent);
+                }}
+                currentContent={content}
+              />
+            )}
 
             {/* Tags */}
             <Card>
