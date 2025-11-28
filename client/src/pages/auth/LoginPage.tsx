@@ -106,7 +106,7 @@ export default function LoginPage() {
             <img src={logoUrl} alt="Country Connect - Future Proof Broadband" className="h-[49px]" />
             <p className="mt-3 text-[#ffffff] text-[20px] text-center">Desktop login.</p>
             <div className="mt-3 text-center">
-              <span className="text-zinc-400 text-sm">
+              <span className="text-zinc-400 text-[14px]">
                 Field worker?{' '}
                 <button
                   type="button"
