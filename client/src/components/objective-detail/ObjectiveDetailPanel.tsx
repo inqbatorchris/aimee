@@ -201,12 +201,12 @@ export default function ObjectiveDetailPanel({
 
   const status = getStatus();
   const statusColors: Record<string, string> = {
-    completed: 'bg-green-100 text-green-800',
-    on_track: 'bg-blue-100 text-blue-800',
-    at_risk: 'bg-yellow-100 text-yellow-800',
-    in_progress: 'bg-blue-100 text-blue-800',
-    behind: 'bg-red-100 text-red-800',
-    not_started: 'bg-gray-100 text-gray-800',
+    completed: 'bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300',
+    on_track: 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300',
+    at_risk: 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300',
+    in_progress: 'bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300',
+    behind: 'bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300',
+    not_started: 'bg-muted text-muted-foreground',
   };
 
   const statusLabels: Record<string, string> = {

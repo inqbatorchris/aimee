@@ -63,7 +63,7 @@ export function SlidePanel({
       {/* Panel content - highest z-index */}
       <div
         className={cn(
-          'fixed top-0 right-0 h-full bg-white border-l shadow-xl z-[210] transform transition-transform duration-300 ease-in-out overflow-hidden flex flex-col',
+          'fixed top-0 right-0 h-full bg-background border-l border-border shadow-xl z-[210] transform transition-transform duration-300 ease-in-out overflow-hidden flex flex-col',
           'w-full sm:w-[500px] md:w-[600px]', // Responsive widths: full on mobile, fixed on desktop
           'translate-x-0', // Always visible when rendered
           isMobile && 'mobile-slide-panel', // Apply mobile-specific height handling
@@ -72,20 +72,20 @@ export function SlidePanel({
         onClick={(e) => e.stopPropagation()} // Prevent event bubbling
       >
         {/* Header */}
-        <div className="flex items-start justify-between p-4 border-b w-full">
+        <div className="flex items-start justify-between p-4 border-b border-border w-full">
           <div className="flex-1 min-w-0">
             {title && (
-              <h2 className="text-lg font-semibold text-gray-900 truncate">{title}</h2>
+              <h2 className="text-lg font-semibold text-foreground truncate">{title}</h2>
             )}
             {description && (
-              <div className="text-sm text-gray-500 mt-1">{description}</div>
+              <div className="text-sm text-muted-foreground mt-1">{description}</div>
             )}
           </div>
           <Button
             variant="ghost"
             size="sm"
             onClick={onClose}
-            className="h-8 w-8 p-0 hover:bg-gray-100 flex-shrink-0"
+            className="h-8 w-8 p-0 hover:bg-muted flex-shrink-0"
           >
             <X className="h-4 w-4" />
           </Button>
