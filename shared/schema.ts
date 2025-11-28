@@ -207,7 +207,6 @@ export const tenants = pgTable("tenants", {
 }, (table) => [
   index("idx_tenants_org").on(table.organizationId),
   index("idx_tenants_subdomain").on(table.subdomain),
-  unique("unique_subdomain").on(table.subdomain),
 ]);
 
 // Plans table for subscription management
@@ -221,9 +220,7 @@ export const plans = pgTable("plans", {
   priceMonthly: decimal("price_monthly", { precision: 10, scale: 2 }).default("0"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-}, (table) => [
-  unique("unique_plan_name").on(table.name),
-]);
+});
 
 // Subscriptions table
 export const subscriptions = pgTable("subscriptions", {
@@ -238,7 +235,6 @@ export const subscriptions = pgTable("subscriptions", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
   index("idx_subscriptions_org").on(table.organizationId),
-  unique("unique_org_subscription").on(table.organizationId),
 ]);
 
 // Users table - aligned with actual database structure
@@ -292,7 +288,6 @@ export const users = pgTable("users", {
   index("idx_users_email").on(table.email),
   index("idx_users_role").on(table.role),
   index("idx_users_active").on(table.isActive),
-  unique("unique_email_per_org").on(table.organizationId, table.email),
 ]);
 
 // Theme Settings table for organization-specific theming
@@ -313,7 +308,7 @@ export const themeSettings = pgTable("theme_settings", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
-  unique("unique_theme_per_org").on(table.organizationId),
+  index("idx_theme_settings_org").on(table.organizationId),
 ]);
 
 // Activity Logs for audit trail (multi-tenant)
@@ -1172,7 +1167,6 @@ export const layoutTemplates = pgTable("layout_templates", {
   index("idx_layout_templates_org").on(table.organizationId),
   index("idx_layout_templates_category").on(table.category),
   index("idx_layout_templates_active").on(table.isActive),
-  unique("unique_layout_per_org").on(table.organizationId, table.name),
 ]);
 
 // Strategy Settings table for configurable automation
@@ -1197,7 +1191,6 @@ export const strategySettings = pgTable("strategy_settings", {
   updatedAt: timestamp("updated_at").defaultNow(),
   updatedBy: integer("updated_by").references(() => users.id),
 }, (table) => [
-  unique("unique_org_strategy_settings").on(table.organizationId),
   index("idx_strategy_settings_org").on(table.organizationId),
 ]);
 
@@ -1237,7 +1230,6 @@ export const pages = pgTable("pages", {
   index("idx_pages_status").on(table.status),
   index("idx_pages_layout").on(table.layoutTemplateId),
   index("idx_pages_deleted").on(table.deletedAt),
-  unique("unique_org_slug").on(table.organizationId, table.slug),
 ]);
 
 // [REMOVED: page_visibility_rules - Replaced by unified_status system]
@@ -1284,7 +1276,6 @@ export const dataTables = pgTable("data_tables", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
   index("idx_data_tables_org").on(table.organizationId),
-  unique("unique_org_table").on(table.organizationId, table.tableName),
 ]);
 
 export const dataFields = pgTable("data_fields", {
@@ -1359,7 +1350,6 @@ export const menuSections = pgTable("menu_sections", {
 }, (table) => [
   index("idx_menu_sections_org").on(table.organizationId),
   index("idx_menu_sections_order").on(table.orderIndex),
-  unique("unique_menu_section_name").on(table.organizationId, table.name),
 ]);
 
 // Menu Items - Individual navigation items
@@ -1399,7 +1389,6 @@ export const menuItems = pgTable("menu_items", {
   index("idx_menu_items_parent").on(table.parentId),
   index("idx_menu_items_page").on(table.pageId),
   index("idx_menu_items_order").on(table.orderIndex),
-  unique("unique_menu_item_path").on(table.organizationId, table.path),
 ]);
 
 // ========================================
@@ -1429,7 +1418,6 @@ export const integrations = pgTable("integrations", {
 }, (table) => [
   index("idx_integrations_org").on(table.organizationId),
   index("idx_integrations_platform").on(table.platformType),
-  unique("unique_integration_per_org_platform").on(table.organizationId, table.platformType),
 ]);
 
 // SQL Direct audit logs for tracking query execution
@@ -1547,7 +1535,6 @@ export const customerGeocodingCache = pgTable("customer_geocoding_cache", {
   index("idx_geocoding_cache_org").on(table.organizationId),
   index("idx_geocoding_cache_customer").on(table.splynxCustomerId),
   index("idx_geocoding_cache_hash").on(table.addressHash),
-  unique("unique_geocode_per_customer_address").on(table.organizationId, table.splynxCustomerId, table.addressHash),
 ]);
 
 // ========================================
@@ -1578,7 +1565,6 @@ export const customFieldDefinitions = pgTable("custom_field_definitions", {
 }, (table) => [
   index("idx_custom_fields_org").on(table.organizationId),
   index("idx_custom_fields_table").on(table.tableName),
-  unique("unique_field_per_table").on(table.organizationId, table.tableName, table.fieldName),
 ]);
 
 // Work item sources - explicit linkage between work items and their source records
@@ -1597,7 +1583,6 @@ export const workItemSources = pgTable("work_item_sources", {
   index("idx_work_item_sources_org").on(table.organizationId),
   index("idx_work_item_sources_work_item").on(table.workItemId),
   index("idx_work_item_sources_source").on(table.sourceTable, table.sourceId),
-  unique("unique_work_item_source").on(table.workItemId),
 ]);
 
 // Workflow step extractions - tracks OCR extraction history and results
@@ -1769,7 +1754,6 @@ export const ticketDraftResponses = pgTable("ticket_draft_responses", {
   index("idx_ticket_drafts_org").on(table.organizationId),
   index("idx_ticket_drafts_work_item").on(table.workItemId),
   index("idx_ticket_drafts_sent_at").on(table.sentAt),
-  unique("unique_draft_per_work_item").on(table.workItemId), // One draft per work item
 ]);
 
 // AI Agent Configurations - Links agent workflows to AI features
@@ -1808,7 +1792,6 @@ export const aiAgentConfigurations = pgTable("ai_agent_configurations", {
   index("idx_ai_configs_org").on(table.organizationId),
   index("idx_ai_configs_workflow").on(table.agentWorkflowId),
   index("idx_ai_configs_objective").on(table.linkedObjectiveId),
-  unique("unique_ai_config_per_workflow").on(table.agentWorkflowId),
 ]);
 
 // Integration triggers available from each integration
@@ -1854,7 +1837,6 @@ export const integrationTriggers = pgTable("integration_triggers", {
 }, (table) => [
   index("idx_integration_triggers_integration").on(table.integrationId),
   index("idx_integration_triggers_key").on(table.triggerKey),
-  unique("unique_trigger_per_integration").on(table.integrationId, table.triggerKey),
 ]);
 
 // Integration actions available from each integration
@@ -1903,7 +1885,6 @@ export const integrationActions = pgTable("integration_actions", {
   index("idx_integration_actions_integration").on(table.integrationId),
   index("idx_integration_actions_key").on(table.actionKey),
   index("idx_integration_actions_category").on(table.category),
-  unique("unique_action_per_integration").on(table.integrationId, table.actionKey),
 ]);
 
 // Webhook events log for tracking incoming webhook calls
@@ -2673,7 +2654,6 @@ export const websitePages = pgTable("website_pages", {
   index("idx_website_pages_org").on(table.organizationId),
   index("idx_website_pages_slug").on(table.slug),
   index("idx_website_pages_status").on(table.status),
-  unique("unique_org_website_slug").on(table.organizationId, table.slug),
 ]);
 
 // Content Types for CMS
@@ -2689,7 +2669,6 @@ export const contentTypes = pgTable("content_types", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
   index("idx_content_types_org").on(table.organizationId),
-  unique("unique_content_type").on(table.organizationId, table.typeName),
 ]);
 
 // Content Items
@@ -2712,7 +2691,6 @@ export const contentItems = pgTable("content_items", {
   index("idx_content_items_org").on(table.organizationId),
   index("idx_content_items_slug").on(table.slug),
   index("idx_content_items_status").on(table.status),
-  unique("unique_content_slug").on(table.organizationId, table.slug),
 ]);
 
 // Content Revisions
@@ -2963,7 +2941,6 @@ export const taskTypeConfigurations = pgTable("task_type_configurations", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
-  unique("unique_splynx_type_per_org").on(table.organizationId, table.splynxTypeId),
   index("idx_task_type_org").on(table.organizationId),
   index("idx_task_type_active").on(table.isActive),
   index("idx_task_type_app_type").on(table.appTaskType),
@@ -3030,7 +3007,6 @@ export const workflowTemplates = pgTable("workflow_templates", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
-  unique("unique_workflow_id_per_org").on(table.organizationId, table.id),
   index("idx_workflow_org").on(table.organizationId),
   index("idx_workflow_active").on(table.isActive),
   index("idx_workflow_menu").on(table.displayInMenu),
@@ -3111,7 +3087,6 @@ export const fieldTasks = pgTable("field_tasks", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
-  unique("unique_splynx_task").on(table.organizationId, table.splynxTaskId),
   index("idx_field_tasks_org_user").on(table.organizationId, table.assignedToUserId),
   index("idx_field_tasks_app_type").on(table.appTaskType),
   index("idx_field_tasks_status").on(table.status),
@@ -3342,7 +3317,6 @@ export const splynxAdministrators = pgTable("splynx_administrators", {
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
-  unique("unique_splynx_admin_per_org").on(table.organizationId, table.splynxAdminId),
   index("idx_splynx_admin_org").on(table.organizationId),
   index("idx_splynx_admin_id").on(table.splynxAdminId),
 ]);
@@ -3501,7 +3475,6 @@ export const fiberNodeTypes = pgTable("fiber_node_types", {
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
   index("idx_fiber_node_types_org").on(table.organizationId),
-  unique("unique_node_type_per_org").on(table.organizationId, table.value),
 ]);
 
 // Audio Recordings - Voice memos for splice documentation
@@ -3566,7 +3539,6 @@ export const fiberSpliceTrays = pgTable("fiber_splice_trays", {
 }, (table) => [
   index("idx_splice_trays_org").on(table.organizationId),
   index("idx_splice_trays_node").on(table.nodeId),
-  unique("unique_tray_per_node").on(table.nodeId, table.trayNumber),
 ]);
 
 // Fiber Connections - Individual fiber-to-fiber splice mappings
@@ -3644,7 +3616,6 @@ export const cableFiberDefinitions = pgTable("cable_fiber_definitions", {
   index("idx_cable_fiber_org").on(table.organizationId),
   index("idx_cable_fiber_cable").on(table.cableId),
   index("idx_cable_fiber_node").on(table.nodeId),
-  unique("unique_cable_per_node").on(table.cableId, table.nodeId),
 ]);
 
 // Fiber Terminations - Customer/endpoint connections (single-fiber drops)
@@ -3692,8 +3663,6 @@ export const fiberTerminations = pgTable("fiber_terminations", {
   index("idx_fiber_term_customer").on(table.customerNodeId),
   index("idx_fiber_term_source").on(table.sourceNodeId),
   index("idx_fiber_term_cable").on(table.cableId),
-  // Prevent double-allocation: one fiber per cable can only terminate once
-  unique("unique_fiber_per_cable").on(table.organizationId, table.cableId, table.fiberNumber),
 ]);
 
 // ========================================
@@ -3734,7 +3703,6 @@ export const airtableConnections = pgTable("airtable_connections", {
   index("idx_airtable_conn_base").on(table.baseId),
   index("idx_airtable_conn_table").on(table.tableId),
   index("idx_airtable_conn_menu").on(table.menuItemId),
-  unique("unique_org_base_table").on(table.organizationId, table.baseId, table.tableId),
 ]);
 
 // Airtable Workflow Templates - Templates for creating work items from Airtable records
@@ -3788,7 +3756,6 @@ export const airtableRecordLinks = pgTable("airtable_record_links", {
   index("idx_airtable_link_conn").on(table.connectionId),
   index("idx_airtable_link_work").on(table.workItemId),
   index("idx_airtable_link_record").on(table.airtableRecordId),
-  unique("unique_conn_record").on(table.connectionId, table.airtableRecordId),
 ]);
 
 // Airtable Address Snapshots - Raw Airtable sync data (backend only, never shown in UI)
@@ -3811,7 +3778,6 @@ export const airtableAddressSnapshots = pgTable("airtable_address_snapshots", {
   index("idx_snapshot_org").on(table.organizationId),
   index("idx_snapshot_airtable_record").on(table.airtableRecordId),
   index("idx_snapshot_connection").on(table.airtableConnectionId),
-  unique("unique_snapshot_airtable_record").on(table.organizationId, table.airtableConnectionId, table.airtableRecordId),
 ]);
 
 // Address Records - Operational address data with searchable columns (what users query)
@@ -3865,7 +3831,6 @@ export const addressRecords = pgTable("address_records", {
   index("idx_address_connection").on(table.airtableConnectionId),
   index("idx_address_postcode").on(table.postcode),
   index("idx_address_network").on(table.network),
-  unique("unique_address_airtable_record").on(table.organizationId, table.airtableConnectionId, table.airtableRecordId),
 ]);
 
 // RAG Status Records - Local storage of Airtable RAG status lookup data
@@ -3894,7 +3859,6 @@ export const ragStatusRecords = pgTable("rag_status_records", {
   index("idx_rag_status_org").on(table.organizationId),
   index("idx_rag_status_airtable_record").on(table.airtableRecordId),
   index("idx_rag_status_connection").on(table.airtableConnectionId),
-  unique("unique_rag_status_airtable_record").on(table.organizationId, table.airtableConnectionId, table.airtableRecordId),
 ]);
 
 // Tariff Records - Local storage of Airtable tariff lookup data
@@ -3923,7 +3887,6 @@ export const tariffRecords = pgTable("tariff_records", {
   index("idx_tariff_org").on(table.organizationId),
   index("idx_tariff_airtable_record").on(table.airtableRecordId),
   index("idx_tariff_connection").on(table.airtableConnectionId),
-  unique("unique_tariff_airtable_record").on(table.organizationId, table.airtableConnectionId, table.airtableRecordId),
 ]);
 
 // Address Sync Logs - Track synchronization history
@@ -4411,7 +4374,6 @@ export const aiAssistantFunctions = pgTable('ai_assistant_functions', {
   orgFuncIdx: index('ai_assistant_functions_org_func_idx').on(table.organizationId, table.functionName),
   categoryIdx: index('ai_assistant_functions_category_idx').on(table.category),
   enabledIdx: index('ai_assistant_functions_enabled_idx').on(table.isEnabled),
-  uniqueFunctionName: unique('ai_assistant_functions_org_name_unique').on(table.organizationId, table.functionName),
 }));
 
 // AI Function Permissions
@@ -4774,7 +4736,6 @@ export const financialTransactions = pgTable("financial_transactions", {
   index("idx_financial_transactions_status").on(table.categorizationStatus),
   index("idx_financial_transactions_splynx_customer").on(table.splynxCustomerId),
   index("idx_financial_transactions_account").on(table.xeroAccountCode),
-  unique("unique_xero_transaction_per_org").on(table.organizationId, table.xeroTransactionId, table.xeroTransactionType),
 ]);
 
 // Xero Chart of Accounts - Imported from Xero for mapping to profit centers
@@ -4821,7 +4782,6 @@ export const xeroChartOfAccounts = pgTable("xero_chart_of_accounts", {
   index("idx_xero_coa_type").on(table.accountType),
   index("idx_xero_coa_code").on(table.accountCode),
   index("idx_xero_coa_status").on(table.status),
-  unique("unique_xero_account_per_org").on(table.organizationId, table.xeroAccountId),
 ]);
 
 // Profit Centers - Business segments for financial analysis
@@ -4883,7 +4843,6 @@ export const profitCenters: any = pgTable("profit_centers", {
   index("idx_profit_centers_objective").on(table.objectiveId),
   index("idx_profit_centers_key_result").on(table.keyResultId),
   index("idx_profit_centers_task").on(table.keyResultTaskId),
-  unique("unique_profit_center_code").on(table.organizationId, table.code),
 ]);
 
 // Financial Metrics Cache - Pre-calculated metrics for dashboard performance
@@ -4917,7 +4876,6 @@ export const financialMetricsCache = pgTable("financial_metrics_cache", {
   index("idx_financial_metrics_period").on(table.period),
   index("idx_financial_metrics_profit_center").on(table.profitCenterId),
   index("idx_financial_metrics_expires").on(table.expiresAt),
-  unique("unique_metric_cache").on(table.organizationId, table.metricType, table.period, table.profitCenterId),
 ]);
 
 // Xero sync status tracking (current status only - gets UPDATE'd)
@@ -4949,7 +4907,6 @@ export const xeroSyncStatus = pgTable("xero_sync_status", {
 }, (table) => [
   index("idx_xero_sync_org").on(table.organizationId),
   index("idx_xero_sync_type").on(table.syncType),
-  unique("unique_sync_type_per_org").on(table.organizationId, table.syncType),
 ]);
 
 // Xero sync logs - Historical record of all syncs (new row INSERT'd each sync)
