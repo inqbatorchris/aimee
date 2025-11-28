@@ -18,6 +18,10 @@ import {
   checkInMeetings,
   meetingTopics,
   missionVision,
+  agentWorkflows,
+  workflowTemplates,
+  integrations,
+  integrationTriggers,
   type InsertAIChatSession,
   type InsertAIChatMessage,
   type InsertAIProposedAction,
@@ -546,6 +550,12 @@ router.post('/sessions/:sessionId/messages', async (req: any, res) => {
       'get_vision_mission',
       'list_addresses',
       'get_recent_activity',
+      // Workflow Builder read-only functions
+      'list_integration_capabilities',
+      'list_workflow_step_types',
+      'list_existing_workflows',
+      'preview_agent_workflow',
+      'preview_workflow_template',
     ];
     
     // Check if the AI wants to call a function
@@ -1681,6 +1691,31 @@ async function executeAction(action: any, user: any): Promise<any> {
     
     case 'get_recent_activity':
       return await getRecentActivity(actionPayload, user);
+    
+    // Workflow Builder functions
+    case 'list_integration_capabilities':
+      return await listIntegrationCapabilities(actionPayload, user);
+    
+    case 'list_workflow_step_types':
+      return await listWorkflowStepTypes(actionPayload, user);
+    
+    case 'list_existing_workflows':
+      return await listExistingWorkflows(actionPayload, user);
+    
+    case 'preview_agent_workflow':
+      return await previewAgentWorkflow(actionPayload, user);
+    
+    case 'create_agent_workflow':
+      return await createAgentWorkflow(actionPayload, user);
+    
+    case 'preview_workflow_template':
+      return await previewWorkflowTemplate(actionPayload, user);
+    
+    case 'create_workflow_template':
+      return await createWorkflowTemplate(actionPayload, user);
+    
+    case 'create_integration_trigger':
+      return await createIntegrationTrigger(actionPayload, user);
     
     default:
       throw new Error(`Unknown action type: ${actionType}`);
@@ -3250,5 +3285,478 @@ router.get('/activity-logs/grouped', async (req: any, res) => {
     res.status(500).json({ error: 'Failed to fetch grouped activity logs' });
   }
 });
+
+// ============================================================================
+// WORKFLOW BUILDER FUNCTIONS
+// ============================================================================
+
+async function listIntegrationCapabilities(payload: any, user: any): Promise<any> {
+  const orgIntegrations = await db.query.integrations.findMany({
+    where: eq(integrations.organizationId, user.organizationId),
+  });
+
+  const triggers = await db.query.integrationTriggers.findMany({
+    where: eq(integrationTriggers.isActive, true),
+  });
+
+  const integrationCapabilities = {
+    availableIntegrations: orgIntegrations.map(i => ({
+      id: i.id,
+      name: i.name,
+      type: i.platformType,
+      isEnabled: i.isEnabled,
+      connectionStatus: i.connectionStatus,
+    })),
+    triggersByIntegration: triggers.reduce((acc: any, t) => {
+      if (!acc[t.integrationId]) acc[t.integrationId] = [];
+      acc[t.integrationId].push({
+        id: t.id,
+        key: t.triggerKey,
+        name: t.name,
+        description: t.description,
+        category: t.category,
+      });
+      return acc;
+    }, {}),
+    agentWorkflowStepTypes: [
+      { type: 'integration_action', description: 'Call an external API or service', example: '{"integrationType": "splynx", "action": "getCustomers"}' },
+      { type: 'create_work_item', description: 'Create a work item with optional template', example: '{"title": "...", "templateId": "...", "status": "Planning"}' },
+      { type: 'ai_draft_response', description: 'Use AI to generate a draft response', example: '{}' },
+      { type: 'database_query', description: 'Query internal database', example: '{"table": "customers", "filters": {...}}' },
+      { type: 'splynx_query', description: 'Query Splynx data', example: '{"entity": "customers", "filters": {...}}' },
+      { type: 'condition', description: 'Branch based on conditions', example: '{"condition": "{{data.status}} === \"active\"", "thenSteps": [...], "elseSteps": [...]}' },
+      { type: 'for_each', description: 'Loop over array data', example: '{"sourceArray": "{{data.items}}", "steps": [...]}' },
+      { type: 'wait', description: 'Pause execution', example: '{"duration": 60, "unit": "seconds"}' },
+      { type: 'notification', description: 'Send a notification', example: '{"type": "email", "to": "...", "subject": "...", "body": "..."}' },
+      { type: 'log_event', description: 'Log an event for debugging', example: '{"message": "Processing complete", "level": "info"}' },
+    ],
+    integrationActions: {
+      splynx: ['getCustomers', 'getTicket', 'addTicketMessage', 'updateTicketStatus', 'createTask', 'send_email_campaign'],
+      pxc: ['getOrders', 'updateOrder'],
+      xero: ['getInvoices', 'createInvoice'],
+      openai: ['generateText', 'analyzeImage'],
+    },
+  };
+
+  return {
+    success: true,
+    capabilities: integrationCapabilities,
+    message: `Found ${orgIntegrations.length} configured integrations with ${triggers.length} available triggers.`,
+  };
+}
+
+async function listWorkflowStepTypes(payload: any, user: any): Promise<any> {
+  const workflowType = payload.workflow_type || 'both';
+
+  const agentWorkflowSteps = [
+    { type: 'integration_action', description: 'Execute an action on an external integration (Splynx, PXC, Xero, etc.)', requiresConfig: true },
+    { type: 'create_work_item', description: 'Create a work item with optional workflow template', requiresConfig: true },
+    { type: 'ai_draft_response', description: 'Generate an AI-powered draft response using configured AI agent', requiresConfig: false },
+    { type: 'database_query', description: 'Query the internal database', requiresConfig: true },
+    { type: 'splynx_query', description: 'Query data from Splynx integration', requiresConfig: true },
+    { type: 'data_source_query', description: 'Query a configured data source', requiresConfig: true },
+    { type: 'condition', description: 'Conditional branching based on data values', requiresConfig: true },
+    { type: 'for_each', description: 'Iterate over an array of items', requiresConfig: true },
+    { type: 'wait', description: 'Wait for a specified duration before continuing', requiresConfig: true },
+    { type: 'notification', description: 'Send email or system notification', requiresConfig: true },
+    { type: 'log_event', description: 'Log an event for debugging and audit', requiresConfig: true },
+  ];
+
+  const templateSteps = [
+    { type: 'form', description: 'Data entry form with configurable fields', supportsOCR: false },
+    { type: 'photo', description: 'Photo capture with optional OCR data extraction', supportsOCR: true },
+    { type: 'file_upload', description: 'File upload step', supportsOCR: false },
+    { type: 'checklist', description: 'Checkbox list for task completion', supportsOCR: false },
+    { type: 'signature', description: 'Signature capture', supportsOCR: false },
+    { type: 'notes', description: 'Free-form text notes', supportsOCR: false },
+    { type: 'text_input', description: 'Single text input field', supportsOCR: false },
+    { type: 'checkbox', description: 'Single checkbox', supportsOCR: false },
+    { type: 'approval', description: 'Approval gate requiring sign-off', supportsOCR: false },
+    { type: 'geolocation', description: 'GPS location capture', supportsOCR: false },
+    { type: 'splynx_ticket', description: 'Splynx support ticket handling (view, respond, update)', supportsOCR: false },
+    { type: 'audio_recording', description: 'Audio recording capture', supportsOCR: false },
+    { type: 'splice_documentation', description: 'Fiber splice documentation interface', supportsOCR: false },
+    { type: 'fiber_network_node', description: 'Fiber network node creation/selection', supportsOCR: false },
+    { type: 'kb_link', description: 'Link to knowledge base document', supportsOCR: false },
+    { type: 'comment', description: 'Comment/discussion thread', supportsOCR: false },
+    { type: 'measurement', description: 'Numeric measurement input', supportsOCR: false },
+  ];
+
+  const result: any = { success: true };
+
+  if (workflowType === 'agent_workflow' || workflowType === 'both') {
+    result.agentWorkflowStepTypes = agentWorkflowSteps;
+  }
+  if (workflowType === 'workflow_template' || workflowType === 'both') {
+    result.templateStepTypes = templateSteps;
+  }
+
+  result.message = `Listed step types for ${workflowType} workflows.`;
+  return result;
+}
+
+async function listExistingWorkflows(payload: any, user: any): Promise<any> {
+  const type = payload.type || 'both';
+  const result: any = { success: true };
+
+  if (type === 'agent_workflows' || type === 'both') {
+    const workflows = await db.query.agentWorkflows.findMany({
+      where: eq(agentWorkflows.organizationId, user.organizationId),
+    });
+    result.agentWorkflows = workflows.map(w => ({
+      id: w.id,
+      name: w.name,
+      description: w.description,
+      triggerType: w.triggerType,
+      isEnabled: w.isEnabled,
+      stepCount: Array.isArray(w.workflowDefinition) ? (w.workflowDefinition as any[]).length : 0,
+    }));
+  }
+
+  if (type === 'workflow_templates' || type === 'both') {
+    const templates = await db.query.workflowTemplates.findMany({
+      where: eq(workflowTemplates.organizationId, user.organizationId),
+    });
+    result.workflowTemplates = templates.map(t => ({
+      id: t.id,
+      name: t.name,
+      description: t.description,
+      category: t.category,
+      isActive: t.isActive,
+      stepCount: Array.isArray(t.steps) ? (t.steps as any[]).length : 0,
+      hasCallbacks: Array.isArray(t.completionCallbacks) && (t.completionCallbacks as any[]).length > 0,
+    }));
+  }
+
+  result.message = `Found ${result.agentWorkflows?.length || 0} agent workflows and ${result.workflowTemplates?.length || 0} workflow templates.`;
+  return result;
+}
+
+async function previewAgentWorkflow(payload: any, user: any): Promise<any> {
+  const { name, description, trigger_type, trigger_config, steps } = payload;
+
+  if (!name || !trigger_type || !steps || !Array.isArray(steps)) {
+    return {
+      success: false,
+      error: 'Missing required fields: name, trigger_type, and steps array are required.',
+    };
+  }
+
+  const validTriggerTypes = ['manual', 'webhook', 'schedule'];
+  if (!validTriggerTypes.includes(trigger_type)) {
+    return {
+      success: false,
+      error: `Invalid trigger_type. Must be one of: ${validTriggerTypes.join(', ')}`,
+    };
+  }
+
+  const validStepTypes = ['integration_action', 'create_work_item', 'ai_draft_response', 'database_query', 
+    'condition', 'for_each', 'wait', 'notification', 'log_event', 'splynx_query', 'data_source_query'];
+
+  const invalidSteps = steps.filter(s => !validStepTypes.includes(s.type));
+  if (invalidSteps.length > 0) {
+    return {
+      success: false,
+      error: `Invalid step types: ${invalidSteps.map(s => s.type).join(', ')}. Valid types are: ${validStepTypes.join(', ')}`,
+    };
+  }
+
+  const workflowPreview = {
+    name,
+    description: description || '',
+    triggerType: trigger_type,
+    triggerConfig: trigger_config || {},
+    workflowDefinition: steps,
+    organizationId: user.organizationId,
+    isEnabled: false,
+    createdBy: user.id,
+  };
+
+  return {
+    success: true,
+    preview: workflowPreview,
+    validation: {
+      isValid: true,
+      stepCount: steps.length,
+      triggerType: trigger_type,
+    },
+    message: `Preview generated for "${name}" workflow with ${steps.length} steps. Use create_agent_workflow to save it.`,
+  };
+}
+
+const CreateAgentWorkflowSchema = z.object({
+  name: z.string().min(3, 'Name must be at least 3 characters').max(255),
+  description: z.string().optional(),
+  trigger_type: z.enum(['manual', 'webhook', 'schedule']),
+  trigger_config: z.record(z.any()).optional(),
+  workflow_definition: z.array(z.object({
+    id: z.string(),
+    name: z.string().optional(),
+    type: z.enum(['integration_action', 'create_work_item', 'ai_draft_response', 'database_query', 
+      'condition', 'for_each', 'wait', 'notification', 'log_event', 'splynx_query', 'data_source_query']),
+    config: z.record(z.any()).optional(),
+  })),
+  is_enabled: z.boolean().optional(),
+});
+
+async function createAgentWorkflow(payload: any, user: any): Promise<any> {
+  const validated = CreateAgentWorkflowSchema.parse(payload);
+  const { name, description, trigger_type, trigger_config, workflow_definition, is_enabled } = validated;
+
+  for (const step of workflow_definition) {
+    if (step.type === 'create_work_item' && step.config?.templateId) {
+      const template = await db.query.workflowTemplates.findFirst({
+        where: and(
+          eq(workflowTemplates.id, step.config.templateId),
+          eq(workflowTemplates.organizationId, user.organizationId)
+        ),
+      });
+      if (!template) {
+        throw new Error(`Template "${step.config.templateId}" not found in your organization.`);
+      }
+    }
+  }
+
+  if (trigger_type === 'webhook' && trigger_config?.triggerId) {
+    const trigger = await db.query.integrationTriggers.findFirst({
+      where: eq(integrationTriggers.id, trigger_config.triggerId),
+    });
+    if (trigger) {
+      const integration = await db.query.integrations.findFirst({
+        where: and(
+          eq(integrations.id, trigger.integrationId),
+          eq(integrations.organizationId, user.organizationId)
+        ),
+      });
+      if (!integration) {
+        throw new Error(`Integration trigger ${trigger_config.triggerId} does not belong to your organization.`);
+      }
+    }
+  }
+
+  const [workflow] = await db.insert(agentWorkflows).values({
+    organizationId: user.organizationId,
+    name,
+    description: description || '',
+    triggerType: trigger_type,
+    triggerConfig: trigger_config || {},
+    workflowDefinition: workflow_definition,
+    isEnabled: is_enabled || false,
+    createdBy: user.id,
+    assignedUserId: user.id,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }).returning();
+
+  return {
+    success: true,
+    workflow: {
+      id: workflow.id,
+      name: workflow.name,
+      triggerType: workflow.triggerType,
+      isEnabled: workflow.isEnabled,
+    },
+    message: `Successfully created agent workflow "${name}" (ID: ${workflow.id}). ${is_enabled ? 'The workflow is now active.' : 'Enable it in Agent Builder to start using it.'}`,
+  };
+}
+
+async function previewWorkflowTemplate(payload: any, user: any): Promise<any> {
+  const { id, name, description, steps, completion_callbacks } = payload;
+
+  if (!id || !name || !steps || !Array.isArray(steps)) {
+    return {
+      success: false,
+      error: 'Missing required fields: id, name, and steps array are required.',
+    };
+  }
+
+  const validStepTypes = ['form', 'photo', 'file_upload', 'checklist', 'signature', 'notes', 'text_input',
+    'checkbox', 'approval', 'geolocation', 'splynx_ticket', 'audio_recording', 'splice_documentation',
+    'fiber_network_node', 'kb_link', 'comment', 'measurement'];
+
+  const invalidSteps = steps.filter(s => !validStepTypes.includes(s.type));
+  if (invalidSteps.length > 0) {
+    return {
+      success: false,
+      error: `Invalid step types: ${invalidSteps.map(s => s.type).join(', ')}. Valid types are: ${validStepTypes.join(', ')}`,
+    };
+  }
+
+  const existingTemplate = await db.query.workflowTemplates.findFirst({
+    where: and(
+      eq(workflowTemplates.id, id),
+      eq(workflowTemplates.organizationId, user.organizationId)
+    ),
+  });
+
+  if (existingTemplate) {
+    return {
+      success: false,
+      error: `A template with ID "${id}" already exists. Choose a different ID.`,
+    };
+  }
+
+  const templatePreview = {
+    id,
+    name,
+    description: description || '',
+    steps,
+    completionCallbacks: completion_callbacks || [],
+    organizationId: user.organizationId,
+    isActive: true,
+  };
+
+  return {
+    success: true,
+    preview: templatePreview,
+    validation: {
+      isValid: true,
+      stepCount: steps.length,
+      hasCallbacks: (completion_callbacks?.length || 0) > 0,
+    },
+    message: `Preview generated for "${name}" template with ${steps.length} steps. Use create_workflow_template to save it.`,
+  };
+}
+
+const validTemplateStepTypes = ['form', 'photo', 'file_upload', 'checklist', 'signature', 'notes', 'text_input',
+  'checkbox', 'approval', 'geolocation', 'splynx_ticket', 'audio_recording', 'splice_documentation',
+  'fiber_network_node', 'kb_link', 'comment', 'measurement'] as const;
+
+const CreateWorkflowTemplateSchema = z.object({
+  id: z.string().min(3).max(100).regex(/^[a-z0-9-]+$/, 'ID must be lowercase with dashes only'),
+  name: z.string().min(3, 'Name must be at least 3 characters').max(256),
+  description: z.string().optional(),
+  category: z.string().max(100).optional(),
+  steps: z.array(z.object({
+    id: z.string(),
+    type: z.enum(validTemplateStepTypes),
+    label: z.string().optional(),
+    title: z.string().optional(),
+    order: z.number(),
+    required: z.boolean().optional(),
+    description: z.string().optional(),
+    config: z.record(z.any()).optional(),
+  })),
+  completion_callbacks: z.array(z.object({
+    integrationName: z.string(),
+    action: z.string(),
+    fieldMappings: z.array(z.any()).optional(),
+  })).optional(),
+  display_in_menu: z.boolean().optional(),
+  menu_label: z.string().max(100).optional(),
+  menu_icon: z.string().max(50).optional(),
+  is_active: z.boolean().optional(),
+});
+
+async function createWorkflowTemplate(payload: any, user: any): Promise<any> {
+  const validated = CreateWorkflowTemplateSchema.parse(payload);
+  const { id, name, description, category, steps, completion_callbacks, display_in_menu, menu_label, menu_icon, is_active } = validated;
+
+  const existingTemplate = await db.query.workflowTemplates.findFirst({
+    where: and(
+      eq(workflowTemplates.id, id),
+      eq(workflowTemplates.organizationId, user.organizationId)
+    ),
+  });
+
+  if (existingTemplate) {
+    throw new Error(`A template with ID "${id}" already exists.`);
+  }
+
+  const [template] = await db.insert(workflowTemplates).values({
+    id,
+    organizationId: user.organizationId,
+    name,
+    description: description || '',
+    category: category || 'General',
+    steps,
+    completionCallbacks: completion_callbacks || [],
+    displayInMenu: display_in_menu || false,
+    menuLabel: menu_label || null,
+    menuIcon: menu_icon || null,
+    isActive: is_active !== false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }).returning();
+
+  return {
+    success: true,
+    template: {
+      id: template.id,
+      name: template.name,
+      stepCount: steps.length,
+      isActive: template.isActive,
+    },
+    message: `Successfully created workflow template "${name}" (ID: ${id}). It can now be attached to work items.`,
+  };
+}
+
+const CreateIntegrationTriggerSchema = z.object({
+  integration_id: z.number().int().positive('Integration ID must be a positive integer'),
+  trigger_key: z.string().min(3).max(100).regex(/^[a-z0-9_]+$/, 'Trigger key must be lowercase with underscores only'),
+  name: z.string().min(3, 'Name must be at least 3 characters').max(255),
+  description: z.string().optional(),
+  category: z.string().max(100).optional(),
+  event_type: z.enum(['webhook', 'polling']).optional(),
+});
+
+async function createIntegrationTrigger(payload: any, user: any): Promise<any> {
+  const validated = CreateIntegrationTriggerSchema.parse(payload);
+  const { integration_id, trigger_key, name, description, category, event_type } = validated;
+
+  const integration = await db.query.integrations.findFirst({
+    where: and(
+      eq(integrations.id, integration_id),
+      eq(integrations.organizationId, user.organizationId)
+    ),
+  });
+
+  if (!integration) {
+    throw new Error(`Integration with ID ${integration_id} not found or does not belong to your organization.`);
+  }
+
+  const existingTrigger = await db.query.integrationTriggers.findFirst({
+    where: and(
+      eq(integrationTriggers.integrationId, integration_id),
+      eq(integrationTriggers.triggerKey, trigger_key)
+    ),
+  });
+
+  if (existingTrigger) {
+    return {
+      success: true,
+      trigger: {
+        id: existingTrigger.id,
+        triggerKey: existingTrigger.triggerKey,
+        name: existingTrigger.name,
+      },
+      message: `Trigger "${trigger_key}" already exists for this integration (ID: ${existingTrigger.id}). You can use this trigger ID in your workflows.`,
+      alreadyExists: true,
+    };
+  }
+
+  const [trigger] = await db.insert(integrationTriggers).values({
+    integrationId: integration_id,
+    triggerKey: trigger_key,
+    name,
+    description: description || '',
+    category: category || 'General',
+    eventType: event_type || 'webhook',
+    isActive: true,
+    isConfigured: false,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  }).returning();
+
+  return {
+    success: true,
+    trigger: {
+      id: trigger.id,
+      triggerKey: trigger.triggerKey,
+      name: trigger.name,
+    },
+    message: `Successfully created integration trigger "${name}" (ID: ${trigger.id}). Use this ID in your workflow's trigger_config.`,
+  };
+}
 
 export default router;
