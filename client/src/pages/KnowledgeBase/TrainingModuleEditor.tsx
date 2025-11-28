@@ -503,6 +503,8 @@ export default function TrainingModuleEditor() {
           ...data,
           documentType: 'training_module',
           status: 'draft',
+          categories: ['Training'],
+          tags: [],
         },
       });
       if (!response.ok) {
