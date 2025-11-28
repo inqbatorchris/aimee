@@ -1,20 +1,25 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { useLocation } from 'wouter';
+import { DndContext, DragOverlay, useDraggable, useDroppable, DragEndEvent, DragStartEvent, pointerWithin } from '@dnd-kit/core';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { BookOpen, Users, Plus, FileText, Filter, Eye, Edit3, Trash2, Calendar, User, Tag, Search, X, UserPlus, Pencil } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { BookOpen, Users, Plus, FileText, Filter, Eye, Edit3, Trash2, Calendar, User, Tag, Search, X, UserPlus, Pencil, PanelLeftClose, PanelLeft, GraduationCap, ChevronDown, GripVertical, FolderInput, Folder, ExternalLink, FileCheck } from "lucide-react";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { KnowledgeDocument } from '@shared/schema';
+import type { KnowledgeDocument, KnowledgeFolder } from '@shared/schema';
 import { AssignTrainingDialog } from "@/components/training/AssignTrainingDialog";
 import { EditAssignmentDialog } from "@/components/training/EditAssignmentDialog";
+import { FolderNavigation } from "@/components/knowledge-hub/FolderNavigation";
 
 interface ExtendedKnowledgeDocument extends KnowledgeDocument {
   author?: {
@@ -53,10 +58,14 @@ export default function KnowledgeBaseListing() {
   const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState<"documents" | "progress">("documents");
   
+  // Folder navigation state
+  const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
+  const [showFolderNav, setShowFolderNav] = useState(true);
+  
   // Filter states
   const [documentStatusFilter, setDocumentStatusFilter] = useState<string>("all");
-  const [selectedCategoriesFilter, setSelectedCategoriesFilter] = useState<string[]>([]); // Updated to array for multi-select
-  const [searchQuery, setSearchQuery] = useState<string>(""); // Added search functionality
+  const [selectedCategoriesFilter, setSelectedCategoriesFilter] = useState<string[]>([]);
+  const [searchQuery, setSearchQuery] = useState<string>("");
   const [progressStatusFilter, setProgressStatusFilter] = useState<string>("all");
   const [progressDocumentFilter, setProgressDocumentFilter] = useState<string>("all");
   
@@ -67,6 +76,11 @@ export default function KnowledgeBaseListing() {
   // Edit assignment dialog state
   const [showEditAssignment, setShowEditAssignment] = useState(false);
   const [selectedAssignment, setSelectedAssignment] = useState<DocumentAssignment | null>(null);
+  
+  // Drag and drop state
+  const [draggedDocId, setDraggedDocId] = useState<number | null>(null);
+  const [selectedDocIds, setSelectedDocIds] = useState<Set<number>>(new Set());
+  const [selectionMode, setSelectionMode] = useState(false);
 
   // Fetch knowledge documents with filters
   const { data: documents = [], isLoading: documentsLoading } = useQuery<ExtendedKnowledgeDocument[]>({
@@ -78,8 +92,11 @@ export default function KnowledgeBaseListing() {
     enabled: activeTab === "documents"
   });
   
-  // Enhanced client-side filtering with search and multi-category support
+  // Enhanced client-side filtering with search, multi-category support, and folder filtering
   const filteredDocuments = documents.filter(doc => {
+    // Folder filter - if a folder is selected, only show documents in that folder
+    if (selectedFolderId !== null && doc.folderId !== selectedFolderId) return false;
+    
     // Status filter
     if (documentStatusFilter !== "all" && doc.status !== documentStatusFilter) return false;
     
@@ -124,8 +141,20 @@ export default function KnowledgeBaseListing() {
     navigate('/knowledge-base/documents/new');
   };
 
+  const handleCreateTrainingModule = () => {
+    navigate('/knowledge-hub/training/modules/new');
+  };
+
+  const handleCreateExternalLink = () => {
+    navigate('/knowledge-base/documents/new?type=external_file_link');
+  };
+
   const handleEditDocument = (document: ExtendedKnowledgeDocument) => {
-    navigate(`/knowledge-base/documents/${document.id}/edit`);
+    if (document.documentType === 'training_module') {
+      navigate(`/knowledge-hub/training/modules/${document.id}/edit`);
+    } else {
+      navigate(`/knowledge-base/documents/${document.id}/edit`);
+    }
   };
 
   const handleViewDocument = (document: ExtendedKnowledgeDocument) => {
@@ -189,6 +218,116 @@ export default function KnowledgeBaseListing() {
 
     deleteDocumentMutation.mutate(document.id);
   };
+
+  // Move document mutation (single or bulk)
+  const moveDocumentMutation = useMutation({
+    mutationFn: async ({ documentIds, folderId }: { documentIds: number[]; folderId: number | null }) => {
+      if (documentIds.length === 1) {
+        const response = await apiRequest(`/api/knowledge-base/documents/${documentIds[0]}/move`, {
+          method: 'PATCH',
+          body: { folderId }
+        });
+        if (!response.ok) throw new Error('Failed to move document');
+        return response.json();
+      } else {
+        const response = await apiRequest('/api/knowledge-base/documents/bulk-move', {
+          method: 'PATCH',
+          body: { documentIds, folderId }
+        });
+        if (!response.ok) throw new Error('Failed to move documents');
+        return response.json();
+      }
+    },
+    onSuccess: (_, { documentIds, folderId }) => {
+      const count = documentIds.length;
+      toast({
+        title: `${count} document${count > 1 ? 's' : ''} moved successfully`,
+        description: folderId ? 'Documents moved to folder' : 'Documents moved to root'
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/knowledge-base/documents'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/knowledge-base/folders'] });
+      setSelectedDocIds(new Set());
+      setSelectionMode(false);
+    },
+    onError: (error: any) => {
+      console.error('Error moving documents:', error);
+      toast({
+        title: 'Failed to move documents',
+        description: error.message || 'Please try again',
+        variant: 'destructive'
+      });
+    }
+  });
+
+  // Fetch folders for drop targets
+  const { data: folders = [] } = useQuery<KnowledgeFolder[]>({
+    queryKey: ['/api/knowledge-base/folders']
+  });
+
+  // Drag and drop handlers
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    const docId = parseInt(String(event.active.id).replace('doc-', ''));
+    setDraggedDocId(docId);
+  }, []);
+
+  const handleDragEnd = useCallback((event: DragEndEvent) => {
+    const { active, over } = event;
+    setDraggedDocId(null);
+
+    if (!over) return;
+
+    const docId = parseInt(String(active.id).replace('doc-', ''));
+    const targetId = String(over.id);
+    
+    let targetFolderId: number | null = null;
+    if (targetId === 'folder-root') {
+      targetFolderId = null;
+    } else if (targetId.startsWith('folder-')) {
+      targetFolderId = parseInt(targetId.replace('folder-', ''));
+    } else {
+      return;
+    }
+
+    // Check if dragging multiple selected documents
+    const idsToMove = selectedDocIds.has(docId) && selectedDocIds.size > 1
+      ? Array.from(selectedDocIds)
+      : [docId];
+
+    moveDocumentMutation.mutate({ documentIds: idsToMove, folderId: targetFolderId });
+  }, [selectedDocIds, moveDocumentMutation]);
+
+  // Selection handlers
+  const toggleDocSelection = (docId: number) => {
+    const newSelected = new Set(selectedDocIds);
+    if (newSelected.has(docId)) {
+      newSelected.delete(docId);
+    } else {
+      newSelected.add(docId);
+    }
+    setSelectedDocIds(newSelected);
+    if (newSelected.size === 0) setSelectionMode(false);
+  };
+
+  const selectAllVisible = () => {
+    setSelectedDocIds(new Set(filteredDocuments.map(d => d.id)));
+    setSelectionMode(true);
+  };
+
+  const clearSelection = () => {
+    setSelectedDocIds(new Set());
+    setSelectionMode(false);
+  };
+
+  const handleBulkMove = (folderId: number | null) => {
+    if (selectedDocIds.size === 0) return;
+    moveDocumentMutation.mutate({ 
+      documentIds: Array.from(selectedDocIds), 
+      folderId 
+    });
+  };
+
+  // Get dragged document for overlay
+  const draggedDocument = draggedDocId ? documents.find(d => d.id === draggedDocId) : null;
 
   // Delete assignment mutation
   const deleteAssignmentMutation = useMutation({
@@ -294,102 +433,191 @@ export default function KnowledgeBaseListing() {
     }
   };
 
-  const DocumentCard = ({ document }: { document: ExtendedKnowledgeDocument }) => (
-    <Card className="hover:shadow-sm transition-shadow" data-testid={`document-card-${document.id}`}>
-      <CardContent className="p-3 cursor-pointer" onClick={() => handleViewDocument(document)}>
-        <div className="flex items-center justify-between">
-          <div className="flex-1 mr-2">
-            <h3 className="font-medium line-clamp-1 mb-1 text-[14px]">
-              {document.title}
-            </h3>
-            <div className="flex items-center gap-2 mb-2">
-              {document.author && (
-                <span className="text-xs text-muted-foreground flex items-center gap-1">
-                  <User className="h-3 w-3" />
-                  {document.author.fullName}
-                </span>
-              )}
-              <span className="text-muted-foreground flex items-center gap-1 text-[12px]">
-                <Calendar className="h-3 w-3" />
-                {formatDate(document.updatedAt)}
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Badge variant={getStatusColor(document.status)} className="px-1 py-0 text-[12px]">
-                {document.status}
-              </Badge>
-              {/* Display categories array as badges */}
-              {document.categories && document.categories.length > 0 && (
-                <div className="flex flex-wrap gap-1">
-                  {document.categories.slice(0, 2).map((category, index) => (
-                    <Badge key={index} variant="outline" className="px-1 py-0 text-[12px]">
-                      <Tag className="h-3 w-3 mr-1" />
-                      {category}
-                    </Badge>
-                  ))}
-                  {document.categories.length > 2 && (
-                    <Badge variant="outline" className="text-xs px-1 py-0">
-                      +{document.categories.length - 2}
-                    </Badge>
-                  )}
+  // Draggable Document Card component
+  const DraggableDocumentCard = ({ document }: { document: ExtendedKnowledgeDocument }) => {
+    const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+      id: `doc-${document.id}`,
+    });
+    
+    const isSelected = selectedDocIds.has(document.id);
+    const style = transform ? {
+      transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+    } : undefined;
+
+    return (
+      <Card 
+        ref={setNodeRef}
+        style={style}
+        className={`group hover:shadow-sm transition-shadow ${isDragging ? 'opacity-50 z-50' : ''} ${isSelected ? 'ring-2 ring-primary' : ''}`} 
+        data-testid={`document-card-${document.id}`}
+      >
+        <CardContent className="p-3">
+          <div className="flex items-center gap-2">
+            {/* Selection checkbox (visible in selection mode or on hover) */}
+            {isAdmin && (
+              <div className={`flex items-center gap-1 ${selectionMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
+                <Checkbox
+                  checked={isSelected}
+                  onCheckedChange={() => {
+                    toggleDocSelection(document.id);
+                    if (!selectionMode) setSelectionMode(true);
+                  }}
+                  onClick={(e) => e.stopPropagation()}
+                  data-testid={`select-document-${document.id}`}
+                />
+                {/* Drag handle */}
+                <div 
+                  {...listeners} 
+                  {...attributes}
+                  className="cursor-grab active:cursor-grabbing p-1 hover:bg-muted rounded"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <GripVertical className="h-4 w-4 text-muted-foreground" />
                 </div>
+              </div>
+            )}
+            
+            <div className="flex-1 cursor-pointer" onClick={() => handleViewDocument(document)}>
+              <h3 className="font-medium line-clamp-1 mb-1 text-[14px]">
+                {document.title}
+              </h3>
+              <div className="flex items-center gap-2 mb-2">
+                {document.author && (
+                  <span className="text-xs text-muted-foreground flex items-center gap-1">
+                    <User className="h-3 w-3" />
+                    {document.author.fullName}
+                  </span>
+                )}
+                <span className="text-muted-foreground flex items-center gap-1 text-[12px]">
+                  <Calendar className="h-3 w-3" />
+                  {formatDate(document.updatedAt)}
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Badge variant={getStatusColor(document.status)} className="px-1 py-0 text-[12px]">
+                  {document.status}
+                </Badge>
+                {document.documentType && document.documentType !== 'internal_kb' && (
+                  <Badge 
+                    variant={document.documentType === 'external_file_link' ? 'outline' : 'secondary'} 
+                    className="px-1 py-0 text-[12px] flex items-center gap-1"
+                  >
+                    {document.documentType === 'training_module' && <GraduationCap className="h-3 w-3" />}
+                    {document.documentType === 'external_file_link' && <ExternalLink className="h-3 w-3" />}
+                    {document.documentType === 'customer_kb' && <FileCheck className="h-3 w-3" />}
+                    {document.documentType === 'training_module' && 'Training'}
+                    {document.documentType === 'external_file_link' && 'External'}
+                    {document.documentType === 'customer_kb' && 'Customer'}
+                  </Badge>
+                )}
+                {document.categories && document.categories.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {document.categories.slice(0, 2).map((category, index) => (
+                      <Badge key={index} variant="outline" className="px-1 py-0 text-[12px]">
+                        <Tag className="h-3 w-3 mr-1" />
+                        {category}
+                      </Badge>
+                    ))}
+                    {document.categories.length > 2 && (
+                      <Badge variant="outline" className="text-xs px-1 py-0">
+                        +{document.categories.length - 2}
+                      </Badge>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="flex items-center gap-1">
+              {/* Open external link button for external file links */}
+              {document.documentType === 'external_file_link' && (document as any).externalFileUrl && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.open((document as any).externalFileUrl, '_blank');
+                  }}
+                  className="h-6 w-6 p-0 text-primary"
+                  data-testid={`open-external-${document.id}`}
+                  title="Open external file"
+                >
+                  <ExternalLink className="h-3 w-3" />
+                </Button>
               )}
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleViewDocument(document);
+                }}
+                className="h-6 w-6 p-0"
+                data-testid={`view-document-${document.id}`}
+                title="View document"
+              >
+                <Eye className="h-3 w-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleEditDocument(document);
+                }}
+                className="h-6 w-6 p-0"
+                data-testid={`edit-document-${document.id}`}
+                title="Edit document"
+              >
+                <Edit3 className="h-3 w-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleAssignDocument(document);
+                }}
+                className="h-6 w-6 p-0"
+                data-testid={`assign-document-${document.id}`}
+                title="Assign Training"
+              >
+                <UserPlus className="h-3 w-3" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteDocument(document);
+                }}
+                disabled={deleteDocumentMutation.isPending}
+                className="h-6 w-6 p-0"
+                data-testid={`delete-document-${document.id}`}
+                title="Delete document"
+              >
+                <Trash2 className="h-3 w-3" />
+              </Button>
             </div>
           </div>
-          <div className="flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleViewDocument(document);
-              }}
-              className="h-6 w-6 p-0"
-              data-testid={`view-document-${document.id}`}
-              title="View document"
-            >
-              <Eye className="h-3 w-3" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleEditDocument(document);
-              }}
-              className="h-6 w-6 p-0"
-              data-testid={`edit-document-${document.id}`}
-              title="Edit document"
-            >
-              <Edit3 className="h-3 w-3" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleAssignDocument(document);
-              }}
-              className="h-6 w-6 p-0"
-              data-testid={`assign-document-${document.id}`}
-              title="Assign Training"
-            >
-              <UserPlus className="h-3 w-3" />
-            </Button>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDeleteDocument(document);
-              }}
-              disabled={deleteDocumentMutation.isPending}
-              className="h-6 w-6 p-0"
-              data-testid={`delete-document-${document.id}`}
-              title="Delete document"
-            >
-              <Trash2 className="h-3 w-3" />
-            </Button>
+        </CardContent>
+      </Card>
+    );
+  };
+
+  // Drag overlay for visual feedback
+  const DragOverlayCard = ({ document }: { document: ExtendedKnowledgeDocument }) => (
+    <Card className="shadow-lg opacity-90 w-80">
+      <CardContent className="p-3">
+        <div className="flex items-center gap-2">
+          <GripVertical className="h-4 w-4 text-muted-foreground" />
+          <div>
+            <h3 className="font-medium line-clamp-1 text-[14px]">{document.title}</h3>
+            {selectedDocIds.size > 1 && selectedDocIds.has(document.id) && (
+              <p className="text-xs text-muted-foreground">
+                Moving {selectedDocIds.size} documents
+              </p>
+            )}
           </div>
         </div>
       </CardContent>
@@ -397,64 +625,112 @@ export default function KnowledgeBaseListing() {
   );
 
   return (
-    <div className="container mx-auto px-3 py-3" data-testid="knowledge-base-listing">
-      <div className="mb-3">
-        <h1 className="text-lg font-semibold text-gray-900">Knowledge Base</h1>
-        <p className="text-gray-600 mt-0.5 text-[12px]">Manage training documents and team progress</p>
-      </div>
-      {/* Compact Tab Navigation */}
-      <div className="mb-3">
-        <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-4">
-            <button
-              onClick={() => setActiveTab("documents")}
-              className={`py-1 px-2 border-b-2 font-medium text-xs ${
-                activeTab === "documents"
-                  ? "border-indigo-500 text-indigo-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-              }`}
-            >
-              <BookOpen className="w-3 h-3 inline mr-1" />
-              Documents
-            </button>
-            {isAdmin && (
-              <button
-                onClick={() => setActiveTab("progress")}
-                className={`py-1 px-2 border-b-2 font-medium text-xs ${
-                  activeTab === "progress"
-                    ? "border-indigo-500 text-indigo-600"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                }`}
-              >
-                <Users className="w-3 h-3 inline mr-1" />
-                Team Progress
-              </button>
-            )}
-          </nav>
-        </div>
-      </div>
-      {/* Documents Tab */}
-      {activeTab === "documents" && (
-        <div className="space-y-3">
-          {/* Compact Header with Create Button */}
-          <div className="flex justify-between items-center">
-            <div>
-              <p className="text-xs text-gray-600 mt-0.5">
-                Manage and organize knowledge base documents
-              </p>
-            </div>
-            <Button 
-              type="button" 
-              size="sm" 
-              onClick={handleCreateDocument} 
-              className="flex items-center gap-1 h-7"
-              data-testid="create-document-button"
-            >
-              <Plus className="w-3 h-3" />
-              <span className="hidden sm:inline">Create Document</span>
-              <span className="sm:hidden">Create</span>
-            </Button>
+    <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd} collisionDetection={pointerWithin}>
+      <div className="container mx-auto px-3 py-3" data-testid="knowledge-base-listing">
+        <div className="mb-3 flex items-center justify-between">
+          <div>
+            <h1 className="text-lg font-semibold text-gray-900">Knowledge Hub</h1>
+            <p className="text-gray-600 mt-0.5 text-[12px]">Manage training documents, folders, and team progress</p>
           </div>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-8 w-8 md:hidden"
+            onClick={() => setShowFolderNav(!showFolderNav)}
+            data-testid="toggle-folder-nav"
+          >
+            {showFolderNav ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
+          </Button>
+        </div>
+        
+        {/* Main Layout with Folder Navigation */}
+        <div className="flex gap-4">
+          {/* Folder Navigation Sidebar */}
+          <div className={`${showFolderNav ? 'block' : 'hidden'} md:block w-56 flex-shrink-0`}>
+            <Card className="sticky top-4">
+              <CardContent className="p-2">
+                <FolderNavigation
+                  selectedFolderId={selectedFolderId}
+                  onFolderSelect={setSelectedFolderId}
+                  isDragging={!!draggedDocId}
+                />
+              </CardContent>
+            </Card>
+          </div>
+        
+        {/* Main Content Area */}
+        <div className="flex-1 min-w-0">
+          {/* Compact Tab Navigation */}
+          <div className="mb-3">
+            <div className="border-b border-gray-200">
+              <nav className="-mb-px flex space-x-4">
+                <button
+                  onClick={() => setActiveTab("documents")}
+                  className={`py-1 px-2 border-b-2 font-medium text-xs ${
+                    activeTab === "documents"
+                      ? "border-indigo-500 text-indigo-600"
+                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  }`}
+                >
+                  <BookOpen className="w-3 h-3 inline mr-1" />
+                  Documents
+                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => setActiveTab("progress")}
+                    className={`py-1 px-2 border-b-2 font-medium text-xs ${
+                      activeTab === "progress"
+                        ? "border-indigo-500 text-indigo-600"
+                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    }`}
+                  >
+                    <Users className="w-3 h-3 inline mr-1" />
+                    Team Progress
+                  </button>
+                )}
+              </nav>
+            </div>
+          </div>
+          
+          {/* Documents Tab */}
+          {activeTab === "documents" && (
+            <div className="space-y-3">
+              {/* Compact Header with Create Button */}
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="text-xs text-gray-600 mt-0.5">
+                    {selectedFolderId ? 'Documents in selected folder' : 'All documents'}
+                  </p>
+                </div>
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button 
+                      type="button" 
+                      size="sm" 
+                      className="flex items-center gap-1 h-7"
+                      data-testid="create-document-button"
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span className="hidden sm:inline">Create</span>
+                      <ChevronDown className="w-3 h-3 ml-0.5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem onClick={handleCreateDocument} data-testid="create-document-option">
+                      <FileText className="w-4 h-4 mr-2" />
+                      Document
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleCreateTrainingModule} data-testid="create-training-module-option">
+                      <GraduationCap className="w-4 h-4 mr-2" />
+                      Training Module
+                    </DropdownMenuItem>
+                    <DropdownMenuItem onClick={handleCreateExternalLink} data-testid="create-external-link-option">
+                      <ExternalLink className="w-4 h-4 mr-2" />
+                      External File Link
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
           
           {/* Enhanced Filters with Search and Multi-Select Categories */}
           <div className="space-y-3">
@@ -530,6 +806,71 @@ export default function KnowledgeBaseListing() {
             )}
           </div>
 
+          {/* Selection Toolbar */}
+          {isAdmin && selectedDocIds.size > 0 && (
+            <div className="flex items-center justify-between px-3 py-2 bg-primary/5 border border-primary/20 rounded-lg mb-3" data-testid="selection-toolbar">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium">
+                  {selectedDocIds.size} selected
+                </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={selectAllVisible}
+                  data-testid="select-all-button"
+                >
+                  Select All ({filteredDocuments.length})
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 text-xs"
+                  onClick={clearSelection}
+                  data-testid="clear-selection-button"
+                >
+                  <X className="h-3 w-3 mr-1" />
+                  Clear
+                </Button>
+              </div>
+              <div className="flex items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-7 text-xs"
+                      data-testid="bulk-move-button"
+                    >
+                      <FolderInput className="h-3 w-3 mr-1" />
+                      Move to Folder
+                      <ChevronDown className="h-3 w-3 ml-1" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem 
+                      onClick={() => handleBulkMove(null)}
+                      data-testid="move-to-root"
+                    >
+                      <Folder className="h-4 w-4 mr-2" />
+                      No Folder (Root)
+                    </DropdownMenuItem>
+                    {folders.map((folder) => (
+                      <DropdownMenuItem
+                        key={folder.id}
+                        onClick={() => handleBulkMove(folder.id)}
+                        data-testid={`move-to-folder-${folder.id}`}
+                      >
+                        <Folder className="h-4 w-4 mr-2" />
+                        {folder.name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+          )}
+
           {/* Compact Documents List */}
           {documentsLoading ? (
             <div className="space-y-2">
@@ -559,7 +900,7 @@ export default function KnowledgeBaseListing() {
           ) : (
             <div className="space-y-2" data-testid="documents-container">
               {filteredDocuments.map((document) => (
-                <DocumentCard key={document.id} document={document} />
+                <DraggableDocumentCard key={document.id} document={document} />
               ))}
             </div>
           )}
@@ -759,6 +1100,8 @@ export default function KnowledgeBaseListing() {
           )}
         </div>
       )}
+        </div>
+      </div>
 
       {/* Assign Training Dialog */}
       {selectedDocument && (
@@ -786,6 +1129,12 @@ export default function KnowledgeBaseListing() {
           isUpdating={updateAssignmentMutation.isPending}
         />
       )}
+      
+      {/* Drag Overlay */}
+      <DragOverlay>
+        {draggedDocument && <DragOverlayCard document={draggedDocument} />}
+      </DragOverlay>
     </div>
+    </DndContext>
   );
 }

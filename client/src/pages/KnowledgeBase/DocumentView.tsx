@@ -30,7 +30,9 @@ const documentTypeConfig = {
   customer_kb: { label: 'Customer Knowledge Base', icon: UsersIcon, color: 'purple' },
   marketing_email: { label: 'Marketing Email', icon: MailIcon, color: 'orange' },
   marketing_letter: { label: 'Marketing Letter', icon: FileTextIcon, color: 'gray' },
-  attachment: { label: 'Attachment', icon: PaperclipIcon, color: 'slate' }
+  attachment: { label: 'Attachment', icon: PaperclipIcon, color: 'slate' },
+  external_file_link: { label: 'External File', icon: ExternalLink, color: 'indigo' },
+  training_module: { label: 'Training Module', icon: BookOpenIcon, color: 'emerald' }
 } as const;
 
 const getDocumentTypeConfig = (type: string) => {
@@ -54,8 +56,6 @@ interface ExtendedKnowledgeDocument extends KnowledgeDocument {
     id: number;
     fullName: string;
   };
-  documentType: string;
-  externalUrl?: string;
   versionNumber?: number;
 }
 
@@ -199,10 +199,13 @@ export default function DocumentView() {
             </Button>
           </Link>
           {canEdit && (
-            <Link href={`/knowledge-base/documents/${id}/edit`}>
+            <Link href={document.documentType === 'training_module' 
+              ? `/knowledge-hub/training/modules/${id}/edit`
+              : `/knowledge-base/documents/${id}/edit`
+            }>
               <Button variant="outline" size="sm" className="h-6 px-2 text-[12px]" data-testid="edit-button">
                 <Edit3 className="h-3 w-3 mr-1" />
-                Edit Document
+                {document.documentType === 'training_module' ? 'Edit Training Module' : 'Edit Document'}
               </Button>
             </Link>
           )}
@@ -212,7 +215,7 @@ export default function DocumentView() {
         <div className="space-y-4">
           {/* Title and Type */}
           <div className="flex items-start gap-3">
-            {getTypeIcon(document.documentType)}
+            {getTypeIcon(document.documentType || 'internal_kb')}
             <div className="flex-1">
               <h2 className="text-3xl font-bold mb-2" data-testid="document-title">
                 {document.title}
@@ -256,6 +259,38 @@ export default function DocumentView() {
 
       <Separator className="mb-6" />
 
+      {/* External File Link - Prominent Open Button */}
+      {document.documentType === 'external_file_link' && document.externalFileUrl && (
+        <Card className="mb-6 border-indigo-200 bg-indigo-50 dark:border-indigo-800 dark:bg-indigo-950">
+          <CardContent className="p-6">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 text-indigo-800 dark:text-indigo-200 mb-2">
+                  <ExternalLink className="h-5 w-5 flex-shrink-0" />
+                  <span className="font-semibold">External File Link</span>
+                  {document.externalFileSource && (
+                    <Badge variant="outline" className="text-xs capitalize">
+                      {document.externalFileSource.replace('_', ' ')}
+                    </Badge>
+                  )}
+                </div>
+                <p className="text-sm text-indigo-700 dark:text-indigo-300 truncate" title={document.externalFileUrl}>
+                  {document.externalFileUrl}
+                </p>
+              </div>
+              <Button 
+                onClick={() => document.externalFileUrl && window.open(document.externalFileUrl, '_blank')}
+                className="flex-shrink-0 bg-indigo-600 hover:bg-indigo-700"
+                data-testid="open-external-file-button"
+              >
+                <ExternalLink className="h-4 w-4 mr-2" />
+                Open External File
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Document Content */}
       <Card>
         <CardContent className="p-8">
@@ -266,50 +301,42 @@ export default function DocumentView() {
             </div>
           )}
           
-          <div 
-            className="document-prose"
-            dangerouslySetInnerHTML={{ __html: processedContent }}
-            data-testid="document-content"
-          />
+          {/* Only show content prose if not an external file link or has meaningful content */}
+          {document.documentType !== 'external_file_link' && (
+            <div 
+              className="document-prose"
+              dangerouslySetInnerHTML={{ __html: processedContent }}
+              data-testid="document-content"
+            />
+          )}
+          
+          {/* For external file links, show a message if no additional content */}
+          {document.documentType === 'external_file_link' && !document.summary && (
+            <p className="text-muted-foreground text-center py-4">
+              Click "Open External File" above to access the linked document.
+            </p>
+          )}
         </CardContent>
       </Card>
 
-      {/* Additional Information */}
-      {(document.externalUrl || document.tags) && (
+      {/* Additional Information - Tags */}
+      {document.tags && document.tags.length > 0 && (
         <Card className="mt-6">
           <CardHeader>
             <h3 className="font-semibold">Additional Information</h3>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {document.externalUrl && (
-                <div>
-                  <h4 className="font-medium mb-2">External Link</h4>
-                  <a 
-                    href={document.externalUrl} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-2 text-blue-600 hover:text-blue-800 underline"
-                    data-testid="external-link"
-                  >
-                    <ExternalLink className="h-4 w-4" />
-                    {document.externalUrl}
-                  </a>
+              <div>
+                <h4 className="font-medium mb-2">Tags</h4>
+                <div className="flex flex-wrap gap-2">
+                  {document.tags.map((tag, index) => (
+                    <Badge key={index} variant="outline" className="text-xs">
+                      {tag}
+                    </Badge>
+                  ))}
                 </div>
-              )}
-              
-              {document.tags && document.tags.length > 0 && (
-                <div>
-                  <h4 className="font-medium mb-2">Tags</h4>
-                  <div className="flex flex-wrap gap-2">
-                    {document.tags.map((tag, index) => (
-                      <Badge key={index} variant="outline" className="text-xs">
-                        {tag}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
+              </div>
             </div>
           </CardContent>
         </Card>

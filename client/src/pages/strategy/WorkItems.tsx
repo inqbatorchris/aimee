@@ -1588,10 +1588,10 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                   )}
                   {visibleColumns.files && (
                   <TableCell className="py-0.5 px-2 text-center border-r border-gray-100">
-                    {item.attachments.length > 0 ? (
+                    {(item.attachments?.length ?? 0) > 0 ? (
                       <div className="flex items-center justify-center gap-1">
                         <FileText className="h-3 w-3" />
-                        <span className="text-[10px]">{item.attachments.length}</span>
+                        <span className="text-[10px]">{item.attachments?.length ?? 0}</span>
                       </div>
                     ) : (
                       <span className="text-muted-foreground text-[10px]">—</span>
@@ -1714,10 +1714,10 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                           </div>
                         )}
                         
-                        {item.attachments.length > 0 && (
+                        {(item.attachments?.length ?? 0) > 0 && (
                           <div className="flex items-center gap-0.5 text-[10px] text-gray-600">
                             <FileText className="h-2.5 w-2.5" />
-                            <span>{item.attachments.length}</span>
+                            <span>{item.attachments?.length ?? 0}</span>
                           </div>
                         )}
                       </div>

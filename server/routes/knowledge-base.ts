@@ -4,7 +4,7 @@ import { db } from "../db";
 import { coreStorage } from "../core-storage";
 import { authenticateToken, requireRole } from "../auth";
 import { z } from "zod";
-import { insertKnowledgeDocumentSchema, insertKnowledgeCategorySchema, User, teamMembers, workItems, documentAssignments } from "../../shared/schema";
+import { insertKnowledgeDocumentSchema, insertKnowledgeCategorySchema, User, teamMembers, workItems, documentAssignments, trainingQuizQuestions } from "../../shared/schema";
 
 const router = Router();
 
@@ -193,6 +193,542 @@ router.delete("/categories/:id", authenticateToken, requireRole(["admin", "super
   } catch (error) {
     console.error("Error deleting knowledge category:", error);
     res.status(500).json({ error: "Failed to delete knowledge category" });
+  }
+});
+
+// ========================================
+// KNOWLEDGE HUB V3 - FOLDERS
+// ========================================
+
+// Get all folders (optionally filtered by parent)
+router.get("/folders", authenticateToken, async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const { parentId } = req.query;
+    
+    let parent: number | null | undefined = undefined;
+    if (parentId === 'null' || parentId === 'root') {
+      parent = null;
+    } else if (parentId) {
+      parent = parseInt(parentId as string);
+    }
+    
+    const folders = await coreStorage.getKnowledgeFolders(organizationId, parent);
+    res.json(folders);
+  } catch (error) {
+    console.error("Error fetching folders:", error);
+    res.status(500).json({ error: "Failed to fetch folders" });
+  }
+});
+
+// Get single folder with its documents
+router.get("/folders/:id", authenticateToken, async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const folderId = parseInt(req.params.id);
+    if (isNaN(folderId)) {
+      return res.status(400).json({ error: "Invalid folder ID" });
+    }
+
+    const result = await coreStorage.getFolderWithDocuments(folderId, organizationId);
+    if (!result) {
+      return res.status(404).json({ error: "Folder not found" });
+    }
+
+    res.json(result);
+  } catch (error) {
+    console.error("Error fetching folder:", error);
+    res.status(500).json({ error: "Failed to fetch folder" });
+  }
+});
+
+// Create folder
+router.post("/folders", authenticateToken, requireRole(["admin", "super_admin", "manager"]), async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const { name, description, parentId, folderType, icon, color } = req.body;
+    
+    if (!name) {
+      return res.status(400).json({ error: "Folder name is required" });
+    }
+    
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    
+    const folder = await coreStorage.createKnowledgeFolder({
+      organizationId,
+      name,
+      slug,
+      description,
+      parentId: parentId || null,
+      folderType: folderType || 'general',
+      icon,
+      color,
+      createdBy: req.user!.id
+    });
+    
+    res.status(201).json(folder);
+  } catch (error) {
+    console.error("Error creating folder:", error);
+    res.status(500).json({ error: "Failed to create folder" });
+  }
+});
+
+// Update folder
+router.put("/folders/:id", authenticateToken, requireRole(["admin", "super_admin", "manager"]), async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const folderId = parseInt(req.params.id);
+    if (isNaN(folderId)) {
+      return res.status(400).json({ error: "Invalid folder ID" });
+    }
+
+    const updates = req.body;
+    if (updates.name) {
+      updates.slug = updates.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    }
+    
+    const folder = await coreStorage.updateKnowledgeFolder(folderId, organizationId, updates);
+    if (!folder) {
+      return res.status(404).json({ error: "Folder not found" });
+    }
+
+    res.json(folder);
+  } catch (error) {
+    console.error("Error updating folder:", error);
+    res.status(500).json({ error: "Failed to update folder" });
+  }
+});
+
+// Delete folder
+router.delete("/folders/:id", authenticateToken, requireRole(["admin", "super_admin", "manager"]), async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const folderId = parseInt(req.params.id);
+    if (isNaN(folderId)) {
+      return res.status(400).json({ error: "Invalid folder ID" });
+    }
+
+    const success = await coreStorage.deleteKnowledgeFolder(folderId, organizationId);
+    if (!success) {
+      return res.status(404).json({ error: "Folder not found" });
+    }
+
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting folder:", error);
+    res.status(500).json({ error: "Failed to delete folder" });
+  }
+});
+
+// ========================================
+// KNOWLEDGE HUB V3 - DOCUMENT MANAGEMENT
+// ========================================
+
+// Bulk move documents to folder
+router.patch("/documents/bulk-move", authenticateToken, requireRole(["admin", "super_admin", "manager"]), async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const { documentIds, folderId } = req.body;
+    
+    if (!Array.isArray(documentIds) || documentIds.length === 0) {
+      return res.status(400).json({ error: "documentIds must be a non-empty array" });
+    }
+    
+    // Validate all documents belong to this organization
+    const results = await Promise.all(
+      documentIds.map(async (docId: number) => {
+        const doc = await coreStorage.getKnowledgeDocument(docId);
+        if (!doc || doc.organizationId !== organizationId) {
+          return { id: docId, success: false, error: "Document not found" };
+        }
+        
+        const updated = await coreStorage.updateKnowledgeDocument(docId, { 
+          folderId: folderId || null 
+        }, req.user!.id);
+        
+        return { id: docId, success: !!updated };
+      })
+    );
+    
+    const successCount = results.filter(r => r.success).length;
+    res.json({ 
+      success: true, 
+      moved: successCount, 
+      total: documentIds.length,
+      results 
+    });
+  } catch (error) {
+    console.error("Error bulk moving documents:", error);
+    res.status(500).json({ error: "Failed to move documents" });
+  }
+});
+
+// Move single document to folder
+router.patch("/documents/:id/move", authenticateToken, requireRole(["admin", "super_admin", "manager"]), async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const documentId = parseInt(req.params.id);
+    if (isNaN(documentId)) {
+      return res.status(400).json({ error: "Invalid document ID" });
+    }
+    
+    const { folderId } = req.body;
+    
+    // Verify document ownership
+    const doc = await coreStorage.getKnowledgeDocument(documentId);
+    if (!doc || doc.organizationId !== organizationId) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+    
+    // If folderId provided, verify folder exists and belongs to org
+    if (folderId) {
+      const folders = await coreStorage.getKnowledgeFolders(organizationId);
+      const folder = folders.find(f => f.id === folderId);
+      if (!folder) {
+        return res.status(404).json({ error: "Folder not found" });
+      }
+    }
+    
+    const updated = await coreStorage.updateKnowledgeDocument(documentId, { 
+      folderId: folderId || null 
+    }, req.user!.id);
+    
+    if (!updated) {
+      return res.status(500).json({ error: "Failed to move document" });
+    }
+    
+    res.json(updated);
+  } catch (error) {
+    console.error("Error moving document:", error);
+    res.status(500).json({ error: "Failed to move document" });
+  }
+});
+
+// ========================================
+// KNOWLEDGE HUB V3 - TRAINING MODULE STEPS
+// ========================================
+
+// Helper function to verify document ownership
+async function verifyDocumentOwnership(documentId: number, organizationId: number): Promise<boolean> {
+  const document = await coreStorage.getKnowledgeDocument(documentId);
+  return document?.organizationId === organizationId;
+}
+
+// Helper function to verify step ownership via its document
+async function verifyStepOwnership(stepId: number, organizationId: number): Promise<boolean> {
+  const step = await coreStorage.getTrainingModuleStep(stepId);
+  if (!step) return false;
+  return verifyDocumentOwnership(step.documentId, organizationId);
+}
+
+// Get training steps for a document
+router.get("/documents/:id/training-steps", authenticateToken, async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const documentId = parseInt(req.params.id);
+    if (isNaN(documentId)) {
+      return res.status(400).json({ error: "Invalid document ID" });
+    }
+
+    if (!await verifyDocumentOwnership(documentId, organizationId)) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+
+    const steps = await coreStorage.getTrainingModuleSteps(documentId);
+    res.json(steps);
+  } catch (error) {
+    console.error("Error fetching training steps:", error);
+    res.status(500).json({ error: "Failed to fetch training steps" });
+  }
+});
+
+// Create training step
+router.post("/documents/:id/training-steps", authenticateToken, requireRole(["admin", "super_admin", "manager"]), async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const documentId = parseInt(req.params.id);
+    if (isNaN(documentId)) {
+      return res.status(400).json({ error: "Invalid document ID" });
+    }
+
+    if (!await verifyDocumentOwnership(documentId, organizationId)) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+
+    const existingSteps = await coreStorage.getTrainingModuleSteps(documentId);
+    const stepOrder = existingSteps.length + 1;
+    
+    const step = await coreStorage.createTrainingModuleStep({
+      documentId,
+      stepOrder,
+      ...req.body
+    });
+    
+    res.status(201).json(step);
+  } catch (error) {
+    console.error("Error creating training step:", error);
+    res.status(500).json({ error: "Failed to create training step" });
+  }
+});
+
+// Update training step
+router.put("/training-steps/:id", authenticateToken, requireRole(["admin", "super_admin", "manager"]), async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const stepId = parseInt(req.params.id);
+    if (isNaN(stepId)) {
+      return res.status(400).json({ error: "Invalid step ID" });
+    }
+
+    if (!await verifyStepOwnership(stepId, organizationId)) {
+      return res.status(404).json({ error: "Step not found" });
+    }
+
+    const step = await coreStorage.updateTrainingModuleStep(stepId, req.body);
+    if (!step) {
+      return res.status(404).json({ error: "Step not found" });
+    }
+
+    res.json(step);
+  } catch (error) {
+    console.error("Error updating training step:", error);
+    res.status(500).json({ error: "Failed to update training step" });
+  }
+});
+
+// Delete training step
+router.delete("/training-steps/:id", authenticateToken, requireRole(["admin", "super_admin", "manager"]), async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const stepId = parseInt(req.params.id);
+    if (isNaN(stepId)) {
+      return res.status(400).json({ error: "Invalid step ID" });
+    }
+
+    if (!await verifyStepOwnership(stepId, organizationId)) {
+      return res.status(404).json({ error: "Step not found" });
+    }
+
+    const success = await coreStorage.deleteTrainingModuleStep(stepId);
+    if (!success) {
+      return res.status(404).json({ error: "Step not found" });
+    }
+
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting training step:", error);
+    res.status(500).json({ error: "Failed to delete training step" });
+  }
+});
+
+// Reorder training steps
+router.put("/documents/:id/training-steps/reorder", authenticateToken, requireRole(["admin", "super_admin", "manager"]), async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const documentId = parseInt(req.params.id);
+    if (isNaN(documentId)) {
+      return res.status(400).json({ error: "Invalid document ID" });
+    }
+
+    if (!await verifyDocumentOwnership(documentId, organizationId)) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+
+    const { stepIds } = req.body;
+    if (!stepIds || !Array.isArray(stepIds)) {
+      return res.status(400).json({ error: "stepIds array is required" });
+    }
+
+    await coreStorage.reorderTrainingModuleSteps(documentId, stepIds);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Error reordering training steps:", error);
+    res.status(500).json({ error: "Failed to reorder training steps" });
+  }
+});
+
+// ========================================
+// KNOWLEDGE HUB V3 - QUIZ QUESTIONS
+// ========================================
+
+// Get quiz questions for a step
+router.get("/training-steps/:id/questions", authenticateToken, async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const stepId = parseInt(req.params.id);
+    if (isNaN(stepId)) {
+      return res.status(400).json({ error: "Invalid step ID" });
+    }
+
+    if (!await verifyStepOwnership(stepId, organizationId)) {
+      return res.status(404).json({ error: "Step not found" });
+    }
+
+    const questions = await coreStorage.getQuizQuestions(stepId);
+    res.json(questions);
+  } catch (error) {
+    console.error("Error fetching quiz questions:", error);
+    res.status(500).json({ error: "Failed to fetch quiz questions" });
+  }
+});
+
+// Create quiz question
+router.post("/training-steps/:id/questions", authenticateToken, requireRole(["admin", "super_admin", "manager"]), async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const stepId = parseInt(req.params.id);
+    if (isNaN(stepId)) {
+      return res.status(400).json({ error: "Invalid step ID" });
+    }
+
+    if (!await verifyStepOwnership(stepId, organizationId)) {
+      return res.status(404).json({ error: "Step not found" });
+    }
+
+    const existingQuestions = await coreStorage.getQuizQuestions(stepId);
+    const questionOrder = existingQuestions.length + 1;
+    
+    const question = await coreStorage.createQuizQuestion({
+      stepId,
+      questionOrder,
+      ...req.body
+    });
+    
+    res.status(201).json(question);
+  } catch (error) {
+    console.error("Error creating quiz question:", error);
+    res.status(500).json({ error: "Failed to create quiz question" });
+  }
+});
+
+// Helper function to verify quiz question ownership via step -> document chain
+async function verifyQuestionOwnership(questionId: number, organizationId: number): Promise<boolean> {
+  const questions = await db.select()
+    .from(trainingQuizQuestions)
+    .where(eq(trainingQuizQuestions.id, questionId))
+    .limit(1);
+  
+  if (questions.length === 0) return false;
+  return verifyStepOwnership(questions[0].stepId, organizationId);
+}
+
+// Update quiz question
+router.put("/quiz-questions/:id", authenticateToken, requireRole(["admin", "super_admin", "manager"]), async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const questionId = parseInt(req.params.id);
+    if (isNaN(questionId)) {
+      return res.status(400).json({ error: "Invalid question ID" });
+    }
+
+    if (!await verifyQuestionOwnership(questionId, organizationId)) {
+      return res.status(404).json({ error: "Question not found" });
+    }
+
+    const question = await coreStorage.updateQuizQuestion(questionId, req.body);
+    if (!question) {
+      return res.status(404).json({ error: "Question not found" });
+    }
+
+    res.json(question);
+  } catch (error) {
+    console.error("Error updating quiz question:", error);
+    res.status(500).json({ error: "Failed to update quiz question" });
+  }
+});
+
+// Delete quiz question
+router.delete("/quiz-questions/:id", authenticateToken, requireRole(["admin", "super_admin", "manager"]), async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const questionId = parseInt(req.params.id);
+    if (isNaN(questionId)) {
+      return res.status(400).json({ error: "Invalid question ID" });
+    }
+
+    if (!await verifyQuestionOwnership(questionId, organizationId)) {
+      return res.status(404).json({ error: "Question not found" });
+    }
+
+    const success = await coreStorage.deleteQuizQuestion(questionId);
+    if (!success) {
+      return res.status(404).json({ error: "Question not found" });
+    }
+
+    res.status(204).send();
+  } catch (error) {
+    console.error("Error deleting quiz question:", error);
+    res.status(500).json({ error: "Failed to delete quiz question" });
+  }
+});
+
+// ========================================
+// KNOWLEDGE HUB V3 - USER TRAINING PROGRESS
+// ========================================
+
+// Get user's training progress for a document
+router.get("/documents/:id/my-progress", authenticateToken, async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const documentId = parseInt(req.params.id);
+    if (isNaN(documentId)) {
+      return res.status(400).json({ error: "Invalid document ID" });
+    }
+
+    if (!await verifyDocumentOwnership(documentId, organizationId)) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+
+    const progress = await coreStorage.getTrainingProgress(req.user!.id, documentId);
+    res.json(progress || { status: 'not_started' });
+  } catch (error) {
+    console.error("Error fetching training progress:", error);
+    res.status(500).json({ error: "Failed to fetch training progress" });
+  }
+});
+
+// Start or update training progress
+router.post("/documents/:id/progress", authenticateToken, async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const documentId = parseInt(req.params.id);
+    if (isNaN(documentId)) {
+      return res.status(400).json({ error: "Invalid document ID" });
+    }
+
+    if (!await verifyDocumentOwnership(documentId, organizationId)) {
+      return res.status(404).json({ error: "Document not found" });
+    }
+
+    const existingProgress = await coreStorage.getTrainingProgress(req.user!.id, documentId);
+    
+    if (existingProgress) {
+      const updated = await coreStorage.updateTrainingProgress(existingProgress.id, req.body);
+      res.json(updated);
+    } else {
+      const created = await coreStorage.createTrainingProgress({
+        documentId,
+        userId: req.user!.id,
+        status: 'in_progress',
+        startedAt: new Date(),
+        ...req.body
+      });
+      res.status(201).json(created);
+    }
+  } catch (error) {
+    console.error("Error updating training progress:", error);
+    res.status(500).json({ error: "Failed to update training progress" });
+  }
+});
+
+// Get user's total points
+router.get("/my-points", authenticateToken, async (req, res) => {
+  try {
+    const points = await coreStorage.getUserPoints(req.user!.id);
+    res.json(points || { totalPoints: 0 });
+  } catch (error) {
+    console.error("Error fetching user points:", error);
+    res.status(500).json({ error: "Failed to fetch user points" });
   }
 });
 
@@ -844,6 +1380,152 @@ router.post('/assignments/complete-from-workflow', async (req, res) => {
   } catch (error) {
     console.error('🎓 [Training Webhook] ❌ Error completing training via workflow:', error);
     res.status(500).json({ error: 'Failed to complete training assignment' });
+  }
+});
+
+// ========================================
+// AI COMPOSE ENDPOINTS
+// ========================================
+
+import { OpenAIService } from '../services/integrations/openaiService';
+
+// Generate document outline
+router.post("/documents/ai/generate-outline", authenticateToken, async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const { topic, documentType, audience } = req.body;
+
+    if (!topic) {
+      return res.status(400).json({ error: "Topic is required" });
+    }
+
+    const openai = new OpenAIService(organizationId);
+    await openai.initialize();
+
+    const systemPrompt = `You are a professional technical writer helping create knowledge base documentation. Generate a structured outline for the given topic. The outline should be practical, actionable, and appropriate for the specified audience.
+
+Format your response as a clean HTML structure that can be directly used in a rich text editor. Use proper heading hierarchy (h2, h3) and bullet points (ul, li).`;
+
+    const userPrompt = `Create a detailed outline for a ${documentType || 'knowledge article'} about: "${topic}"
+${audience ? `Target audience: ${audience}` : ''}
+
+The outline should include:
+- A clear introduction section
+- 3-5 main sections with subsections
+- Practical tips or best practices
+- A conclusion or summary section`;
+
+    const response = await openai.createChatCompletion([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ], {
+      model: 'gpt-4',
+      temperature: 0.7,
+      max_tokens: 1500
+    });
+
+    const outline = response.choices[0]?.message?.content || '';
+
+    res.json({ 
+      success: true, 
+      outline,
+      topic 
+    });
+  } catch (error: any) {
+    console.error("Error generating outline:", error);
+    if (error.message?.includes('integration not configured') || error.message?.includes('credentials not configured')) {
+      return res.status(400).json({ error: "OpenAI integration not configured. Please set up OpenAI in Integrations." });
+    }
+    res.status(500).json({ error: "Failed to generate outline" });
+  }
+});
+
+// Expand section with AI
+router.post("/documents/ai/expand-section", authenticateToken, async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const { section, context, tone } = req.body;
+
+    if (!section) {
+      return res.status(400).json({ error: "Section content is required" });
+    }
+
+    const openai = new OpenAIService(organizationId);
+    await openai.initialize();
+
+    const systemPrompt = `You are a professional technical writer. Expand the given section heading or brief content into detailed, well-written documentation. Write in a ${tone || 'professional'} tone. Format your response as clean HTML suitable for a rich text editor.`;
+
+    const userPrompt = `Expand this section into detailed content:
+"${section}"
+
+${context ? `Additional context: ${context}` : ''}
+
+Write 2-4 paragraphs with practical, actionable information. Include examples where relevant.`;
+
+    const response = await openai.createChatCompletion([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ], {
+      model: 'gpt-4',
+      temperature: 0.7,
+      max_tokens: 1000
+    });
+
+    const content = response.choices[0]?.message?.content || '';
+
+    res.json({ 
+      success: true, 
+      content 
+    });
+  } catch (error: any) {
+    console.error("Error expanding section:", error);
+    if (error.message?.includes('integration not configured') || error.message?.includes('credentials not configured')) {
+      return res.status(400).json({ error: "OpenAI integration not configured. Please set up OpenAI in Integrations." });
+    }
+    res.status(500).json({ error: "Failed to expand section" });
+  }
+});
+
+// Improve writing
+router.post("/documents/ai/improve-writing", authenticateToken, async (req, res) => {
+  try {
+    const organizationId = req.user!.organizationId || 1;
+    const { content, instruction } = req.body;
+
+    if (!content) {
+      return res.status(400).json({ error: "Content is required" });
+    }
+
+    const openai = new OpenAIService(organizationId);
+    await openai.initialize();
+
+    const systemPrompt = `You are an expert editor helping improve documentation quality. Apply the requested improvements while preserving the original meaning and key information. Return clean HTML suitable for a rich text editor.`;
+
+    const userPrompt = `${instruction || 'Improve the clarity and readability of this content'}:
+
+${content}`;
+
+    const response = await openai.createChatCompletion([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ], {
+      model: 'gpt-4',
+      temperature: 0.5,
+      max_tokens: 2000
+    });
+
+    const improved = response.choices[0]?.message?.content || '';
+
+    res.json({ 
+      success: true, 
+      content: improved 
+    });
+  } catch (error: any) {
+    console.error("Error improving writing:", error);
+    if (error.message?.includes('integration not configured') || error.message?.includes('credentials not configured')) {
+      return res.status(400).json({ error: "OpenAI integration not configured. Please set up OpenAI in Integrations." });
+    }
+    res.status(500).json({ error: "Failed to improve writing" });
   }
 });
 

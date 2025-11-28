@@ -61,6 +61,7 @@ const Training = lazy(() => import("@/pages/Training"));
 const DocumentEditor = lazy(() => import("@/pages/KnowledgeBase/DocumentEditor"));
 const KnowledgeBaseListing = lazy(() => import("@/pages/KnowledgeBase/KnowledgeBaseListing"));
 const DocumentView = lazy(() => import("@/pages/KnowledgeBase/DocumentView"));
+const TrainingModuleEditor = lazy(() => import("@/pages/KnowledgeBase/TrainingModuleEditor"));
 const SprintDetails = lazy(() => import("@/pages/SprintDetails"));
 
 // Dynamic Pages
@@ -676,6 +677,8 @@ function AppContent() {
               <Route path="/knowledge-base/documents/new" component={DocumentEditor} />
               <Route path="/knowledge-base/documents/:id/edit" component={DocumentEditor} />
               <Route path="/kb/documents/:id" component={DocumentView} />
+              <Route path="/knowledge-hub/training/modules/new" component={TrainingModuleEditor} />
+              <Route path="/knowledge-hub/training/modules/:id/edit" component={TrainingModuleEditor} />
 
               {/* Redirects for backward compatibility */}
               <Route path="/admin/support" component={() => {
