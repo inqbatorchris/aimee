@@ -8,13 +8,15 @@ import { Progress } from "@/components/ui/progress";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { BookOpen, Users, Plus, FileText, Filter, Eye, Edit3, Trash2, Calendar, User, Tag, Search, X, UserPlus, Pencil } from "lucide-react";
+import { Separator } from "@/components/ui/separator";
+import { BookOpen, Users, Plus, FileText, Filter, Eye, Edit3, Trash2, Calendar, User, Tag, Search, X, UserPlus, Pencil, PanelLeftClose, PanelLeft } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
 import type { KnowledgeDocument } from '@shared/schema';
 import { AssignTrainingDialog } from "@/components/training/AssignTrainingDialog";
 import { EditAssignmentDialog } from "@/components/training/EditAssignmentDialog";
+import { FolderNavigation } from "@/components/knowledge-hub/FolderNavigation";
 
 interface ExtendedKnowledgeDocument extends KnowledgeDocument {
   author?: {
@@ -53,6 +55,10 @@ export default function KnowledgeBaseListing() {
   const [, navigate] = useLocation();
   const [activeTab, setActiveTab] = useState<"documents" | "progress">("documents");
   
+  // Folder navigation state
+  const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
+  const [showFolderNav, setShowFolderNav] = useState(true);
+  
   // Filter states
   const [documentStatusFilter, setDocumentStatusFilter] = useState<string>("all");
   const [selectedCategoriesFilter, setSelectedCategoriesFilter] = useState<string[]>([]); // Updated to array for multi-select
@@ -78,8 +84,11 @@ export default function KnowledgeBaseListing() {
     enabled: activeTab === "documents"
   });
   
-  // Enhanced client-side filtering with search and multi-category support
+  // Enhanced client-side filtering with search, multi-category support, and folder filtering
   const filteredDocuments = documents.filter(doc => {
+    // Folder filter - if a folder is selected, only show documents in that folder
+    if (selectedFolderId !== null && doc.folderId !== selectedFolderId) return false;
+    
     // Status filter
     if (documentStatusFilter !== "all" && doc.status !== documentStatusFilter) return false;
     
@@ -398,63 +407,92 @@ export default function KnowledgeBaseListing() {
 
   return (
     <div className="container mx-auto px-3 py-3" data-testid="knowledge-base-listing">
-      <div className="mb-3">
-        <h1 className="text-lg font-semibold text-gray-900">Knowledge Base</h1>
-        <p className="text-gray-600 mt-0.5 text-[12px]">Manage training documents and team progress</p>
-      </div>
-      {/* Compact Tab Navigation */}
-      <div className="mb-3">
-        <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-4">
-            <button
-              onClick={() => setActiveTab("documents")}
-              className={`py-1 px-2 border-b-2 font-medium text-xs ${
-                activeTab === "documents"
-                  ? "border-indigo-500 text-indigo-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-              }`}
-            >
-              <BookOpen className="w-3 h-3 inline mr-1" />
-              Documents
-            </button>
-            {isAdmin && (
-              <button
-                onClick={() => setActiveTab("progress")}
-                className={`py-1 px-2 border-b-2 font-medium text-xs ${
-                  activeTab === "progress"
-                    ? "border-indigo-500 text-indigo-600"
-                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
-                }`}
-              >
-                <Users className="w-3 h-3 inline mr-1" />
-                Team Progress
-              </button>
-            )}
-          </nav>
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <h1 className="text-lg font-semibold text-gray-900">Knowledge Hub</h1>
+          <p className="text-gray-600 mt-0.5 text-[12px]">Manage training documents, folders, and team progress</p>
         </div>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 md:hidden"
+          onClick={() => setShowFolderNav(!showFolderNav)}
+          data-testid="toggle-folder-nav"
+        >
+          {showFolderNav ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
+        </Button>
       </div>
-      {/* Documents Tab */}
-      {activeTab === "documents" && (
-        <div className="space-y-3">
-          {/* Compact Header with Create Button */}
-          <div className="flex justify-between items-center">
-            <div>
-              <p className="text-xs text-gray-600 mt-0.5">
-                Manage and organize knowledge base documents
-              </p>
+      
+      {/* Main Layout with Folder Navigation */}
+      <div className="flex gap-4">
+        {/* Folder Navigation Sidebar */}
+        <div className={`${showFolderNav ? 'block' : 'hidden'} md:block w-56 flex-shrink-0`}>
+          <Card className="sticky top-4">
+            <CardContent className="p-2">
+              <FolderNavigation
+                selectedFolderId={selectedFolderId}
+                onFolderSelect={setSelectedFolderId}
+              />
+            </CardContent>
+          </Card>
+        </div>
+        
+        {/* Main Content Area */}
+        <div className="flex-1 min-w-0">
+          {/* Compact Tab Navigation */}
+          <div className="mb-3">
+            <div className="border-b border-gray-200">
+              <nav className="-mb-px flex space-x-4">
+                <button
+                  onClick={() => setActiveTab("documents")}
+                  className={`py-1 px-2 border-b-2 font-medium text-xs ${
+                    activeTab === "documents"
+                      ? "border-indigo-500 text-indigo-600"
+                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                  }`}
+                >
+                  <BookOpen className="w-3 h-3 inline mr-1" />
+                  Documents
+                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => setActiveTab("progress")}
+                    className={`py-1 px-2 border-b-2 font-medium text-xs ${
+                      activeTab === "progress"
+                        ? "border-indigo-500 text-indigo-600"
+                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    }`}
+                  >
+                    <Users className="w-3 h-3 inline mr-1" />
+                    Team Progress
+                  </button>
+                )}
+              </nav>
             </div>
-            <Button 
-              type="button" 
-              size="sm" 
-              onClick={handleCreateDocument} 
-              className="flex items-center gap-1 h-7"
-              data-testid="create-document-button"
-            >
-              <Plus className="w-3 h-3" />
-              <span className="hidden sm:inline">Create Document</span>
-              <span className="sm:hidden">Create</span>
-            </Button>
           </div>
+          
+          {/* Documents Tab */}
+          {activeTab === "documents" && (
+            <div className="space-y-3">
+              {/* Compact Header with Create Button */}
+              <div className="flex justify-between items-center">
+                <div>
+                  <p className="text-xs text-gray-600 mt-0.5">
+                    {selectedFolderId ? 'Documents in selected folder' : 'All documents'}
+                  </p>
+                </div>
+                <Button 
+                  type="button" 
+                  size="sm" 
+                  onClick={handleCreateDocument} 
+                  className="flex items-center gap-1 h-7"
+                  data-testid="create-document-button"
+                >
+                  <Plus className="w-3 h-3" />
+                  <span className="hidden sm:inline">Create Document</span>
+                  <span className="sm:hidden">Create</span>
+                </Button>
+              </div>
           
           {/* Enhanced Filters with Search and Multi-Select Categories */}
           <div className="space-y-3">
@@ -759,6 +797,8 @@ export default function KnowledgeBaseListing() {
           )}
         </div>
       )}
+        </div>
+      </div>
 
       {/* Assign Training Dialog */}
       {selectedDocument && (
