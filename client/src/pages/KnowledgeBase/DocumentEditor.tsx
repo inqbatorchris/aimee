@@ -20,7 +20,7 @@ import type { KnowledgeFolder } from '@shared/schema';
 const DOCUMENT_TYPES = [
   { value: 'internal_kb', label: 'Knowledge Article', icon: FileText, description: 'Standard knowledge base article' },
   { value: 'training_module', label: 'Training Module', icon: GraduationCap, description: 'Step-based training with quizzes' },
-  { value: 'customer_document', label: 'Customer Document', icon: FileCheck, description: 'Customer-facing documentation' },
+  { value: 'customer_kb', label: 'Customer Document', icon: FileCheck, description: 'Customer-facing documentation' },
   { value: 'external_file_link', label: 'External File', icon: ExternalLink, description: 'Link to external file' },
 ] as const;
 
@@ -30,6 +30,10 @@ export default function DocumentEditor() {
   const { currentUser } = useAuth();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  
+  // Get query params for pre-selecting document type
+  const searchParams = new URLSearchParams(window.location.search);
+  const initialType = searchParams.get('type');
   
   // Document state
   const [title, setTitle] = useState('');
@@ -41,7 +45,7 @@ export default function DocumentEditor() {
   const [estimatedReadingTime, setEstimatedReadingTime] = useState<number>(5);
   const [newTag, setNewTag] = useState('');
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
-  const [documentType, setDocumentType] = useState<string>('internal_kb');
+  const [documentType, setDocumentType] = useState<string>(initialType || 'internal_kb');
   const [folderId, setFolderId] = useState<number | null>(null);
   
   // External file link fields
@@ -108,7 +112,7 @@ export default function DocumentEditor() {
     }
   }, [document, isLoading]);
 
-  // Reset form when switching between create/edit modes
+  // Reset form when switching between create/edit modes (preserve URL type param)
   useEffect(() => {
     if (!isEditing) {
       setTitle('');
@@ -117,12 +121,12 @@ export default function DocumentEditor() {
       setTags([]);
       setStatus('draft');
       setEstimatedReadingTime(5);
-      setDocumentType('internal_kb');
+      setDocumentType(initialType || 'internal_kb');
       setFolderId(null);
       setExternalFileUrl('');
       setExternalFileSource('');
     }
-  }, [isEditing]);
+  }, [isEditing, initialType]);
 
   // Save document mutation
   const saveDocumentMutation = useMutation({
