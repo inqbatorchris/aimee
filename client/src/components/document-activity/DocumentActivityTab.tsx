@@ -18,7 +18,7 @@ import {
   CheckCircle2,
   AlertCircle
 } from 'lucide-react';
-import { format, formatDistanceToNow } from 'date-fns';
+import { format, formatDistanceToNow, isValid, parseISO } from 'date-fns';
 import { useDocumentActivity } from '@/hooks/useDocumentActivity';
 
 interface DocumentActivityTabProps {
@@ -117,6 +117,59 @@ export function DocumentActivityTab({ documentId }: DocumentActivityTabProps) {
       .substring(0, 2);
   };
 
+  const parseActivityDate = (dateValue: string | number | null | undefined): Date | null => {
+    if (!dateValue) return null;
+    
+    try {
+      let date: Date;
+      
+      if (typeof dateValue === 'string') {
+        date = parseISO(dateValue);
+        if (!isValid(date)) {
+          date = new Date(dateValue);
+        }
+      } else if (typeof dateValue === 'number') {
+        date = new Date(dateValue < 10000000000 ? dateValue * 1000 : dateValue);
+      } else {
+        date = new Date(dateValue);
+      }
+      
+      if (!isValid(date)) {
+        return null;
+      }
+      
+      if (date.getTime() === 0) {
+        return null;
+      }
+      
+      return date;
+    } catch {
+      return null;
+    }
+  };
+
+  const formatActivityDate = (dateValue: string | number | null | undefined): string => {
+    const date = parseActivityDate(dateValue);
+    if (!date) {
+      if (typeof dateValue === 'string' && dateValue.trim()) {
+        return dateValue.substring(0, 20) + (dateValue.length > 20 ? '...' : '');
+      }
+      return 'Unknown';
+    }
+    return formatDistanceToNow(date, { addSuffix: true });
+  };
+
+  const formatActivityDateTitle = (dateValue: string | number | null | undefined): string => {
+    const date = parseActivityDate(dateValue);
+    if (!date) {
+      if (typeof dateValue === 'string' && dateValue.trim()) {
+        return dateValue;
+      }
+      return 'Unknown date';
+    }
+    return format(date, 'PPp');
+  };
+
   if (isLoading) {
     return (
       <div className="space-y-4" data-testid="activity-loading">
@@ -199,8 +252,8 @@ export function DocumentActivityTab({ documentId }: DocumentActivityTabProps) {
 
           {/* Timestamp */}
           <div className="flex-shrink-0 text-xs text-muted-foreground">
-            <div title={format(new Date(activity.createdAt), 'PPp')}>
-              {formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}
+            <div title={formatActivityDateTitle(activity.createdAt)}>
+              {formatActivityDate(activity.createdAt)}
             </div>
           </div>
         </div>
