@@ -83,6 +83,29 @@ export const updateTypeEnum = pgEnum('update_type', ['progress', 'status_change'
 export const documentStatusEnum = pgEnum('document_status', ['draft', 'published', 'archived']);
 export const documentVisibilityEnum = pgEnum('document_visibility', ['public', 'internal', 'private']);
 
+// Knowledge Hub document types (v3 extension)
+export const knowledgeDocumentTypeEnum = pgEnum('knowledge_document_type', [
+  'internal_kb',
+  'website_page', 
+  'customer_kb',
+  'marketing_email',
+  'marketing_letter',
+  'attachment',
+  'training_module',
+  'external_file_link',
+  'contract',
+  'policy',
+  'public_report',
+  'quick_reference'
+]);
+
+// Training completion requirements
+export const knowledgeCompletionRequirementEnum = pgEnum('knowledge_completion_requirement', [
+  'all_steps',
+  'quiz',
+  'both'
+]);
+
 // Enum for team member roles (migration 007) - reusing same values as participantRoleEnum for consistency
 export const teamRoleEnum = pgEnum('team_role', ['Leader', 'Member', 'Watcher']);
 
@@ -908,6 +931,10 @@ export const knowledgeDocuments = pgTable("knowledge_documents", {
   id: serial("id").primaryKey(),
   organizationId: integer("organization_id").references(() => organizations.id).notNull(),
   
+  // Knowledge Hub v3 - Folder and Type
+  folderId: integer("folder_id"),
+  documentType: knowledgeDocumentTypeEnum("document_type").default("internal_kb"),
+  
   // Document details
   title: varchar("title", { length: 255 }).notNull(),
   content: text("content"),
@@ -927,6 +954,16 @@ export const knowledgeDocuments = pgTable("knowledge_documents", {
   estimatedReadingTime: integer("estimated_reading_time"), // minutes
   metadata: jsonb("metadata"), // Additional document metadata
   
+  // Knowledge Hub v3 - Training Module Settings
+  completionPoints: integer("completion_points").default(0),
+  completionRequirement: knowledgeCompletionRequirementEnum("completion_requirement"),
+  quizPassingScore: integer("quiz_passing_score").default(70),
+  
+  // Knowledge Hub v3 - External File Link
+  externalFileUrl: text("external_file_url"),
+  externalFileSource: varchar("external_file_source", { length: 50 }),
+  externalFileId: varchar("external_file_id", { length: 255 }),
+  
   // AI and search
   searchVector: text("search_vector"), // For full-text search
   aiEmbedding: jsonb("ai_embedding"), // For semantic search
@@ -939,6 +976,8 @@ export const knowledgeDocuments = pgTable("knowledge_documents", {
 }, (table) => [
   index("idx_knowledge_docs_org").on(table.organizationId),
   index("idx_knowledge_docs_author").on(table.authorId),
+  index("idx_knowledge_docs_folder").on(table.folderId),
+  index("idx_knowledge_docs_type").on(table.documentType),
   // Indexes for array columns (categories and tags) - PostgreSQL will automatically optimize for arrays
   index("idx_knowledge_docs_categories").on(table.categories),
   index("idx_knowledge_docs_tags").on(table.tags),
@@ -1129,6 +1168,434 @@ export const userOnboardingProgress = pgTable("user_onboarding_progress", {
   index("idx_user_onboarding_plan").on(table.planId),
   index("idx_user_onboarding_status").on(table.status),
 ]);
+
+// ========================================
+// KNOWLEDGE HUB ENTERPRISE EXTENSION (v3)
+// ========================================
+// Note: Core enums (knowledgeDocumentTypeEnum, knowledgeCompletionRequirementEnum) 
+// are defined with other document enums near line 89 for proper table references.
+
+// Additional enums for Knowledge Hub features
+export const folderTypeEnum = pgEnum('folder_type', [
+  'general',
+  'training', 
+  'customer',
+  'content',
+  'internal',
+  'reports',
+  'files'
+]);
+
+export const trainingStepTypeEnum = pgEnum('training_step_type', [
+  'video',
+  'checklist',
+  'resource',
+  'quiz',
+  'practical_task'
+]);
+
+export const lifecycleStatusEnum = pgEnum('lifecycle_status', [
+  'draft',
+  'pending_review',
+  'active',
+  'expiring',
+  'expired',
+  'archived'
+]);
+
+export const reportAccessTypeEnum = pgEnum('report_access_type', [
+  'public',
+  'role_based',
+  'user_based'
+]);
+
+export const reportBlockTypeEnum = pgEnum('report_block_type', [
+  'rich_text',
+  'data_table',
+  'chart',
+  'doc_snippet'
+]);
+
+export const userStatusTypeEnum = pgEnum('user_status_type', [
+  'active',
+  'away',
+  'in_meeting',
+  'offline'
+]);
+
+export const activityEventTypeEnum = pgEnum('activity_event_type', [
+  'training_completed',
+  'document_published',
+  'sale_recorded',
+  'work_item_updated',
+  'whatsapp_message',
+  'custom'
+]);
+
+export const aiApprovalStatusEnum = pgEnum('ai_approval_status', [
+  'pending',
+  'approved',
+  'rejected'
+]);
+
+// Knowledge Folders - hierarchical folder system
+export const knowledgeFolders = pgTable("knowledge_folders", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  parentId: integer("parent_id"),
+  name: varchar("name", { length: 255 }).notNull(),
+  slug: varchar("slug", { length: 255 }).notNull(),
+  description: text("description"),
+  folderType: folderTypeEnum("folder_type").default("general"),
+  icon: varchar("icon", { length: 100 }),
+  color: varchar("color", { length: 50 }),
+  metadata: jsonb("metadata").default({}),
+  sortOrder: integer("sort_order").default(0),
+  isSystem: boolean("is_system").default(false),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_folders_org").on(table.organizationId),
+  index("idx_folders_parent").on(table.parentId),
+  index("idx_folders_type").on(table.folderType),
+  unique("unique_folder_slug_per_parent").on(table.organizationId, table.parentId, table.slug),
+]);
+
+// Training Module Steps
+export const trainingModuleSteps = pgTable("training_module_steps", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").references(() => knowledgeDocuments.id, { onDelete: "cascade" }).notNull(),
+  stepOrder: integer("step_order").notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  stepType: trainingStepTypeEnum("step_type").notNull(),
+  content: text("content"),
+  config: jsonb("config").default({}).$type<{
+    url?: string;
+    embedType?: 'youtube' | 'vimeo';
+    items?: Array<{ id: string; label: string; required: boolean }>;
+    passingScore?: number;
+    maxAttempts?: number;
+    pointsPerQuestion?: number[];
+    requiresSupervisorSignoff?: boolean;
+    instructions?: string;
+  }>(),
+  attachments: jsonb("attachments").default([]).$type<number[]>(),
+  required: boolean("required").default(true),
+  estimatedMinutes: integer("estimated_minutes").default(5),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_training_steps_doc").on(table.documentId),
+  index("idx_training_steps_order").on(table.documentId, table.stepOrder),
+]);
+
+// Training Quiz Questions
+export const trainingQuizQuestions = pgTable("training_quiz_questions", {
+  id: serial("id").primaryKey(),
+  stepId: integer("step_id").references(() => trainingModuleSteps.id, { onDelete: "cascade" }).notNull(),
+  questionOrder: integer("question_order").notNull(),
+  questionText: text("question_text").notNull(),
+  questionType: varchar("question_type", { length: 50 }).notNull(),
+  options: jsonb("options").$type<Array<{ id: string; text: string; isCorrect: boolean }>>(),
+  correctAnswer: text("correct_answer"),
+  explanation: text("explanation"),
+  points: integer("points").default(1),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_quiz_questions_step").on(table.stepId),
+  index("idx_quiz_questions_order").on(table.stepId, table.questionOrder),
+]);
+
+// Training Progress
+export const trainingProgress = pgTable("training_progress", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").references(() => knowledgeDocuments.id, { onDelete: "cascade" }).notNull(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  assignmentId: integer("assignment_id").references(() => documentAssignments.id),
+  currentStepId: integer("current_step_id").references(() => trainingModuleSteps.id),
+  status: varchar("status", { length: 50 }).default("not_started"),
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  totalTimeSeconds: integer("total_time_seconds").default(0),
+  quizScore: decimal("quiz_score", { precision: 5, scale: 2 }),
+  quizPointsEarned: integer("quiz_points_earned").default(0),
+  quizAttempts: integer("quiz_attempts").default(0),
+  stepCompletions: jsonb("step_completions").default({}).$type<{
+    [stepId: string]: {
+      completedAt: string;
+      data?: any;
+      score?: number;
+    };
+  }>(),
+  certificateUrl: text("certificate_url"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_training_progress_user").on(table.userId),
+  index("idx_training_progress_doc").on(table.documentId),
+  index("idx_training_progress_status").on(table.status),
+  unique("unique_training_progress").on(table.documentId, table.userId, table.assignmentId),
+]);
+
+// User Points
+export const userPoints = pgTable("user_points", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  totalPoints: integer("total_points").default(0),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  unique("unique_user_points").on(table.userId),
+  index("idx_user_points_org").on(table.organizationId),
+]);
+
+// Point Transactions
+export const pointTransactions = pgTable("point_transactions", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  points: integer("points").notNull(),
+  sourceType: varchar("source_type", { length: 50 }).notNull(),
+  sourceId: integer("source_id"),
+  description: varchar("description", { length: 500 }),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_point_transactions_user").on(table.userId),
+  index("idx_point_transactions_org").on(table.organizationId),
+  index("idx_point_transactions_created").on(table.createdAt.desc()),
+]);
+
+// Document Lifecycle
+export const documentLifecycle = pgTable("document_lifecycle", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").references(() => knowledgeDocuments.id, { onDelete: "cascade" }).notNull(),
+  lifecycleStatus: lifecycleStatusEnum("lifecycle_status").default("draft"),
+  effectiveDate: date("effective_date"),
+  expirationDate: date("expiration_date"),
+  reviewDate: date("review_date"),
+  reviewCycleDays: integer("review_cycle_days"),
+  lastReviewedAt: timestamp("last_reviewed_at"),
+  lastReviewedBy: integer("last_reviewed_by").references(() => users.id),
+  requiresAcknowledgment: boolean("requires_acknowledgment").default(false),
+  acknowledgmentCount: integer("acknowledgment_count").default(0),
+  approvalRequired: boolean("approval_required").default(false),
+  approvedBy: integer("approved_by").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  renewalWorkItemId: integer("renewal_work_item_id").references(() => workItems.id),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  unique("unique_doc_lifecycle").on(table.documentId),
+  index("idx_lifecycle_status").on(table.lifecycleStatus),
+  index("idx_lifecycle_expiration").on(table.expirationDate),
+]);
+
+// Public Report Sections
+export const publicReportSections = pgTable("public_report_sections", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").references(() => knowledgeDocuments.id, { onDelete: "cascade" }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  description: text("description"),
+  sectionOrder: integer("section_order").notNull(),
+  isVisible: boolean("is_visible").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_report_sections_doc").on(table.documentId),
+  index("idx_report_sections_order").on(table.documentId, table.sectionOrder),
+]);
+
+// Public Report Blocks
+export const publicReportBlocks = pgTable("public_report_blocks", {
+  id: serial("id").primaryKey(),
+  sectionId: integer("section_id").references(() => publicReportSections.id, { onDelete: "cascade" }).notNull(),
+  blockType: reportBlockTypeEnum("block_type").notNull(),
+  blockOrder: integer("block_order").notNull(),
+  content: text("content"),
+  queryConfig: jsonb("query_config").default({}).$type<{
+    entity?: string;
+    filters?: Array<{ field: string; op: string; value: any }>;
+    columns?: string[];
+    sorting?: Array<{ field: string; direction: 'asc' | 'desc' }>;
+    aggregations?: Array<{ field: string; fn: string }>;
+    joins?: Array<{ table: string; on: string; columns: string[] }>;
+    enableCsv?: boolean;
+    enablePdf?: boolean;
+  }>(),
+  config: jsonb("config").default({}).$type<{
+    chartType?: 'line' | 'bar' | 'pie';
+    documentId?: number;
+    heading?: string;
+    maxChars?: number;
+  }>(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_report_blocks_section").on(table.sectionId),
+  index("idx_report_blocks_order").on(table.sectionId, table.blockOrder),
+]);
+
+// Public Report Access Log
+export const publicReportAccessLog = pgTable("public_report_access_log", {
+  id: serial("id").primaryKey(),
+  documentId: integer("document_id").references(() => knowledgeDocuments.id, { onDelete: "cascade" }).notNull(),
+  userId: integer("user_id").references(() => users.id),
+  accessType: varchar("access_type", { length: 50 }).notNull(),
+  ipAddress: varchar("ip_address", { length: 45 }),
+  userAgent: text("user_agent"),
+  sectionViewed: varchar("section_viewed", { length: 255 }),
+  accessedAt: timestamp("accessed_at").defaultNow(),
+}, (table) => [
+  index("idx_report_access_doc").on(table.documentId),
+  index("idx_report_access_time").on(table.accessedAt.desc()),
+]);
+
+// User Status (for Team Page)
+export const userStatus = pgTable("user_status", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: "cascade" }).notNull(),
+  status: userStatusTypeEnum("status").default("offline"),
+  statusMessage: varchar("status_message", { length: 255 }),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  unique("unique_user_status").on(table.userId),
+]);
+
+// Activity Feed
+export const activityFeed = pgTable("activity_feed", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  userId: integer("user_id").references(() => users.id),
+  eventType: activityEventTypeEnum("event_type").notNull(),
+  title: varchar("title", { length: 500 }).notNull(),
+  description: text("description"),
+  metadata: jsonb("metadata").default({}),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_activity_feed_org").on(table.organizationId),
+  index("idx_activity_feed_created").on(table.createdAt.desc()),
+  index("idx_activity_feed_type").on(table.eventType),
+]);
+
+// WhatsApp Messages (read-only bridge)
+export const whatsappMessages = pgTable("whatsapp_messages", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  groupId: varchar("group_id", { length: 255 }).notNull(),
+  groupName: varchar("group_name", { length: 255 }),
+  senderPhone: varchar("sender_phone", { length: 50 }).notNull(),
+  senderName: varchar("sender_name", { length: 255 }),
+  matchedUserId: integer("matched_user_id").references(() => users.id),
+  messageType: varchar("message_type", { length: 50 }).default("text"),
+  textContent: text("text_content"),
+  mediaUrl: text("media_url"),
+  whatsappTimestamp: timestamp("whatsapp_timestamp").notNull(),
+  receivedAt: timestamp("received_at").defaultNow(),
+}, (table) => [
+  index("idx_whatsapp_org").on(table.organizationId),
+  index("idx_whatsapp_timestamp").on(table.whatsappTimestamp.desc()),
+  index("idx_whatsapp_group").on(table.groupId),
+]);
+
+// AI Content Generations (with approval workflow)
+export const aiContentGenerations = pgTable("ai_content_generations", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  documentId: integer("document_id").references(() => knowledgeDocuments.id),
+  mode: varchar("mode", { length: 50 }).notNull(),
+  prompt: text("prompt").notNull(),
+  contextDocuments: jsonb("context_documents").default([]).$type<Array<{ id: number; title: string }>>(),
+  originalText: text("original_text"),
+  generatedContent: text("generated_content"),
+  approvalStatus: aiApprovalStatusEnum("approval_status").default("pending"),
+  approvedAt: timestamp("approved_at"),
+  approvedBy: integer("approved_by").references(() => users.id),
+  rejectionReason: text("rejection_reason"),
+  modelUsed: varchar("model_used", { length: 100 }),
+  tokensUsed: integer("tokens_used"),
+  applied: boolean("applied").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_ai_gen_org").on(table.organizationId),
+  index("idx_ai_gen_user").on(table.userId),
+  index("idx_ai_gen_doc").on(table.documentId),
+  index("idx_ai_gen_status").on(table.approvalStatus),
+]);
+
+// Microsoft 365 Connections
+export const microsoft365Connections = pgTable("microsoft_365_connections", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  accessTokenEncrypted: text("access_token_encrypted").notNull(),
+  refreshTokenEncrypted: text("refresh_token_encrypted").notNull(),
+  tokenExpiresAt: timestamp("token_expires_at").notNull(),
+  scopes: text("scopes").notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  unique("unique_ms365_connection").on(table.organizationId, table.userId),
+]);
+
+// ========================================
+// KNOWLEDGE HUB INSERT SCHEMAS
+// ========================================
+
+export const insertKnowledgeFolderSchema = createInsertSchema(knowledgeFolders).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertKnowledgeFolder = z.infer<typeof insertKnowledgeFolderSchema>;
+export type KnowledgeFolder = typeof knowledgeFolders.$inferSelect;
+
+export const insertTrainingModuleStepSchema = createInsertSchema(trainingModuleSteps).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTrainingModuleStep = z.infer<typeof insertTrainingModuleStepSchema>;
+export type TrainingModuleStep = typeof trainingModuleSteps.$inferSelect;
+
+export const insertTrainingQuizQuestionSchema = createInsertSchema(trainingQuizQuestions).omit({ id: true, createdAt: true });
+export type InsertTrainingQuizQuestion = z.infer<typeof insertTrainingQuizQuestionSchema>;
+export type TrainingQuizQuestion = typeof trainingQuizQuestions.$inferSelect;
+
+export const insertTrainingProgressSchema = createInsertSchema(trainingProgress).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertTrainingProgress = z.infer<typeof insertTrainingProgressSchema>;
+export type TrainingProgress = typeof trainingProgress.$inferSelect;
+
+export const insertUserPointsSchema = createInsertSchema(userPoints).omit({ id: true, updatedAt: true });
+export type InsertUserPoints = z.infer<typeof insertUserPointsSchema>;
+export type UserPoints = typeof userPoints.$inferSelect;
+
+export const insertPointTransactionSchema = createInsertSchema(pointTransactions).omit({ id: true, createdAt: true });
+export type InsertPointTransaction = z.infer<typeof insertPointTransactionSchema>;
+export type PointTransaction = typeof pointTransactions.$inferSelect;
+
+export const insertDocumentLifecycleSchema = createInsertSchema(documentLifecycle).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertDocumentLifecycle = z.infer<typeof insertDocumentLifecycleSchema>;
+export type DocumentLifecycle = typeof documentLifecycle.$inferSelect;
+
+export const insertPublicReportSectionSchema = createInsertSchema(publicReportSections).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPublicReportSection = z.infer<typeof insertPublicReportSectionSchema>;
+export type PublicReportSection = typeof publicReportSections.$inferSelect;
+
+export const insertPublicReportBlockSchema = createInsertSchema(publicReportBlocks).omit({ id: true, createdAt: true, updatedAt: true });
+export type InsertPublicReportBlock = z.infer<typeof insertPublicReportBlockSchema>;
+export type PublicReportBlock = typeof publicReportBlocks.$inferSelect;
+
+export const insertUserStatusSchema = createInsertSchema(userStatus).omit({ id: true, updatedAt: true });
+export type InsertUserStatus = z.infer<typeof insertUserStatusSchema>;
+export type UserStatusType = typeof userStatus.$inferSelect;
+
+export const insertActivityFeedSchema = createInsertSchema(activityFeed).omit({ id: true, createdAt: true });
+export type InsertActivityFeed = z.infer<typeof insertActivityFeedSchema>;
+export type ActivityFeed = typeof activityFeed.$inferSelect;
+
+export const insertWhatsappMessageSchema = createInsertSchema(whatsappMessages).omit({ id: true, receivedAt: true });
+export type InsertWhatsappMessage = z.infer<typeof insertWhatsappMessageSchema>;
+export type WhatsappMessage = typeof whatsappMessages.$inferSelect;
+
+export const insertAiContentGenerationSchema = createInsertSchema(aiContentGenerations).omit({ id: true, createdAt: true });
+export type InsertAiContentGeneration = z.infer<typeof insertAiContentGenerationSchema>;
+export type AiContentGeneration = typeof aiContentGenerations.$inferSelect;
 
 // ========================================
 // LEGACY DATA MIGRATION COMPLETED
