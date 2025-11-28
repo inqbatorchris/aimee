@@ -1,7 +1,6 @@
 import express, { Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import rateLimit from 'express-rate-limit';
 import { db } from './db';
 import { users, organizations } from '@shared/schema';
 import { eq, and } from 'drizzle-orm';
@@ -11,16 +10,7 @@ import { storage } from './storage';
 
 const router = express.Router();
 
-// Rate limiting for auth endpoints
-const authRateLimit = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 5, // 5 attempts per window
-  message: { error: 'Too many authentication attempts. Please try again later.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-  // Skip IP validation in development to avoid trust proxy errors
-  skip: (req) => process.env.NODE_ENV === 'development',
-});
+// Note: Rate limiting removed - using Cloudflare for protection instead
 
 // Validation schemas
 const loginSchema = z.object({
@@ -45,7 +35,7 @@ const resetPasswordSchema = z.object({
 });
 
 // Login endpoint
-router.post('/login', authRateLimit, async (req: Request, res: Response) => {
+router.post('/login', async (req: Request, res: Response) => {
   try {
     // Validate input
     const validatedData = loginSchema.parse(req.body);
@@ -132,7 +122,7 @@ router.post('/login', authRateLimit, async (req: Request, res: Response) => {
 });
 
 // Register endpoint
-router.post('/register', authRateLimit, async (req: Request, res: Response) => {
+router.post('/register', async (req: Request, res: Response) => {
   try {
     // Validate input
     const validatedData = registerSchema.parse(req.body);
@@ -349,7 +339,7 @@ router.post('/logout', authenticateToken, async (req: Request, res: Response) =>
 });
 
 // Forgot password endpoint
-router.post('/forgot-password', authRateLimit, async (req: Request, res: Response) => {
+router.post('/forgot-password', async (req: Request, res: Response) => {
   try {
     const validatedData = forgotPasswordSchema.parse(req.body);
     
