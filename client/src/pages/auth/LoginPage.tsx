@@ -104,7 +104,7 @@ export default function LoginPage() {
         <div className="w-full max-w-md mx-auto">
           <div className="mb-10">
             <img src={logoUrl} alt="Country Connect - Future Proof Broadband" className="h-[49px]" />
-            <p className="text-zinc-500 text-sm mt-3">Desktop login.</p>
+            <p className="mt-3 text-[#ffffff] text-[20px]">Desktop login.</p>
           </div>
 
           <form onSubmit={handleSubmit(onSubmit)} className="space-y-5">
@@ -220,7 +220,6 @@ export default function LoginPage() {
           </div>
         </div>
       </div>
-
       <div className="p-6 text-center">
         <a 
           href="https://aimee.works" 
