@@ -34,10 +34,6 @@ import {
   MoreVertical,
   Edit2,
   Trash2,
-  GraduationCap,
-  FileText,
-  ExternalLink,
-  Globe,
   Library,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
@@ -67,28 +63,6 @@ interface FolderNavigationProps {
   className?: string;
 }
 
-const FOLDER_TYPES = [
-  { value: 'general', label: 'General', icon: Folder },
-  { value: 'training', label: 'Training Modules', icon: GraduationCap },
-  { value: 'customer_documents', label: 'Customer Documents', icon: FileText },
-  { value: 'external_links', label: 'External Links', icon: ExternalLink },
-  { value: 'public_reports', label: 'Public Reports', icon: Globe },
-] as const;
-
-const getFolderIcon = (folderType: string) => {
-  switch (folderType) {
-    case 'training': return GraduationCap;
-    case 'customer_documents': return FileText;
-    case 'external_links': return ExternalLink;
-    case 'public_reports': return Globe;
-    default: return Folder;
-  }
-};
-
-const getFolderTypeLabel = (folderType: string) => {
-  const type = FOLDER_TYPES.find(t => t.value === folderType);
-  return type?.label || 'General';
-};
 
 export function FolderNavigation({ selectedFolderId, onFolderSelect, className }: FolderNavigationProps) {
   const { currentUser } = useAuth();
@@ -99,7 +73,6 @@ export function FolderNavigation({ selectedFolderId, onFolderSelect, className }
   const [editingFolder, setEditingFolder] = useState<KnowledgeFolder | null>(null);
   const [newFolderName, setNewFolderName] = useState("");
   const [newFolderDescription, setNewFolderDescription] = useState("");
-  const [newFolderType, setNewFolderType] = useState<string>("general");
   const [newFolderParentId, setNewFolderParentId] = useState<number | null>(null);
 
   const isAdmin = currentUser?.role === "admin" || currentUser?.role === "super_admin" || currentUser?.role === "manager";
@@ -109,12 +82,15 @@ export function FolderNavigation({ selectedFolderId, onFolderSelect, className }
   });
 
   const createFolderMutation = useMutation({
-    mutationFn: async (data: { name: string; description?: string; folderType: string; parentId: number | null }) => {
+    mutationFn: async (data: { name: string; description?: string; parentId: number | null }) => {
       const response = await apiRequest("/api/knowledge-base/folders", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: data,
       });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to create folder');
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -136,9 +112,12 @@ export function FolderNavigation({ selectedFolderId, onFolderSelect, className }
     mutationFn: async ({ id, data }: { id: number; data: Partial<KnowledgeFolder> }) => {
       const response = await apiRequest(`/api/knowledge-base/folders/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: data,
       });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Failed to update folder');
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -183,7 +162,6 @@ export function FolderNavigation({ selectedFolderId, onFolderSelect, className }
   const resetForm = () => {
     setNewFolderName("");
     setNewFolderDescription("");
-    setNewFolderType("general");
     setNewFolderParentId(null);
   };
 
@@ -202,7 +180,6 @@ export function FolderNavigation({ selectedFolderId, onFolderSelect, className }
     createFolderMutation.mutate({
       name: newFolderName.trim(),
       description: newFolderDescription.trim() || undefined,
-      folderType: newFolderType,
       parentId: newFolderParentId,
     });
   };
@@ -214,7 +191,6 @@ export function FolderNavigation({ selectedFolderId, onFolderSelect, className }
       data: {
         name: newFolderName.trim(),
         description: newFolderDescription.trim() || null,
-        folderType: newFolderType,
       },
     });
   };
@@ -230,7 +206,6 @@ export function FolderNavigation({ selectedFolderId, onFolderSelect, className }
     setEditingFolder(folder);
     setNewFolderName(folder.name);
     setNewFolderDescription(folder.description || "");
-    setNewFolderType(folder.folderType);
     setShowEditDialog(true);
   };
 
@@ -242,7 +217,6 @@ export function FolderNavigation({ selectedFolderId, onFolderSelect, className }
     const hasChildren = children.length > 0;
     const isExpanded = expandedFolders.has(folder.id);
     const isSelected = selectedFolderId === folder.id;
-    const IconComponent = getFolderIcon(folder.folderType);
 
     return (
       <div>
@@ -280,7 +254,7 @@ export function FolderNavigation({ selectedFolderId, onFolderSelect, className }
             {isExpanded && hasChildren ? (
               <FolderOpen className="h-4 w-4 flex-shrink-0" style={{ color: folder.color || undefined }} />
             ) : (
-              <IconComponent className="h-4 w-4 flex-shrink-0" style={{ color: folder.color || undefined }} />
+              <Folder className="h-4 w-4 flex-shrink-0" style={{ color: folder.color || undefined }} />
             )}
             <span className="text-sm truncate">{folder.name}</span>
           </div>
@@ -418,24 +392,6 @@ export function FolderNavigation({ selectedFolderId, onFolderSelect, className }
                 data-testid="input-folder-description"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="folder-type">Type</Label>
-              <Select value={newFolderType} onValueChange={setNewFolderType}>
-                <SelectTrigger data-testid="select-folder-type">
-                  <SelectValue placeholder="Select folder type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {FOLDER_TYPES.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>
-                      <div className="flex items-center gap-2">
-                        <type.icon className="h-4 w-4" />
-                        {type.label}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
             {newFolderParentId && (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <span>Creating inside:</span>
@@ -488,24 +444,6 @@ export function FolderNavigation({ selectedFolderId, onFolderSelect, className }
                 placeholder="Enter folder description"
                 data-testid="input-edit-folder-description"
               />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="edit-folder-type">Type</Label>
-              <Select value={newFolderType} onValueChange={setNewFolderType}>
-                <SelectTrigger data-testid="select-edit-folder-type">
-                  <SelectValue placeholder="Select folder type" />
-                </SelectTrigger>
-                <SelectContent>
-                  {FOLDER_TYPES.map((type) => (
-                    <SelectItem key={type.value} value={type.value}>
-                      <div className="flex items-center gap-2">
-                        <type.icon className="h-4 w-4" />
-                        {type.label}
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
             </div>
           </div>
           <DialogFooter>
