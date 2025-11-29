@@ -72,7 +72,7 @@ export function ActionApprovalCard({ action, onApproved, onRejected }: ActionApp
     },
   });
 
-  const payload = action.actionPayload;
+  const payload = action.actionPayload || {};
 
   const renderActionPreview = () => {
     switch (action.actionType) {
@@ -80,7 +80,7 @@ export function ActionApprovalCard({ action, onApproved, onRejected }: ActionApp
         return (
           <div className="space-y-1.5">
             <div>
-              <p className="text-xs font-semibold">{payload.title}</p>
+              <p className="text-xs font-semibold">{payload.title || 'Untitled'}</p>
               {payload.description && <p className="text-[11px] text-muted-foreground mt-0.5">{payload.description}</p>}
             </div>
             <div className="text-[10px] space-y-0.5">
@@ -93,10 +93,10 @@ export function ActionApprovalCard({ action, onApproved, onRejected }: ActionApp
       case 'create_key_result':
         return (
           <div className="space-y-1.5">
-            <p className="text-xs font-semibold">{payload.title}</p>
+            <p className="text-xs font-semibold">{payload.title || 'Untitled'}</p>
             {payload.description && <p className="text-[11px] text-muted-foreground">{payload.description}</p>}
             <div className="text-[10px]">
-              <p>📊 Target: {payload.currentValue || 0} → {payload.targetValue} {payload.unit || ''}</p>
+              <p>📊 Target: {payload.currentValue || 0} → {payload.targetValue || 0} {payload.unit || ''}</p>
               {payload.deadline && <p>⏰ Deadline: {new Date(payload.deadline).toLocaleDateString()}</p>}
             </div>
           </div>
@@ -105,7 +105,7 @@ export function ActionApprovalCard({ action, onApproved, onRejected }: ActionApp
       case 'create_task':
         return (
           <div className="space-y-1.5">
-            <p className="text-xs font-semibold">{payload.title}</p>
+            <p className="text-xs font-semibold">{payload.title || 'Untitled'}</p>
             {payload.description && <p className="text-[11px] text-muted-foreground">{payload.description}</p>}
             <div className="text-[10px]">
               {payload.dueDate && <p>📅 Due: {new Date(payload.dueDate).toLocaleDateString()}</p>}
@@ -118,7 +118,7 @@ export function ActionApprovalCard({ action, onApproved, onRejected }: ActionApp
         return (
           <div className="space-y-1 text-[11px]">
             <p><strong>Action:</strong> Query customer balance</p>
-            <p><strong>Customer:</strong> {payload.customerName}</p>
+            <p><strong>Customer:</strong> {payload.customerName || 'Unknown'}</p>
           </div>
         );
 
@@ -126,8 +126,8 @@ export function ActionApprovalCard({ action, onApproved, onRejected }: ActionApp
         return (
           <div className="space-y-2 text-[11px]">
             <div>
-              <p className="text-xs font-semibold">{payload.objectiveTitle}</p>
-              <p className="text-muted-foreground mt-0.5">{payload.description}</p>
+              <p className="text-xs font-semibold">{payload.objectiveTitle || 'Untitled'}</p>
+              <p className="text-muted-foreground mt-0.5">{payload.description || ''}</p>
             </div>
 
             {payload.keyResults && payload.keyResults.length > 0 && (
