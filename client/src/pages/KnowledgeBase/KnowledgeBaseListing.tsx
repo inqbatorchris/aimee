@@ -455,14 +455,14 @@ export default function KnowledgeBaseListing() {
       <Card 
         ref={setNodeRef}
         style={style}
-        className={`group hover:shadow-sm transition-shadow ${isDragging ? 'opacity-50 z-50' : ''} ${isSelected ? 'ring-2 ring-primary' : ''}`} 
+        className={`group hover:shadow-sm transition-shadow overflow-hidden ${isDragging ? 'opacity-50 z-50' : ''} ${isSelected ? 'ring-2 ring-primary' : ''}`} 
         data-testid={`document-card-${document.id}`}
       >
-        <CardContent className="p-3">
-          <div className="flex items-center gap-2">
+        <CardContent className="p-3 overflow-hidden">
+          <div className="flex items-start gap-2">
             {/* Selection checkbox (visible in selection mode or on hover) */}
             {isAdmin && (
-              <div className={`flex items-center gap-1 ${selectionMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
+              <div className={`flex items-center gap-1 flex-shrink-0 ${selectionMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
                 <Checkbox
                   checked={isSelected}
                   onCheckedChange={() => {
@@ -484,30 +484,30 @@ export default function KnowledgeBaseListing() {
               </div>
             )}
             
-            <div className="flex-1 cursor-pointer" onClick={() => handleViewDocument(document)}>
-              <h3 className="font-medium line-clamp-1 mb-1 text-[14px]">
+            <div className="flex-1 min-w-0 overflow-hidden cursor-pointer" onClick={() => handleViewDocument(document)}>
+              <h3 className="font-medium truncate mb-1 text-[14px]">
                 {document.title}
               </h3>
-              <div className="flex items-center gap-2 mb-2">
+              <div className="flex items-center gap-2 mb-2 overflow-hidden">
                 {document.author && (
-                  <span className="text-xs text-muted-foreground flex items-center gap-1">
-                    <User className="h-3 w-3" />
-                    {document.author.fullName}
+                  <span className="text-xs text-muted-foreground flex items-center gap-1 truncate">
+                    <User className="h-3 w-3 flex-shrink-0" />
+                    <span className="truncate">{document.author.fullName}</span>
                   </span>
                 )}
-                <span className="text-muted-foreground flex items-center gap-1 text-[12px]">
+                <span className="text-muted-foreground flex items-center gap-1 text-[12px] flex-shrink-0">
                   <Calendar className="h-3 w-3" />
                   {formatDate(document.updatedAt)}
                 </span>
               </div>
-              <div className="flex items-center gap-2">
-                <Badge variant={getStatusColor(document.status)} className="px-1 py-0 text-[12px]">
+              <div className="flex flex-wrap items-center gap-1">
+                <Badge variant={getStatusColor(document.status)} className="px-1 py-0 text-[12px] flex-shrink-0">
                   {document.status}
                 </Badge>
                 {document.documentType && document.documentType !== 'internal_kb' && (
                   <Badge 
                     variant={document.documentType === 'external_file_link' ? 'outline' : 'secondary'} 
-                    className="px-1 py-0 text-[12px] flex items-center gap-1"
+                    className="px-1 py-0 text-[12px] flex items-center gap-1 flex-shrink-0"
                   >
                     {document.documentType === 'training_module' && <GraduationCap className="h-3 w-3" />}
                     {document.documentType === 'external_file_link' && <ExternalLink className="h-3 w-3" />}
@@ -518,24 +518,24 @@ export default function KnowledgeBaseListing() {
                   </Badge>
                 )}
                 {document.categories && document.categories.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
+                  <>
                     {document.categories.slice(0, 2).map((category, index) => (
-                      <Badge key={index} variant="outline" className="px-1 py-0 text-[12px]">
-                        <Tag className="h-3 w-3 mr-1" />
-                        {category}
+                      <Badge key={index} variant="outline" className="px-1 py-0 text-[12px] truncate max-w-[80px]">
+                        <Tag className="h-3 w-3 mr-1 flex-shrink-0" />
+                        <span className="truncate">{category}</span>
                       </Badge>
                     ))}
                     {document.categories.length > 2 && (
-                      <Badge variant="outline" className="text-xs px-1 py-0">
+                      <Badge variant="outline" className="text-xs px-1 py-0 flex-shrink-0">
                         +{document.categories.length - 2}
                       </Badge>
                     )}
-                  </div>
+                  </>
                 )}
               </div>
             </div>
             
-            <div className="flex items-center gap-1">
+            <div className="flex items-center gap-1 flex-shrink-0">
               {/* Open external link button for external file links */}
               {document.documentType === 'external_file_link' && (document as any).externalFileUrl && (
                 <Button
