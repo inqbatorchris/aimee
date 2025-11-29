@@ -325,10 +325,7 @@ export default function TemplateList() {
 
         <main className="flex-1 overflow-auto">
           <div className="container mx-auto px-6 py-6">
-            <div className="flex items-center justify-between mb-6">
-              <div>
-                <h1 className="text-2xl font-bold mb-1">Workflow Templates</h1>
-              </div>
+            <div className="flex justify-end mb-6">
               <Button 
                 onClick={() => navigate('/templates/workflows/new/edit')}
                 data-testid="button-create-template"
