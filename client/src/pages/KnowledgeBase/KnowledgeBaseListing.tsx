@@ -459,8 +459,8 @@ export default function KnowledgeBaseListing() {
         data-testid={`document-card-${document.id}`}
       >
         <CardContent className="p-3 overflow-hidden">
-          <div className="flex items-start gap-2">
-            {/* Selection checkbox (visible in selection mode or on hover) */}
+          {/* Title row with drag handle */}
+          <div className="flex items-start gap-2 mb-2">
             {isAdmin && (
               <div className={`flex items-center gap-1 flex-shrink-0 ${selectionMode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
                 <Checkbox
@@ -472,7 +472,6 @@ export default function KnowledgeBaseListing() {
                   onClick={(e) => e.stopPropagation()}
                   data-testid={`select-document-${document.id}`}
                 />
-                {/* Drag handle */}
                 <div 
                   {...listeners} 
                   {...attributes}
@@ -483,129 +482,125 @@ export default function KnowledgeBaseListing() {
                 </div>
               </div>
             )}
-            
-            <div className="flex-1 min-w-0 overflow-hidden cursor-pointer" onClick={() => handleViewDocument(document)}>
-              <h3 className="font-medium truncate mb-1 text-[14px]">
-                {document.title}
-              </h3>
-              <div className="flex items-center gap-2 mb-2 overflow-hidden">
-                {document.author && (
-                  <span className="text-xs text-muted-foreground flex items-center gap-1 truncate">
-                    <User className="h-3 w-3 flex-shrink-0" />
-                    <span className="truncate">{document.author.fullName}</span>
-                  </span>
-                )}
-                <span className="text-muted-foreground flex items-center gap-1 text-[12px] flex-shrink-0">
-                  <Calendar className="h-3 w-3" />
-                  {formatDate(document.updatedAt)}
-                </span>
-              </div>
-              <div className="flex flex-wrap items-center gap-1">
-                <Badge variant={getStatusColor(document.status)} className="px-1 py-0 text-[12px] flex-shrink-0">
-                  {document.status}
-                </Badge>
-                {document.documentType && document.documentType !== 'internal_kb' && (
-                  <Badge 
-                    variant={document.documentType === 'external_file_link' ? 'outline' : 'secondary'} 
-                    className="px-1 py-0 text-[12px] flex items-center gap-1 flex-shrink-0"
-                  >
-                    {document.documentType === 'training_module' && <GraduationCap className="h-3 w-3" />}
-                    {document.documentType === 'external_file_link' && <ExternalLink className="h-3 w-3" />}
-                    {document.documentType === 'customer_kb' && <FileCheck className="h-3 w-3" />}
-                    {document.documentType === 'training_module' && 'Training'}
-                    {document.documentType === 'external_file_link' && 'External'}
-                    {document.documentType === 'customer_kb' && 'Customer'}
+            <h3 
+              className="flex-1 min-w-0 font-medium text-sm leading-tight cursor-pointer hover:text-primary"
+              onClick={() => handleViewDocument(document)}
+            >
+              {document.title}
+            </h3>
+          </div>
+          
+          {/* Date row */}
+          <div className="flex items-center gap-2 mb-2 text-xs text-muted-foreground">
+            <Calendar className="h-3 w-3 flex-shrink-0" />
+            <span>{formatDate(document.updatedAt)}</span>
+          </div>
+          
+          {/* Status and categories row */}
+          <div className="flex flex-wrap items-center gap-1 mb-2">
+            <Badge variant={getStatusColor(document.status)} className="text-[11px] px-1.5 py-0">
+              {document.status}
+            </Badge>
+            {document.documentType && document.documentType !== 'internal_kb' && (
+              <Badge 
+                variant={document.documentType === 'external_file_link' ? 'outline' : 'secondary'} 
+                className="text-[11px] px-1.5 py-0 flex items-center gap-1"
+              >
+                {document.documentType === 'training_module' && <GraduationCap className="h-3 w-3" />}
+                {document.documentType === 'external_file_link' && <ExternalLink className="h-3 w-3" />}
+                {document.documentType === 'customer_kb' && <FileCheck className="h-3 w-3" />}
+                {document.documentType === 'training_module' && 'Training'}
+                {document.documentType === 'external_file_link' && 'External'}
+                {document.documentType === 'customer_kb' && 'Customer'}
+              </Badge>
+            )}
+            {document.categories && document.categories.length > 0 && (
+              <>
+                {document.categories.slice(0, 2).map((category, index) => (
+                  <Badge key={index} variant="outline" className="text-[11px] px-1.5 py-0 max-w-[100px] truncate">
+                    <Tag className="h-3 w-3 mr-1 flex-shrink-0" />
+                    <span className="truncate">{category}</span>
+                  </Badge>
+                ))}
+                {document.categories.length > 2 && (
+                  <Badge variant="outline" className="text-[11px] px-1.5 py-0">
+                    +{document.categories.length - 2}
                   </Badge>
                 )}
-                {document.categories && document.categories.length > 0 && (
-                  <>
-                    {document.categories.slice(0, 2).map((category, index) => (
-                      <Badge key={index} variant="outline" className="px-1 py-0 text-[12px] truncate max-w-[80px]">
-                        <Tag className="h-3 w-3 mr-1 flex-shrink-0" />
-                        <span className="truncate">{category}</span>
-                      </Badge>
-                    ))}
-                    {document.categories.length > 2 && (
-                      <Badge variant="outline" className="text-xs px-1 py-0 flex-shrink-0">
-                        +{document.categories.length - 2}
-                      </Badge>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-            
-            <div className="flex items-center gap-1 flex-shrink-0">
-              {/* Open external link button for external file links */}
-              {document.documentType === 'external_file_link' && (document as any).externalFileUrl && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    window.open((document as any).externalFileUrl, '_blank');
-                  }}
-                  className="h-6 w-6 p-0 text-primary"
-                  data-testid={`open-external-${document.id}`}
-                  title="Open external file"
-                >
-                  <ExternalLink className="h-3 w-3" />
-                </Button>
-              )}
+              </>
+            )}
+          </div>
+          
+          {/* Action buttons row */}
+          <div className="flex items-center gap-1 pt-1 border-t border-border/50">
+            {document.documentType === 'external_file_link' && (document as any).externalFileUrl && (
               <Button
                 variant="ghost"
                 size="sm"
                 onClick={(e) => {
                   e.stopPropagation();
-                  handleViewDocument(document);
+                  window.open((document as any).externalFileUrl, '_blank');
                 }}
-                className="h-6 w-6 p-0"
-                data-testid={`view-document-${document.id}`}
-                title="View document"
+                className="h-7 w-7 p-0 text-primary"
+                data-testid={`open-external-${document.id}`}
+                title="Open external file"
               >
-                <Eye className="h-3 w-3" />
+                <ExternalLink className="h-3.5 w-3.5" />
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleEditDocument(document);
-                }}
-                className="h-6 w-6 p-0"
-                data-testid={`edit-document-${document.id}`}
-                title="Edit document"
-              >
-                <Edit3 className="h-3 w-3" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleAssignDocument(document);
-                }}
-                className="h-6 w-6 p-0"
-                data-testid={`assign-document-${document.id}`}
-                title="Assign Training"
-              >
-                <UserPlus className="h-3 w-3" />
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleDeleteDocument(document);
-                }}
-                disabled={deleteDocumentMutation.isPending}
-                className="h-6 w-6 p-0"
-                data-testid={`delete-document-${document.id}`}
-                title="Delete document"
-              >
-                <Trash2 className="h-3 w-3" />
-              </Button>
-            </div>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleViewDocument(document);
+              }}
+              className="h-7 w-7 p-0"
+              data-testid={`view-document-${document.id}`}
+              title="View document"
+            >
+              <Eye className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleEditDocument(document);
+              }}
+              className="h-7 w-7 p-0"
+              data-testid={`edit-document-${document.id}`}
+              title="Edit document"
+            >
+              <Edit3 className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleAssignDocument(document);
+              }}
+              className="h-7 w-7 p-0"
+              data-testid={`assign-document-${document.id}`}
+              title="Assign Training"
+            >
+              <UserPlus className="h-3.5 w-3.5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleDeleteDocument(document);
+              }}
+              disabled={deleteDocumentMutation.isPending}
+              className="h-7 w-7 p-0"
+              data-testid={`delete-document-${document.id}`}
+              title="Delete document"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
           </div>
         </CardContent>
       </Card>
