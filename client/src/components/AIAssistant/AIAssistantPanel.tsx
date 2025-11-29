@@ -393,12 +393,26 @@ export function AIAssistantPanel({ isOpen, onClose }: AIAssistantPanelProps) {
               )}
               <DropdownMenuSeparator />
               <DropdownMenuItem 
-                onClick={() => createSessionMutation.mutate()}
+                onClick={async () => {
+                  const newSession = await createSessionMutation.mutateAsync();
+                  setCurrentSessionId(newSession.id);
+                  setMessages([]);
+                }}
+                disabled={createSessionMutation.isPending}
                 data-testid="button-new-chat"
                 style={{ fontSize: '10pt' }}
               >
-                <MessageSquarePlus className="mr-2 h-4 w-4" />
-                Start New Chat
+                {createSessionMutation.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <MessageSquarePlus className="mr-2 h-4 w-4" />
+                    Start New Chat
+                  </>
+                )}
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
