@@ -3642,7 +3642,10 @@ const CreateWorkflowTemplateSchema = z.object({
   completion_callbacks: z.array(z.object({
     integrationName: z.string(),
     action: z.string(),
-    fieldMappings: z.array(z.any()).optional(),
+    fieldMappings: z.array(z.object({
+      source: z.string(),
+      target: z.string(),
+    }).passthrough()).optional(),
   })).optional(),
   display_in_menu: z.boolean().optional(),
   menu_label: z.string().max(100).optional(),
