@@ -761,24 +761,38 @@ export default function KnowledgeBaseListing() {
           {/* Documents Tab */}
           {activeTab === "documents" && (
             <div className="space-y-3">
-              {/* Compact Header with Create Button */}
-              <div className="flex justify-between items-center">
-                <div>
-                  <p className="text-xs text-gray-600 mt-0.5">
-                    {selectedFolderId ? 'Documents in selected folder' : 'All documents'}
-                  </p>
+              {/* Compact Search and Actions Row */}
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Input
+                    placeholder="Search documents..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="h-8 text-sm"
+                    data-testid="search-input"
+                  />
                 </div>
+                <Select value={documentStatusFilter} onValueChange={setDocumentStatusFilter}>
+                  <SelectTrigger className="h-8 w-28 text-xs" data-testid="status-filter">
+                    <SelectValue placeholder="Status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All</SelectItem>
+                    <SelectItem value="draft">Draft</SelectItem>
+                    <SelectItem value="published">Published</SelectItem>
+                    <SelectItem value="archived">Archived</SelectItem>
+                  </SelectContent>
+                </Select>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button 
                       type="button" 
                       size="sm" 
-                      className="flex items-center gap-1 h-7"
+                      className="flex items-center gap-1 h-8"
                       data-testid="create-document-button"
                     >
                       <Plus className="w-3 h-3" />
                       <span className="hidden sm:inline">Create</span>
-                      <ChevronDown className="w-3 h-3 ml-0.5" />
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent align="end">
@@ -797,80 +811,29 @@ export default function KnowledgeBaseListing() {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-          
-          {/* Enhanced Filters with Search and Multi-Select Categories */}
-          <div className="space-y-3">
-            {/* Search Bar */}
-            <div className="relative">
-              <Input
-                placeholder="Search documents..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-8 text-sm"
-                data-testid="search-input"
-              />
-            </div>
-            
-            {/* Filter Controls */}
-            <div className="flex flex-wrap gap-2">
-              <Select value={documentStatusFilter} onValueChange={setDocumentStatusFilter}>
-                <SelectTrigger className="h-7 w-32 text-xs" data-testid="status-filter">
-                  <SelectValue placeholder="Status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Status</SelectItem>
-                  <SelectItem value="draft">Draft</SelectItem>
-                  <SelectItem value="published">Published</SelectItem>
-                  <SelectItem value="archived">Archived</SelectItem>
-                </SelectContent>
-              </Select>
               
-              {/* Multi-select Categories */}
-              <Select onValueChange={(value) => {
-                if (value && !selectedCategoriesFilter.includes(value)) {
-                  setSelectedCategoriesFilter([...selectedCategoriesFilter, value]);
-                }
-              }}>
-                <SelectTrigger className="h-7 w-36 text-xs" data-testid="category-filter">
-                  <SelectValue placeholder="Add Category" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="policies">Policies</SelectItem>
-                  <SelectItem value="procedures">Procedures</SelectItem>
-                  <SelectItem value="training">Training</SelectItem>
-                  <SelectItem value="technical">Technical</SelectItem>
-                  <SelectItem value="general">General</SelectItem>
-                  <SelectItem value="documentation">Documentation</SelectItem>
-                  <SelectItem value="guidelines">Guidelines</SelectItem>
-                  <SelectItem value="best-practices">Best Practices</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            
-            {/* Selected Categories as Chips */}
-            {selectedCategoriesFilter.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                <Label className="text-xs text-muted-foreground self-center">Categories:</Label>
-                {selectedCategoriesFilter.map((category, index) => (
-                  <Badge
-                    key={index}
-                    variant="secondary"
-                    className="flex items-center gap-1 px-2 py-1 text-xs"
-                    data-testid={`selected-category-${category}`}
-                  >
-                    {category}
-                    <X
-                      className="h-3 w-3 cursor-pointer hover:text-destructive"
-                      onClick={() => {
-                        setSelectedCategoriesFilter(prev => prev.filter((_, i) => i !== index));
-                      }}
-                      data-testid={`remove-category-filter-${category}`}
-                    />
-                  </Badge>
-                ))}
-              </div>
-            )}
-          </div>
+              {/* Category Filters (only shown when categories are selected) */}
+              {selectedCategoriesFilter.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2">
+                  {selectedCategoriesFilter.map((category, index) => (
+                    <Badge
+                      key={index}
+                      variant="secondary"
+                      className="flex items-center gap-1 px-2 py-0.5 text-xs"
+                      data-testid={`selected-category-${category}`}
+                    >
+                      {category}
+                      <X
+                        className="h-3 w-3 cursor-pointer hover:text-destructive"
+                        onClick={() => {
+                          setSelectedCategoriesFilter(prev => prev.filter((_, i) => i !== index));
+                        }}
+                        data-testid={`remove-category-filter-${category}`}
+                      />
+                    </Badge>
+                  ))}
+                </div>
+              )}
 
           {/* Selection Toolbar */}
           {isAdmin && selectedDocIds.size > 0 && (
