@@ -151,7 +151,11 @@ export default function TemplateList() {
   };
 
   const filteredTemplates = templates?.filter(template => {
-    if (selectedFolderId !== null && template.folderId !== selectedFolderId) {
+    if (selectedFolderId === -1) {
+      if (template.folderId !== null && template.folderId !== undefined) {
+        return false;
+      }
+    } else if (selectedFolderId !== null && template.folderId !== selectedFolderId) {
       return false;
     }
     if (selectedTeamId !== null && template.teamId !== selectedTeamId) {

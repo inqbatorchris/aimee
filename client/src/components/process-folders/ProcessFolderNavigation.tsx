@@ -531,16 +531,16 @@ export function ProcessFolderNavigation({
       <div
         className={cn(
           "flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer transition-colors mb-1",
-          selectedFolderId === null && selectedTeamId === null ? "bg-primary/10 text-primary" : "hover:bg-muted"
+          selectedFolderId === -1 && selectedTeamId === null ? "bg-primary/10 text-primary" : "hover:bg-muted"
         )}
         onClick={() => {
-          onFolderSelect(null);
+          onFolderSelect(-1);
           onTeamSelect?.(null);
         }}
-        data-testid="all-items-folder"
+        data-testid="no-folder-item"
       >
         <Library className="h-4 w-4" />
-        <span className="text-sm">{allItemsLabel}</span>
+        <span className="text-sm">No folder</span>
       </div>
 
       <div className="space-y-0.5">
