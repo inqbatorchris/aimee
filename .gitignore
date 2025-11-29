@@ -26,3 +26,4 @@ attached_assets/consol*
 
 # Git backup folder
 .git_backup_old_repo/
+attached_assets/devbackup-*
