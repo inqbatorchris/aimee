@@ -8,8 +8,7 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
-import { Plus, Edit, Trash2, GitBranch, Loader2, Users, Folder, Clock, Layers, GripVertical, Menu } from 'lucide-react';
+import { Plus, Edit, Trash2, GitBranch, Loader2, Users, Folder, Clock, Layers, GripVertical, X } from 'lucide-react';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { ProcessFolderNavigation } from '@/components/process-folders/ProcessFolderNavigation';
@@ -36,7 +35,6 @@ export default function TemplateList() {
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTemplate, setActiveTemplate] = useState<WorkflowTemplate | null>(null);
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -332,39 +330,88 @@ export default function TemplateList() {
           <SidebarContent />
         </aside>
 
-        {/* Mobile Drawer */}
-        <Sheet open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
-          <SheetTrigger asChild className="md:hidden absolute left-4 top-20">
-            <Button variant="ghost" size="sm" data-testid="button-toggle-nav">
-              <Menu className="h-5 w-5" />
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="left" className="w-64 p-0">
-            <SidebarContent />
-          </SheetContent>
-        </Sheet>
-
-        <main className="flex-1 overflow-auto">
-          <div className="container mx-auto px-4 sm:px-6 py-6">
-            <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-              <div className="w-full sm:max-w-md">
-                <Input
-                  placeholder="Search templates..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  data-testid="input-search-templates"
-                />
+        <main className="flex-1 overflow-auto flex flex-col">
+          {/* Mobile Filter Chips */}
+          <div className="md:hidden border-b bg-muted/30 overflow-x-auto">
+            <ScrollArea className="w-full h-auto">
+              <div className="flex gap-2 p-3 whitespace-nowrap">
+                <Button
+                  variant={selectedTeamId === null && selectedFolderId === null ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setSelectedTeamId(null);
+                    setSelectedFolderId(null);
+                  }}
+                  className="shrink-0 h-8 text-xs px-3"
+                >
+                  All
+                </Button>
+                <Button
+                  variant={selectedTeamId === -1 ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setSelectedTeamId(-1);
+                    setSelectedFolderId(null);
+                  }}
+                  className="shrink-0 h-8 text-xs px-3"
+                >
+                  No team
+                </Button>
+                {templates?.reduce((acc: any[], t) => {
+                  if (t.teamId && !acc.find(team => team.id === t.teamId)) {
+                    const team = teams.find(team => team.id === t.teamId);
+                    if (team) acc.push(team);
+                  }
+                  return acc;
+                }, []).map((team) => (
+                  <Button
+                    key={team.id}
+                    variant={selectedTeamId === team.id ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setSelectedTeamId(team.id);
+                      setSelectedFolderId(null);
+                    }}
+                    className="shrink-0 h-8 text-xs px-3"
+                  >
+                    {team.name}
+                  </Button>
+                ))}
+                {selectedTeamId !== null && selectedTeamId !== -1 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedTeamId(null)}
+                    className="shrink-0 h-8 text-xs px-2 ml-2"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                )}
               </div>
-              <Button 
-                onClick={() => navigate('/templates/workflows/new/edit')}
-                data-testid="button-create-template"
-                size="sm"
-                className="w-full sm:w-auto"
-              >
-                <Plus className="h-3 w-3 mr-1" />
-                Create
-              </Button>
-            </div>
+            </ScrollArea>
+          </div>
+
+          <div className="flex-1 overflow-auto">
+            <div className="container mx-auto px-4 sm:px-6 py-6">
+              <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                <div className="w-full sm:max-w-md">
+                  <Input
+                    placeholder="Search templates..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    data-testid="input-search-templates"
+                  />
+                </div>
+                <Button 
+                  onClick={() => navigate('/templates/workflows/new/edit')}
+                  data-testid="button-create-template"
+                  size="sm"
+                  className="w-full sm:w-auto"
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Create
+                </Button>
+              </div>
 
             {!filteredTemplates || filteredTemplates.length === 0 ? (
               <Card>
@@ -395,6 +442,7 @@ export default function TemplateList() {
                 ))}
               </div>
             )}
+            </div>
           </div>
         </main>
       </div>
