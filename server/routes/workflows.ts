@@ -597,8 +597,14 @@ router.post('/folders', authenticateToken, requireRole(['admin', 'super_admin', 
       return res.status(401).json({ error: 'User not authenticated or missing organization' });
     }
 
+    // Auto-generate slug from name
+    const slug = req.body.name
+      ? req.body.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '')
+      : '';
+
     const validated = insertProcessFolderSchema.parse({
       ...req.body,
+      slug,
       organizationId: user.organizationId,
       createdBy: user.id
     });

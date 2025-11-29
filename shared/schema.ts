@@ -2841,10 +2841,11 @@ export const insertProcessFolderSchema = createInsertSchema(processFolders).omit
   updatedAt: true,
 }).extend({
   name: z.string().min(1, "Name is required").max(255),
-  description: z.string().optional(),
+  slug: z.string().min(1).max(255),
+  description: z.string().optional().nullable(),
   folderType: z.enum(['agents', 'templates', 'shared']).default('shared'),
-  teamId: z.number().int().positive().optional(),
-  parentId: z.number().int().positive().optional(),
+  teamId: z.number().int().positive().optional().nullable(),
+  parentId: z.number().int().positive().optional().nullable(),
 });
 
 // Agent Workflow Run schema
