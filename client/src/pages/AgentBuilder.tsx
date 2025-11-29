@@ -21,7 +21,7 @@ import {
   Workflow, Plus, Play, Pause, Edit, Trash2, Settings, Save, 
   GitBranch, Zap, Clock, Calendar, CheckCircle, XCircle,
   AlertCircle, History, Bot, ArrowRight, RefreshCw,
-  Filter, Search, ChevronRight, Folder, Users
+  Filter, Search, ChevronRight, Folder, Users, GripVertical, X
 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
@@ -408,42 +408,122 @@ export default function AgentBuilder() {
     });
   };
 
-  return (
-    <div className="container mx-auto py-4 sm:py-8 px-4">
-      {/* Header */}
-      <div className="mb-6 sm:mb-8">
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
-          <div className="flex-1">
-            <h1 className="text-2xl sm:text-3xl font-bold">Agent Builder</h1>
-            <p className="text-sm sm:text-base text-muted-foreground mt-1 sm:mt-2">
-              Create intelligent automation workflows with triggers and actions
-            </p>
-          </div>
-          <Link href="/integrations">
-            <Button variant="outline" size="sm" data-testid="button-integrations" className="w-full sm:w-auto">
-              <Settings className="h-4 w-4 sm:mr-2" />
-              <span className="hidden sm:inline">Manage Integrations</span>
-            </Button>
-          </Link>
-        </div>
+  const SidebarContent = () => (
+    <div className="flex flex-col h-full">
+      <div className="p-4 border-b">
+        <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
+          Agent Workflows
+        </h2>
       </div>
+      <ScrollArea className="flex-1 p-2">
+        <ProcessFolderNavigation
+          folderType="agents"
+          selectedFolderId={selectedFolderId}
+          onFolderSelect={setSelectedFolderId}
+          selectedTeamId={selectedTeamId}
+          onTeamSelect={setSelectedTeamId}
+          showTeamFilter={true}
+          isDragging={false}
+          items={workflows?.map(w => ({ teamId: w.assignedTeamId, folderId: (w as any).folderId })) || []}
+        />
+      </ScrollArea>
+    </div>
+  );
 
-      {/* Tabs */}
-      <Tabs value={selectedTab} onValueChange={(v) => setSelectedTab(v as 'workflows' | 'runs')}>
-        <TabsList className="mb-6">
-          <TabsTrigger value="workflows" data-testid="tab-workflows">
-            <Workflow className="mr-2 h-4 w-4" />
-            My Workflows ({workflows?.length || 0})
-          </TabsTrigger>
-          <TabsTrigger value="runs" data-testid="tab-runs">
-            <History className="mr-2 h-4 w-4" />
-            Run History
-          </TabsTrigger>
-        </TabsList>
+  return (
+    <div className="flex h-[calc(100vh-64px)] flex-col md:flex-row">
+      {/* Desktop Sidebar */}
+      <aside className="hidden md:flex w-64 border-r bg-muted/30 flex-col">
+        <SidebarContent />
+      </aside>
 
-        {/* Workflows Tab */}
-        <TabsContent value="workflows">
-          <div className="mb-4">
+      <main className="flex-1 overflow-auto flex flex-col">
+        {/* Mobile Filter Chips */}
+        <div className="md:hidden border-b bg-muted/30 overflow-x-auto">
+          <ScrollArea className="w-full h-auto">
+            <div className="flex gap-2 p-3 whitespace-nowrap">
+              <Button
+                variant={selectedTeamId === null && selectedFolderId === null ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setSelectedTeamId(null);
+                  setSelectedFolderId(null);
+                }}
+                className="shrink-0 h-8 text-xs px-3"
+              >
+                All
+              </Button>
+              <Button
+                variant={selectedTeamId === -1 ? "default" : "outline"}
+                size="sm"
+                onClick={() => {
+                  setSelectedTeamId(-1);
+                  setSelectedFolderId(null);
+                }}
+                className="shrink-0 h-8 text-xs px-3"
+              >
+                No team
+              </Button>
+              {workflows?.reduce((acc: any[], w) => {
+                if (w.assignedTeamId && !acc.find(team => team.id === w.assignedTeamId)) {
+                  const team = teams.find(team => team.id === w.assignedTeamId);
+                  if (team) acc.push(team);
+                }
+                return acc;
+              }, []).map((team) => (
+                <Button
+                  key={team.id}
+                  variant={selectedTeamId === team.id ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setSelectedTeamId(team.id);
+                    setSelectedFolderId(null);
+                  }}
+                  className="shrink-0 h-8 text-xs px-3"
+                >
+                  {team.name}
+                </Button>
+              ))}
+              {selectedTeamId !== null && selectedTeamId !== -1 && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedTeamId(null)}
+                  className="shrink-0 h-8 text-xs px-2 ml-2"
+                >
+                  <X className="h-3 w-3" />
+                </Button>
+              )}
+            </div>
+          </ScrollArea>
+        </div>
+
+        <div className="flex-1 overflow-auto">
+          <div className="container mx-auto px-4 sm:px-6 py-6">
+            {/* Tabs */}
+            <Tabs value={selectedTab} onValueChange={(v) => setSelectedTab(v as 'workflows' | 'runs')}>
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-6">
+                <TabsList>
+                  <TabsTrigger value="workflows" data-testid="tab-workflows">
+                    <Workflow className="mr-2 h-4 w-4" />
+                    Workflows ({workflows?.length || 0})
+                  </TabsTrigger>
+                  <TabsTrigger value="runs" data-testid="tab-runs">
+                    <History className="mr-2 h-4 w-4" />
+                    Run History
+                  </TabsTrigger>
+                </TabsList>
+                <Link href="/integrations">
+                  <Button variant="outline" size="sm" data-testid="button-integrations">
+                    <Settings className="h-4 w-4 mr-2" />
+                    Integrations
+                  </Button>
+                </Link>
+              </div>
+
+              {/* Workflows Tab */}
+              <TabsContent value="workflows">
+                <div className="mb-4">
             <Dialog open={createDialogOpen} onOpenChange={setCreateDialogOpen}>
               <DialogTrigger asChild>
                 <Button data-testid="button-new-workflow">
@@ -926,19 +1006,17 @@ export default function AgentBuilder() {
           </div>
 
           {/* Filtering Controls */}
-          <div className="mb-6 flex flex-col sm:flex-row gap-4 flex-wrap">
-            <div className="relative flex-1 min-w-[200px] max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <div className="mb-6 flex flex-col sm:flex-row gap-4 flex-wrap items-center">
+            <div className="w-full sm:max-w-md">
               <Input
                 placeholder="Search workflows..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-10"
                 data-testid="input-search-workflows"
               />
             </div>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-full sm:w-[140px]" data-testid="select-filter-status">
+              <SelectTrigger className="w-full sm:w-[130px]" data-testid="select-filter-status">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -948,42 +1026,14 @@ export default function AgentBuilder() {
               </SelectContent>
             </Select>
             <Select value={filterTriggerType} onValueChange={setFilterTriggerType}>
-              <SelectTrigger className="w-full sm:w-[140px]" data-testid="select-filter-trigger">
-                <SelectValue placeholder="Trigger Type" />
+              <SelectTrigger className="w-full sm:w-[130px]" data-testid="select-filter-trigger">
+                <SelectValue placeholder="Trigger" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Triggers</SelectItem>
                 <SelectItem value="manual">Manual</SelectItem>
                 <SelectItem value="webhook">Webhook</SelectItem>
                 <SelectItem value="schedule">Schedule</SelectItem>
-              </SelectContent>
-            </Select>
-            <Select value={selectedTeamId?.toString() || "all"} onValueChange={(v) => setSelectedTeamId(v === "all" ? null : parseInt(v))}>
-              <SelectTrigger className="w-full sm:w-[160px]" data-testid="select-filter-team">
-                <Users className="h-4 w-4 mr-2" />
-                <SelectValue placeholder="All Teams" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Teams</SelectItem>
-                {teams.map((team) => (
-                  <SelectItem key={team.id} value={team.id.toString()}>
-                    {team.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={selectedFolderId?.toString() || "all"} onValueChange={(v) => setSelectedFolderId(v === "all" ? null : parseInt(v))}>
-              <SelectTrigger className="w-full sm:w-[160px]" data-testid="select-filter-folder">
-                <Folder className="h-4 w-4 mr-2" />
-                <SelectValue placeholder="All Folders" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Folders</SelectItem>
-                {folders.map((folder) => (
-                  <SelectItem key={folder.id} value={folder.id.toString()}>
-                    {folder.parentId ? `└ ${folder.name}` : folder.name}
-                  </SelectItem>
-                ))}
               </SelectContent>
             </Select>
           </div>
@@ -1032,8 +1082,12 @@ export default function AgentBuilder() {
                         const matchesTrigger = filterTriggerType === 'all' || 
                           workflow.triggerType === filterTriggerType;
                         
-                        const matchesTeam = selectedTeamId === null || 
-                          workflow.assignedTeamId === selectedTeamId;
+                        let matchesTeam = true;
+                        if (selectedTeamId === -1) {
+                          matchesTeam = workflow.assignedTeamId === null || workflow.assignedTeamId === undefined;
+                        } else if (selectedTeamId !== null) {
+                          matchesTeam = workflow.assignedTeamId === selectedTeamId;
+                        }
                         
                         const matchesFolder = selectedFolderId === null || 
                           (workflow as any).folderId === selectedFolderId;
@@ -1296,42 +1350,44 @@ export default function AgentBuilder() {
               </CardContent>
             </Card>
           )}
-        </TabsContent>
-      </Tabs>
-
-      {/* Delete Confirmation Dialog */}
-      <Dialog open={deleteWorkflowId !== null} onOpenChange={(open) => !open && setDeleteWorkflowId(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Delete Workflow</DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete this workflow? This action cannot be undone.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex justify-end gap-3 mt-4">
-            <Button
-              variant="outline"
-              onClick={() => setDeleteWorkflowId(null)}
-              data-testid="button-cancel-delete"
-            >
-              Cancel
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={() => {
-                if (deleteWorkflowId !== null) {
-                  deleteWorkflowMutation.mutate(deleteWorkflowId);
-                  setDeleteWorkflowId(null);
-                }
-              }}
-              data-testid="button-confirm-delete"
-            >
-              Delete
-            </Button>
+              </TabsContent>
+            </Tabs>
           </div>
-        </DialogContent>
-      </Dialog>
+        </div>
 
+        {/* Delete Confirmation Dialog */}
+        <Dialog open={deleteWorkflowId !== null} onOpenChange={(open) => !open && setDeleteWorkflowId(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete Workflow</DialogTitle>
+              <DialogDescription>
+                Are you sure you want to delete this workflow? This action cannot be undone.
+              </DialogDescription>
+            </DialogHeader>
+            <div className="flex justify-end gap-3 mt-4">
+              <Button
+                variant="outline"
+                onClick={() => setDeleteWorkflowId(null)}
+                data-testid="button-cancel-delete"
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (deleteWorkflowId !== null) {
+                    deleteWorkflowMutation.mutate(deleteWorkflowId);
+                    setDeleteWorkflowId(null);
+                  }
+                }}
+                data-testid="button-confirm-delete"
+              >
+                Delete
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </main>
     </div>
   );
 }
