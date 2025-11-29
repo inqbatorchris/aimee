@@ -1,7 +1,7 @@
 import { Router, Request } from 'express';
-import { authenticateToken } from '../auth';
+import { authenticateToken, requireRole } from '../auth';
 import { storage } from '../storage';
-import { insertWorkflowTemplateSchema, integrations, workItems } from '@shared/schema';
+import { insertWorkflowTemplateSchema, insertProcessFolderSchema, integrations, workItems } from '@shared/schema';
 import { z } from 'zod';
 import { db } from '../db';
 import { eq, and } from 'drizzle-orm';
@@ -540,6 +540,133 @@ router.post('/work-items/:workItemId/workflow/complete', authenticateToken, asyn
   } catch (error) {
     console.error('Error completing workflow:', error);
     res.status(500).json({ error: 'Failed to complete workflow' });
+  }
+});
+
+// ========================================
+// PROCESS FOLDERS ROUTES
+// ========================================
+
+// Get all process folders (optionally filtered by folder type)
+router.get('/folders', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated or missing organization' });
+    }
+
+    const { folderType } = req.query;
+    const folders = await storage.getProcessFolders(user.organizationId, folderType as string | undefined);
+    res.json(folders);
+  } catch (error) {
+    console.error('Error fetching process folders:', error);
+    res.status(500).json({ error: 'Failed to fetch folders' });
+  }
+});
+
+// Get single process folder
+router.get('/folders/:id', authenticateToken, async (req: AuthRequest, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated or missing organization' });
+    }
+
+    const folderId = parseInt(req.params.id);
+    if (isNaN(folderId)) {
+      return res.status(400).json({ error: 'Invalid folder ID' });
+    }
+
+    const folder = await storage.getProcessFolder(user.organizationId, folderId);
+    if (!folder) {
+      return res.status(404).json({ error: 'Folder not found' });
+    }
+
+    res.json(folder);
+  } catch (error) {
+    console.error('Error fetching process folder:', error);
+    res.status(500).json({ error: 'Failed to fetch folder' });
+  }
+});
+
+// Create process folder
+router.post('/folders', authenticateToken, requireRole(['admin', 'super_admin', 'manager']), async (req: AuthRequest, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated or missing organization' });
+    }
+
+    const validated = insertProcessFolderSchema.parse({
+      ...req.body,
+      organizationId: user.organizationId,
+      createdBy: user.id
+    });
+
+    const folder = await storage.createProcessFolder(validated);
+    res.status(201).json(folder);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Validation error', details: error.errors });
+    }
+    console.error('Error creating process folder:', error);
+    res.status(500).json({ error: 'Failed to create folder' });
+  }
+});
+
+// Update process folder
+router.put('/folders/:id', authenticateToken, requireRole(['admin', 'super_admin', 'manager']), async (req: AuthRequest, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated or missing organization' });
+    }
+
+    const folderId = parseInt(req.params.id);
+    if (isNaN(folderId)) {
+      return res.status(400).json({ error: 'Invalid folder ID' });
+    }
+
+    const existing = await storage.getProcessFolder(user.organizationId, folderId);
+    if (!existing) {
+      return res.status(404).json({ error: 'Folder not found' });
+    }
+
+    const updateData = insertProcessFolderSchema.partial().omit({ organizationId: true }).parse(req.body);
+    const updated = await storage.updateProcessFolder(user.organizationId, folderId, updateData);
+    
+    res.json(updated);
+  } catch (error) {
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Validation error', details: error.errors });
+    }
+    console.error('Error updating process folder:', error);
+    res.status(500).json({ error: 'Failed to update folder' });
+  }
+});
+
+// Delete process folder
+router.delete('/folders/:id', authenticateToken, requireRole(['admin', 'super_admin', 'manager']), async (req: AuthRequest, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated or missing organization' });
+    }
+
+    const folderId = parseInt(req.params.id);
+    if (isNaN(folderId)) {
+      return res.status(400).json({ error: 'Invalid folder ID' });
+    }
+
+    const deleted = await storage.deleteProcessFolder(user.organizationId, folderId);
+    if (!deleted) {
+      return res.status(404).json({ error: 'Folder not found' });
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error deleting process folder:', error);
+    res.status(500).json({ error: 'Failed to delete folder' });
   }
 });
 

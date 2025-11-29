@@ -7,12 +7,28 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, Save, ExternalLink } from 'lucide-react';
+import { ArrowLeft, Save, ExternalLink, Users, Folder } from 'lucide-react';
 import WorkflowTemplateStepBuilder from '@/components/workflow/WorkflowTemplateStepBuilder';
 import CompletionCallbackEditor, { type CompletionCallback } from '@/components/workflow/CompletionCallbackEditor';
 import { Badge } from '@/components/ui/badge';
 import { format } from 'date-fns';
+import type { Team } from '@shared/schema';
+
+interface ProcessFolder {
+  id: number;
+  name: string;
+  slug: string;
+  folderType: string;
+  parentId?: number | null;
+}
 
 interface WorkflowTemplate {
   id: string;
@@ -22,6 +38,8 @@ interface WorkflowTemplate {
   completionCallbacks?: CompletionCallback[];
   applicableTypes?: string[];
   estimatedMinutes?: number;
+  teamId?: number | null;
+  folderId?: number | null;
 }
 
 interface WorkItem {
@@ -52,11 +70,28 @@ export default function TemplateEdit() {
   const [description, setDescription] = useState('');
   const [steps, setSteps] = useState<any[]>([]);
   const [completionCallbacks, setCompletionCallbacks] = useState<CompletionCallback[]>([]);
+  const [teamId, setTeamId] = useState<number | null>(null);
+  const [folderId, setFolderId] = useState<number | null>(null);
 
   // Fetch template details (if editing existing)
   const { data: template, isLoading } = useQuery<WorkflowTemplate>({
     queryKey: [`/api/workflows/templates/${id}`],
     enabled: !!id && id !== 'new',
+  });
+
+  // Fetch teams
+  const { data: teams = [] } = useQuery<Team[]>({
+    queryKey: ['/api/teams'],
+  });
+
+  // Fetch process folders for templates
+  const { data: folders = [] } = useQuery<ProcessFolder[]>({
+    queryKey: ['/api/workflows/folders', { folderType: 'templates' }],
+    queryFn: async () => {
+      const response = await fetch('/api/workflows/folders?folderType=templates');
+      if (!response.ok) throw new Error('Failed to fetch folders');
+      return response.json();
+    },
   });
 
   // Fetch recent work items using this template (only for existing templates)
@@ -87,9 +122,10 @@ export default function TemplateEdit() {
     if (template) {
       setName(template.name);
       setDescription(template.description || '');
-      // Normalize legacy step types when loading
       setSteps(normalizeLegacyStepTypes(template.steps || []));
       setCompletionCallbacks(template.completionCallbacks || []);
+      setTeamId(template.teamId || null);
+      setFolderId(template.folderId || null);
     }
   }, [template]);
 
@@ -185,11 +221,9 @@ export default function TemplateEdit() {
   };
 
   const handleSave = () => {
-    // Clean steps to remove UI-only fields before saving
     const cleanedSteps = cleanStepsForSave(steps);
 
     if (id === 'new') {
-      // Generate a slug ID from the name for new templates only
       const slugId = name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
       
       const templateData = {
@@ -198,17 +232,20 @@ export default function TemplateEdit() {
         description,
         steps: cleanedSteps,
         completionCallbacks,
+        teamId,
+        folderId,
       };
       
       console.log('[TemplateEdit] Saving new template:', JSON.stringify(templateData, null, 2));
       createMutation.mutate(templateData);
     } else {
-      // For updates, don't include id to preserve existing template ID
       const updateData = {
         name,
         description,
         steps: cleanedSteps,
         completionCallbacks,
+        teamId,
+        folderId,
       };
       
       console.log('[TemplateEdit] Updating template:', JSON.stringify(updateData, null, 2));
@@ -317,6 +354,52 @@ export default function TemplateEdit() {
                     rows={3}
                     data-testid="input-description"
                   />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="flex items-center gap-1.5 mb-2">
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                      Team
+                    </Label>
+                    <Select
+                      value={teamId?.toString() || "none"}
+                      onValueChange={(v) => setTeamId(v === "none" ? null : parseInt(v))}
+                    >
+                      <SelectTrigger data-testid="select-team">
+                        <SelectValue placeholder="No team assigned" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No team assigned</SelectItem>
+                        {teams.map((team) => (
+                          <SelectItem key={team.id} value={team.id.toString()}>
+                            {team.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="flex items-center gap-1.5 mb-2">
+                      <Folder className="h-4 w-4 text-muted-foreground" />
+                      Folder
+                    </Label>
+                    <Select
+                      value={folderId?.toString() || "none"}
+                      onValueChange={(v) => setFolderId(v === "none" ? null : parseInt(v))}
+                    >
+                      <SelectTrigger data-testid="select-folder">
+                        <SelectValue placeholder="No folder" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No folder</SelectItem>
+                        {folders.map((folder) => (
+                          <SelectItem key={folder.id} value={folder.id.toString()}>
+                            {folder.parentId ? `└ ${folder.name}` : folder.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </CardContent>
             </Card>

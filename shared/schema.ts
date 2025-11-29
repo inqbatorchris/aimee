@@ -1167,6 +1167,13 @@ export const folderTypeEnum = pgEnum('folder_type', [
   'customer',
   'content',
   'internal',
+]);
+
+// Process Folder Types - for organizing agents and workflow templates
+export const processFolderTypeEnum = pgEnum('process_folder_type', [
+  'agents',
+  'templates',
+  'shared',
   'reports',
   'files'
 ]);
@@ -2147,11 +2154,39 @@ export const agentWorkflows = pgTable("agent_workflows", {
   // Audit
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  // Folder organization
+  folderId: integer("folder_id"),
 }, (table) => [
   index("idx_agent_workflows_org").on(table.organizationId),
   index("idx_agent_workflows_enabled").on(table.isEnabled),
   index("idx_agent_workflows_webhook").on(table.webhookToken),
   index("idx_agent_workflows_assigned_user").on(table.assignedUserId),
+  index("idx_agent_workflows_team").on(table.assignedTeamId),
+  index("idx_agent_workflows_folder").on(table.folderId),
+]);
+
+// Process Folders - hierarchical folder system for agents and workflow templates
+export const processFolders = pgTable("process_folders", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  parentId: integer("parent_id"),
+  name: varchar("name", { length: 255 }).notNull(),
+  slug: varchar("slug", { length: 255 }).notNull(),
+  description: text("description"),
+  folderType: processFolderTypeEnum("folder_type").default("shared"),
+  teamId: integer("team_id").references(() => teams.id),
+  icon: varchar("icon", { length: 100 }),
+  color: varchar("color", { length: 50 }),
+  sortOrder: integer("sort_order").default(0),
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_process_folders_org").on(table.organizationId),
+  index("idx_process_folders_parent").on(table.parentId),
+  index("idx_process_folders_type").on(table.folderType),
+  index("idx_process_folders_team").on(table.teamId),
+  unique("unique_process_folder_slug_per_parent").on(table.organizationId, table.parentId, table.slug),
 ]);
 
 // Agent workflow execution history
@@ -2574,6 +2609,9 @@ export type InsertDatabaseConnection = typeof databaseConnections.$inferInsert;
 export type AgentWorkflow = typeof agentWorkflows.$inferSelect;
 export type InsertAgentWorkflow = typeof agentWorkflows.$inferInsert;
 
+export type ProcessFolder = typeof processFolders.$inferSelect;
+export type InsertProcessFolder = z.infer<typeof insertProcessFolderSchema>;
+
 export type AgentWorkflowRun = typeof agentWorkflowRuns.$inferSelect;
 export type InsertAgentWorkflowRun = typeof agentWorkflowRuns.$inferInsert;
 
@@ -2793,6 +2831,20 @@ export const insertAgentWorkflowSchema = createInsertSchema(agentWorkflows).omit
   retryConfig: z.record(z.any()).default({maxRetries: 3, retryDelay: 60}),
   executionTimeout: z.number().int().positive().default(300),
   assignedUserId: z.number().int().positive(),
+  folderId: z.number().int().positive().optional(),
+});
+
+// Process Folder schema
+export const insertProcessFolderSchema = createInsertSchema(processFolders).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+}).extend({
+  name: z.string().min(1, "Name is required").max(255),
+  description: z.string().optional(),
+  folderType: z.enum(['agents', 'templates', 'shared']).default('shared'),
+  teamId: z.number().int().positive().optional(),
+  parentId: z.number().int().positive().optional(),
 });
 
 // Agent Workflow Run schema
@@ -3464,6 +3516,10 @@ export const workflowTemplates = pgTable("workflow_templates", {
     webhookHeaders?: Record<string, string>;
   }[]>(),
   
+  // Team and folder organization
+  teamId: integer("team_id").references(() => teams.id),
+  folderId: integer("folder_id"),
+  
   // Timestamps
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -3471,6 +3527,8 @@ export const workflowTemplates = pgTable("workflow_templates", {
   index("idx_workflow_org").on(table.organizationId),
   index("idx_workflow_active").on(table.isActive),
   index("idx_workflow_menu").on(table.displayInMenu),
+  index("idx_workflow_team").on(table.teamId),
+  index("idx_workflow_folder").on(table.folderId),
 ]);
 
 // Email Templates - Self-managed email templates for campaigns

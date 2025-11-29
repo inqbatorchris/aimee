@@ -153,6 +153,7 @@ import {
   strategySettings,
   taskTypeConfigurations,
   workflowTemplates,
+  processFolders,
   emailTemplates,
   workItemWorkflowExecutions,
   fieldTasks,
@@ -166,6 +167,8 @@ import {
   type InsertTaskTypeConfiguration,
   type WorkflowTemplate,
   type InsertWorkflowTemplate,
+  type ProcessFolder,
+  type InsertProcessFolder,
   type EmailTemplate,
   type InsertEmailTemplate,
   type FieldTask,
@@ -523,11 +526,18 @@ export interface ICleanStorage {
   deleteTaskTypeConfiguration(id: number): Promise<boolean>;
   
   // Field Engineering - Workflow Templates
-  getWorkflowTemplates(organizationId: number): Promise<WorkflowTemplate[]>;
+  getWorkflowTemplates(organizationId: number, filters?: { teamId?: number; folderId?: number | null }): Promise<WorkflowTemplate[]>;
   getWorkflowTemplate(organizationId: number, id: string): Promise<WorkflowTemplate | undefined>;
   createWorkflowTemplate(template: InsertWorkflowTemplate): Promise<WorkflowTemplate>;
   updateWorkflowTemplate(organizationId: number, id: string, data: Partial<WorkflowTemplate>): Promise<WorkflowTemplate | undefined>;
   deleteWorkflowTemplate(organizationId: number, id: string): Promise<boolean>;
+  
+  // Process Folders (for organizing agents and workflow templates)
+  getProcessFolders(organizationId: number, folderType?: string): Promise<ProcessFolder[]>;
+  getProcessFolder(organizationId: number, id: number): Promise<ProcessFolder | undefined>;
+  createProcessFolder(folder: InsertProcessFolder): Promise<ProcessFolder>;
+  updateProcessFolder(organizationId: number, id: number, data: Partial<ProcessFolder>): Promise<ProcessFolder | undefined>;
+  deleteProcessFolder(organizationId: number, id: number): Promise<boolean>;
   
   // Email Templates
   getEmailTemplates(organizationId: number): Promise<EmailTemplate[]>;
@@ -3829,6 +3839,93 @@ export class CleanDatabaseStorage implements ICleanStorage {
         and(
           eq(workflowTemplates.organizationId, organizationId),
           eq(workflowTemplates.id, id)
+        )
+      );
+    return result.rowCount !== null && result.rowCount > 0;
+  }
+
+  // Process Folders operations (for organizing agents and workflow templates)
+  async getProcessFolders(organizationId: number, folderType?: string): Promise<ProcessFolder[]> {
+    const conditions = [eq(processFolders.organizationId, organizationId)];
+    if (folderType) {
+      conditions.push(eq(processFolders.folderType, folderType as any));
+    }
+    
+    return await db.select()
+      .from(processFolders)
+      .where(and(...conditions))
+      .orderBy(asc(processFolders.sortOrder), asc(processFolders.name));
+  }
+
+  async getProcessFolder(organizationId: number, id: number): Promise<ProcessFolder | undefined> {
+    const [folder] = await db.select()
+      .from(processFolders)
+      .where(
+        and(
+          eq(processFolders.organizationId, organizationId),
+          eq(processFolders.id, id)
+        )
+      )
+      .limit(1);
+    return folder;
+  }
+
+  async createProcessFolder(folder: InsertProcessFolder): Promise<ProcessFolder> {
+    const slug = folder.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    const [created] = await db.insert(processFolders)
+      .values({ ...folder, slug })
+      .returning();
+    
+    await this.logActivity({
+      organizationId: created.organizationId,
+      userId: folder.createdBy || 1,
+      actionType: 'creation',
+      entityType: 'process_folder',
+      entityId: created.id,
+      description: `Process folder "${created.name}" created`,
+      metadata: { folderId: created.id, folderType: created.folderType }
+    });
+    
+    return created;
+  }
+
+  async updateProcessFolder(organizationId: number, id: number, data: Partial<ProcessFolder>): Promise<ProcessFolder | undefined> {
+    const updateData: any = { ...data, updatedAt: new Date() };
+    if (data.name) {
+      updateData.slug = data.name.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+    }
+    
+    const [updated] = await db.update(processFolders)
+      .set(updateData)
+      .where(
+        and(
+          eq(processFolders.organizationId, organizationId),
+          eq(processFolders.id, id)
+        )
+      )
+      .returning();
+    
+    if (updated) {
+      await this.logActivity({
+        organizationId: updated.organizationId,
+        userId: 1,
+        actionType: 'status_change',
+        entityType: 'process_folder',
+        entityId: updated.id,
+        description: `Process folder "${updated.name}" updated`,
+        metadata: { folderId: updated.id, ...data }
+      });
+    }
+    
+    return updated;
+  }
+
+  async deleteProcessFolder(organizationId: number, id: number): Promise<boolean> {
+    const result = await db.delete(processFolders)
+      .where(
+        and(
+          eq(processFolders.organizationId, organizationId),
+          eq(processFolders.id, id)
         )
       );
     return result.rowCount !== null && result.rowCount > 0;

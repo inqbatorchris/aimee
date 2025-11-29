@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormDescription, FormMessage } from '@/components/ui/form';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { useForm } from 'react-hook-form';
@@ -20,12 +21,22 @@ import {
   Workflow, Plus, Play, Pause, Edit, Trash2, Settings, Save, 
   GitBranch, Zap, Clock, Calendar, CheckCircle, XCircle,
   AlertCircle, History, Bot, ArrowRight, RefreshCw,
-  Filter, Search, ChevronRight
+  Filter, Search, ChevronRight, Folder, Users
 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
-import type { AgentWorkflow, Integration, KeyResult } from '@shared/schema';
+import type { AgentWorkflow, Integration, KeyResult, Team } from '@shared/schema';
 import WorkflowStepBuilder from '@/components/workflow/WorkflowStepBuilder';
+import { ProcessFolderNavigation } from '@/components/process-folders/ProcessFolderNavigation';
+
+interface ProcessFolder {
+  id: number;
+  name: string;
+  slug: string;
+  folderType: string;
+  parentId?: number | null;
+  teamId?: number | null;
+}
 
 // Define WorkflowRun type locally until added to schema
 interface WorkflowRun {
@@ -101,6 +112,9 @@ export default function AgentBuilder() {
   const [editingWorkflow, setEditingWorkflow] = useState<AgentWorkflow | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterTriggerType, setFilterTriggerType] = useState<string>('all');
+  const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
+  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [expandedRunId, setExpandedRunId] = useState<number | null>(null);
   const [createAgentUserDialogOpen, setCreateAgentUserDialogOpen] = useState(false);
   const [newAgentUserName, setNewAgentUserName] = useState('');
@@ -132,6 +146,21 @@ export default function AgentBuilder() {
   // Fetch key results for strategy updates
   const { data: keyResults } = useQuery<KeyResult[]>({
     queryKey: ['/api/strategy/key-results'],
+  });
+
+  // Fetch teams for filtering
+  const { data: teams = [] } = useQuery<Team[]>({
+    queryKey: ['/api/teams'],
+  });
+
+  // Fetch process folders for agents
+  const { data: folders = [] } = useQuery<ProcessFolder[]>({
+    queryKey: ['/api/workflows/folders', { folderType: 'agents' }],
+    queryFn: async () => {
+      const response = await fetch('/api/workflows/folders?folderType=agents');
+      if (!response.ok) throw new Error('Failed to fetch folders');
+      return response.json();
+    },
   });
 
   // Fetch agent users
@@ -897,9 +926,19 @@ export default function AgentBuilder() {
           </div>
 
           {/* Filtering Controls */}
-          <div className="mb-6 flex flex-col sm:flex-row gap-4">
+          <div className="mb-6 flex flex-col sm:flex-row gap-4 flex-wrap">
+            <div className="relative flex-1 min-w-[200px] max-w-md">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search workflows..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-10"
+                data-testid="input-search-workflows"
+              />
+            </div>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
-              <SelectTrigger className="w-full sm:w-[180px]" data-testid="select-filter-status">
+              <SelectTrigger className="w-full sm:w-[140px]" data-testid="select-filter-status">
                 <SelectValue placeholder="Status" />
               </SelectTrigger>
               <SelectContent>
@@ -909,7 +948,7 @@ export default function AgentBuilder() {
               </SelectContent>
             </Select>
             <Select value={filterTriggerType} onValueChange={setFilterTriggerType}>
-              <SelectTrigger className="w-full sm:w-[180px]" data-testid="select-filter-trigger">
+              <SelectTrigger className="w-full sm:w-[140px]" data-testid="select-filter-trigger">
                 <SelectValue placeholder="Trigger Type" />
               </SelectTrigger>
               <SelectContent>
@@ -917,6 +956,34 @@ export default function AgentBuilder() {
                 <SelectItem value="manual">Manual</SelectItem>
                 <SelectItem value="webhook">Webhook</SelectItem>
                 <SelectItem value="schedule">Schedule</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={selectedTeamId?.toString() || "all"} onValueChange={(v) => setSelectedTeamId(v === "all" ? null : parseInt(v))}>
+              <SelectTrigger className="w-full sm:w-[160px]" data-testid="select-filter-team">
+                <Users className="h-4 w-4 mr-2" />
+                <SelectValue placeholder="All Teams" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Teams</SelectItem>
+                {teams.map((team) => (
+                  <SelectItem key={team.id} value={team.id.toString()}>
+                    {team.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select value={selectedFolderId?.toString() || "all"} onValueChange={(v) => setSelectedFolderId(v === "all" ? null : parseInt(v))}>
+              <SelectTrigger className="w-full sm:w-[160px]" data-testid="select-filter-folder">
+                <Folder className="h-4 w-4 mr-2" />
+                <SelectValue placeholder="All Folders" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All Folders</SelectItem>
+                {folders.map((folder) => (
+                  <SelectItem key={folder.id} value={folder.id.toString()}>
+                    {folder.parentId ? `└ ${folder.name}` : folder.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
           </div>
@@ -958,7 +1025,6 @@ export default function AgentBuilder() {
                   <TableBody>
                     {workflows
                       ?.filter((workflow) => {
-                        // Apply filters
                         const matchesStatus = filterStatus === 'all' || 
                           (filterStatus === 'enabled' && workflow.isEnabled) ||
                           (filterStatus === 'disabled' && !workflow.isEnabled);
@@ -966,7 +1032,17 @@ export default function AgentBuilder() {
                         const matchesTrigger = filterTriggerType === 'all' || 
                           workflow.triggerType === filterTriggerType;
                         
-                        return matchesStatus && matchesTrigger;
+                        const matchesTeam = selectedTeamId === null || 
+                          workflow.assignedTeamId === selectedTeamId;
+                        
+                        const matchesFolder = selectedFolderId === null || 
+                          (workflow as any).folderId === selectedFolderId;
+                        
+                        const matchesSearch = !searchQuery || 
+                          workflow.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                          workflow.description?.toLowerCase().includes(searchQuery.toLowerCase());
+                        
+                        return matchesStatus && matchesTrigger && matchesTeam && matchesFolder && matchesSearch;
                       })
                       .map((workflow) => {
                         const triggerConfig = TRIGGER_TYPES[workflow.triggerType as keyof typeof TRIGGER_TYPES];

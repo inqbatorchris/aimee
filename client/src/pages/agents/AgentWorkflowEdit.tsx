@@ -10,14 +10,22 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
-import { ArrowLeft, Save, Play, Settings, Bot, Copy, Clock, Zap } from 'lucide-react';
+import { ArrowLeft, Save, Play, Settings, Bot, Copy, Clock, Zap, Users, Folder } from 'lucide-react';
 import WorkflowStepBuilder from '@/components/workflow/WorkflowStepBuilder';
 import { WebhookEventLog } from '@/components/webhooks/WebhookEventLog';
-import type { Integration, AgentWorkflow, KeyResult, Objective, User } from '@shared/schema';
+import type { Integration, AgentWorkflow, KeyResult, Objective, User, Team } from '@shared/schema';
+
+interface ProcessFolder {
+  id: number;
+  name: string;
+  slug: string;
+  folderType: string;
+  parentId?: number | null;
+}
 
 interface WorkflowStep {
   id: string;
-  type: 'integration_action' | 'strategy_update' | 'log_event' | 'notification' | 'data_source_query' | 'data_transformation' | 'splynx_query' | 'for_each' | 'create_work_item';
+  type: 'integration_action' | 'strategy_update' | 'log_event' | 'notification' | 'data_source_query' | 'data_transformation' | 'splynx_query' | 'for_each' | 'create_work_item' | 'ai_draft_response';
   name: string;
   config?: any;
 }
@@ -43,6 +51,8 @@ export default function AgentWorkflowEdit() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [assignedUserId, setAssignedUserId] = useState<number>(0);
+  const [assignedTeamId, setAssignedTeamId] = useState<number | null>(null);
+  const [folderId, setFolderId] = useState<number | null>(null);
   const [triggerType, setTriggerType] = useState('manual');
   const [enabled, setEnabled] = useState(false);
   const [frequency, setFrequency] = useState('daily');
@@ -77,6 +87,21 @@ export default function AgentWorkflowEdit() {
     queryKey: ['/api/strategy/objectives'],
   });
 
+  // Fetch teams for assignment
+  const { data: teams = [] } = useQuery<Team[]>({
+    queryKey: ['/api/teams'],
+  });
+
+  // Fetch process folders for agents
+  const { data: folders = [] } = useQuery<ProcessFolder[]>({
+    queryKey: ['/api/workflows/folders', { folderType: 'agents' }],
+    queryFn: async () => {
+      const response = await fetch('/api/workflows/folders?folderType=agents');
+      if (!response.ok) throw new Error('Failed to fetch folders');
+      return response.json();
+    },
+  });
+
   // Fetch available triggers when webhook is selected
   const { data: availableTriggers = [] } = useQuery<any[]>({
     queryKey: ['/api/integrations/integration-triggers'],
@@ -90,6 +115,8 @@ export default function AgentWorkflowEdit() {
       setName(workflow.name);
       setDescription(workflow.description || '');
       setAssignedUserId(workflow.assignedUserId || 0);
+      setAssignedTeamId(workflow.assignedTeamId || null);
+      setFolderId((workflow as any).folderId || null);
       setTriggerType(workflow.triggerType);
       setEnabled(workflow.isEnabled);
       
@@ -177,6 +204,8 @@ export default function AgentWorkflowEdit() {
       name,
       description,
       assignedUserId,
+      assignedTeamId,
+      folderId,
       triggerType,
       triggerConfig,
       workflowDefinition: workflowSteps,
@@ -309,6 +338,52 @@ export default function AgentWorkflowEdit() {
                   <p className="text-sm text-muted-foreground mt-1">
                     This agent user will be shown in activity logs as the performer of this workflow's actions
                   </p>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="flex items-center gap-1.5 mb-2">
+                      <Users className="h-4 w-4 text-muted-foreground" />
+                      Team
+                    </Label>
+                    <Select
+                      value={assignedTeamId?.toString() || "none"}
+                      onValueChange={(v) => setAssignedTeamId(v === "none" ? null : parseInt(v))}
+                    >
+                      <SelectTrigger data-testid="select-team">
+                        <SelectValue placeholder="No team assigned" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No team assigned</SelectItem>
+                        {teams.map((team) => (
+                          <SelectItem key={team.id} value={team.id.toString()}>
+                            {team.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="flex items-center gap-1.5 mb-2">
+                      <Folder className="h-4 w-4 text-muted-foreground" />
+                      Folder
+                    </Label>
+                    <Select
+                      value={folderId?.toString() || "none"}
+                      onValueChange={(v) => setFolderId(v === "none" ? null : parseInt(v))}
+                    >
+                      <SelectTrigger data-testid="select-folder">
+                        <SelectValue placeholder="No folder" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">No folder</SelectItem>
+                        {folders.map((folder) => (
+                          <SelectItem key={folder.id} value={folder.id.toString()}>
+                            {folder.parentId ? `└ ${folder.name}` : folder.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </CardContent>
             </Card>
