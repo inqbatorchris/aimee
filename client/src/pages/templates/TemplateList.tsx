@@ -325,17 +325,7 @@ export default function TemplateList() {
 
         <main className="flex-1 overflow-auto">
           <div className="container mx-auto px-6 py-6">
-            <div className="flex justify-end mb-6">
-              <Button 
-                onClick={() => navigate('/templates/workflows/new/edit')}
-                data-testid="button-create-template"
-              >
-                <Plus className="h-4 w-4 mr-2" />
-                Create Template
-              </Button>
-            </div>
-
-            <div className="mb-6">
+            <div className="mb-6 flex items-center justify-between gap-4">
               <div className="max-w-md">
                 <Input
                   placeholder="Search templates..."
@@ -344,6 +334,14 @@ export default function TemplateList() {
                   data-testid="input-search-templates"
                 />
               </div>
+              <Button 
+                onClick={() => navigate('/templates/workflows/new/edit')}
+                data-testid="button-create-template"
+                size="sm"
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                Create
+              </Button>
             </div>
 
             {!filteredTemplates || filteredTemplates.length === 0 ? (
