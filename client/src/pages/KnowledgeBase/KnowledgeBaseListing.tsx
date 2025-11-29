@@ -13,13 +13,14 @@ import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { BookOpen, Users, Plus, FileText, Filter, Eye, Edit3, Trash2, Calendar, User, Tag, Search, X, UserPlus, Pencil, PanelLeftClose, PanelLeft, GraduationCap, ChevronDown, GripVertical, FolderInput, Folder, ExternalLink, FileCheck } from "lucide-react";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { useAuth } from "@/contexts/AuthContext";
 import { useToast } from "@/hooks/use-toast";
 import { queryClient, apiRequest } from "@/lib/queryClient";
-import type { KnowledgeDocument, KnowledgeFolder } from '@shared/schema';
+import type { KnowledgeDocument, KnowledgeFolder, Team } from '@shared/schema';
 import { AssignTrainingDialog } from "@/components/training/AssignTrainingDialog";
 import { EditAssignmentDialog } from "@/components/training/EditAssignmentDialog";
-import { FolderNavigation } from "@/components/knowledge-hub/FolderNavigation";
+import { ProcessFolderNavigation } from "@/components/process-folders/ProcessFolderNavigation";
 
 interface ExtendedKnowledgeDocument extends KnowledgeDocument {
   author?: {
@@ -60,6 +61,7 @@ export default function KnowledgeBaseListing() {
   
   // Folder navigation state
   const [selectedFolderId, setSelectedFolderId] = useState<number | null>(null);
+  const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const [showFolderNav, setShowFolderNav] = useState(true);
   
   // Filter states
@@ -135,6 +137,11 @@ export default function KnowledgeBaseListing() {
   const { data: assignmentDetails = [], isLoading: assignmentsLoading } = useQuery<DocumentAssignment[]>({
     queryKey: ["/api/knowledge-base/assignments"],
     enabled: activeTab === "progress" && isAdmin
+  });
+
+  // Fetch teams for filtering
+  const { data: teams = [] } = useQuery<Team[]>({
+    queryKey: ['/api/teams'],
   });
 
   const handleCreateDocument = () => {
@@ -624,42 +631,101 @@ export default function KnowledgeBaseListing() {
     </Card>
   );
 
+  const SidebarContent = () => (
+    <div className="flex flex-col h-full">
+      <div className="p-4 border-b">
+        <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
+          Knowledge Hub
+        </h2>
+      </div>
+      <ScrollArea className="flex-1 p-2">
+        <ProcessFolderNavigation
+          folderType="shared"
+          selectedFolderId={selectedFolderId}
+          onFolderSelect={setSelectedFolderId}
+          selectedTeamId={selectedTeamId}
+          onTeamSelect={setSelectedTeamId}
+          showTeamFilter={true}
+          isDragging={!!draggedDocId}
+          items={documents?.map(d => ({ teamId: (d as any).teamId, folderId: d.folderId })) || []}
+        />
+      </ScrollArea>
+    </div>
+  );
+
   return (
     <DndContext onDragStart={handleDragStart} onDragEnd={handleDragEnd} collisionDetection={pointerWithin}>
-      <div className="container mx-auto px-3 py-3" data-testid="knowledge-base-listing">
-        <div className="mb-3 flex items-center justify-between">
-          <div>
-            <h1 className="text-lg font-semibold text-gray-900">Knowledge Hub</h1>
-            <p className="text-gray-600 mt-0.5 text-[12px]">Manage training documents, folders, and team progress</p>
+      <div className="flex h-[calc(100vh-64px)] flex-col md:flex-row" data-testid="knowledge-base-listing">
+        {/* Desktop Sidebar */}
+        <aside className="hidden md:flex w-64 border-r bg-muted/30 flex-col">
+          <SidebarContent />
+        </aside>
+
+        <main className="flex-1 overflow-auto flex flex-col">
+          {/* Mobile Filter Chips */}
+          <div className="md:hidden border-b bg-muted/30 overflow-x-auto">
+            <ScrollArea className="w-full h-auto">
+              <div className="flex gap-2 p-3 whitespace-nowrap">
+                <Button
+                  variant={selectedTeamId === null && selectedFolderId === null ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setSelectedTeamId(null);
+                    setSelectedFolderId(null);
+                  }}
+                  className="shrink-0 h-8 text-xs px-3"
+                >
+                  All
+                </Button>
+                <Button
+                  variant={selectedTeamId === -1 ? "default" : "outline"}
+                  size="sm"
+                  onClick={() => {
+                    setSelectedTeamId(-1);
+                    setSelectedFolderId(null);
+                  }}
+                  className="shrink-0 h-8 text-xs px-3"
+                >
+                  No team
+                </Button>
+                {documents?.reduce((acc: any[], d) => {
+                  if ((d as any).teamId && !acc.find(team => team.id === (d as any).teamId)) {
+                    const team = teams.find(team => team.id === (d as any).teamId);
+                    if (team) acc.push(team);
+                  }
+                  return acc;
+                }, []).map((team) => (
+                  <Button
+                    key={team.id}
+                    variant={selectedTeamId === team.id ? "default" : "outline"}
+                    size="sm"
+                    onClick={() => {
+                      setSelectedTeamId(team.id);
+                      setSelectedFolderId(null);
+                    }}
+                    className="shrink-0 h-8 text-xs px-3"
+                  >
+                    {team.name}
+                  </Button>
+                ))}
+                {selectedTeamId !== null && selectedTeamId !== -1 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setSelectedTeamId(null)}
+                    className="shrink-0 h-8 text-xs px-2 ml-2"
+                  >
+                    <X className="h-3 w-3" />
+                  </Button>
+                )}
+              </div>
+            </ScrollArea>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 md:hidden"
-            onClick={() => setShowFolderNav(!showFolderNav)}
-            data-testid="toggle-folder-nav"
-          >
-            {showFolderNav ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeft className="h-4 w-4" />}
-          </Button>
-        </div>
-        
-        {/* Main Layout with Folder Navigation */}
-        <div className="flex gap-4">
-          {/* Folder Navigation Sidebar */}
-          <div className={`${showFolderNav ? 'block' : 'hidden'} md:block w-56 flex-shrink-0`}>
-            <Card className="sticky top-4">
-              <CardContent className="p-2">
-                <FolderNavigation
-                  selectedFolderId={selectedFolderId}
-                  onFolderSelect={setSelectedFolderId}
-                  isDragging={!!draggedDocId}
-                />
-              </CardContent>
-            </Card>
-          </div>
-        
-        {/* Main Content Area */}
-        <div className="flex-1 min-w-0">
+
+          <div className="flex-1 overflow-auto">
+            <div className="container mx-auto px-4 sm:px-6 py-6">
+              {/* Main Content Area */}
+              <div className="flex-1 min-w-0">
           {/* Compact Tab Navigation */}
           <div className="mb-3">
             <div className="border-b border-gray-200">
@@ -1096,45 +1162,47 @@ export default function KnowledgeBaseListing() {
                   </CardContent>
                 </Card>
               ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              </div>
             </div>
+          </div>
+
+          {/* Assign Training Dialog */}
+          {selectedDocument && (
+            <AssignTrainingDialog
+              isOpen={showAssignTraining}
+              onClose={() => {
+                setShowAssignTraining(false);
+                setSelectedDocument(null);
+              }}
+              documentId={selectedDocument.id}
+              documentTitle={selectedDocument.title}
+            />
           )}
-        </div>
-      )}
-        </div>
+
+          {/* Edit Assignment Dialog */}
+          {selectedAssignment && (
+            <EditAssignmentDialog
+              isOpen={showEditAssignment}
+              onClose={() => {
+                setShowEditAssignment(false);
+                setSelectedAssignment(null);
+              }}
+              assignment={selectedAssignment}
+              onUpdate={handleUpdateAssignment}
+              isUpdating={updateAssignmentMutation.isPending}
+            />
+          )}
+        </main>
+        
+        {/* Drag Overlay */}
+        <DragOverlay>
+          {draggedDocument && <DragOverlayCard document={draggedDocument} />}
+        </DragOverlay>
       </div>
-
-      {/* Assign Training Dialog */}
-      {selectedDocument && (
-        <AssignTrainingDialog
-          isOpen={showAssignTraining}
-          onClose={() => {
-            setShowAssignTraining(false);
-            setSelectedDocument(null);
-          }}
-          documentId={selectedDocument.id}
-          documentTitle={selectedDocument.title}
-        />
-      )}
-
-      {/* Edit Assignment Dialog */}
-      {selectedAssignment && (
-        <EditAssignmentDialog
-          isOpen={showEditAssignment}
-          onClose={() => {
-            setShowEditAssignment(false);
-            setSelectedAssignment(null);
-          }}
-          assignment={selectedAssignment}
-          onUpdate={handleUpdateAssignment}
-          isUpdating={updateAssignmentMutation.isPending}
-        />
-      )}
-      
-      {/* Drag Overlay */}
-      <DragOverlay>
-        {draggedDocument && <DragOverlayCard document={draggedDocument} />}
-      </DragOverlay>
-    </div>
     </DndContext>
   );
 }
