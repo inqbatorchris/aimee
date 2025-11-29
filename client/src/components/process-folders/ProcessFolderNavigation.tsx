@@ -74,6 +74,7 @@ interface ProcessFolderNavigationProps {
   className?: string;
   isDragging?: boolean;
   allItemsLabel?: string;
+  items?: { teamId?: number | null; folderId?: number | null }[];
 }
 
 export function ProcessFolderNavigation({ 
@@ -85,11 +86,13 @@ export function ProcessFolderNavigation({
   showTeamFilter = false,
   className, 
   isDragging = false,
-  allItemsLabel = "All Items"
+  allItemsLabel = "All Items",
+  items = []
 }: ProcessFolderNavigationProps) {
   const { currentUser } = useAuth();
   const { toast } = useToast();
   const [expandedFolders, setExpandedFolders] = useState<Set<number>>(new Set());
+  const [expandedTeams, setExpandedTeams] = useState<Set<number>>(new Set());
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingFolder, setEditingFolder] = useState<ProcessFolder | null>(null);
@@ -113,6 +116,28 @@ export function ProcessFolderNavigation({
     queryKey: ["/api/teams"],
     enabled: showTeamFilter,
   });
+
+  const toggleTeam = (teamId: number) => {
+    const newExpanded = new Set(expandedTeams);
+    if (newExpanded.has(teamId)) {
+      newExpanded.delete(teamId);
+    } else {
+      newExpanded.add(teamId);
+    }
+    setExpandedTeams(newExpanded);
+  };
+
+  const teamsWithContent = teams.filter(team => {
+    const hasItems = items.some(item => item.teamId === team.id);
+    const hasFolders = folders.some(folder => folder.teamId === team.id);
+    return hasItems || hasFolders;
+  });
+
+  const getFoldersForTeam = (teamId: number | null) => 
+    folders.filter(f => f.teamId === teamId && !f.parentId);
+
+  const getUnassignedFolders = () => 
+    folders.filter(f => !f.teamId && !f.parentId);
 
   const createFolderMutation = useMutation({
     mutationFn: async (data: { name: string; description?: string; parentId: number | null; teamId: number | null; folderType: string }) => {
@@ -247,12 +272,7 @@ export function ProcessFolderNavigation({
     setShowEditDialog(true);
   };
 
-  const filteredFolders = selectedTeamId 
-    ? folders.filter(f => f.teamId === selectedTeamId || !f.teamId)
-    : folders;
-  
-  const rootFolders = filteredFolders.filter(f => !f.parentId);
-  const getChildFolders = (parentId: number) => filteredFolders.filter(f => f.parentId === parentId);
+  const getChildFolders = (parentId: number) => folders.filter(f => f.parentId === parentId);
 
   const getFolderIcon = () => {
     switch (folderType) {
@@ -267,7 +287,6 @@ export function ProcessFolderNavigation({
     const hasChildren = children.length > 0;
     const isExpanded = expandedFolders.has(folder.id);
     const isSelected = selectedFolderId === folder.id;
-    const team = folder.teamId ? teams.find(t => t.id === folder.teamId) : null;
     
     const { isOver, setNodeRef } = useDroppable({
       id: `folder-${folder.id}`,
@@ -280,7 +299,6 @@ export function ProcessFolderNavigation({
           className={cn(
             "group flex items-center gap-1 px-2 py-1.5 rounded-md cursor-pointer transition-all",
             isSelected ? "bg-primary/10 text-primary" : "hover:bg-muted",
-            depth > 0 && "ml-4",
             isDragging && "border border-dashed border-transparent",
             isDragging && isOver && "border-primary bg-primary/5 ring-2 ring-primary/20"
           )}
@@ -317,12 +335,6 @@ export function ProcessFolderNavigation({
               <Folder className="h-4 w-4 flex-shrink-0" style={{ color: folder.color || undefined }} />
             )}
             <span className="text-sm truncate">{folder.name}</span>
-            {team && (
-              <Badge variant="outline" className="text-xs h-5 px-1.5 ml-auto">
-                <Users className="h-3 w-3 mr-1" />
-                {team.name}
-              </Badge>
-            )}
             {isDragging && isOver && (
               <span className="text-xs text-primary ml-auto">Drop here</span>
             )}
@@ -409,34 +421,94 @@ export function ProcessFolderNavigation({
     );
   }
 
+  const DroppableTeamItem = ({ team }: { team: Team }) => {
+    const teamFolders = getFoldersForTeam(team.id);
+    const isExpanded = expandedTeams.has(team.id);
+    const isSelected = selectedTeamId === team.id && selectedFolderId === null;
+    
+    const { isOver, setNodeRef } = useDroppable({
+      id: `team-${team.id}`,
+    });
+
+    return (
+      <div>
+        <div
+          ref={setNodeRef}
+          className={cn(
+            "group flex items-center gap-1 px-2 py-1.5 rounded-md cursor-pointer transition-all",
+            isSelected ? "bg-primary/10 text-primary" : "hover:bg-muted",
+            isDragging && "border border-dashed border-transparent",
+            isDragging && isOver && "border-primary bg-primary/5 ring-2 ring-primary/20"
+          )}
+          data-testid={`team-item-${team.id}`}
+        >
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              toggleTeam(team.id);
+            }}
+            className="p-0.5 hover:bg-muted-foreground/10 rounded"
+          >
+            {isExpanded ? (
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            ) : (
+              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+            )}
+          </button>
+
+          <div
+            className="flex-1 flex items-center gap-2 min-w-0"
+            onClick={() => {
+              onTeamSelect?.(team.id);
+              onFolderSelect(null);
+            }}
+          >
+            <Users className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+            <span className="text-sm truncate font-medium">{team.name}</span>
+            {isDragging && isOver && (
+              <span className="text-xs text-primary ml-auto">Drop here</span>
+            )}
+          </div>
+
+          {!isDragging && isAdmin && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-6 w-6 opacity-0 group-hover:opacity-100"
+              onClick={(e) => {
+                e.stopPropagation();
+                setNewFolderTeamId(team.id);
+                resetForm();
+                setNewFolderTeamId(team.id);
+                setShowCreateDialog(true);
+              }}
+            >
+              <Plus className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+
+        {isExpanded && (
+          <div className="ml-4">
+            {teamFolders.map((folder) => (
+              <DroppableFolderItem key={folder.id} folder={folder} depth={1} />
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  const unassignedFolders = getUnassignedFolders();
+
   return (
     <div className={cn("", className)}>
-      {showTeamFilter && onTeamSelect && (
-        <div className="px-2 mb-3">
-          <Label className="text-xs text-muted-foreground mb-1.5 block">Filter by Team</Label>
-          <Select 
-            value={selectedTeamId?.toString() || "all"} 
-            onValueChange={(v) => onTeamSelect(v === "all" ? null : parseInt(v))}
-          >
-            <SelectTrigger className="h-8 text-sm" data-testid="team-filter-select">
-              <SelectValue placeholder="All Teams" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Teams</SelectItem>
-              {teams.map((team) => (
-                <SelectItem key={team.id} value={team.id.toString()}>
-                  {team.name}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      )}
-
       <div className="flex items-center justify-between px-2 mb-2">
         <div className="flex items-center gap-2">
           {getFolderIcon()}
-          <span className="text-sm font-medium text-muted-foreground">Folders</span>
+          <span className="text-sm font-medium text-muted-foreground">
+            {folderType === 'templates' ? 'Templates' : 'Workflows'}
+          </span>
         </div>
         {isAdmin && (
           <Button
@@ -459,24 +531,40 @@ export function ProcessFolderNavigation({
       <div
         className={cn(
           "flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer transition-colors mb-1",
-          selectedFolderId === null ? "bg-primary/10 text-primary" : "hover:bg-muted"
+          selectedFolderId === null && selectedTeamId === null ? "bg-primary/10 text-primary" : "hover:bg-muted"
         )}
-        onClick={() => onFolderSelect(null)}
+        onClick={() => {
+          onFolderSelect(null);
+          onTeamSelect?.(null);
+        }}
         data-testid="all-items-folder"
       >
-        <Folder className="h-4 w-4" />
+        <Library className="h-4 w-4" />
         <span className="text-sm">{allItemsLabel}</span>
       </div>
 
       <div className="space-y-0.5">
-        {rootFolders.map((folder) => (
-          <DroppableFolderItem key={folder.id} folder={folder} />
+        {teamsWithContent.map((team) => (
+          <DroppableTeamItem key={team.id} team={team} />
         ))}
+        
+        {unassignedFolders.length > 0 && (
+          <>
+            {teamsWithContent.length > 0 && (
+              <div className="px-2 py-1.5">
+                <span className="text-xs text-muted-foreground">Unassigned</span>
+              </div>
+            )}
+            {unassignedFolders.map((folder) => (
+              <DroppableFolderItem key={folder.id} folder={folder} />
+            ))}
+          </>
+        )}
       </div>
 
-      {folders.length === 0 && (
+      {teamsWithContent.length === 0 && folders.length === 0 && (
         <div className="px-3 py-4 text-center text-sm text-muted-foreground">
-          No folders yet. {isAdmin && "Click + to create one."}
+          No teams or folders yet.
         </div>
       )}
 
