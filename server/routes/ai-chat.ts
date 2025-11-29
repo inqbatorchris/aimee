@@ -588,10 +588,13 @@ router.post('/sessions/:sessionId/messages', async (req: any, res) => {
           });
           
           // Get AI's final response with the function result
+          // IMPORTANT: Include functions so AI can call write functions after reading data
           const finalCompletion = await openaiService.createChatCompletion(messages, {
             model: config?.defaultModel || 'gpt-4o-mini',
             temperature: parseFloat(config?.temperature?.toString() || '0.7'),
             max_tokens: config?.maxTokens || 2000,
+            functions: availableFunctions,
+            function_call: 'auto',
           });
           
           // Update assistant message with the final response
