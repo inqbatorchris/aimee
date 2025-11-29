@@ -803,6 +803,7 @@ async function getAvailableFunctions(organizationId: number, userRole: string) {
 
   return functions
     .filter(f => canUserAccessFunction(f, userRole))
+    .filter(f => f.functionSchema != null) // Exclude functions with null schema
     .map(f => normalizeFunctionSchema(f.functionSchema));
 }
 
