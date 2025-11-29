@@ -558,123 +558,141 @@ router.post('/sessions/:sessionId/messages', async (req: any, res) => {
       'preview_workflow_template',
     ];
     
-    // Check if the AI wants to call a function
-    if (assistantMessage.function_call) {
+    // Loop to auto-execute chained read functions until AI returns text or a write function
+    const MAX_READ_ITERATIONS = 5; // Safety limit to prevent infinite loops
+    let readIterations = 0;
+    
+    while (assistantMessage.function_call && readIterations < MAX_READ_ITERATIONS) {
       const functionName = assistantMessage.function_call.name;
       const functionArgs = JSON.parse(assistantMessage.function_call.arguments);
       
       // Determine if this is a read-only function
       const isReadOnly = readOnlyFunctions.includes(functionName);
       
-      if (isReadOnly) {
-        // Auto-execute read-only functions
+      if (!isReadOnly) {
+        // Write function - break out of loop to show approval card
+        console.log(`\n📝 WRITE FUNCTION detected: ${functionName} - breaking loop for approval`);
+        break;
+      }
+      
+      readIterations++;
+      console.log(`\n🔄 READ ITERATION ${readIterations}: Auto-executing ${functionName}`);
+      
+      // Auto-execute read-only functions
+      try {
+        const action = {
+          actionType: functionName,
+          actionPayload: functionArgs
+        };
+        const functionResult = await executeAction(action, req.user);
+        
+        // Add function call and result to messages
+        messages.push({
+          role: 'assistant' as const,
+          content: '',
+          function_call: assistantMessage.function_call,
+        });
+        messages.push({
+          role: 'function' as const,
+          name: functionName,
+          content: JSON.stringify(functionResult),
+        });
+        
+        // Get AI's next response with the function result
+        // IMPORTANT: Include functions so AI can call more read functions or write functions
+        const nextCompletion = await openaiService.createChatCompletion(messages, {
+          model: config?.defaultModel || 'gpt-4o-mini',
+          temperature: parseFloat(config?.temperature?.toString() || '0.7'),
+          max_tokens: config?.maxTokens || 2000,
+          functions: availableFunctions,
+          function_call: 'auto',
+        });
+        
+        // Update assistant message for next iteration
+        assistantMessage = nextCompletion.choices[0].message;
+        
+        console.log(`  → Next response: ${assistantMessage.function_call ? `function: ${assistantMessage.function_call.name}` : 'text response'}`);
+        
+        // Update function statistics
+        const functionRecord = await db.query.aiAssistantFunctions.findFirst({
+          where: and(
+            eq(aiAssistantFunctions.organizationId, req.user.organizationId),
+            eq(aiAssistantFunctions.functionName, functionName)
+          )
+        });
+        
+        if (functionRecord) {
+          await db.update(aiAssistantFunctions)
+            .set({
+              totalCalls: (functionRecord.totalCalls || 0) + 1,
+              successfulCalls: (functionRecord.successfulCalls || 0) + 1,
+              lastCalledAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(eq(aiAssistantFunctions.id, functionRecord.id));
+        }
+        
+        // Log function execution in activity logs
+        await db.insert(activityLogs).values({
+          organizationId: req.user.organizationId,
+          userId: req.user.id,
+          actionType: 'ai_chat',
+          entityType: 'ai_function',
+          entityId: functionRecord?.id,
+          description: `Auto-executed function: ${functionName}`,
+          metadata: {
+            sessionId,
+            functionName,
+            functionArgs,
+            executionTime: Date.now() - startTime,
+            success: true,
+          },
+        });
+      } catch (error: any) {
+        console.error('Error auto-executing function:', error);
+        
+        // ✅ Provide helpful error message to user instead of silent failure
+        const errorMessage = error.message || 'Unknown error occurred';
+        const suggestion = getSuggestionForError(error);
+        
+        // Create an error response message for the AI to deliver to the user
+        messages.push({
+          role: 'assistant' as const,
+          content: '',
+          function_call: assistantMessage.function_call,
+        });
+        messages.push({
+          role: 'function' as const,
+          name: functionName,
+          content: JSON.stringify({
+            error: true,
+            message: errorMessage,
+            suggestion: suggestion,
+          }),
+        });
+        
+        // Let AI formulate a user-friendly response based on the error
         try {
-          const action = {
-            actionType: functionName,
-            actionPayload: functionArgs
-          };
-          const functionResult = await executeAction(action, req.user);
-          
-          // Add function call and result to messages
-          messages.push({
-            role: 'assistant' as const,
-            content: '',
-            function_call: assistantMessage.function_call,
-          });
-          messages.push({
-            role: 'function' as const,
-            name: functionName,
-            content: JSON.stringify(functionResult),
-          });
-          
-          // Get AI's final response with the function result
-          // IMPORTANT: Include functions so AI can call write functions after reading data
-          const finalCompletion = await openaiService.createChatCompletion(messages, {
+          const errorRecoveryCompletion = await openaiService.createChatCompletion(messages, {
             model: config?.defaultModel || 'gpt-4o-mini',
             temperature: parseFloat(config?.temperature?.toString() || '0.7'),
             max_tokens: config?.maxTokens || 2000,
-            functions: availableFunctions,
-            function_call: 'auto',
           });
-          
-          // Update assistant message with the final response
-          assistantMessage = finalCompletion.choices[0].message;
-          
-          // Update function statistics
-          const functionRecord = await db.query.aiAssistantFunctions.findFirst({
-            where: and(
-              eq(aiAssistantFunctions.organizationId, req.user.organizationId),
-              eq(aiAssistantFunctions.functionName, functionName)
-            )
-          });
-          
-          if (functionRecord) {
-            await db.update(aiAssistantFunctions)
-              .set({
-                totalCalls: (functionRecord.totalCalls || 0) + 1,
-                successfulCalls: (functionRecord.successfulCalls || 0) + 1,
-                lastCalledAt: new Date(),
-                updatedAt: new Date(),
-              })
-              .where(eq(aiAssistantFunctions.id, functionRecord.id));
-          }
-          
-          // Log function execution in activity logs
-          await db.insert(activityLogs).values({
-            organizationId: req.user.organizationId,
-            userId: req.user.id,
-            actionType: 'ai_chat',
-            entityType: 'ai_function',
-            entityId: functionRecord?.id,
-            description: `Auto-executed function: ${functionName}`,
-            metadata: {
-              sessionId,
-              functionName,
-              functionArgs,
-              executionTime: Date.now() - startTime,
-              success: true,
-            },
-          });
-        } catch (error: any) {
-          console.error('Error auto-executing function:', error);
-          
-          // ✅ Provide helpful error message to user instead of silent failure
-          const errorMessage = error.message || 'Unknown error occurred';
-          const suggestion = getSuggestionForError(error);
-          
-          // Create an error response message for the AI to deliver to the user
-          messages.push({
+          assistantMessage = errorRecoveryCompletion.choices[0].message;
+        } catch (recoveryError) {
+          // If AI can't recover, provide a basic error message
+          assistantMessage = {
             role: 'assistant' as const,
-            content: '',
-            function_call: assistantMessage.function_call,
-          });
-          messages.push({
-            role: 'function' as const,
-            name: functionName,
-            content: JSON.stringify({
-              error: true,
-              message: errorMessage,
-              suggestion: suggestion,
-            }),
-          });
-          
-          // Let AI formulate a user-friendly response based on the error
-          try {
-            const errorRecoveryCompletion = await openaiService.createChatCompletion(messages, {
-              model: config?.defaultModel || 'gpt-4o-mini',
-              temperature: parseFloat(config?.temperature?.toString() || '0.7'),
-              max_tokens: config?.maxTokens || 2000,
-            });
-            assistantMessage = errorRecoveryCompletion.choices[0].message;
-          } catch (recoveryError) {
-            // If AI can't recover, provide a basic error message
-            assistantMessage = {
-              role: 'assistant' as const,
-              content: `❌ I encountered an error: ${errorMessage}\n\n💡 ${suggestion}`,
-            };
-          }
+            content: `❌ I encountered an error: ${errorMessage}\n\n💡 ${suggestion}`,
+          };
         }
+        // Break on error to prevent further issues
+        break;
       }
+    }
+    
+    if (readIterations >= MAX_READ_ITERATIONS) {
+      console.log(`⚠️ Hit max read iterations (${MAX_READ_ITERATIONS}) - stopping to prevent infinite loop`);
     }
 
     // ✅ FIX: Generate preview if AI made function call but provided no content
