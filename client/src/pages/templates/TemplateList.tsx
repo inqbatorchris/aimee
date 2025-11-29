@@ -8,7 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Input } from '@/components/ui/input';
-import { Plus, Edit, Trash2, GitBranch, Loader2, Users, Folder, Clock, Layers, GripVertical } from 'lucide-react';
+import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Plus, Edit, Trash2, GitBranch, Loader2, Users, Folder, Clock, Layers, GripVertical, Menu } from 'lucide-react';
 import { queryClient, apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 import { ProcessFolderNavigation } from '@/components/process-folders/ProcessFolderNavigation';
@@ -35,6 +36,7 @@ export default function TemplateList() {
   const [selectedTeamId, setSelectedTeamId] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTemplate, setActiveTemplate] = useState<WorkflowTemplate | null>(null);
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -298,35 +300,54 @@ export default function TemplateList() {
     );
   }
 
+  const SidebarContent = () => (
+    <div className="flex flex-col h-full">
+      <div className="p-4 border-b">
+        <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
+          Workflow Templates
+        </h2>
+      </div>
+      <ScrollArea className="flex-1 p-2">
+        <ProcessFolderNavigation
+          folderType="templates"
+          selectedFolderId={selectedFolderId}
+          onFolderSelect={setSelectedFolderId}
+          selectedTeamId={selectedTeamId}
+          onTeamSelect={setSelectedTeamId}
+          showTeamFilter={true}
+          isDragging={!!activeTemplate}
+          items={templates?.map(t => ({ teamId: t.teamId, folderId: t.folderId })) || []}
+          templates={templates?.map(t => ({ id: t.id, name: t.name, teamId: t.teamId, folderId: t.folderId })) || []}
+          onTemplateSelect={(id) => navigate(`/templates/workflows/${id}/edit`)}
+        />
+      </ScrollArea>
+    </div>
+  );
+
   return (
     <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-      <div className="flex h-[calc(100vh-64px)]">
-        <aside className="w-64 border-r bg-muted/30 flex flex-col">
-          <div className="p-4 border-b">
-            <h2 className="font-semibold text-sm text-muted-foreground uppercase tracking-wider">
-              Workflow Templates
-            </h2>
-          </div>
-          <ScrollArea className="flex-1 p-2">
-            <ProcessFolderNavigation
-              folderType="templates"
-              selectedFolderId={selectedFolderId}
-              onFolderSelect={setSelectedFolderId}
-              selectedTeamId={selectedTeamId}
-              onTeamSelect={setSelectedTeamId}
-              showTeamFilter={true}
-              isDragging={!!activeTemplate}
-              items={templates?.map(t => ({ teamId: t.teamId, folderId: t.folderId })) || []}
-              templates={templates?.map(t => ({ id: t.id, name: t.name, teamId: t.teamId, folderId: t.folderId })) || []}
-              onTemplateSelect={(id) => navigate(`/templates/workflows/${id}/edit`)}
-            />
-          </ScrollArea>
+      <div className="flex h-[calc(100vh-64px)] flex-col md:flex-row">
+        {/* Desktop Sidebar */}
+        <aside className="hidden md:flex w-64 border-r bg-muted/30 flex-col">
+          <SidebarContent />
         </aside>
 
+        {/* Mobile Drawer */}
+        <Sheet open={isDrawerOpen} onOpenChange={setIsDrawerOpen}>
+          <SheetTrigger asChild className="md:hidden absolute left-4 top-20">
+            <Button variant="ghost" size="sm" data-testid="button-toggle-nav">
+              <Menu className="h-5 w-5" />
+            </Button>
+          </SheetTrigger>
+          <SheetContent side="left" className="w-64 p-0">
+            <SidebarContent />
+          </SheetContent>
+        </Sheet>
+
         <main className="flex-1 overflow-auto">
-          <div className="container mx-auto px-6 py-6">
-            <div className="mb-6 flex items-center justify-between gap-4">
-              <div className="max-w-md">
+          <div className="container mx-auto px-4 sm:px-6 py-6">
+            <div className="mb-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="w-full sm:max-w-md">
                 <Input
                   placeholder="Search templates..."
                   value={searchQuery}
@@ -338,6 +359,7 @@ export default function TemplateList() {
                 onClick={() => navigate('/templates/workflows/new/edit')}
                 data-testid="button-create-template"
                 size="sm"
+                className="w-full sm:w-auto"
               >
                 <Plus className="h-3 w-3 mr-1" />
                 Create
