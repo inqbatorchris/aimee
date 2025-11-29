@@ -500,29 +500,27 @@ export default function AgentBuilder() {
         ref={setNodeRef}
         style={style}
         className={cn(
-          "hover:shadow-lg transition-shadow group cursor-pointer",
+          "hover:shadow-sm transition-shadow group cursor-pointer overflow-hidden",
           isDragging && "opacity-50 shadow-lg"
         )}
         onClick={() => !isDragging && navigate(`/agents/workflows/${workflow.id}/edit`)}
         data-testid={`card-workflow-${workflow.id}`}
       >
-        <CardHeader className="pb-3">
-          <div className="flex items-start justify-between">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <div 
-                  {...attributes} 
-                  {...listeners}
-                  className="cursor-grab active:cursor-grabbing p-1 -ml-1 rounded hover:bg-muted"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <GripVertical className="h-4 w-4 text-muted-foreground" />
-                </div>
-                <CardTitle className="text-lg mb-1 truncate">{workflow.name}</CardTitle>
-              </div>
-              <CardDescription className="line-clamp-2 ml-6">{workflow.description}</CardDescription>
+        <CardContent className="p-3 overflow-hidden">
+          {/* Title row with drag handle and switch */}
+          <div className="flex items-start gap-2 mb-2">
+            <div 
+              {...attributes} 
+              {...listeners}
+              className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-muted flex-shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <GripVertical className="h-4 w-4 text-muted-foreground" />
             </div>
-            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+            <h3 className="flex-1 min-w-0 font-medium text-sm leading-tight">
+              {workflow.name}
+            </h3>
+            <div className="flex-shrink-0" onClick={(e) => e.stopPropagation()}>
               <Switch
                 checked={workflow.isEnabled}
                 onCheckedChange={() => handleToggleWorkflow(workflow)}
@@ -530,70 +528,74 @@ export default function AgentBuilder() {
               />
             </div>
           </div>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant="outline" className="flex items-center gap-1">
-                <TriggerIcon className="h-3 w-3" />
-                {triggerConfig?.label}
-              </Badge>
-              <Badge variant={workflow.isEnabled ? "default" : "secondary"}>
-                {workflow.isEnabled ? 'Enabled' : 'Disabled'}
-              </Badge>
+          
+          {/* Description */}
+          {workflow.description && (
+            <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
+              {workflow.description}
+            </p>
+          )}
+          
+          {/* Badges row */}
+          <div className="flex flex-wrap items-center gap-1 mb-2">
+            <Badge variant="outline" className="text-[11px] px-1.5 py-0 flex items-center gap-1">
+              <TriggerIcon className="h-3 w-3" />
+              {triggerConfig?.label}
+            </Badge>
+            <Badge variant={workflow.isEnabled ? "default" : "secondary"} className="text-[11px] px-1.5 py-0">
+              {workflow.isEnabled ? 'Enabled' : 'Disabled'}
+            </Badge>
+          </div>
+          
+          {/* Team/Folder info */}
+          {(workflow.assignedTeamId || (workflow as any).folderId) && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+              {team && (
+                <span className="flex items-center gap-1">
+                  <Users className="h-3 w-3" />
+                  {team.name}
+                </span>
+              )}
             </div>
-            
-            {(workflow.assignedTeamId || (workflow as any).folderId) && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                {team && (
-                  <span className="flex items-center gap-1">
-                    <Users className="h-3 w-3" />
-                    {team.name}
-                  </span>
-                )}
-                {(workflow as any).folderId && (
-                  <span className="flex items-center gap-1">
-                    <Folder className="h-3 w-3" />
-                    {folders.find(f => f.id === (workflow as any).folderId)?.name}
-                  </span>
-                )}
-              </div>
-            )}
+          )}
 
-            {workflow.lastRunAt && (
-              <div className="text-xs text-muted-foreground">
-                Last run: {new Date(workflow.lastRunAt).toLocaleDateString()}
-              </div>
-            )}
+          {/* Last run */}
+          {workflow.lastRunAt && (
+            <div className="text-xs text-muted-foreground mb-2">
+              Last run: {new Date(workflow.lastRunAt).toLocaleDateString()}
+            </div>
+          )}
+          
+          {/* Action buttons row */}
+          <div className="flex items-center justify-between pt-2 border-t border-border/50">
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={(e) => {
+                e.stopPropagation();
+                executeWorkflowMutation.mutate(workflow.id);
+              }}
+              disabled={!workflow.isEnabled || workflow.triggerType !== 'manual'}
+              className="h-7 text-xs px-2"
+              data-testid={`button-run-${workflow.id}`}
+            >
+              <Play className="h-3 w-3 mr-1" />
+              Run
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={(e) => {
+                e.stopPropagation();
+                setDeleteWorkflowId(workflow.id);
+              }}
+              className="h-7 w-7 p-0 text-destructive hover:text-destructive"
+              data-testid={`button-delete-${workflow.id}`}
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
           </div>
         </CardContent>
-        <div className="px-6 py-3 border-t flex justify-between">
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={(e) => {
-              e.stopPropagation();
-              executeWorkflowMutation.mutate(workflow.id);
-            }}
-            disabled={!workflow.isEnabled || workflow.triggerType !== 'manual'}
-            data-testid={`button-run-${workflow.id}`}
-          >
-            <Play className="h-3 w-3 mr-1" />
-            Run
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={(e) => {
-              e.stopPropagation();
-              setDeleteWorkflowId(workflow.id);
-            }}
-            className="text-destructive hover:text-destructive"
-            data-testid={`button-delete-${workflow.id}`}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
-        </div>
       </Card>
     );
   };

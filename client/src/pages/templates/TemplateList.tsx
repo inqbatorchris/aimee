@@ -190,100 +190,103 @@ export default function TemplateList() {
         ref={setNodeRef}
         style={style}
         className={cn(
-          "hover:shadow-lg transition-shadow group cursor-pointer",
+          "hover:shadow-sm transition-shadow group cursor-pointer overflow-hidden",
           isDragging && "opacity-50 shadow-lg"
         )}
         onClick={() => !isDragging && navigate(`/templates/workflows/${template.id}/edit`)}
         data-testid={`card-template-${template.id}`}
       >
-        <CardHeader className="pb-3">
-          <div className="flex items-start justify-between">
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
-                <div 
-                  {...attributes} 
-                  {...listeners}
-                  className="cursor-grab active:cursor-grabbing p-1 -ml-1 rounded hover:bg-muted"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <GripVertical className="h-4 w-4 text-muted-foreground" />
-                </div>
-                <CardTitle className="text-lg mb-1 truncate">{template.name}</CardTitle>
-              </div>
-              <CardDescription className="line-clamp-2 ml-6">{template.description}</CardDescription>
+        <CardContent className="p-3 overflow-hidden">
+          {/* Title row with drag handle */}
+          <div className="flex items-start gap-2 mb-2">
+            <div 
+              {...attributes} 
+              {...listeners}
+              className="cursor-grab active:cursor-grabbing p-1 rounded hover:bg-muted flex-shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <GripVertical className="h-4 w-4 text-muted-foreground" />
             </div>
+            <h3 className="flex-1 min-w-0 font-medium text-sm leading-tight">
+              {template.name}
+            </h3>
           </div>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-3">
-            <div className="flex items-center gap-2 flex-wrap">
-              <Badge variant="secondary" className="flex items-center gap-1">
-                <Layers className="h-3 w-3" />
-                {template.steps?.length || 0} steps
+          
+          {/* Description */}
+          {template.description && (
+            <p className="text-xs text-muted-foreground line-clamp-2 mb-2">
+              {template.description}
+            </p>
+          )}
+          
+          {/* Badges row */}
+          <div className="flex flex-wrap items-center gap-1 mb-2">
+            <Badge variant="secondary" className="text-[11px] px-1.5 py-0 flex items-center gap-1">
+              <Layers className="h-3 w-3" />
+              {template.steps?.length || 0} steps
+            </Badge>
+            {template.estimatedMinutes && (
+              <Badge variant="outline" className="text-[11px] px-1.5 py-0 flex items-center gap-1">
+                <Clock className="h-3 w-3" />
+                ~{template.estimatedMinutes} min
               </Badge>
-              {template.estimatedMinutes && (
-                <Badge variant="outline" className="flex items-center gap-1">
-                  <Clock className="h-3 w-3" />
-                  ~{template.estimatedMinutes} min
-                </Badge>
-              )}
-              {template.category && (
-                <Badge variant="outline">
-                  {template.category}
-                </Badge>
-              )}
-            </div>
-            
-            {(template.teamId || template.folderId) && (
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                {template.teamId && (
-                  <span className="flex items-center gap-1">
-                    <Users className="h-3 w-3" />
-                    {getTeamName(template.teamId)}
-                  </span>
-                )}
-                {template.folderId && (
-                  <span className="flex items-center gap-1">
-                    <Folder className="h-3 w-3" />
-                    In folder
-                  </span>
-                )}
-              </div>
             )}
-
-            <Separator />
-            
-            <div className="flex gap-2" onClick={(e) => e.stopPropagation()}>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => navigate(`/templates/workflows/${template.id}/edit`)}
-                className="flex-1 h-7 text-xs px-2"
-                data-testid={`button-edit-${template.id}`}
-              >
-                <Edit className="h-3 w-3 mr-1" />
-                Edit
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => {
-                  if (confirm('Are you sure you want to delete this template?')) {
-                    deleteMutation.mutate(template.id);
-                  }
-                }}
-                disabled={deleteMutation.isPending}
-                className="flex-1 h-7 text-xs px-2"
-                data-testid={`button-delete-${template.id}`}
-              >
-                {deleteMutation.isPending ? (
-                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                ) : (
-                  <Trash2 className="h-3 w-3 mr-1" />
-                )}
-                Delete
-              </Button>
+            {template.category && (
+              <Badge variant="outline" className="text-[11px] px-1.5 py-0 truncate max-w-[100px]">
+                {template.category}
+              </Badge>
+            )}
+          </div>
+          
+          {/* Team/Folder info */}
+          {(template.teamId || template.folderId) && (
+            <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+              {template.teamId && (
+                <span className="flex items-center gap-1">
+                  <Users className="h-3 w-3" />
+                  {getTeamName(template.teamId)}
+                </span>
+              )}
+              {template.folderId && (
+                <span className="flex items-center gap-1">
+                  <Folder className="h-3 w-3" />
+                  In folder
+                </span>
+              )}
             </div>
+          )}
+          
+          {/* Action buttons row */}
+          <div className="flex gap-2 pt-2 border-t border-border/50" onClick={(e) => e.stopPropagation()}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => navigate(`/templates/workflows/${template.id}/edit`)}
+              className="flex-1 h-7 text-xs px-2"
+              data-testid={`button-edit-${template.id}`}
+            >
+              <Edit className="h-3 w-3 mr-1" />
+              Edit
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                if (confirm('Are you sure you want to delete this template?')) {
+                  deleteMutation.mutate(template.id);
+                }
+              }}
+              disabled={deleteMutation.isPending}
+              className="flex-1 h-7 text-xs px-2"
+              data-testid={`button-delete-${template.id}`}
+            >
+              {deleteMutation.isPending ? (
+                <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+              ) : (
+                <Trash2 className="h-3 w-3 mr-1" />
+              )}
+              Delete
+            </Button>
           </div>
         </CardContent>
       </Card>
