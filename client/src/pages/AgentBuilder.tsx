@@ -25,6 +25,8 @@ import {
 } from 'lucide-react';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
+import { DndContext, DragOverlay, useDraggable, useSensors, useSensor, PointerSensor, DragStartEvent, DragEndEvent } from '@dnd-kit/core';
+import { cn } from '@/lib/utils';
 import type { AgentWorkflow, Integration, KeyResult, Team } from '@shared/schema';
 import WorkflowStepBuilder from '@/components/workflow/WorkflowStepBuilder';
 import { ProcessFolderNavigation } from '@/components/process-folders/ProcessFolderNavigation';
@@ -119,8 +121,19 @@ export default function AgentBuilder() {
   const [createAgentUserDialogOpen, setCreateAgentUserDialogOpen] = useState(false);
   const [newAgentUserName, setNewAgentUserName] = useState('');
   const [deleteWorkflowId, setDeleteWorkflowId] = useState<number | null>(null);
+  const [activeWorkflow, setActiveWorkflow] = useState<AgentWorkflow | null>(null);
   const { toast} = useToast();
   const [, setLocation] = useLocation();
+  const navigate = (path: string) => setLocation(path);
+
+  // Drag and drop sensors
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8,
+      },
+    })
+  );
 
   // Fetch workflows
   const { data: workflows, isLoading: workflowsLoading } = useQuery<AgentWorkflow[]>({
@@ -340,6 +353,45 @@ export default function AgentBuilder() {
     },
   });
 
+  // Drag and drop handlers
+  const handleDragStart = (event: DragStartEvent) => {
+    const workflowId = parseInt(event.active.id.toString().replace('workflow-', ''));
+    const workflow = workflows?.find(w => w.id === workflowId);
+    setActiveWorkflow(workflow || null);
+  };
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveWorkflow(null);
+    const { active, over } = event;
+    
+    if (!over) return;
+    
+    const workflowId = parseInt(active.id.toString().replace('workflow-', ''));
+    const overId = over.id.toString();
+    
+    let newTeamId: number | null = null;
+    let newFolderId: number | null = null;
+    
+    if (overId === 'folder-root') {
+      newFolderId = null;
+      newTeamId = null;
+    } else if (overId.startsWith('team-')) {
+      newTeamId = parseInt(overId.replace('team-', ''));
+      newFolderId = null;
+    } else if (overId.startsWith('folder-')) {
+      const folderId = overId.replace('folder-', '');
+      newFolderId = parseInt(folderId);
+      const folder = folders.find(f => f.id === newFolderId);
+      newTeamId = folder?.teamId ?? null;
+    }
+    
+    updateWorkflowMutation.mutate({
+      id: workflowId,
+      assignedTeamId: newTeamId,
+      folderId: newFolderId,
+    });
+  };
+
   // Convert user-friendly schedule settings to cron expression
   const generateCronExpression = (triggerConfig: any) => {
     if (triggerConfig.frequency === 'custom') {
@@ -423,14 +475,131 @@ export default function AgentBuilder() {
           selectedTeamId={selectedTeamId}
           onTeamSelect={setSelectedTeamId}
           showTeamFilter={true}
-          isDragging={false}
+          isDragging={activeWorkflow !== null}
           items={workflows?.map(w => ({ teamId: w.assignedTeamId, folderId: (w as any).folderId })) || []}
         />
       </ScrollArea>
     </div>
   );
 
+  const DraggableWorkflowCard = ({ workflow }: { workflow: AgentWorkflow }) => {
+    const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+      id: `workflow-${workflow.id}`,
+    });
+
+    const style = transform ? {
+      transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
+    } : undefined;
+
+    const triggerConfig = TRIGGER_TYPES[workflow.triggerType as keyof typeof TRIGGER_TYPES];
+    const TriggerIcon = triggerConfig?.icon || Zap;
+    const team = teams.find(t => t.id === workflow.assignedTeamId);
+
+    return (
+      <Card 
+        ref={setNodeRef}
+        style={style}
+        className={cn(
+          "hover:shadow-lg transition-shadow group cursor-pointer",
+          isDragging && "opacity-50 shadow-lg"
+        )}
+        onClick={() => !isDragging && navigate(`/agents/workflows/${workflow.id}/edit`)}
+        data-testid={`card-workflow-${workflow.id}`}
+      >
+        <CardHeader className="pb-3">
+          <div className="flex items-start justify-between">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <div 
+                  {...attributes} 
+                  {...listeners}
+                  className="cursor-grab active:cursor-grabbing p-1 -ml-1 rounded hover:bg-muted"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <GripVertical className="h-4 w-4 text-muted-foreground" />
+                </div>
+                <CardTitle className="text-lg mb-1 truncate">{workflow.name}</CardTitle>
+              </div>
+              <CardDescription className="line-clamp-2 ml-6">{workflow.description}</CardDescription>
+            </div>
+            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+              <Switch
+                checked={workflow.isEnabled}
+                onCheckedChange={() => handleToggleWorkflow(workflow)}
+                data-testid={`switch-workflow-${workflow.id}`}
+              />
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <Badge variant="outline" className="flex items-center gap-1">
+                <TriggerIcon className="h-3 w-3" />
+                {triggerConfig?.label}
+              </Badge>
+              <Badge variant={workflow.isEnabled ? "default" : "secondary"}>
+                {workflow.isEnabled ? 'Enabled' : 'Disabled'}
+              </Badge>
+            </div>
+            
+            {(workflow.assignedTeamId || (workflow as any).folderId) && (
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                {team && (
+                  <span className="flex items-center gap-1">
+                    <Users className="h-3 w-3" />
+                    {team.name}
+                  </span>
+                )}
+                {(workflow as any).folderId && (
+                  <span className="flex items-center gap-1">
+                    <Folder className="h-3 w-3" />
+                    {folders.find(f => f.id === (workflow as any).folderId)?.name}
+                  </span>
+                )}
+              </div>
+            )}
+
+            {workflow.lastRunAt && (
+              <div className="text-xs text-muted-foreground">
+                Last run: {new Date(workflow.lastRunAt).toLocaleDateString()}
+              </div>
+            )}
+          </div>
+        </CardContent>
+        <div className="px-6 py-3 border-t flex justify-between">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={(e) => {
+              e.stopPropagation();
+              executeWorkflowMutation.mutate(workflow.id);
+            }}
+            disabled={!workflow.isEnabled || workflow.triggerType !== 'manual'}
+            data-testid={`button-run-${workflow.id}`}
+          >
+            <Play className="h-3 w-3 mr-1" />
+            Run
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={(e) => {
+              e.stopPropagation();
+              setDeleteWorkflowId(workflow.id);
+            }}
+            className="text-destructive hover:text-destructive"
+            data-testid={`button-delete-${workflow.id}`}
+          >
+            <Trash2 className="h-4 w-4" />
+          </Button>
+        </div>
+      </Card>
+    );
+  };
+
   return (
+    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
     <div className="flex h-[calc(100vh-64px)] flex-col md:flex-row">
       {/* Desktop Sidebar */}
       <aside className="hidden md:flex w-64 border-r bg-muted/30 flex-col">
@@ -1060,154 +1229,36 @@ export default function AgentBuilder() {
               </CardContent>
             </Card>
           ) : (
-            <Card>
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead className="hidden sm:table-cell">Trigger</TableHead>
-                      <TableHead className="hidden md:table-cell">Status</TableHead>
-                      <TableHead className="hidden lg:table-cell">Last Run</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {workflows
-                      ?.filter((workflow) => {
-                        const matchesStatus = filterStatus === 'all' || 
-                          (filterStatus === 'enabled' && workflow.isEnabled) ||
-                          (filterStatus === 'disabled' && !workflow.isEnabled);
-                        
-                        const matchesTrigger = filterTriggerType === 'all' || 
-                          workflow.triggerType === filterTriggerType;
-                        
-                        let matchesTeam = true;
-                        if (selectedTeamId === -1) {
-                          matchesTeam = workflow.assignedTeamId === null || workflow.assignedTeamId === undefined;
-                        } else if (selectedTeamId !== null) {
-                          matchesTeam = workflow.assignedTeamId === selectedTeamId;
-                        }
-                        
-                        const matchesFolder = selectedFolderId === null || 
-                          (workflow as any).folderId === selectedFolderId;
-                        
-                        const matchesSearch = !searchQuery || 
-                          workflow.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                          workflow.description?.toLowerCase().includes(searchQuery.toLowerCase());
-                        
-                        return matchesStatus && matchesTrigger && matchesTeam && matchesFolder && matchesSearch;
-                      })
-                      .map((workflow) => {
-                        const triggerConfig = TRIGGER_TYPES[workflow.triggerType as keyof typeof TRIGGER_TYPES];
-                        const TriggerIcon = triggerConfig?.icon || Zap;
-                        
-                        return (
-                          <TableRow 
-                            key={workflow.id}
-                            className="cursor-pointer hover:bg-muted/50"
-                            onClick={() => {
-                              setLocation(`/agents/workflows/${workflow.id}/edit`);
-                            }}
-                            data-testid={`row-workflow-${workflow.id}`}
-                          >
-                            <TableCell>
-                              <div className="flex items-start gap-2 sm:gap-3">
-                                <div className="p-1.5 sm:p-2 rounded-lg bg-primary bg-opacity-10 shrink-0">
-                                  <TriggerIcon className="h-3 w-3 sm:h-4 sm:w-4 text-primary" />
-                                </div>
-                                <div className="min-w-0">
-                                  <div className="font-medium text-sm sm:text-base truncate">{workflow.name}</div>
-                                  {workflow.description && (
-                                    <div className="text-xs sm:text-sm text-muted-foreground mt-1 line-clamp-1">
-                                      {workflow.description}
-                                    </div>
-                                  )}
-                                  {/* Mobile: Show status inline */}
-                                  <div className="flex items-center gap-2 mt-2 md:hidden">
-                                    <Badge variant="outline" className="text-xs">
-                                      <TriggerIcon className="h-2 w-2 mr-1" />
-                                      {triggerConfig?.label}
-                                    </Badge>
-                                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
-                                      <Switch
-                                        checked={workflow.isEnabled}
-                                        onCheckedChange={() => handleToggleWorkflow(workflow)}
-                                        data-testid={`switch-workflow-${workflow.id}`}
-                                        className="scale-75"
-                                      />
-                                      <span className="text-xs text-muted-foreground">
-                                        {workflow.isEnabled ? 'On' : 'Off'}
-                                      </span>
-                                    </div>
-                                  </div>
-                                </div>
-                              </div>
-                            </TableCell>
-                            <TableCell className="hidden sm:table-cell">
-                              <Badge variant="outline" className="text-xs">
-                                <TriggerIcon className="h-3 w-3 mr-1" />
-                                {triggerConfig?.label}
-                              </Badge>
-                            </TableCell>
-                            <TableCell onClick={(e) => e.stopPropagation()} className="hidden md:table-cell">
-                              <div className="flex items-center gap-2">
-                                <Switch
-                                  checked={workflow.isEnabled}
-                                  onCheckedChange={() => handleToggleWorkflow(workflow)}
-                                  data-testid={`switch-workflow-${workflow.id}`}
-                                />
-                                <span className="text-sm text-muted-foreground">
-                                  {workflow.isEnabled ? 'Enabled' : 'Disabled'}
-                                </span>
-                              </div>
-                            </TableCell>
-                            <TableCell className="hidden lg:table-cell">
-                              {workflow.lastRunAt ? (
-                                <div className="text-sm">
-                                  {new Date(workflow.lastRunAt).toLocaleDateString()}
-                                  <div className="text-xs text-muted-foreground">
-                                    {new Date(workflow.lastRunAt).toLocaleTimeString()}
-                                  </div>
-                                </div>
-                              ) : (
-                                <span className="text-sm text-muted-foreground">Never</span>
-                              )}
-                            </TableCell>
-                            <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
-                              <div className="flex items-center justify-end gap-2">
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={() => {
-                                    setLocation(`/agents/workflows/${workflow.id}/edit`);
-                                  }}
-                                  data-testid={`button-view-${workflow.id}`}
-                                  className="h-8 w-8 p-0"
-                                >
-                                  <ChevronRight className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setDeleteWorkflowId(workflow.id);
-                                  }}
-                                  data-testid={`button-delete-${workflow.id}`}
-                                  className="h-8 w-8 p-0 text-destructive hover:text-destructive"
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        );
-                      })}
-                  </TableBody>
-                </Table>
-              </div>
-            </Card>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {workflows
+                ?.filter((workflow) => {
+                  const matchesStatus = filterStatus === 'all' || 
+                    (filterStatus === 'enabled' && workflow.isEnabled) ||
+                    (filterStatus === 'disabled' && !workflow.isEnabled);
+                  
+                  const matchesTrigger = filterTriggerType === 'all' || 
+                    workflow.triggerType === filterTriggerType;
+                  
+                  let matchesTeam = true;
+                  if (selectedTeamId === -1) {
+                    matchesTeam = workflow.assignedTeamId === null || workflow.assignedTeamId === undefined;
+                  } else if (selectedTeamId !== null) {
+                    matchesTeam = workflow.assignedTeamId === selectedTeamId;
+                  }
+                  
+                  const matchesFolder = selectedFolderId === null || 
+                    (workflow as any).folderId === selectedFolderId;
+                  
+                  const matchesSearch = !searchQuery || 
+                    workflow.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    workflow.description?.toLowerCase().includes(searchQuery.toLowerCase());
+                  
+                  return matchesStatus && matchesTrigger && matchesTeam && matchesFolder && matchesSearch;
+                })
+                .map((workflow) => (
+                  <DraggableWorkflowCard key={workflow.id} workflow={workflow} />
+                ))}
+            </div>
           )}
         </TabsContent>
 
@@ -1388,6 +1439,17 @@ export default function AgentBuilder() {
           </DialogContent>
         </Dialog>
       </main>
+      
+      <DragOverlay>
+        {activeWorkflow && (
+          <Card className="w-64 shadow-lg opacity-90">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm truncate">{activeWorkflow.name}</CardTitle>
+            </CardHeader>
+          </Card>
+        )}
+      </DragOverlay>
     </div>
+    </DndContext>
   );
 }
