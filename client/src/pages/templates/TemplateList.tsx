@@ -328,9 +328,6 @@ export default function TemplateList() {
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h1 className="text-2xl font-bold mb-1">Workflow Templates</h1>
-                <p className="text-sm text-muted-foreground">
-                  Create and manage workflow templates for work items, field tasks, and processes
-                </p>
               </div>
               <Button 
                 onClick={() => navigate('/templates/workflows/new/edit')}
