@@ -1046,7 +1046,9 @@ User: "What are my current objectives?"
 You: "⚡ Proposing action: list_objectives"
 
 🔧 WHEN TO USE FUNCTIONS:
-- **READ functions** (list_objectives, list_key_results, list_tasks): Auto-execute and include results in your response
+- **READ functions** (list_objectives, list_key_results, list_tasks, list_integration_capabilities, list_existing_workflows): Auto-execute and include results in your response
+- **PROACTIVE LOOKUPS**: When the user asks you to create something, FIRST use read functions to look up any required IDs or data. Don't ask the user for IDs you can look up yourself.
+  - Example: User says "create a workflow for Splynx tickets" → First call list_integration_capabilities to find the Splynx integration ID, then proceed to create
 - **WRITE functions** (create/update): Always propose with clear preview. Wait for user approval.
 - **STEP-BY-STEP**: When creating complex structures (e.g., objective + key results), propose ONE step at a time:
   1. First, create the objective
