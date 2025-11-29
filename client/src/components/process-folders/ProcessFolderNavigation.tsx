@@ -141,7 +141,8 @@ export function ProcessFolderNavigation({
   const teamsWithContent = teams.filter(team => {
     const hasTemplates = templates.some(t => t.teamId === team.id);
     const hasFolders = folders.some(folder => folder.teamId === team.id);
-    return hasTemplates || hasFolders;
+    const hasItems = items.some(item => item.teamId === team.id);
+    return hasTemplates || hasFolders || hasItems;
   });
 
   const getFoldersForTeam = (teamId: number | null) => 
@@ -594,7 +595,7 @@ export function ProcessFolderNavigation({
         ))}
       </div>
 
-      {teamsWithContent.length === 0 && templates.length === 0 && (
+      {teamsWithContent.length === 0 && templates.length === 0 && items.length === 0 && (
         <div className="px-3 py-4 text-center text-sm text-muted-foreground">
           No teams with content yet.
         </div>
