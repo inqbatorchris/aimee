@@ -31,6 +31,8 @@ export default function OrganizationSettings() {
   const [country, setCountry] = useState("");
   const [logoPreview, setLogoPreview] = useState("");
   const [squareLogoPreview, setSquareLogoPreview] = useState("");
+  const [darkLogoPreview, setDarkLogoPreview] = useState("");
+  const [darkSquareLogoPreview, setDarkSquareLogoPreview] = useState("");
 
   // Fetch organization data
   const { data: orgData, isLoading } = useQuery<any>({
@@ -61,6 +63,14 @@ export default function OrganizationSettings() {
       
       if (org.squareLogoUrl) {
         setSquareLogoPreview(org.squareLogoUrl);
+      }
+      
+      if (org.darkLogoUrl) {
+        setDarkLogoPreview(org.darkLogoUrl);
+      }
+      
+      if (org.darkSquareLogoUrl) {
+        setDarkSquareLogoPreview(org.darkSquareLogoUrl);
       }
     }
   }, [orgData]);
@@ -233,6 +243,138 @@ export default function OrganizationSettings() {
       const reader = new FileReader();
       reader.onloadend = () => {
         setSquareLogoPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Dark logo upload mutation
+  const darkLogoUploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append('darkLogo', file);
+      
+      const token = localStorage.getItem('authToken');
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`/api/organizations/${orgId}/dark-logo`, {
+        method: 'POST',
+        body: formData,
+        headers,
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to upload dark logo');
+      }
+      
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setDarkLogoPreview(data.organization.darkLogoUrl);
+      queryClient.invalidateQueries({ queryKey: [`/api/organizations/${orgId}`] });
+      toast({
+        title: "Success",
+        description: "Dark mode logo uploaded successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to upload dark mode logo",
+        variant: "destructive",
+      });
+    }
+  });
+
+  // Dark square logo upload mutation
+  const darkSquareLogoUploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append('darkSquareLogo', file);
+      
+      const token = localStorage.getItem('authToken');
+      const headers: Record<string, string> = {};
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+      
+      const response = await fetch(`/api/organizations/${orgId}/dark-square-logo`, {
+        method: 'POST',
+        body: formData,
+        headers,
+        credentials: 'include',
+      });
+      
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.error || 'Failed to upload dark square logo');
+      }
+      
+      return response.json();
+    },
+    onSuccess: (data) => {
+      setDarkSquareLogoPreview(data.organization.darkSquareLogoUrl);
+      queryClient.invalidateQueries({ queryKey: [`/api/organizations/${orgId}`] });
+      toast({
+        title: "Success",
+        description: "Dark mode square logo uploaded successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Error",
+        description: error.message || "Failed to upload dark mode square logo",
+        variant: "destructive",
+      });
+    }
+  });
+
+  // Handle dark logo file selection
+  const handleDarkLogoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        toast({
+          title: "File too large",
+          description: "Logo must be less than 2MB",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      darkLogoUploadMutation.mutate(file);
+      
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setDarkLogoPreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Handle dark square logo file selection
+  const handleDarkSquareLogoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        toast({
+          title: "File too large",
+          description: "Square logo must be less than 2MB",
+          variant: "destructive",
+        });
+        return;
+      }
+      
+      darkSquareLogoUploadMutation.mutate(file);
+      
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setDarkSquareLogoPreview(reader.result as string);
       };
       reader.readAsDataURL(file);
     }
@@ -492,6 +634,129 @@ export default function OrganizationSettings() {
                       onClick={() => setSquareLogoPreview("")}
                     >
                       Remove Square Logo
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Dark Mode Logos Card */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Dark Mode Logos</CardTitle>
+            <CardDescription>
+              Upload separate logos for dark mode (optional - falls back to main logos if not set)
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Dark Mode Main Logo */}
+            <div>
+              <Label className="text-base font-medium">Dark Mode Main Logo</Label>
+              <p className="text-sm text-muted-foreground mb-3">Used in headers when dark mode is active</p>
+              <div className="flex items-center gap-4">
+                <div className="w-24 h-24 border-2 border-dashed rounded-lg flex items-center justify-center bg-zinc-900 overflow-hidden">
+                  {darkLogoPreview ? (
+                    <img 
+                      src={darkLogoPreview} 
+                      alt="Dark mode logo"
+                      className="w-full h-full object-contain"
+                    />
+                  ) : (
+                    <Upload className="h-8 w-8 text-zinc-500" />
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg,image/svg+xml"
+                    onChange={handleDarkLogoSelect}
+                    className="hidden"
+                    id="dark-logo-upload"
+                  />
+                  <label htmlFor="dark-logo-upload">
+                    <Button 
+                      variant="outline" 
+                      asChild
+                      disabled={darkLogoUploadMutation.isPending}
+                    >
+                      <span className="cursor-pointer">
+                        {darkLogoUploadMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Upload className="h-4 w-4 mr-2" />
+                        )}
+                        Choose File
+                      </span>
+                    </Button>
+                  </label>
+                  <p className="text-sm text-muted-foreground">
+                    PNG, JPG or SVG. Max size 2MB.
+                  </p>
+                  {darkLogoPreview && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => setDarkLogoPreview("")}
+                    >
+                      Remove Dark Logo
+                    </Button>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Dark Mode Square Logo */}
+            <div>
+              <Label className="text-base font-medium">Dark Mode Square Logo</Label>
+              <p className="text-sm text-muted-foreground mb-3">Used in collapsed menu when dark mode is active</p>
+              <div className="flex items-center gap-4">
+                <div className="w-24 h-24 border-2 border-dashed rounded-lg flex items-center justify-center bg-zinc-900 overflow-hidden">
+                  {darkSquareLogoPreview ? (
+                    <img 
+                      src={darkSquareLogoPreview} 
+                      alt="Dark mode square logo"
+                      className="w-full h-full object-contain"
+                    />
+                  ) : (
+                    <Upload className="h-8 w-8 text-zinc-500" />
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg,image/svg+xml"
+                    onChange={handleDarkSquareLogoSelect}
+                    className="hidden"
+                    id="dark-square-logo-upload"
+                  />
+                  <label htmlFor="dark-square-logo-upload">
+                    <Button 
+                      variant="outline" 
+                      asChild
+                      disabled={darkSquareLogoUploadMutation.isPending}
+                    >
+                      <span className="cursor-pointer">
+                        {darkSquareLogoUploadMutation.isPending ? (
+                          <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                        ) : (
+                          <Upload className="h-4 w-4 mr-2" />
+                        )}
+                        Choose File
+                      </span>
+                    </Button>
+                  </label>
+                  <p className="text-sm text-muted-foreground">
+                    PNG, JPG or SVG. Max size 2MB. Square format recommended.
+                  </p>
+                  {darkSquareLogoPreview && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm"
+                      onClick={() => setDarkSquareLogoPreview("")}
+                    >
+                      Remove Dark Square Logo
                     </Button>
                   )}
                 </div>

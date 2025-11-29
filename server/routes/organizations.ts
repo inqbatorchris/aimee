@@ -311,6 +311,122 @@ router.post('/:id/square-logo', authenticateToken, upload.single('squareLogo'), 
   }
 });
 
+// Upload dark mode logo
+router.post('/:id/dark-logo', authenticateToken, upload.single('darkLogo'), async (req: any, res) => {
+  try {
+    const orgId = parseInt(req.params.id);
+    
+    // Check permission
+    if (req.user.role !== 'super_admin' && 
+        (req.user.organizationId !== orgId || req.user.role !== 'admin')) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    
+    // Generate URL for uploaded file - use dark-logo prefix
+    const oldPath = req.file.path;
+    const newFilename = req.file.filename.replace(/^logo-/, 'dark-logo-');
+    const newPath = `uploads/logos/${newFilename}`;
+    
+    try {
+      fs.renameSync(oldPath, newPath);
+    } catch (renameError) {
+      console.error('Error renaming dark logo file:', renameError);
+    }
+    
+    // Update organization with dark logo URL
+    const organization = await storage.updateOrganization(orgId, {
+      darkLogoUrl: `/uploads/logos/${newFilename}`
+    });
+    
+    if (!organization) {
+      try {
+        fs.unlinkSync(newPath);
+      } catch (e) {
+        try {
+          fs.unlinkSync(oldPath);
+        } catch (e2) {
+          console.error('Error deleting uploaded file:', e2);
+        }
+      }
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+    
+    res.json({ organization });
+  } catch (error) {
+    console.error('Error uploading dark logo:', error);
+    if (req.file) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (e) {
+        console.error('Error deleting uploaded file:', e);
+      }
+    }
+    res.status(500).json({ error: 'Failed to upload dark logo' });
+  }
+});
+
+// Upload dark mode square logo
+router.post('/:id/dark-square-logo', authenticateToken, upload.single('darkSquareLogo'), async (req: any, res) => {
+  try {
+    const orgId = parseInt(req.params.id);
+    
+    // Check permission
+    if (req.user.role !== 'super_admin' && 
+        (req.user.organizationId !== orgId || req.user.role !== 'admin')) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No file uploaded' });
+    }
+    
+    // Generate URL for uploaded file - use dark-square-logo prefix
+    const oldPath = req.file.path;
+    const newFilename = req.file.filename.replace(/^logo-/, 'dark-square-logo-');
+    const newPath = `uploads/logos/${newFilename}`;
+    
+    try {
+      fs.renameSync(oldPath, newPath);
+    } catch (renameError) {
+      console.error('Error renaming dark square logo file:', renameError);
+    }
+    
+    // Update organization with dark square logo URL
+    const organization = await storage.updateOrganization(orgId, {
+      darkSquareLogoUrl: `/uploads/logos/${newFilename}`
+    });
+    
+    if (!organization) {
+      try {
+        fs.unlinkSync(newPath);
+      } catch (e) {
+        try {
+          fs.unlinkSync(oldPath);
+        } catch (e2) {
+          console.error('Error deleting uploaded file:', e2);
+        }
+      }
+      return res.status(404).json({ error: 'Organization not found' });
+    }
+    
+    res.json({ organization });
+  } catch (error) {
+    console.error('Error uploading dark square logo:', error);
+    if (req.file) {
+      try {
+        fs.unlinkSync(req.file.path);
+      } catch (e) {
+        console.error('Error deleting uploaded file:', e);
+      }
+    }
+    res.status(500).json({ error: 'Failed to upload dark square logo' });
+  }
+});
+
 // Delete organization (super admin only)
 router.delete('/:id', authenticateToken, async (req: any, res) => {
   try {

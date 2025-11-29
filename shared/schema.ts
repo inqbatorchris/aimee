@@ -189,6 +189,8 @@ export const organizations = pgTable("organizations", {
   // Organization metadata
   logoUrl: varchar("logo_url", { length: 500 }),
   squareLogoUrl: varchar("square_logo_url", { length: 500 }),
+  darkLogoUrl: varchar("dark_logo_url", { length: 500 }),
+  darkSquareLogoUrl: varchar("dark_square_logo_url", { length: 500 }),
   contactEmail: varchar("contact_email", { length: 255 }),
   contactPhone: varchar("contact_phone", { length: 50 }),
   address: jsonb("address"), // {street, city, state, zipCode, country}
