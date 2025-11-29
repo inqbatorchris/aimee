@@ -129,19 +129,17 @@ export default function TemplateList() {
     let newTeamId: number | null = null;
     let newFolderId: number | null = null;
     
-    if (overId.startsWith('team-')) {
+    if (overId === 'folder-root') {
+      newFolderId = null;
+      newTeamId = null;
+    } else if (overId.startsWith('team-')) {
       newTeamId = parseInt(overId.replace('team-', ''));
       newFolderId = null;
     } else if (overId.startsWith('folder-')) {
       const folderId = overId.replace('folder-', '');
-      if (folderId === 'root') {
-        newFolderId = null;
-        newTeamId = null;
-      } else {
-        newFolderId = parseInt(folderId);
-        const folder = folders.find(f => f.id === newFolderId);
-        newTeamId = folder?.teamId ?? null;
-      }
+      newFolderId = parseInt(folderId);
+      const folder = folders.find(f => f.id === newFolderId);
+      newTeamId = folder?.teamId ?? null;
     }
     
     updateTemplateMutation.mutate({
@@ -151,14 +149,14 @@ export default function TemplateList() {
   };
 
   const filteredTemplates = templates?.filter(template => {
-    if (selectedFolderId === -1) {
-      if (template.folderId !== null && template.folderId !== undefined) {
+    if (selectedTeamId === -1) {
+      if (template.teamId !== null && template.teamId !== undefined) {
         return false;
       }
-    } else if (selectedFolderId !== null && template.folderId !== selectedFolderId) {
+    } else if (selectedTeamId !== null && template.teamId !== selectedTeamId) {
       return false;
     }
-    if (selectedTeamId !== null && template.teamId !== selectedTeamId) {
+    if (selectedFolderId !== null && template.folderId !== selectedFolderId) {
       return false;
     }
     if (searchQuery) {
@@ -319,6 +317,8 @@ export default function TemplateList() {
               showTeamFilter={true}
               isDragging={!!activeTemplate}
               items={templates?.map(t => ({ teamId: t.teamId, folderId: t.folderId })) || []}
+              templates={templates?.map(t => ({ id: t.id, name: t.name, teamId: t.teamId, folderId: t.folderId })) || []}
+              onTemplateSelect={(id) => navigate(`/templates/workflows/${id}/edit`)}
             />
           </ScrollArea>
         </aside>

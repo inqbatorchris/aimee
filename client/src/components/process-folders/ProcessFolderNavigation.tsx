@@ -64,6 +64,13 @@ interface ProcessFolder {
   updatedAt: Date;
 }
 
+interface TemplateItem {
+  id: string;
+  name: string;
+  teamId?: number | null;
+  folderId?: number | null;
+}
+
 interface ProcessFolderNavigationProps {
   folderType: 'agents' | 'templates' | 'shared';
   selectedFolderId: number | null;
@@ -75,6 +82,8 @@ interface ProcessFolderNavigationProps {
   isDragging?: boolean;
   allItemsLabel?: string;
   items?: { teamId?: number | null; folderId?: number | null }[];
+  templates?: TemplateItem[];
+  onTemplateSelect?: (templateId: string) => void;
 }
 
 export function ProcessFolderNavigation({ 
@@ -87,7 +96,9 @@ export function ProcessFolderNavigation({
   className, 
   isDragging = false,
   allItemsLabel = "All Items",
-  items = []
+  items = [],
+  templates = [],
+  onTemplateSelect
 }: ProcessFolderNavigationProps) {
   const { currentUser } = useAuth();
   const { toast } = useToast();
@@ -128,16 +139,25 @@ export function ProcessFolderNavigation({
   };
 
   const teamsWithContent = teams.filter(team => {
-    const hasItems = items.some(item => item.teamId === team.id);
+    const hasTemplates = templates.some(t => t.teamId === team.id);
     const hasFolders = folders.some(folder => folder.teamId === team.id);
-    return hasItems || hasFolders;
+    return hasTemplates || hasFolders;
   });
 
   const getFoldersForTeam = (teamId: number | null) => 
     folders.filter(f => f.teamId === teamId && !f.parentId);
 
+  const getTemplatesForTeam = (teamId: number) => 
+    templates.filter(t => t.teamId === teamId && !t.folderId);
+
+  const getTemplatesForFolder = (folderId: number) => 
+    templates.filter(t => t.folderId === folderId);
+
   const getUnassignedFolders = () => 
     folders.filter(f => !f.teamId && !f.parentId);
+
+  const getUnassignedTemplates = () => 
+    templates.filter(t => !t.teamId && !t.folderId);
 
   const createFolderMutation = useMutation({
     mutationFn: async (data: { name: string; description?: string; parentId: number | null; teamId: number | null; folderType: string }) => {
@@ -405,7 +425,7 @@ export function ProcessFolderNavigation({
       >
         <Library className={cn("h-4 w-4", isOver ? "text-primary" : "text-muted-foreground")} />
         <span className={cn("text-sm", isOver ? "text-primary font-medium" : "text-muted-foreground")}>
-          {isOver ? "Drop to remove from folder" : "Drop here for no folder"}
+          {isOver ? "Drop to remove from team" : "Drop here to unassign"}
         </span>
       </div>
     );
@@ -421,10 +441,28 @@ export function ProcessFolderNavigation({
     );
   }
 
+  const TemplateTreeItem = ({ template, depth = 0 }: { template: TemplateItem; depth?: number }) => {
+    return (
+      <div
+        className={cn(
+          "flex items-center gap-2 px-2 py-1 rounded-md cursor-pointer transition-colors hover:bg-muted text-muted-foreground"
+        )}
+        style={{ paddingLeft: `${8 + depth * 12}px` }}
+        onClick={() => onTemplateSelect?.(template.id)}
+        data-testid={`template-tree-item-${template.id}`}
+      >
+        <Workflow className="h-3.5 w-3.5 flex-shrink-0" />
+        <span className="text-xs truncate">{template.name}</span>
+      </div>
+    );
+  };
+
   const DroppableTeamItem = ({ team }: { team: Team }) => {
     const teamFolders = getFoldersForTeam(team.id);
+    const teamTemplates = getTemplatesForTeam(team.id);
     const isExpanded = expandedTeams.has(team.id);
     const isSelected = selectedTeamId === team.id && selectedFolderId === null;
+    const hasChildren = teamFolders.length > 0 || teamTemplates.length > 0;
     
     const { isOver, setNodeRef } = useDroppable({
       id: `team-${team.id}`,
@@ -442,19 +480,23 @@ export function ProcessFolderNavigation({
           )}
           data-testid={`team-item-${team.id}`}
         >
-          <button
-            onClick={(e) => {
-              e.stopPropagation();
-              toggleTeam(team.id);
-            }}
-            className="p-0.5 hover:bg-muted-foreground/10 rounded"
-          >
-            {isExpanded ? (
-              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
-            ) : (
-              <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
-            )}
-          </button>
+          {hasChildren ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleTeam(team.id);
+              }}
+              className="p-0.5 hover:bg-muted-foreground/10 rounded"
+            >
+              {isExpanded ? (
+                <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+              )}
+            </button>
+          ) : (
+            <span className="w-5" />
+          )}
 
           <div
             className="flex-1 flex items-center gap-2 min-w-0"
@@ -477,7 +519,6 @@ export function ProcessFolderNavigation({
               className="h-6 w-6 opacity-0 group-hover:opacity-100"
               onClick={(e) => {
                 e.stopPropagation();
-                setNewFolderTeamId(team.id);
                 resetForm();
                 setNewFolderTeamId(team.id);
                 setShowCreateDialog(true);
@@ -488,10 +529,13 @@ export function ProcessFolderNavigation({
           )}
         </div>
 
-        {isExpanded && (
+        {isExpanded && hasChildren && (
           <div className="ml-4">
             {teamFolders.map((folder) => (
               <DroppableFolderItem key={folder.id} folder={folder} depth={1} />
+            ))}
+            {teamTemplates.map((template) => (
+              <TemplateTreeItem key={template.id} template={template} depth={1} />
             ))}
           </div>
         )}
@@ -500,6 +544,7 @@ export function ProcessFolderNavigation({
   };
 
   const unassignedFolders = getUnassignedFolders();
+  const unassignedTemplates = getUnassignedTemplates();
 
   return (
     <div className={cn("", className)}>
@@ -531,40 +576,27 @@ export function ProcessFolderNavigation({
       <div
         className={cn(
           "flex items-center gap-2 px-3 py-1.5 rounded-md cursor-pointer transition-colors mb-1",
-          selectedFolderId === -1 && selectedTeamId === null ? "bg-primary/10 text-primary" : "hover:bg-muted"
+          selectedTeamId === -1 ? "bg-primary/10 text-primary" : "hover:bg-muted"
         )}
         onClick={() => {
-          onFolderSelect(-1);
-          onTeamSelect?.(null);
+          onTeamSelect?.(-1);
+          onFolderSelect(null);
         }}
-        data-testid="no-folder-item"
+        data-testid="no-team-item"
       >
         <Library className="h-4 w-4" />
-        <span className="text-sm">No folder</span>
+        <span className="text-sm">No team</span>
       </div>
 
       <div className="space-y-0.5">
         {teamsWithContent.map((team) => (
           <DroppableTeamItem key={team.id} team={team} />
         ))}
-        
-        {unassignedFolders.length > 0 && (
-          <>
-            {teamsWithContent.length > 0 && (
-              <div className="px-2 py-1.5">
-                <span className="text-xs text-muted-foreground">Unassigned</span>
-              </div>
-            )}
-            {unassignedFolders.map((folder) => (
-              <DroppableFolderItem key={folder.id} folder={folder} />
-            ))}
-          </>
-        )}
       </div>
 
-      {teamsWithContent.length === 0 && folders.length === 0 && (
+      {teamsWithContent.length === 0 && templates.length === 0 && (
         <div className="px-3 py-4 text-center text-sm text-muted-foreground">
-          No teams or folders yet.
+          No teams with content yet.
         </div>
       )}
 
