@@ -678,11 +678,19 @@ router.post('/sessions/:sessionId/messages', async (req: any, res) => {
     }
 
     // ✅ FIX: Generate preview if AI made function call but provided no content
+    // Only generate "proposing action" preview for WRITE functions
+    // Read functions auto-execute, so they don't need a proposal preview
     let messageContent = assistantMessage.content || '';
     if (!messageContent && assistantMessage.function_call) {
       const functionName = assistantMessage.function_call.name;
       const functionArgs = JSON.parse(assistantMessage.function_call.arguments);
-      messageContent = generateActionPreview(functionName, functionArgs);
+      const isReadOnly = readOnlyFunctions.includes(functionName);
+      if (isReadOnly) {
+        // For read functions, show a "looking up" message instead of "proposing"
+        messageContent = `🔍 Looking up ${functionName.replace(/_/g, ' ')}...`;
+      } else {
+        messageContent = generateActionPreview(functionName, functionArgs);
+      }
     }
 
     const aiMessageData: InsertAIChatMessage = {
