@@ -1893,11 +1893,15 @@ export class WorkflowExecutor {
       
       // Context enrichment: Fetch customer data from Splynx
       let customerContextStr = '';
-      const contextSources = (config.contextSources as string[]) || ['customer_info', 'ticket_history', 'account_balance', 'connection_status'];
+      // Use step-level contextSources config if available, otherwise fall back to global config
+      const contextSources = (step.config?.contextSources as string[]) 
+        || (config.contextSources as string[]) 
+        || ['customer_info', 'ticket_history', 'account_balance', 'connection_status'];
       
-      // Extract customer ID from work item metadata
+      // Extract customer ID from step config, work item metadata, or trigger
       const workflowMetadata = workItem.workflowMetadata as any;
-      const splynxCustomerId = workflowMetadata?.splynx_customer_id 
+      const splynxCustomerId = step.config?.splynxCustomerId
+        || workflowMetadata?.splynx_customer_id 
         || workflowMetadata?.customerId 
         || context.trigger?.customer_id
         || context.webhookData?.data?.customer_id;

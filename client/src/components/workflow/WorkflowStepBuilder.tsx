@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
@@ -1706,6 +1707,14 @@ export default function WorkflowStepBuilder({
         );
 
       case 'ai_draft_response':
+        const contextSources = step.config.contextSources || ['customer_info', 'ticket_history', 'account_balance', 'connection_status'];
+        const CONTEXT_SOURCE_OPTIONS = [
+          { id: 'customer_info', label: 'Customer Information', description: 'Name, status, plan, contact details from Splynx' },
+          { id: 'ticket_history', label: 'Ticket History', description: 'Last 4 support tickets for context' },
+          { id: 'account_balance', label: 'Account Balance', description: 'Balance status, payment history' },
+          { id: 'connection_status', label: 'Connection Status', description: 'Service status, speed, IP address' },
+        ];
+        
         return (
           <div className="space-y-4">
             <div className="p-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-md">
@@ -1736,6 +1745,82 @@ export default function WorkflowStepBuilder({
               />
               <p className="text-xs text-muted-foreground mt-1">
                 Leave empty to automatically use the most recent work item created in a previous step. Or specify explicitly using {'{{stepNOutput.workItemId}}'}.
+              </p>
+            </div>
+
+            <div>
+              <Label>Customer ID from Splynx (Optional)</Label>
+              <VariableFieldPicker
+                value={step.config.splynxCustomerId || ''}
+                onChange={(value) => updateStep(step.id, {
+                  config: { ...step.config, splynxCustomerId: value }
+                })}
+                placeholder="e.g., {{trigger.customer_id}}"
+                availableFields={getAvailableFields()}
+                variablePrefix="trigger"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Splynx customer ID for context enrichment. Use {'{{trigger.customer_id}}'} from webhook.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <Label>Context Sources (Splynx)</Label>
+              <p className="text-xs text-muted-foreground">
+                Select which customer data from Splynx to include when generating AI responses.
+              </p>
+              <div className="space-y-2">
+                {CONTEXT_SOURCE_OPTIONS.map((source) => {
+                  const isChecked = contextSources.includes(source.id);
+                  return (
+                    <div
+                      key={source.id}
+                      className="flex flex-row items-start space-x-3 space-y-0 rounded-md p-3 hover:bg-accent cursor-pointer border"
+                      onClick={() => {
+                        const currentSources = step.config.contextSources || ['customer_info', 'ticket_history', 'account_balance', 'connection_status'];
+                        if (currentSources.includes(source.id)) {
+                          updateStep(step.id, {
+                            config: { ...step.config, contextSources: currentSources.filter((s: string) => s !== source.id) }
+                          });
+                        } else {
+                          updateStep(step.id, {
+                            config: { ...step.config, contextSources: [...currentSources, source.id] }
+                          });
+                        }
+                      }}
+                      data-testid={`checkbox-context-${source.id}`}
+                    >
+                      <Checkbox
+                        checked={isChecked}
+                        onCheckedChange={(checked) => {
+                          const currentSources = step.config.contextSources || ['customer_info', 'ticket_history', 'account_balance', 'connection_status'];
+                          if (checked) {
+                            if (!currentSources.includes(source.id)) {
+                              updateStep(step.id, {
+                                config: { ...step.config, contextSources: [...currentSources, source.id] }
+                              });
+                            }
+                          } else {
+                            updateStep(step.id, {
+                              config: { ...step.config, contextSources: currentSources.filter((s: string) => s !== source.id) }
+                            });
+                          }
+                        }}
+                      />
+                      <div className="flex-1 space-y-1 leading-none">
+                        <span className="text-sm font-medium cursor-pointer">
+                          {source.label}
+                        </span>
+                        <p className="text-xs text-muted-foreground">
+                          {source.description}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                {contextSources.length} context source{contextSources.length !== 1 ? 's' : ''} enabled
               </p>
             </div>
           </div>
