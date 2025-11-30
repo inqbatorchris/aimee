@@ -24,6 +24,7 @@ import {
   Calendar,
   ChevronRight,
   Plus,
+  Bot,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 
@@ -95,6 +96,8 @@ export function KeyResultActivityTab({ keyResultId }: KeyResultActivityTabProps)
         return <Clock className="h-4 w-4 text-orange-600" />;
       case 'assigned':
         return <User className="h-4 w-4 text-blue-600" />;
+      case 'agent_action':
+        return <Bot className="h-4 w-4 text-indigo-600" />;
       default:
         return <Activity className="h-4 w-4 text-gray-600" />;
     }
@@ -109,9 +112,9 @@ export function KeyResultActivityTab({ keyResultId }: KeyResultActivityTabProps)
       case 'updated':
         return `${userName} updated the key result details`;
       case 'progress_updated':
-        const oldValue = activity.metadata?.oldValue || 0;
-        const newValue = activity.metadata?.newValue || 0;
-        return `${userName} updated progress from ${oldValue} to ${newValue}`;
+        const oldVal = activity.metadata?.oldValue || 0;
+        const newVal = activity.metadata?.newValue || 0;
+        return `${userName} updated progress from ${oldVal} to ${newVal}`;
       case 'task_created':
         return `${userName} created task "${activity.task?.title || 'Untitled'}"`;
       case 'task_completed':
@@ -120,6 +123,14 @@ export function KeyResultActivityTab({ keyResultId }: KeyResultActivityTabProps)
         return `${userName} changed status from ${activity.metadata?.oldStatus || 'unknown'} to ${activity.metadata?.newStatus || 'unknown'}`;
       case 'assigned':
         return `${userName} assigned ${activity.metadata?.assigneeName || 'someone'} to "${activity.task?.title || 'this task'}"`;
+      case 'agent_action':
+        const agentOldValue = activity.metadata?.oldValue || '0';
+        const agentNewValue = activity.metadata?.newValue || '0';
+        const updateType = activity.metadata?.updateType || 'set';
+        if (updateType === 'increment') {
+          return `${userName} incremented value to ${agentNewValue}`;
+        }
+        return `${userName} updated value from ${agentOldValue} to ${agentNewValue}`;
       default:
         return `${userName} performed ${activity.action}`;
     }
@@ -153,11 +164,11 @@ export function KeyResultActivityTab({ keyResultId }: KeyResultActivityTabProps)
   );
 
   return (
-    <div className="p-4 space-y-4 w-full max-w-full overflow-hidden">
+    <div className="p-2 space-y-2 w-full max-w-full overflow-hidden">
       {/* Header with filters */}
-      <div className="p-4 sm:p-6 border-b space-y-4 pt-[4px] pb-[4px] pl-[4px] pr-[4px]">
+      <div className="p-2 border-b space-y-2">
         <div className="flex items-center justify-between">
-          <h3 className="font-medium text-[14px]">Activity Timeline</h3>
+          <h3 className="font-medium text-sm">Activity Timeline</h3>
           <Badge variant="secondary" className="text-xs">
             {activities.length} {activities.length === 1 ? 'activity' : 'activities'}
           </Badge>
@@ -165,7 +176,7 @@ export function KeyResultActivityTab({ keyResultId }: KeyResultActivityTabProps)
 
         <div className="flex gap-2">
           <Select value={filterType} onValueChange={setFilterType}>
-            <SelectTrigger className="w-full sm:w-[160px] h-9">
+            <SelectTrigger className="w-full sm:w-[160px] h-8 text-xs">
               <Filter className="h-3 w-3 mr-1" />
               <SelectValue />
             </SelectTrigger>
@@ -177,7 +188,7 @@ export function KeyResultActivityTab({ keyResultId }: KeyResultActivityTabProps)
             </SelectContent>
           </Select>
           <Select value={sortOrder} onValueChange={setSortOrder}>
-            <SelectTrigger className="w-full sm:w-[140px] h-9">
+            <SelectTrigger className="w-full sm:w-[120px] h-8 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
@@ -188,80 +199,81 @@ export function KeyResultActivityTab({ keyResultId }: KeyResultActivityTabProps)
         </div>
       </div>
       {/* Activity List */}
-      <div className="flex-1 overflow-y-auto p-4 sm:p-6 pl-[10px] pr-[10px] pt-[4px] pb-[4px] mt-[0px] mb-[0px]">
+      <div className="flex-1 overflow-y-auto px-1 py-2">
         {isLoading ? (
-          <div className="text-center py-12 text-muted-foreground">
+          <div className="text-center py-6 text-muted-foreground text-sm">
             Loading activity history...
           </div>
         ) : filteredActivities.length === 0 ? (
-          <div className="text-center py-12">
-            <Activity className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-            <p className="text-muted-foreground">
+          <div className="text-center py-6">
+            <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-muted mb-3">
+              <Activity className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <p className="text-sm text-muted-foreground">
               {filterType !== 'all' 
                 ? 'No activities found for the selected filter.' 
                 : 'No activity recorded yet.'}
             </p>
+            <p className="text-xs text-muted-foreground mt-1">
+              Agent updates and manual changes will appear here.
+            </p>
           </div>
         ) : (
-          <div className="space-y-6">
+          <div className="space-y-4">
             {dateGroups.map((date) => (
               <div key={date}>
-                <div className="sticky top-0 bg-background z-10 pt-[0px] pb-[0px] text-[12px]">
+                <div className="sticky top-0 bg-background z-10 pb-1">
                   <p className="text-xs font-medium text-muted-foreground">
                     {format(new Date(date), 'EEEE, MMMM d, yyyy')}
                   </p>
                 </div>
-                <div className="space-y-3">
+                <div className="space-y-2">
                   {groupedActivities[date].map((activity: ActivityLog) => (
-                    <Card key={activity.id} className="rounded-lg border bg-card text-card-foreground shadow-sm p-4 pl-[4px] pr-[4px] pt-[4px] pb-[4px]">
-                      <div className="flex gap-3">
+                    <Card key={activity.id} className="rounded-md border bg-card text-card-foreground shadow-sm p-2">
+                      <div className="flex gap-2">
                         <div className="flex-shrink-0">
-                          <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center">
+                          <div className="h-7 w-7 rounded-full bg-muted flex items-center justify-center">
                             {getActivityIcon(activity)}
                           </div>
                         </div>
-                        <div className="flex-1 space-y-2">
+                        <div className="flex-1 min-w-0 space-y-1">
                           <div className="flex items-start justify-between gap-2">
-                            <div className="flex-1">
-                              <p className="font-medium mt-[0px] mb-[0px] text-[12px]">
-                                {getActivityTitle(activity)}
-                              </p>
-                              {activity.notes && (
-                                <p className="text-xs text-muted-foreground mt-[0px] mb-[0px]">
-                                  {activity.notes}
-                                </p>
-                              )}
-                            </div>
-                            <Badge className={`${getActivityColor(activity)} text-xs px-2 py-0`}>
+                            <p className="font-medium text-xs leading-tight">
+                              {getActivityTitle(activity)}
+                            </p>
+                            <Badge className={`${getActivityColor(activity)} text-[10px] px-1.5 py-0 shrink-0`}>
                               {activity.entityType.replace('_', ' ')}
                             </Badge>
                           </div>
                           
-                          <div className="flex items-center gap-3 text-xs text-muted-foreground">
-                            <div className="flex items-center gap-1">
+                          {activity.notes && (
+                            <p className="text-xs text-muted-foreground">
+                              {activity.notes}
+                            </p>
+                          )}
+                          
+                          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                            <span className="flex items-center gap-1">
                               <Clock className="h-3 w-3" />
-                              <span>
-                                {formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}
-                              </span>
-                            </div>
+                              {formatDistanceToNow(new Date(activity.createdAt), { addSuffix: true })}
+                            </span>
                             {activity.user && (
-                              <div className="flex items-center gap-1">
-                                <Avatar className="h-4 w-4">
-                                  <AvatarFallback className="text-xs">
+                              <span className="flex items-center gap-1">
+                                <Avatar className="h-3.5 w-3.5">
+                                  <AvatarFallback className="text-[8px]">
                                     {activity.user.fullName.charAt(0)}
                                   </AvatarFallback>
                                 </Avatar>
-                                <span>{activity.user.fullName}</span>
-                              </div>
+                                {activity.user.fullName}
+                              </span>
                             )}
                           </div>
 
-                          {/* Additional metadata */}
-                          {activity.metadata && Object.keys(activity.metadata).length > 0 && (
-                            <div className="mt-2 p-2 bg-muted rounded-md">
-                              <pre className="text-xs overflow-x-auto">
-                                {JSON.stringify(activity.metadata, null, 2)}
-                              </pre>
+                          {/* Show workflow info for agent actions */}
+                          {activity.action === 'agent_action' && activity.metadata?.workflowName && (
+                            <div className="flex items-center gap-1 text-[10px] text-indigo-600 dark:text-indigo-400">
+                              <Bot className="h-3 w-3" />
+                              <span>via {activity.metadata.workflowName}</span>
                             </div>
                           )}
                         </div>
