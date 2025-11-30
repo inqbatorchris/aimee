@@ -1228,8 +1228,8 @@ export default function WorkItemPanel({
                             {log.description}
                           </p>
                           {log.metadata && Object.keys(log.metadata).length > 0 && (
-                            <div className="mt-2 p-2 bg-gray-50 rounded text-xs">
-                              <pre className="whitespace-pre-wrap">{JSON.stringify(log.metadata, null, 2)}</pre>
+                            <div className="mt-2 p-2 bg-muted rounded text-xs">
+                              <pre className="whitespace-pre-wrap text-muted-foreground">{JSON.stringify(log.metadata, null, 2)}</pre>
                             </div>
                           )}
                         </div>
@@ -1275,7 +1275,7 @@ export default function WorkItemPanel({
                           showAttachButton={false}
                         />
                       ) : (
-                        <div className="text-center py-8 text-muted-foreground border rounded-lg bg-gray-50/50">
+                        <div className="text-center py-8 text-muted-foreground border rounded-lg bg-muted/50">
                           <FileText className="h-8 w-8 mx-auto mb-3 text-muted-foreground/50" />
                           <p className="text-sm">No direct attachments</p>
                           <p className="text-xs mt-1">
