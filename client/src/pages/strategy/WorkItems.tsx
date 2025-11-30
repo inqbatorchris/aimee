@@ -77,12 +77,12 @@ function formatInOrgTz(dateISO: string | Date, fmt: Intl.DateTimeFormatOptions =
 }
 
 const STATUS_OPTIONS = [
-  { value: 'Planning', label: 'Planning', color: 'bg-gray-100 text-gray-700' },
-  { value: 'Ready', label: 'Ready', color: 'bg-blue-100 text-blue-700' },
-  { value: 'In Progress', label: 'In Progress', color: 'bg-yellow-100 text-yellow-700' },
-  { value: 'Stuck', label: 'Stuck', color: 'bg-red-100 text-red-700' },
-  { value: 'Completed', label: 'Completed', color: 'bg-green-100 text-green-700' },
-  { value: 'Archived', label: 'Archived', color: 'bg-gray-100 text-gray-500' },
+  { value: 'Planning', label: 'Planning', color: 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300' },
+  { value: 'Ready', label: 'Ready', color: 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300' },
+  { value: 'In Progress', label: 'In Progress', color: 'bg-yellow-100 dark:bg-yellow-900/50 text-yellow-700 dark:text-yellow-300' },
+  { value: 'Stuck', label: 'Stuck', color: 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-300' },
+  { value: 'Completed', label: 'Completed', color: 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-300' },
+  { value: 'Archived', label: 'Archived', color: 'bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400' },
 ];
 
 // Component to fetch and display workflow progress for a work item
@@ -93,7 +93,7 @@ function WorkflowProgressCell({ workItemId }: { workItemId: number }) {
   });
 
   if (steps.length === 0) {
-    return <span className="text-[10px] text-gray-400">—</span>;
+    return <span className="text-[10px] text-muted-foreground">—</span>;
   }
 
   const completedSteps = steps.filter(s => s.status === 'completed').length;
@@ -709,7 +709,7 @@ export default function WorkItems(props: WorkItemsProps = {}) {
   
   const getStatusBadge = (status: string) => {
     const option = STATUS_OPTIONS.find(opt => opt.value === status);
-    return option ? option.color : 'bg-gray-100 text-gray-700';
+    return option ? option.color : 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300';
   };
   
   const getOriginChip = (item: WorkItem) => {
@@ -761,7 +761,7 @@ export default function WorkItems(props: WorkItemsProps = {}) {
     
     return (
       <TableHead 
-        className={`text-[11px] text-gray-600 font-normal py-1 px-1 border-r border-gray-100 cursor-pointer hover:bg-gray-100 select-none ${className}`}
+        className={`text-[11px] text-muted-foreground font-normal py-1 px-1 border-r border-border cursor-pointer hover:bg-muted select-none ${className}`}
         onClick={() => handleSort(column)}
       >
         <div className="flex items-center gap-1">
@@ -775,14 +775,14 @@ export default function WorkItems(props: WorkItemsProps = {}) {
   };
   
   return (
-    <div className="flex flex-col h-full bg-white">
+    <div className="flex flex-col h-full bg-background">
       <div className="flex justify-center">
         <div className="w-full max-w-7xl">
           {/* Header */}
           <div className="px-3 py-1 pt-8">
             <div className="mb-1">
               <h1 className="mt-[10px] mb-[10px] text-[14px] font-bold">Work Items</h1>
-              <p className="text-xs text-gray-500">Manage tasks and deliverables</p>
+              <p className="text-xs text-muted-foreground">Manage tasks and deliverables</p>
             </div>
 
             {/* Filter Bar */}
@@ -792,7 +792,7 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                 <DropdownMenuTrigger asChild>
                   <Button 
                     variant="ghost" 
-                    className="flex sm:hidden h-6 px-2 py-0 text-[11px] font-normal hover:bg-gray-100 items-center gap-1"
+                    className="flex sm:hidden h-6 px-2 py-0 text-[11px] font-normal hover:bg-muted items-center gap-1"
                   >
                     <Filter className="h-3 w-3" />
                     <span>Filters</span>
@@ -950,7 +950,7 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                 {/* Status Filter Dropdown */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="h-6 px-2 py-0 text-[11px] font-normal hover:bg-gray-100 flex items-center gap-1">
+                    <Button variant="ghost" className="h-6 px-2 py-0 text-[11px] font-normal hover:bg-muted flex items-center gap-1">
                       <Filter className="h-3 w-3" />
                       <span>Status {filters.status && filters.status.length > 0 ? `(${filters.status.length})` : ''}</span>
                       <ChevronDown className="h-3 w-3" />
@@ -1771,7 +1771,7 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <span className="text-xs text-gray-600">
+                <span className="text-xs text-muted-foreground">
                   Page {currentPage} of {totalPages}
                 </span>
                 <Button
