@@ -1687,6 +1687,33 @@ export class WorkflowExecutor {
           workflowMetadata: Object.keys(workflowMetadata).length > 0 ? workflowMetadata : existingWorkItem.workflowMetadata,
         });
         console.log(`[WorkflowExecutor]   ✅ Work item updated: ID ${workItem.id}`);
+        
+        // Log activity for work item update
+        try {
+          const agentName = context.assignedUserName || 'Automation Agent';
+          const workflowName = context.workflowName || 'Workflow';
+          await db.insert(activityLogs).values({
+            organizationId: parseInt(organizationId),
+            userId: context.assignedUserId || null,
+            actionType: 'agent_action',
+            entityType: 'work_item',
+            entityId: workItem.id,
+            description: `${agentName} updated work item via ${workflowName}`,
+            metadata: {
+              title: processedTitle,
+              oldTitle: existingWorkItem.title,
+              status: status,
+              oldStatus: existingWorkItem.status,
+              triggerSource: context.triggerSource || 'workflow',
+              workflowId: context.workflowId,
+              workflowName: context.workflowName,
+              runId: context.runId
+            }
+          });
+          console.log(`[WorkflowExecutor]   📝 Activity logged for work item update: ID ${workItem.id}`);
+        } catch (logError: any) {
+          console.error(`[WorkflowExecutor]   ⚠️ Failed to log activity for work item update:`, logError.message);
+        }
       } else {
         // Create the work item
         workItem = await storage.createWorkItem({
@@ -1706,6 +1733,34 @@ export class WorkflowExecutor {
           console.log(`[WorkflowExecutor]   📋 Attached workflow template: ${templateId}`);
         }
         console.log(`[WorkflowExecutor]   ✅ Work item created: ID ${workItem.id}`);
+        
+        // Log activity for work item creation
+        try {
+          const agentName = context.assignedUserName || 'Automation Agent';
+          const workflowName = context.workflowName || 'Workflow';
+          await db.insert(activityLogs).values({
+            organizationId: parseInt(organizationId),
+            userId: context.assignedUserId || null,
+            actionType: 'creation',
+            entityType: 'work_item',
+            entityId: workItem.id,
+            description: `${agentName} created work item via ${workflowName}`,
+            metadata: {
+              title: processedTitle,
+              status: status,
+              assignedTo: finalAssigneeId,
+              templateId: templateId,
+              splynxTicketId: processedSplynxTicketId,
+              triggerSource: context.triggerSource || 'workflow',
+              workflowId: context.workflowId,
+              workflowName: context.workflowName,
+              runId: context.runId
+            }
+          });
+          console.log(`[WorkflowExecutor]   📝 Activity logged for work item creation: ID ${workItem.id}`);
+        } catch (logError: any) {
+          console.error(`[WorkflowExecutor]   ⚠️ Failed to log activity for work item creation:`, logError.message);
+        }
       }
       
       return {
