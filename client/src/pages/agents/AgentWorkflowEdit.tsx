@@ -238,27 +238,29 @@ export default function AgentWorkflowEdit() {
       {/* Header */}
       <div className="border-b bg-card">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-4">
               <Button
                 variant="ghost"
                 size="icon"
                 onClick={handleCancel}
                 data-testid="button-back"
+                className="shrink-0"
               >
                 <ArrowLeft className="h-4 w-4" />
               </Button>
-              <div>
-                <h1 className="text-2xl font-bold">Edit Agent Workflow</h1>
-                <p className="text-muted-foreground">Configure your automated workflow</p>
+              <div className="min-w-0">
+                <h1 className="text-xl md:text-2xl font-bold truncate">Edit Agent Workflow</h1>
+                <p className="text-sm text-muted-foreground truncate">Configure your automated workflow</p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap md:flex-nowrap">
               <Button
                 variant="outline"
                 onClick={() => runMutation.mutate()}
                 disabled={runMutation.isPending || !enabled}
                 data-testid="button-run"
+                className="flex-1 md:flex-none"
               >
                 <Play className="h-4 w-4 mr-2" />
                 Run Now
@@ -267,6 +269,7 @@ export default function AgentWorkflowEdit() {
                 variant="outline"
                 onClick={handleCancel}
                 data-testid="button-cancel"
+                className="flex-1 md:flex-none"
               >
                 Cancel
               </Button>
@@ -274,9 +277,10 @@ export default function AgentWorkflowEdit() {
                 onClick={handleSave}
                 disabled={updateMutation.isPending}
                 data-testid="button-save"
+                className="flex-1 md:flex-none"
               >
                 <Save className="h-4 w-4 mr-2" />
-                Save Changes
+                Save
               </Button>
             </div>
           </div>
