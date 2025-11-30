@@ -730,12 +730,16 @@ export class WorkflowExecutor {
         const userId = context.assignedUserId || null;
         const orgId = parseInt(context.organizationId);
         
-        if (!isNaN(orgId)) {
+        console.log(`[WorkflowExecutor] 📝 Preparing activity log: orgId=${orgId}, userId=${userId}, organizationId raw=${context.organizationId}`);
+        
+        if (!isNaN(orgId) && orgId > 0) {
           try {
             // Create description in format: "AgentName performed WorkflowName"
             const agentName = context.assignedUserName || 'Unknown Agent';
             const workflowName = context.workflowName || 'Workflow';
             const description = `${agentName} performed ${workflowName}`;
+            
+            console.log(`[WorkflowExecutor] 📝 Creating activity log: description="${description}", entityId=${processedTargetId}`);
             
             await db.insert(activityLogs).values({
               organizationId: orgId,
@@ -755,11 +759,20 @@ export class WorkflowExecutor {
                 runId: context.runId
               }
             });
-            console.log(`[WorkflowExecutor] ✓ Activity log created for key result ${processedTargetId}: "${description}"`);
-          } catch (error) {
-            console.error('[WorkflowExecutor] Failed to log activity:', error);
+            console.log(`[WorkflowExecutor] ✅ Activity log created successfully for key result ${processedTargetId}: "${description}"`);
+          } catch (error: any) {
+            console.error('[WorkflowExecutor] ❌ Failed to create activity log:', {
+              error: error.message,
+              stack: error.stack,
+              orgId,
+              userId,
+              targetId: processedTargetId,
+              workflowName: context.workflowName
+            });
             // Don't throw - activity log failure shouldn't break the workflow
           }
+        } else {
+          console.warn(`[WorkflowExecutor] ⚠️ Skipping activity log creation: Invalid organizationId (orgId=${orgId}, raw=${context.organizationId})`);
         }
       } else if (type === 'objective') {
         // Get the objective details before updating (for activity log)
@@ -818,11 +831,15 @@ export class WorkflowExecutor {
         const userId = context.assignedUserId || null;
         const orgId = parseInt(context.organizationId);
         
-        if (!isNaN(orgId)) {
+        console.log(`[WorkflowExecutor] 📝 Preparing activity log for objective: orgId=${orgId}, userId=${userId}, organizationId raw=${context.organizationId}`);
+        
+        if (!isNaN(orgId) && orgId > 0) {
           try {
             const agentName = context.assignedUserName || 'Unknown Agent';
             const workflowName = context.workflowName || 'Workflow';
             const description = `${agentName} performed ${workflowName}`;
+            
+            console.log(`[WorkflowExecutor] 📝 Creating activity log for objective: description="${description}", entityId=${processedTargetId}`);
             
             await db.insert(activityLogs).values({
               organizationId: orgId,
@@ -842,11 +859,20 @@ export class WorkflowExecutor {
                 runId: context.runId
               }
             });
-            console.log(`[WorkflowExecutor] ✓ Activity log created for objective ${processedTargetId}: "${description}"`);
-          } catch (error) {
-            console.error('[WorkflowExecutor] Failed to log objective activity:', error);
+            console.log(`[WorkflowExecutor] ✅ Activity log created successfully for objective ${processedTargetId}: "${description}"`);
+          } catch (error: any) {
+            console.error('[WorkflowExecutor] ❌ Failed to create objective activity log:', {
+              error: error.message,
+              stack: error.stack,
+              orgId,
+              userId,
+              targetId: processedTargetId,
+              workflowName: context.workflowName
+            });
             // Don't throw - activity log failure shouldn't break the workflow
           }
+        } else {
+          console.warn(`[WorkflowExecutor] ⚠️ Skipping objective activity log creation: Invalid organizationId (orgId=${orgId}, raw=${context.organizationId})`);
         }
       }
       
