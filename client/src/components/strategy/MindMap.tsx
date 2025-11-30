@@ -717,7 +717,7 @@ function MindMapInner({ objectives, onNodeClick }: MindMapProps) {
     }) => {
       return apiRequest('/api/strategy/mindmap-positions', {
         method: 'POST',
-        body: JSON.stringify(data),
+        body: data,
       });
     },
     onSuccess: () => {
