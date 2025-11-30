@@ -39,11 +39,12 @@ interface ObjectiveActivityTabProps {
 export function ObjectiveActivityTab({ objectiveId }: ObjectiveActivityTabProps) {
   // Fetch activity for this objective
   const { data: activities = [], isLoading } = useQuery({
-    queryKey: [`/api/strategy/objectives/${objectiveId}/activity`],
+    queryKey: ['/api/strategy/objectives', objectiveId, 'activity'],
     queryFn: async () => {
       const response = await apiRequest(`/api/strategy/objectives/${objectiveId}/activity`);
       return response.json();
     },
+    enabled: Boolean(objectiveId),
   });
 
   const getActivityIcon = (type: string) => {
