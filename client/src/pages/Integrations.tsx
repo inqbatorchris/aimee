@@ -172,7 +172,7 @@ export default function Integrations() {
   ) as IntegrationType[];
 
   return (
-    <div className="container mx-auto py-4 px-4 max-w-6xl">
+    <div className="container mx-auto py-4 px-4 pb-24 md:pb-4 max-w-6xl">
       {/* Header */}
       <div className="mb-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
