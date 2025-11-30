@@ -88,7 +88,7 @@ export default function AITicketDraftingSetup() {
   });
 
   const { data: kbDocuments = [], isLoading: kbLoading } = useQuery<any[]>({
-    queryKey: ['/api/knowledge-base'],
+    queryKey: ['/api/knowledge-base/documents'],
   });
 
   const { data: objectives = [] } = useQuery<any[]>({
@@ -188,7 +188,7 @@ export default function AITicketDraftingSetup() {
         title: 'Document created',
         description: 'Knowledge base document has been created.',
       });
-      queryClient.invalidateQueries({ queryKey: ['/api/knowledge-base'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/knowledge-base/documents'] });
       setCreateDocOpen(false);
       setNewDocTitle("");
       setNewDocContent("");
@@ -551,10 +551,10 @@ export default function AITicketDraftingSetup() {
                         <FormLabel>Objective</FormLabel>
                         <Select
                           onValueChange={(value) => {
-                            field.onChange(value ? parseInt(value) : undefined);
+                            field.onChange(value === '__none__' ? undefined : parseInt(value));
                             form.setValue('keyResultIds', []);
                           }}
-                          value={field.value?.toString() || ''}
+                          value={field.value?.toString() || '__none__'}
                         >
                           <FormControl>
                             <SelectTrigger data-testid="select-objective">
@@ -562,7 +562,7 @@ export default function AITicketDraftingSetup() {
                             </SelectTrigger>
                           </FormControl>
                           <SelectContent>
-                            <SelectItem value="">None</SelectItem>
+                            <SelectItem value="__none__">None</SelectItem>
                             {objectives.map((obj) => (
                               <SelectItem key={obj.id} value={obj.id.toString()}>
                                 {obj.title}
