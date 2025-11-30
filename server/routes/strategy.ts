@@ -7,7 +7,7 @@ import { authenticateToken } from '../auth.js';
 import { ensureTeamMeetings } from '../utils/meetingGenerator.js';
 import { eq, and, gte, lte, desc, inArray, notInArray, gt, asc, isNull, or, sql } from 'drizzle-orm';
 import { db } from '../db.js';
-import { checkInMeetings, teams, workItems, teamMembers, meetingAttendees, updateMeetingStatusSchema, keyResultTasks, objectives, keyResults, activityLogs, keyResultSnapshots, keyResultComments, users } from '../../shared/schema.js';
+import { checkInMeetings, teams, workItems, teamMembers, meetingAttendees, updateMeetingStatusSchema, keyResultTasks, objectives, keyResults, activityLogs, keyResultSnapshots, keyResultComments, users, mindMapNodePositions } from '../../shared/schema.js';
 import type { User } from '../../shared/schema.js';
 
 const router = Router();
@@ -3446,6 +3446,162 @@ router.get('/my-day', authenticateToken, async (req: AuthRequest, res: Response)
   } catch (error) {
     console.error('Error fetching My Day data:', error);
     res.status(500).json({ error: 'Failed to fetch My Day data' });
+  }
+});
+
+// ========================================
+// MIND MAP NODE POSITIONS ENDPOINTS
+// ========================================
+
+// Schema for saving node positions
+const saveNodePositionsSchema = z.object({
+  positions: z.array(z.object({
+    nodeId: z.string().min(1).max(100),
+    nodeType: z.string().min(1).max(50),
+    positionX: z.number(),
+    positionY: z.number(),
+  })),
+  viewport: z.object({
+    x: z.number(),
+    y: z.number(),
+    zoom: z.number(),
+  }).optional(),
+});
+
+// Get saved mind map positions for current user
+router.get('/mindmap-positions', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    const userId = req.user?.id;
+    
+    if (!organizationId || !userId) {
+      return res.status(400).json({ error: 'Authentication required' });
+    }
+    
+    const positions = await db.select()
+      .from(mindMapNodePositions)
+      .where(and(
+        eq(mindMapNodePositions.organizationId, organizationId),
+        eq(mindMapNodePositions.userId, userId)
+      ));
+    
+    // Extract viewport from mission node if present
+    const missionNode = positions.find(p => p.nodeId === 'mission');
+    const viewport = missionNode ? {
+      x: parseFloat(missionNode.viewportX || '0'),
+      y: parseFloat(missionNode.viewportY || '0'),
+      zoom: parseFloat(missionNode.viewportZoom || '1'),
+    } : null;
+    
+    res.json({
+      positions: positions.map(p => ({
+        nodeId: p.nodeId,
+        nodeType: p.nodeType,
+        positionX: parseFloat(p.positionX),
+        positionY: parseFloat(p.positionY),
+      })),
+      viewport,
+    });
+  } catch (error) {
+    console.error('Error fetching mind map positions:', error);
+    res.status(500).json({ error: 'Failed to fetch mind map positions' });
+  }
+});
+
+// Save mind map positions for current user (bulk upsert)
+router.post('/mindmap-positions', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    const userId = req.user?.id;
+    
+    if (!organizationId || !userId) {
+      return res.status(400).json({ error: 'Authentication required' });
+    }
+    
+    const data = saveNodePositionsSchema.parse(req.body);
+    
+    // Use upsert for each position
+    for (const pos of data.positions) {
+      const existingPosition = await db.select()
+        .from(mindMapNodePositions)
+        .where(and(
+          eq(mindMapNodePositions.organizationId, organizationId),
+          eq(mindMapNodePositions.userId, userId),
+          eq(mindMapNodePositions.nodeId, pos.nodeId)
+        ))
+        .limit(1);
+      
+      if (existingPosition.length > 0) {
+        // Update existing position
+        const updateData: any = {
+          nodeType: pos.nodeType,
+          positionX: pos.positionX.toString(),
+          positionY: pos.positionY.toString(),
+          updatedAt: new Date(),
+        };
+        
+        // Only update viewport on mission node
+        if (pos.nodeId === 'mission' && data.viewport) {
+          updateData.viewportX = data.viewport.x.toString();
+          updateData.viewportY = data.viewport.y.toString();
+          updateData.viewportZoom = data.viewport.zoom.toString();
+        }
+        
+        await db.update(mindMapNodePositions)
+          .set(updateData)
+          .where(eq(mindMapNodePositions.id, existingPosition[0].id));
+      } else {
+        // Insert new position
+        const insertData: any = {
+          organizationId,
+          userId,
+          nodeId: pos.nodeId,
+          nodeType: pos.nodeType,
+          positionX: pos.positionX.toString(),
+          positionY: pos.positionY.toString(),
+        };
+        
+        // Only set viewport on mission node
+        if (pos.nodeId === 'mission' && data.viewport) {
+          insertData.viewportX = data.viewport.x.toString();
+          insertData.viewportY = data.viewport.y.toString();
+          insertData.viewportZoom = data.viewport.zoom.toString();
+        }
+        
+        await db.insert(mindMapNodePositions).values(insertData);
+      }
+    }
+    
+    res.json({ success: true, saved: data.positions.length });
+  } catch (error) {
+    console.error('Error saving mind map positions:', error);
+    if (error instanceof z.ZodError) {
+      return res.status(400).json({ error: 'Invalid data', details: error.errors });
+    }
+    res.status(500).json({ error: 'Failed to save mind map positions' });
+  }
+});
+
+// Clear all mind map positions for current user (reset layout)
+router.delete('/mindmap-positions', authenticateToken, async (req: AuthRequest, res: Response) => {
+  try {
+    const organizationId = req.user?.organizationId;
+    const userId = req.user?.id;
+    
+    if (!organizationId || !userId) {
+      return res.status(400).json({ error: 'Authentication required' });
+    }
+    
+    await db.delete(mindMapNodePositions)
+      .where(and(
+        eq(mindMapNodePositions.organizationId, organizationId),
+        eq(mindMapNodePositions.userId, userId)
+      ));
+    
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error clearing mind map positions:', error);
+    res.status(500).json({ error: 'Failed to clear mind map positions' });
   }
 });
 
