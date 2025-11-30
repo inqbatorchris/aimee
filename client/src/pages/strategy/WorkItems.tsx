@@ -981,7 +981,7 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                 {/* Assignee Filter */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="h-6 px-2 py-0 text-[11px] font-normal hover:bg-gray-100 flex items-center gap-1">
+                    <Button variant="ghost" className="h-6 px-2 py-0 text-[11px] font-normal hover:bg-muted flex items-center gap-1">
                       <User className="h-3 w-3" />
                       <span>{filters.assigneeId ? users.find(u => u.id === filters.assigneeId)?.fullName || 'Assignee' : 'All Assignees'}</span>
                       <ChevronDown className="h-3 w-3" />
@@ -1007,7 +1007,7 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                 {/* Team Filter */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="h-6 px-2 py-0 text-[11px] font-normal hover:bg-gray-100 flex items-center gap-1">
+                    <Button variant="ghost" className="h-6 px-2 py-0 text-[11px] font-normal hover:bg-muted flex items-center gap-1">
                       <Users className="h-3 w-3" />
                       <span>{filters.teamId ? teams.find(t => t.id === filters.teamId)?.name || 'Team' : 'All Teams'}</span>
                       <ChevronDown className="h-3 w-3" />
@@ -1033,7 +1033,7 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                 {/* Workflow Template Filter */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="h-6 px-2 py-0 text-[11px] font-normal hover:bg-gray-100 flex items-center gap-1" data-testid="button-filter-workflow">
+                    <Button variant="ghost" className="h-6 px-2 py-0 text-[11px] font-normal hover:bg-muted flex items-center gap-1" data-testid="button-filter-workflow">
                       <FileText className="h-3 w-3" />
                       <span>
                         {filters.workflowTemplateId === 'none' 
@@ -1075,7 +1075,7 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                 {/* Due Date Filter */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="h-6 px-2 py-0 text-[11px] font-normal hover:bg-gray-100 flex items-center gap-1">
+                    <Button variant="ghost" className="h-6 px-2 py-0 text-[11px] font-normal hover:bg-muted flex items-center gap-1">
                       <Calendar className="h-3 w-3" />
                       <span>{filters.dueFrom || filters.dueTo ? 'Due Date' : 'All Dates'}</span>
                       <ChevronDown className="h-3 w-3" />
@@ -1123,7 +1123,7 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                 {/* Column Selector */}
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" className="h-6 px-2 py-0 text-[11px] font-normal hover:bg-gray-100 flex items-center gap-1">
+                    <Button variant="ghost" className="h-6 px-2 py-0 text-[11px] font-normal hover:bg-muted flex items-center gap-1">
                       <Settings2 className="h-3 w-3" />
                       <span>Columns</span>
                       <ChevronDown className="h-3 w-3" />
@@ -1352,7 +1352,7 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                 variant="outline"
                 size="sm"
                 onClick={() => setBulkDeleteConfirmation(true)}
-                className="border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700"
+                className="border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 hover:text-red-700 dark:hover:text-red-300"
                 data-testid="button-bulk-delete"
               >
                 Delete ({selectedItems.size})
@@ -1363,16 +1363,16 @@ export default function WorkItems(props: WorkItemsProps = {}) {
       )}
       {/* Table */}
       <div className="flex-1 flex justify-center">
-        <div className="w-full max-w-7xl border-t border-gray-200 flex flex-col h-full">
+        <div className="w-full max-w-7xl border-t border-border flex flex-col h-full">
         {isLoading ? (
           <div className="flex items-center justify-center h-64">
-            <div className="text-gray-500">Loading work items...</div>
+            <div className="text-muted-foreground">Loading work items...</div>
           </div>
         ) : workItems.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-64 bg-white rounded-lg">
-            <FileText className="h-12 w-12 text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium mb-2">No work items found</h3>
-            <p className="text-gray-500 mb-4">Start by creating your first work item</p>
+          <div className="flex flex-col items-center justify-center h-64 bg-background rounded-lg">
+            <FileText className="h-12 w-12 text-muted-foreground mb-4" />
+            <h3 className="text-lg font-medium text-foreground mb-2">No work items found</h3>
+            <p className="text-muted-foreground mb-4">Start by creating your first work item</p>
             <Button onClick={() => openPanel('create')}>
               <Plus className="h-4 w-4 mr-2" />
               Create First Work Item
@@ -1383,9 +1383,9 @@ export default function WorkItems(props: WorkItemsProps = {}) {
           {/* Desktop Table View - Hidden on mobile */}
           <div className="hidden sm:flex flex-1 overflow-auto">
             <Table className="border-collapse">
-            <TableHeader className="sticky top-0 bg-white z-10">
-              <TableRow className="border-b border-gray-200 bg-gray-50">
-                <TableHead className="text-[11px] text-gray-600 font-normal py-1 px-1 w-12 border-r border-gray-100">
+            <TableHeader className="sticky top-0 bg-background z-10">
+              <TableRow className="border-b border-border bg-muted/50">
+                <TableHead className="text-[11px] text-muted-foreground font-normal py-1 px-1 w-12 border-r border-border">
                   <Checkbox
                     checked={workItems.length > 0 && selectedItems.size === workItems.length}
                     onCheckedChange={handleSelectAll}
@@ -1396,11 +1396,11 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                 {visibleColumns.status && <SortableHeader column="status" className="w-[100px]">Status</SortableHeader>}
                 {visibleColumns.due && <SortableHeader column="dueDate" className="w-[100px]">Due</SortableHeader>}
                 {visibleColumns.assignee && <SortableHeader column="assignee" className="w-[120px]">Assignee</SortableHeader>}
-                {visibleColumns.origin && <TableHead className="text-[11px] text-gray-600 font-normal py-1 px-1 w-[80px] border-r border-gray-100">Origin</TableHead>}
+                {visibleColumns.origin && <TableHead className="text-[11px] text-muted-foreground font-normal py-1 px-1 w-[80px] border-r border-border">Origin</TableHead>}
                 {visibleColumns.team && <SortableHeader column="team" className="w-[100px]">Team</SortableHeader>}
                 {visibleColumns.checkin && <SortableHeader column="checkin" className="w-[100px]">Check-in</SortableHeader>}
-                {visibleColumns.progress && <TableHead className="text-[11px] text-gray-600 font-normal py-1 px-1 w-[140px] border-r border-gray-100">Progress</TableHead>}
-                {visibleColumns.files && <TableHead className="text-[11px] text-gray-600 font-normal py-1 px-1 w-[80px] text-center border-r border-gray-100">Files</TableHead>}
+                {visibleColumns.progress && <TableHead className="text-[11px] text-muted-foreground font-normal py-1 px-1 w-[140px] border-r border-border">Progress</TableHead>}
+                {visibleColumns.files && <TableHead className="text-[11px] text-muted-foreground font-normal py-1 px-1 w-[80px] text-center border-r border-border">Files</TableHead>}
                 {visibleColumns.updated && <SortableHeader column="updated" className="w-[100px]">Updated</SortableHeader>}
                 <TableHead className="w-6 py-1 px-1"></TableHead>
               </TableRow>
@@ -1409,20 +1409,20 @@ export default function WorkItems(props: WorkItemsProps = {}) {
               {paginatedWorkItems.map((item) => (
                 <TableRow
                   key={item.id}
-                  className="hover:bg-gray-50/30 border-b border-gray-100 h-5"
+                  className="hover:bg-muted/30 border-b border-border h-5"
                   onClick={() => openPanel('view', item.id)}
                   data-testid={`work-item-row-${item.id}`}
                 >
-                  <TableCell className="py-0 px-1 border-r border-gray-100 text-center" onClick={(e) => e.stopPropagation()}>
+                  <TableCell className="py-0 px-1 border-r border-border text-center" onClick={(e) => e.stopPropagation()}>
                     <Checkbox
                       checked={selectedItems.has(item.id)}
                       onCheckedChange={(checked) => handleSelectItem(item.id, checked as boolean)}
                       className="scale-75"
                     />
                   </TableCell>
-                  <TableCell className="py-0 px-2 border-r border-gray-100">
+                  <TableCell className="py-0 px-2 border-r border-border">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium leading-tight truncate flex-1">
+                      <span className="text-sm font-medium leading-tight truncate flex-1 text-foreground">
                         {item.title}
                       </span>
                       <DocumentIndicator 
@@ -1435,7 +1435,7 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                     </div>
                   </TableCell>
                   {visibleColumns.status && (
-                  <TableCell className="py-0 px-1 border-r border-gray-100">
+                  <TableCell className="py-0 px-1 border-r border-border">
                     {editingField?.itemId === item.id && editingField.field === 'status' ? (
                           <Select
                             value={tempValue}
@@ -1472,7 +1472,7 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                   </TableCell>
                   )}
                   {visibleColumns.due && (
-                  <TableCell className="py-0 px-1 border-r border-gray-100">
+                  <TableCell className="py-0 px-1 border-r border-border">
                     {editingField?.itemId === item.id && editingField.field === 'dueDate' ? (
                           <Input
                             type="date"
@@ -1511,9 +1511,9 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                   </TableCell>
                   )}
                   {visibleColumns.assignee && (
-                  <TableCell className="py-0.5 px-2 border-r border-gray-100">
+                  <TableCell className="py-0.5 px-2 border-r border-border">
                     {item.assignee ? (
-                      <span className="inline-block px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-medium whitespace-nowrap">
+                      <span className="inline-block px-2 py-0.5 rounded-full bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-[10px] font-medium whitespace-nowrap">
                         {item.assignee.fullName || item.assignee.email}
                       </span>
                     ) : (
@@ -1522,10 +1522,10 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                   </TableCell>
                   )}
                   {visibleColumns.origin && (
-                  <TableCell className="py-0.5 px-2 border-r border-gray-100">{getOriginChip(item)}</TableCell>
+                  <TableCell className="py-0.5 px-2 border-r border-border">{getOriginChip(item)}</TableCell>
                   )}
                   {visibleColumns.team && (
-                  <TableCell className="py-0 px-1 border-r border-gray-100">
+                  <TableCell className="py-0 px-1 border-r border-border">
                     {editingField?.itemId === item.id && editingField.field === 'team' ? (
                           <Select
                             value={tempValue}
@@ -1566,7 +1566,7 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                   </TableCell>
                   )}
                   {visibleColumns.checkin && (
-                  <TableCell className="py-0.5 px-2 border-r border-gray-100">
+                  <TableCell className="py-0.5 px-2 border-r border-border">
                     {item.targetMeeting ? (
                       <div className="flex items-center gap-1 text-[10px]">
                         <Calendar className="h-3 w-3" />
@@ -1578,7 +1578,7 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                   </TableCell>
                   )}
                   {visibleColumns.progress && (
-                  <TableCell className="py-0.5 px-2 border-r border-gray-100">
+                  <TableCell className="py-0.5 px-2 border-r border-border">
                     {item.workflowTemplateId ? (
                       <WorkflowProgressCell workItemId={item.id} />
                     ) : (
@@ -1587,7 +1587,7 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                   </TableCell>
                   )}
                   {visibleColumns.files && (
-                  <TableCell className="py-0.5 px-2 text-center border-r border-gray-100">
+                  <TableCell className="py-0.5 px-2 text-center border-r border-border">
                     {(item.attachments?.length ?? 0) > 0 ? (
                       <div className="flex items-center justify-center gap-1">
                         <FileText className="h-3 w-3" />
@@ -1599,7 +1599,7 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                   </TableCell>
                   )}
                   {visibleColumns.updated && (
-                  <TableCell className="py-0.5 px-2 border-r border-gray-100">
+                  <TableCell className="py-0.5 px-2 border-r border-border">
                     <span className="text-[10px] text-muted-foreground">
                       {format(new Date(item.updatedAt), 'MMM d, h:mm a')}
                     </span>
@@ -1643,7 +1643,7 @@ export default function WorkItems(props: WorkItemsProps = {}) {
             {paginatedWorkItems.map((item) => (
               <Card 
                 key={item.id} 
-                className="border border-gray-200 hover:border-gray-300 transition-colors cursor-pointer"
+                className="border border-border hover:border-muted-foreground/30 transition-colors cursor-pointer"
                 onClick={() => openPanel('view', item.id)}
                 data-testid={`work-item-card-${item.id}`}
               >
@@ -1694,28 +1694,28 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                         </Badge>
                         
                         {item.dueDate && (
-                          <div className="flex items-center gap-0.5 text-[10px] text-gray-600">
+                          <div className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
                             <Calendar className="h-2.5 w-2.5" />
                             <span>{format(new Date(item.dueDate), 'MMM d')}</span>
                           </div>
                         )}
                         
                         {item.assignee && (
-                          <div className="flex items-center gap-0.5 text-[10px] text-gray-600">
+                          <div className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
                             <User className="h-2.5 w-2.5" />
                             <span className="truncate max-w-[120px]">{item.assignee.fullName || item.assignee.email}</span>
                           </div>
                         )}
                         
                         {item.team && (
-                          <div className="flex items-center gap-0.5 text-[10px] text-gray-600">
+                          <div className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
                             <Users className="h-2.5 w-2.5" />
                             <span>{item.team.name}</span>
                           </div>
                         )}
                         
                         {(item.attachments?.length ?? 0) > 0 && (
-                          <div className="flex items-center gap-0.5 text-[10px] text-gray-600">
+                          <div className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
                             <FileText className="h-2.5 w-2.5" />
                             <span>{item.attachments?.length ?? 0}</span>
                           </div>
@@ -1723,7 +1723,7 @@ export default function WorkItems(props: WorkItemsProps = {}) {
                       </div>
                       
                       {item.workflowTemplateId && (
-                        <div className="mt-2 pt-2 border-t border-gray-100">
+                        <div className="mt-2 pt-2 border-t border-border">
                           <WorkflowProgressCell workItemId={item.id} />
                         </div>
                       )}
@@ -1736,8 +1736,8 @@ export default function WorkItems(props: WorkItemsProps = {}) {
           
           {/* Pagination Controls */}
           {workItems.length > 0 && (
-            <div className="px-3 py-3 border-t border-gray-200 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-2 text-xs text-gray-600">
+            <div className="px-3 py-3 border-t border-border flex items-center justify-between gap-4">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span>
                   Showing {startIndex + 1}-{endIndex} of {totalItems}
                 </span>
