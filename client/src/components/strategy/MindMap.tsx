@@ -17,7 +17,8 @@ import {
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation } from '@tanstack/react-query';
+import { apiRequest, queryClient } from '@/lib/queryClient';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
@@ -699,38 +700,90 @@ function MindMapInner({ objectives, onNodeClick }: MindMapProps) {
     layoutModeRef.current = layoutMode;
   }, [layoutMode]);
 
-  // LocalStorage helpers for persisting node positions
-  const saveNodePositions = useCallback((nodesToSave: Node[]) => {
-    try {
-      const positions: Record<string, { x: number; y: number }> = {};
-      nodesToSave.forEach(node => {
-        positions[node.id] = { x: node.position.x, y: node.position.y };
-      });
-      // Use ref to get current layout mode (not captured in closure)
-      const currentMode = layoutModeRef.current;
-      localStorage.setItem(`mindmap-positions-${currentMode}`, JSON.stringify(positions));
-    } catch (error) {
-      console.error('Failed to save node positions:', error);
-    }
-  }, []);
+  // Fetch saved positions from database
+  const { data: savedPositionsData } = useQuery<{
+    positions: Array<{ nodeId: string; nodeType: string; positionX: number; positionY: number }>;
+    viewport: { x: number; y: number; zoom: number } | null;
+  }>({
+    queryKey: ['/api/strategy/mindmap-positions'],
+    staleTime: 1000 * 60 * 5, // Cache for 5 minutes
+  });
 
+  // Mutation to save positions to database
+  const savePositionsMutation = useMutation({
+    mutationFn: async (data: {
+      positions: Array<{ nodeId: string; nodeType: string; positionX: number; positionY: number }>;
+      viewport?: { x: number; y: number; zoom: number };
+    }) => {
+      return apiRequest('/api/strategy/mindmap-positions', {
+        method: 'POST',
+        body: JSON.stringify(data),
+      });
+    },
+    onSuccess: () => {
+      // Invalidate positions cache to refetch
+      queryClient.invalidateQueries({ queryKey: ['/api/strategy/mindmap-positions'] });
+    },
+    onError: (error) => {
+      console.error('Failed to save node positions:', error);
+    },
+  });
+
+  // Save node positions to database with debounce
+  const savePositionsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const saveNodePositions = useCallback((nodesToSave: Node[]) => {
+    // Clear any pending save
+    if (savePositionsTimeoutRef.current) {
+      clearTimeout(savePositionsTimeoutRef.current);
+    }
+
+    // Debounce saves to avoid too many API calls
+    savePositionsTimeoutRef.current = setTimeout(() => {
+      const positions = nodesToSave.map(node => ({
+        nodeId: node.id,
+        nodeType: node.type || 'unknown',
+        positionX: node.position.x,
+        positionY: node.position.y,
+      }));
+
+      // Get current viewport
+      const viewport = reactFlowInstance.getViewport();
+
+      savePositionsMutation.mutate({
+        positions,
+        viewport: { x: viewport.x, y: viewport.y, zoom: viewport.zoom },
+      });
+    }, 500); // Debounce 500ms
+  }, [reactFlowInstance, savePositionsMutation]);
+
+  // Load positions from database cache
   const loadNodePositions = useCallback((): Record<string, { x: number; y: number }> | null => {
-    try {
-      const saved = localStorage.getItem(`mindmap-positions-${layoutMode}`);
-      return saved ? JSON.parse(saved) : null;
-    } catch (error) {
-      console.error('Failed to load node positions:', error);
+    if (!savedPositionsData?.positions || savedPositionsData.positions.length === 0) {
       return null;
     }
-  }, [layoutMode]);
+    
+    const positions: Record<string, { x: number; y: number }> = {};
+    savedPositionsData.positions.forEach(pos => {
+      positions[pos.nodeId] = { x: pos.positionX, y: pos.positionY };
+    });
+    return positions;
+  }, [savedPositionsData]);
+
+  // Clear positions (reset layout mutation)
+  const clearPositionsMutation = useMutation({
+    mutationFn: async () => {
+      return apiRequest('/api/strategy/mindmap-positions', {
+        method: 'DELETE',
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/strategy/mindmap-positions'] });
+    },
+  });
 
   const clearNodePositions = useCallback(() => {
-    try {
-      localStorage.removeItem(`mindmap-positions-${layoutMode}`);
-    } catch (error) {
-      console.error('Failed to clear node positions:', error);
-    }
-  }, [layoutMode]);
+    clearPositionsMutation.mutate();
+  }, [clearPositionsMutation]);
 
   // Custom onNodesChange handler to save positions when dragged
   const handleNodesChange = useCallback((changes: any) => {
@@ -803,7 +856,7 @@ function MindMapInner({ objectives, onNodeClick }: MindMapProps) {
     });
     
     setEdges(edgesWithHandles);
-  }, [layoutedNodes, initialEdges, layoutMode, nodes, setNodes, setEdges, loadNodePositions]);
+  }, [layoutedNodes, initialEdges, layoutMode, nodes, setNodes, setEdges, loadNodePositions, savedPositionsData]);
 
   const handleNodeClick = useCallback(
     (_event: any, node: Node) => {
@@ -829,7 +882,7 @@ function MindMapInner({ objectives, onNodeClick }: MindMapProps) {
   }, [nodes.length, reactFlowInstance]);
 
   return (
-    <div className={`${isFullscreen ? 'fixed inset-0 z-50' : 'relative w-full h-full'} bg-gray-50 border border-gray-200 rounded-lg`}>
+    <div className={`${isFullscreen ? 'fixed inset-0 z-50' : 'relative w-full h-full'} bg-background border border-border rounded-lg`}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -842,7 +895,7 @@ function MindMapInner({ objectives, onNodeClick }: MindMapProps) {
         nodesDraggable={true}
         minZoom={0.05}
         maxZoom={2}
-        className="bg-gray-50"
+        className="bg-background"
       >
         <Background />
         <Controls />
@@ -857,7 +910,7 @@ function MindMapInner({ objectives, onNodeClick }: MindMapProps) {
               default: return '#9ca3af';
             }
           }}
-          className="bg-white"
+          className="bg-background dark:bg-card"
         />
         
         <Panel position="top-left" className="flex gap-2">
@@ -871,7 +924,7 @@ function MindMapInner({ objectives, onNodeClick }: MindMapProps) {
             </SelectContent>
           </Select>
 
-          <div className="flex items-center gap-2 h-8 px-3 bg-white border rounded-md shadow-sm">
+          <div className="flex items-center gap-2 h-8 px-3 bg-background border border-border rounded-md shadow-sm">
             <Switch 
               id="group-by-team"
               checked={groupByTeam} 
@@ -894,8 +947,8 @@ function MindMapInner({ objectives, onNodeClick }: MindMapProps) {
           </Button>
         </Panel>
 
-        <Panel position="bottom-right" className="bg-white/90 backdrop-blur-sm px-3 py-2 rounded-lg border shadow-sm">
-          <div className="text-[10px] text-gray-600 space-y-1">
+        <Panel position="bottom-right" className="bg-background/90 dark:bg-card/90 backdrop-blur-sm px-3 py-2 rounded-lg border border-border shadow-sm">
+          <div className="text-[10px] text-muted-foreground space-y-1">
             <div className="flex items-center gap-2">
               <Target className="h-3 w-3 text-blue-600" />
               <span>Mission</span>
