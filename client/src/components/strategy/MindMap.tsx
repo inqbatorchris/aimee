@@ -51,12 +51,12 @@ const MissionNode = ({ data }: { data: any }) => {
       <Handle id="bottom" type="target" position={Position.Bottom} isConnectable={false} style={handleStyle} />
       <Handle id="left" type="target" position={Position.Left} isConnectable={false} style={handleStyle} />
       
-      <Card className="p-4 min-w-[280px] max-w-[320px] border-2 border-blue-500 bg-gradient-to-br from-blue-50 to-white shadow-lg">
+      <Card className="p-4 min-w-[280px] max-w-[320px] border-2 border-blue-500 dark:border-blue-400 bg-gradient-to-br from-blue-50 to-white dark:from-blue-950 dark:to-background shadow-lg">
         <div className="flex items-start gap-2">
-          <Target className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+          <Target className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5 flex-shrink-0" />
           <div className="flex-1">
-            <div className="font-semibold text-sm text-blue-900 mb-1">Mission</div>
-            <div className="text-xs text-gray-700 line-clamp-3">{data.mission || 'Define your mission'}</div>
+            <div className="font-semibold text-sm text-blue-900 dark:text-blue-100 mb-1">Mission</div>
+            <div className="text-xs text-gray-700 dark:text-gray-300 line-clamp-3">{data.mission || 'Define your mission'}</div>
           </div>
         </div>
       </Card>
@@ -79,13 +79,13 @@ const TeamNode = ({ data }: { data: any }) => {
       <Handle id="bottom" type="target" position={Position.Bottom} isConnectable={false} style={handleStyle} />
       <Handle id="left" type="target" position={Position.Left} isConnectable={false} style={handleStyle} />
       
-      <Card className="p-3.5 min-w-[220px] max-w-[260px] border-2 border-orange-400 bg-gradient-to-br from-orange-50 to-white shadow-md" style={{ borderColor: '#fb923c', backgroundColor: '#fff7ed' }}>
+      <Card className="p-3.5 min-w-[220px] max-w-[260px] border-2 border-orange-400 dark:border-orange-500 bg-gradient-to-br from-orange-50 to-white dark:from-orange-950 dark:to-background shadow-md">
         <div className="flex items-start gap-2">
-          <Users className="h-4 w-4 text-orange-600 mt-0.5 flex-shrink-0" style={{ color: '#ea580c' }} />
+          <Users className="h-4 w-4 text-orange-600 dark:text-orange-400 mt-0.5 flex-shrink-0" />
           <div className="flex-1">
-            <div className="font-semibold text-xs text-orange-900 mb-0.5" style={{ color: '#7c2d12' }}>{data.name}</div>
+            <div className="font-semibold text-xs text-orange-900 dark:text-orange-100 mb-0.5">{data.name}</div>
             {data.description && (
-              <div className="text-[10px] text-gray-600 line-clamp-2">{data.description}</div>
+              <div className="text-[10px] text-gray-600 dark:text-gray-400 line-clamp-2">{data.description}</div>
             )}
           </div>
         </div>
@@ -110,19 +110,19 @@ const ObjectiveNode = ({ data }: { data: any }) => {
       <Handle id="bottom" type="target" position={Position.Bottom} isConnectable={false} style={handleStyle} />
       <Handle id="left" type="target" position={Position.Left} isConnectable={false} style={handleStyle} />
       
-      <Card className="p-3 min-w-[240px] max-w-[280px] border border-purple-300 bg-white shadow-md hover:shadow-lg transition-shadow">
+      <Card className="p-3 min-w-[240px] max-w-[280px] border border-purple-300 dark:border-purple-600 bg-background shadow-md hover:shadow-lg transition-shadow">
         <div className="flex items-start gap-2">
           <span className="text-lg flex-shrink-0">🎯</span>
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-xs text-gray-900 mb-1 line-clamp-2">{data.title}</div>
+            <div className="font-medium text-xs text-foreground mb-1 line-clamp-2">{data.title}</div>
             <div className="flex items-center gap-2 mb-1">
-              <div className="flex-1 bg-gray-200 rounded-full h-1.5">
+              <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
                 <div 
-                  className="bg-purple-600 h-1.5 rounded-full transition-all"
+                  className="bg-purple-600 dark:bg-purple-500 h-1.5 rounded-full transition-all"
                   style={{ width: `${progress}%` }}
                 />
               </div>
-              <span className="text-[10px] text-gray-500">{progress}%</span>
+              <span className="text-[10px] text-muted-foreground">{progress}%</span>
             </div>
             <div className="flex items-center gap-1 flex-wrap">
               {data.status && (
@@ -130,16 +130,16 @@ const ObjectiveNode = ({ data }: { data: any }) => {
                   {data.status}
                 </Badge>
               )}
-              <span className="text-[9px] text-gray-600 font-medium">
+              <span className="text-[9px] text-muted-foreground font-medium">
                 {Math.floor(data.currentValue || 0)}/{Math.floor(data.targetValue || 0)}
               </span>
               {data.team?.name && (
-                <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-auto bg-purple-50 text-purple-700">
+                <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-auto bg-purple-50 dark:bg-purple-900/40 text-purple-700 dark:text-purple-300">
                   {data.team.name}
                 </Badge>
               )}
               {data.owner?.fullName && (
-                <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-auto bg-blue-50 text-blue-700">
+                <Badge variant="secondary" className="text-[9px] px-1.5 py-0 h-auto bg-blue-50 dark:bg-blue-900/40 text-blue-700 dark:text-blue-300">
                   {data.owner.fullName}
                 </Badge>
               )}
@@ -169,19 +169,19 @@ const KeyResultNode = ({ data }: { data: any }) => {
       <Handle id="bottom" type="target" position={Position.Bottom} isConnectable={false} style={handleStyle} />
       <Handle id="left" type="target" position={Position.Left} isConnectable={false} style={handleStyle} />
       
-      <Card className="p-2.5 min-w-[200px] max-w-[240px] border border-green-300 bg-white shadow hover:shadow-md transition-shadow">
+      <Card className="p-2.5 min-w-[200px] max-w-[240px] border border-green-300 dark:border-green-600 bg-background shadow hover:shadow-md transition-shadow">
         <div className="flex items-start gap-1.5">
-          <CheckCircle2 className="h-3.5 w-3.5 text-green-600 mt-0.5 flex-shrink-0" />
+          <CheckCircle2 className="h-3.5 w-3.5 text-green-600 dark:text-green-400 mt-0.5 flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="font-medium text-[11px] text-gray-900 mb-1 line-clamp-2">{data.title}</div>
+            <div className="font-medium text-[11px] text-foreground mb-1 line-clamp-2">{data.title}</div>
             <div className="flex items-center gap-1.5 mb-1">
-              <div className="flex-1 bg-gray-200 rounded-full h-1">
+              <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-1">
                 <div 
-                  className="bg-green-600 h-1 rounded-full transition-all"
+                  className="bg-green-600 dark:bg-green-500 h-1 rounded-full transition-all"
                   style={{ width: `${progress}%` }}
                 />
               </div>
-              <span className="text-[9px] text-gray-500">{progress}%</span>
+              <span className="text-[9px] text-muted-foreground">{progress}%</span>
             </div>
             {data.status && (
               <Badge variant="outline" className="text-[8px] px-1 py-0 h-auto">
@@ -210,11 +210,11 @@ const TaskNode = ({ data }: { data: any }) => {
       <Handle id="bottom" type="target" position={Position.Bottom} isConnectable={false} style={handleStyle} />
       <Handle id="left" type="target" position={Position.Left} isConnectable={false} style={handleStyle} />
       
-      <Card className="p-2 min-w-[160px] max-w-[200px] border border-gray-300 bg-white shadow-sm hover:shadow transition-shadow">
+      <Card className="p-2 min-w-[160px] max-w-[200px] border border-border bg-background shadow-sm hover:shadow transition-shadow">
         <div className="flex items-start gap-1.5">
-          <ListTodo className="h-3 w-3 text-gray-600 mt-0.5 flex-shrink-0" />
+          <ListTodo className="h-3 w-3 text-muted-foreground mt-0.5 flex-shrink-0" />
           <div className="flex-1 min-w-0">
-            <div className="text-[10px] text-gray-900 line-clamp-2">{data.title}</div>
+            <div className="text-[10px] text-foreground line-clamp-2">{data.title}</div>
             {data.status && (
               <Badge variant="outline" className="text-[8px] px-1 py-0 h-auto mt-1">
                 {data.status}
