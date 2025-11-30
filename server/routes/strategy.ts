@@ -2809,27 +2809,53 @@ router.get('/activity-logs', authenticateToken, async (req: AuthRequest, res: Re
     }
 
     const { objectiveId, keyResultId, limit = 50 } = req.query;
+    console.log('[Activity Logs API] Request params:', { objectiveId, keyResultId, limit, organizationId });
+
+    // If filtering by objectiveId, we need to include logs from child key results too
+    let keyResultIds: number[] = [];
+    if (objectiveId) {
+      const objId = parseInt(objectiveId as string);
+      // Get all key results under this objective
+      const childKeyResults = await db
+        .select({ id: keyResults.id })
+        .from(keyResults)
+        .where(eq(keyResults.objectiveId, objId));
+      keyResultIds = childKeyResults.map(kr => kr.id);
+      console.log('[Activity Logs API] Found child key results for objective', objId, ':', keyResultIds);
+    }
 
     // Get all activity logs for the organization
     const allLogs = await storage.getActivityLogs(organizationId, {
-      limit: parseInt(limit as string)
+      limit: parseInt(limit as string) * 2 // Fetch more to account for filtering
     });
+    console.log('[Activity Logs API] Fetched', allLogs.length, 'logs from storage');
 
     // Filter by objectiveId or keyResultId if provided
     let filteredLogs = allLogs;
     if (objectiveId) {
       const objId = parseInt(objectiveId as string);
       filteredLogs = filteredLogs.filter(log => 
-        (log.metadata as any)?.objectiveId === objId || 
-        (log.entityType === 'objective' && log.entityId === objId)
+        // Direct objective logs
+        (log.entityType === 'objective' && log.entityId === objId) ||
+        // Logs with objectiveId in metadata
+        (log.metadata as any)?.objectiveId === objId ||
+        // Child key result logs
+        (log.entityType === 'key_result' && keyResultIds.includes(log.entityId))
       );
+      console.log('[Activity Logs API] Filtered to', filteredLogs.length, 'logs for objective', objId);
     } else if (keyResultId) {
       const krId = parseInt(keyResultId as string);
       filteredLogs = filteredLogs.filter(log => 
         (log.metadata as any)?.keyResultId === krId || 
         (log.entityType === 'key_result' && log.entityId === krId)
       );
+      console.log('[Activity Logs API] Filtered to', filteredLogs.length, 'logs for key result', krId);
     }
+    
+    // Limit to requested amount and sort by date descending
+    filteredLogs = filteredLogs
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, parseInt(limit as string));
     
     res.json(filteredLogs);
   } catch (error) {
