@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Link, useLocation } from 'wouter';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -150,6 +150,31 @@ export default function AgentBuilder() {
       return hasRunningWorkflows ? 2000 : false;
     },
   });
+
+  // Memoized filtered runs based on team selection
+  const filteredRuns = useMemo(() => {
+    if (!runs || selectedTeamId === null) return runs;
+    
+    // Create a lookup map of workflowId to teamId for efficient filtering
+    const workflowTeamMap = new Map<number, number | null | undefined>();
+    workflows?.forEach(w => {
+      workflowTeamMap.set(w.id, w.assignedTeamId);
+    });
+
+    // Filter runs based on selected team
+    return runs.filter((run) => {
+      const teamId = workflowTeamMap.get(run.workflowId);
+      if (teamId === undefined) return true; // Show if workflow not found
+      
+      if (selectedTeamId === -1) {
+        // "No team" filter
+        return teamId === null || teamId === undefined;
+      } else {
+        // Specific team filter
+        return teamId === selectedTeamId;
+      }
+    });
+  }, [runs, workflows, selectedTeamId]);
 
   // Fetch available integrations
   const { data: integrations } = useQuery<Integration[]>({
@@ -1293,35 +1318,35 @@ export default function AgentBuilder() {
               </CardHeader>
               <CardContent>
                 <div className="space-y-4">
-                  {runs?.map((run) => (
+                  {filteredRuns?.map((run) => (
                     <div key={run.id} className="border rounded-lg overflow-hidden">
                       <div 
-                        className="flex items-center justify-between p-4 cursor-pointer hover:bg-muted/50"
+                        className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 p-4 cursor-pointer hover:bg-muted/50"
                         onClick={() => setExpandedRunId(expandedRunId === run.id ? null : run.id)}
                       >
-                        <div className="flex items-center gap-4">
+                        <div className="flex items-start sm:items-center gap-3 min-w-0">
                           {run.status === 'completed' ? (
-                            <CheckCircle className="h-5 w-5 text-green-500" />
+                            <CheckCircle className="h-5 w-5 text-green-500 shrink-0 mt-0.5 sm:mt-0" />
                           ) : run.status === 'failed' ? (
-                            <XCircle className="h-5 w-5 text-destructive" />
+                            <XCircle className="h-5 w-5 text-destructive shrink-0 mt-0.5 sm:mt-0" />
                           ) : (
-                            <RefreshCw className="h-5 w-5 text-blue-500 animate-spin" />
+                            <RefreshCw className="h-5 w-5 text-blue-500 animate-spin shrink-0 mt-0.5 sm:mt-0" />
                           )}
-                          <div>
-                            <p className="font-medium">{run.workflowName}</p>
-                            <p className="text-sm text-muted-foreground">
+                          <div className="min-w-0 flex-1">
+                            <p className="font-medium truncate">{run.workflowName}</p>
+                            <p className="text-sm text-muted-foreground truncate">
                               {new Date(run.startedAt).toLocaleString()} • {run.triggerSource}
                             </p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap ml-8 sm:ml-0">
                           {run.executionDuration && (
-                            <Badge variant="outline">
+                            <Badge variant="outline" className="shrink-0">
                               {run.executionDuration}ms
                             </Badge>
                           )}
                           {run.totalSteps && (
-                            <Badge variant="outline">
+                            <Badge variant="outline" className="shrink-0">
                               {run.stepsCompleted}/{run.totalSteps} steps
                             </Badge>
                           )}
@@ -1329,10 +1354,10 @@ export default function AgentBuilder() {
                             run.status === 'completed' ? 'default' : 
                             run.status === 'failed' ? 'destructive' : 
                             'secondary'
-                          }>
+                          } className="shrink-0">
                             {run.status}
                           </Badge>
-                          <ChevronRight className={`h-4 w-4 transition-transform ${expandedRunId === run.id ? 'rotate-90' : ''}`} />
+                          <ChevronRight className={`h-4 w-4 transition-transform shrink-0 ${expandedRunId === run.id ? 'rotate-90' : ''}`} />
                         </div>
                       </div>
                       
