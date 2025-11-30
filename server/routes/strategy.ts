@@ -591,41 +591,14 @@ router.get('/key-results/:id/activities', authenticateToken, async (req: AuthReq
       return res.status(404).json({ error: 'Key result not found' });
     }
     
-    // Get all activity logs for the organization
-    const allLogs = await storage.getActivityLogs(organizationId, {
+    // Get activity logs filtered by entity type and entity ID at the database level
+    const keyResultLogs = await storage.getActivityLogs(organizationId, {
+      entityType: 'key_result',
+      entityId: keyResultId,
       limit: 100
     });
     
-    console.log(`[Activity API] Got ${allLogs.length} total logs for org ${organizationId}`);
-    if (allLogs.length > 0) {
-      console.log(`[Activity API] Sample log:`, JSON.stringify(allLogs[0], null, 2));
-    }
-    
-    // Filter for this specific key result - includes both direct key result logs and related activities
-    const keyResultLogs = allLogs.filter(log => {
-      // Direct entity match for key result logs
-      if (log.entityType === 'key_result' && log.entityId === keyResultId) {
-        console.log(`[Activity API] Found matching log by entityType/entityId: ${log.id}`);
-        return true;
-      }
-      
-      // Metadata keyResultId match for related logs
-      try {
-        if (log.metadata) {
-          const metadata = typeof log.metadata === 'string' ? JSON.parse(log.metadata) : log.metadata;
-          if (metadata.keyResultId === keyResultId || metadata.keyResultId === String(keyResultId)) {
-            console.log(`[Activity API] Found matching log by metadata.keyResultId: ${log.id}`);
-            return true;
-          }
-        }
-      } catch (e) {
-        // Ignore JSON parse errors and continue
-      }
-      
-      return false;
-    });
-    
-    console.log(`[Activity API] Filtered to ${keyResultLogs.length} logs for key result ${keyResultId}`);
+    console.log(`[Activity API] Got ${keyResultLogs.length} logs for key result ${keyResultId}`);
     
     // Transform database format to frontend expected format
     const transformedLogs = keyResultLogs.map(log => ({

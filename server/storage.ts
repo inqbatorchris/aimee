@@ -243,7 +243,7 @@ export interface ICleanStorage {
   
   // Activity Logs
   logActivity(activity: InsertActivityLog): Promise<ActivityLog>;
-  getActivityLogs(organizationId: number, filters?: { userId?: number; entityType?: string; limit?: number }): Promise<ActivityLog[]>;
+  getActivityLogs(organizationId: number, filters?: { userId?: number; entityType?: string; entityId?: number; limit?: number }): Promise<ActivityLog[]>;
   
   // Platform Features Management
   getPlatformFeatures(organizationId?: number, filters?: { isEnabled?: boolean }): Promise<PlatformFeature[]>;
@@ -891,7 +891,7 @@ export class CleanDatabaseStorage implements ICleanStorage {
     return created;
   }
 
-  async getActivityLogs(organizationId: number, filters?: { userId?: number; entityType?: string; limit?: number }): Promise<ActivityLog[]> {
+  async getActivityLogs(organizationId: number, filters?: { userId?: number; entityType?: string; entityId?: number; limit?: number }): Promise<ActivityLog[]> {
     const conditions = [eq(activityLogs.organizationId, organizationId)];
 
     if (filters?.userId) {
@@ -900,6 +900,10 @@ export class CleanDatabaseStorage implements ICleanStorage {
 
     if (filters?.entityType) {
       conditions.push(eq(activityLogs.entityType, filters.entityType));
+    }
+
+    if (filters?.entityId) {
+      conditions.push(eq(activityLogs.entityId, filters.entityId));
     }
 
     const limit = filters?.limit || 100;
