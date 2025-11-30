@@ -624,6 +624,31 @@ export const keyResultComments = pgTable("key_result_comments", {
 
 // Routines table removed - functionality moved to keyResultTasks
 
+// Mind Map Node Positions - stores user/org-specific node positions for strategy map
+export const mindMapNodePositions = pgTable("mind_map_node_positions", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  
+  // Node positioning
+  nodeId: varchar("node_id", { length: 100 }).notNull(), // e.g., "objective-123", "keyResult-456"
+  nodeType: varchar("node_type", { length: 50 }).notNull(), // mission, team, objective, keyResult, task
+  positionX: numeric("position_x", { precision: 12, scale: 2 }).notNull(),
+  positionY: numeric("position_y", { precision: 12, scale: 2 }).notNull(),
+  
+  // Viewport settings (stored once per user/org, on the "mission" node as anchor)
+  viewportX: numeric("viewport_x", { precision: 12, scale: 2 }),
+  viewportY: numeric("viewport_y", { precision: 12, scale: 2 }),
+  viewportZoom: numeric("viewport_zoom", { precision: 5, scale: 3 }),
+  
+  // Audit
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_mindmap_positions_org_user").on(table.organizationId, table.userId),
+  index("idx_mindmap_positions_node").on(table.nodeId),
+  unique("uq_mindmap_node_per_user").on(table.organizationId, table.userId, table.nodeId),
+]);
+
 // Check-in Meetings (Phase-1) - Moved before workItems to resolve reference
 export const checkInMeetings = pgTable("check_in_meetings", {
   id: serial("id").primaryKey(),
@@ -2489,6 +2514,9 @@ export type InsertKeyResultTask = typeof keyResultTasks.$inferInsert;
 export type KeyResultComment = typeof keyResultComments.$inferSelect;
 export type InsertKeyResultComment = typeof keyResultComments.$inferInsert;
 
+export type MindMapNodePosition = typeof mindMapNodePositions.$inferSelect;
+export type InsertMindMapNodePosition = typeof mindMapNodePositions.$inferInsert;
+
 // Migration 004: Routines types
 
 // Migration 005: Work Items types
@@ -2707,6 +2735,11 @@ export const insertKeyResultTaskSchema = createInsertSchema(keyResultTasks).omit
 export const insertKeyResultCommentSchema = createInsertSchema(keyResultComments).omit({
   id: true,
   createdAt: true,
+});
+
+export const insertMindMapNodePositionSchema = createInsertSchema(mindMapNodePositions).omit({
+  id: true,
+  updatedAt: true,
 });
 
 // Migration 005: Work Items validators
