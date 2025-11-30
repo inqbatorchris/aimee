@@ -582,9 +582,12 @@ router.get('/key-results/:id/activities', authenticateToken, async (req: AuthReq
     const keyResultId = parseInt(req.params.id);
     const organizationId = req.user?.organizationId || 3;
     
+    console.log(`[Activity API] Fetching activities for key result ${keyResultId}, org ${organizationId}`);
+    
     // Verify key result exists and belongs to user's organization
     const keyResult = await storage.getKeyResult(keyResultId);
     if (!keyResult) {
+      console.log(`[Activity API] Key result ${keyResultId} not found`);
       return res.status(404).json({ error: 'Key result not found' });
     }
     
@@ -593,10 +596,16 @@ router.get('/key-results/:id/activities', authenticateToken, async (req: AuthReq
       limit: 100
     });
     
+    console.log(`[Activity API] Got ${allLogs.length} total logs for org ${organizationId}`);
+    if (allLogs.length > 0) {
+      console.log(`[Activity API] Sample log:`, JSON.stringify(allLogs[0], null, 2));
+    }
+    
     // Filter for this specific key result - includes both direct key result logs and related activities
     const keyResultLogs = allLogs.filter(log => {
       // Direct entity match for key result logs
       if (log.entityType === 'key_result' && log.entityId === keyResultId) {
+        console.log(`[Activity API] Found matching log by entityType/entityId: ${log.id}`);
         return true;
       }
       
@@ -604,7 +613,10 @@ router.get('/key-results/:id/activities', authenticateToken, async (req: AuthReq
       try {
         if (log.metadata) {
           const metadata = typeof log.metadata === 'string' ? JSON.parse(log.metadata) : log.metadata;
-          return metadata.keyResultId === keyResultId || metadata.keyResultId === String(keyResultId);
+          if (metadata.keyResultId === keyResultId || metadata.keyResultId === String(keyResultId)) {
+            console.log(`[Activity API] Found matching log by metadata.keyResultId: ${log.id}`);
+            return true;
+          }
         }
       } catch (e) {
         // Ignore JSON parse errors and continue
@@ -612,6 +624,8 @@ router.get('/key-results/:id/activities', authenticateToken, async (req: AuthReq
       
       return false;
     });
+    
+    console.log(`[Activity API] Filtered to ${keyResultLogs.length} logs for key result ${keyResultId}`);
     
     // Transform database format to frontend expected format
     const transformedLogs = keyResultLogs.map(log => ({
