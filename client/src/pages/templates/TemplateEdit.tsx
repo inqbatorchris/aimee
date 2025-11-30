@@ -283,7 +283,7 @@ export default function TemplateEdit() {
       {/* Header */}
       <div className="border-b bg-card">
         <div className="container mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div className="flex items-center gap-4">
               <Button
                 variant="ghost"
@@ -293,11 +293,11 @@ export default function TemplateEdit() {
               >
                 <ArrowLeft className="h-4 w-4" />
               </Button>
-              <div>
-                <h1 className="text-2xl font-bold">
+              <div className="min-w-0 flex-1">
+                <h1 className="text-xl md:text-2xl font-bold truncate">
                   {id === 'new' ? 'Create Workflow Template' : 'Edit Workflow Template'}
                 </h1>
-                <p className="text-muted-foreground">
+                <p className="text-sm text-muted-foreground truncate">
                   Configure step-by-step template for work items
                 </p>
               </div>
@@ -306,6 +306,7 @@ export default function TemplateEdit() {
               <Button
                 variant="outline"
                 onClick={handleCancel}
+                className="flex-1 md:flex-none"
                 data-testid="button-cancel"
               >
                 Cancel
@@ -313,6 +314,7 @@ export default function TemplateEdit() {
               <Button
                 onClick={handleSave}
                 disabled={!name || createMutation.isPending || updateMutation.isPending}
+                className="flex-1 md:flex-none"
                 data-testid="button-save"
               >
                 <Save className="h-4 w-4 mr-2" />
@@ -355,7 +357,7 @@ export default function TemplateEdit() {
                     data-testid="input-description"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
                     <Label className="flex items-center gap-1.5 mb-2">
                       <Users className="h-4 w-4 text-muted-foreground" />
