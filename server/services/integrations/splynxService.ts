@@ -1145,6 +1145,265 @@ export class SplynxService {
     }
   }
 
+  /**
+   * Get detailed customer information by ID
+   * Used for AI context enrichment
+   */
+  async getCustomerById(customerId: number): Promise<{
+    id: number;
+    name: string;
+    email: string;
+    phone: string;
+    status: string;
+    plan: string;
+    address: string;
+    createdAt: string;
+    raw: any;
+  } | null> {
+    try {
+      const url = this.buildUrl(`admin/customers/customer/${customerId}`);
+      
+      console.log(`[SPLYNX getCustomerById] Fetching customer ${customerId} from:`, url);
+      
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log(`[SPLYNX getCustomerById] Response status:`, response.status);
+      
+      const customer = response.data;
+      if (!customer || !customer.id) {
+        return null;
+      }
+
+      return {
+        id: customer.id,
+        name: customer.name || `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 'Unknown',
+        email: customer.email || '',
+        phone: customer.phone || customer.phone_mobile || '',
+        status: customer.status || 'unknown',
+        plan: customer.tariff_name || customer.tariff || 'Unknown Plan',
+        address: customer.street || customer.full_address || '',
+        createdAt: customer.date_add || customer.created_at || '',
+        raw: customer,
+      };
+    } catch (error: any) {
+      console.error(`[SPLYNX getCustomerById] Error fetching customer ${customerId}:`, error.message);
+      if (error.response?.status === 404) {
+        return null;
+      }
+      throw new Error(`Failed to fetch customer details: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get customer's recent support tickets
+   * Used for AI context enrichment
+   */
+  async getCustomerTickets(customerId: number, limit: number = 4): Promise<Array<{
+    id: number;
+    subject: string;
+    status: string;
+    priority: string;
+    createdAt: string;
+    closedAt: string | null;
+    messages: Array<{ sender: string; body: string; timestamp: string }>;
+  }>> {
+    try {
+      const url = this.buildUrl('admin/support/tickets');
+      
+      console.log(`[SPLYNX getCustomerTickets] Fetching tickets for customer ${customerId}`);
+      
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+        params: {
+          main_attributes: {
+            customer_id: customerId,
+          },
+          limit: limit + 10, // Fetch a few extra in case some are filtered
+        },
+      });
+
+      console.log(`[SPLYNX getCustomerTickets] Response status:`, response.status);
+      
+      const tickets = Array.isArray(response.data) ? response.data : (response.data?.items || []);
+      
+      // Sort by date descending and take the most recent ones
+      const sortedTickets = tickets
+        .sort((a: any, b: any) => {
+          const dateA = new Date(a.date_created || a.date_add || 0);
+          const dateB = new Date(b.date_created || b.date_add || 0);
+          return dateB.getTime() - dateA.getTime();
+        })
+        .slice(0, limit);
+
+      return sortedTickets.map((ticket: any) => ({
+        id: ticket.id,
+        subject: ticket.subject || ticket.title || 'No Subject',
+        status: ticket.status_name || ticket.status || 'unknown',
+        priority: ticket.priority_name || ticket.priority || 'normal',
+        createdAt: ticket.date_created || ticket.date_add || '',
+        closedAt: ticket.date_closed || null,
+        messages: (ticket.messages || []).map((msg: any) => ({
+          sender: msg.author_name || msg.author || 'Unknown',
+          body: msg.message || msg.body || '',
+          timestamp: msg.date || msg.created_at || '',
+        })),
+      }));
+    } catch (error: any) {
+      console.error(`[SPLYNX getCustomerTickets] Error:`, error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Get customer's account balance and payment status
+   * Used for AI context enrichment
+   */
+  async getCustomerBalance(customerId: number): Promise<{
+    balance: number;
+    status: 'current' | 'overdue' | 'credit' | 'unknown';
+    lastPaymentDate: string | null;
+    lastPaymentAmount: number | null;
+    currency: string;
+  }> {
+    try {
+      // First try to get balance from customer details
+      const customerUrl = this.buildUrl(`admin/customers/customer/${customerId}`);
+      
+      console.log(`[SPLYNX getCustomerBalance] Fetching balance for customer ${customerId}`);
+      
+      const customerResponse = await axios.get(customerUrl, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      const customer = customerResponse.data;
+      const balance = parseFloat(customer.balance || customer.account_balance || '0');
+      
+      // Determine status based on balance
+      let status: 'current' | 'overdue' | 'credit' | 'unknown' = 'unknown';
+      if (balance > 0) {
+        status = 'credit';
+      } else if (balance < 0) {
+        status = 'overdue';
+      } else {
+        status = 'current';
+      }
+
+      // Try to get last payment
+      let lastPaymentDate: string | null = null;
+      let lastPaymentAmount: number | null = null;
+      
+      try {
+        const paymentsUrl = this.buildUrl(`admin/finance/payments`);
+        const paymentsResponse = await axios.get(paymentsUrl, {
+          headers: {
+            'Authorization': this.credentials.authHeader,
+            'Content-Type': 'application/json',
+          },
+          params: {
+            main_attributes: {
+              customer_id: customerId,
+            },
+            limit: 1,
+          },
+        });
+        
+        const payments = Array.isArray(paymentsResponse.data) ? paymentsResponse.data : [];
+        if (payments.length > 0) {
+          lastPaymentDate = payments[0].date || payments[0].payment_date || null;
+          lastPaymentAmount = parseFloat(payments[0].amount || '0');
+        }
+      } catch (paymentError: any) {
+        console.log(`[SPLYNX getCustomerBalance] Could not fetch payments:`, paymentError.message);
+      }
+
+      return {
+        balance,
+        status,
+        lastPaymentDate,
+        lastPaymentAmount,
+        currency: customer.currency || 'USD',
+      };
+    } catch (error: any) {
+      console.error(`[SPLYNX getCustomerBalance] Error:`, error.message);
+      return {
+        balance: 0,
+        status: 'unknown',
+        lastPaymentDate: null,
+        lastPaymentAmount: null,
+        currency: 'USD',
+      };
+    }
+  }
+
+  /**
+   * Get customer's services and connection status
+   * Used for AI context enrichment
+   */
+  async getCustomerServices(customerId: number): Promise<Array<{
+    id: number;
+    serviceName: string;
+    status: 'active' | 'inactive' | 'suspended' | 'unknown';
+    speed: string;
+    ipAddress: string | null;
+    routerId: string | null;
+    connectionType: string;
+    startDate: string | null;
+  }>> {
+    try {
+      const url = this.buildUrl(`admin/customers/customer/${customerId}/internet-services`);
+      
+      console.log(`[SPLYNX getCustomerServices] Fetching services for customer ${customerId}`);
+      
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log(`[SPLYNX getCustomerServices] Response status:`, response.status);
+      
+      const services = Array.isArray(response.data) ? response.data : (response.data?.items || []);
+
+      return services.map((service: any) => {
+        let status: 'active' | 'inactive' | 'suspended' | 'unknown' = 'unknown';
+        const serviceStatus = (service.status || '').toLowerCase();
+        if (serviceStatus === 'active' || serviceStatus === 'online') {
+          status = 'active';
+        } else if (serviceStatus === 'inactive' || serviceStatus === 'disabled' || serviceStatus === 'offline') {
+          status = 'inactive';
+        } else if (serviceStatus === 'suspended' || serviceStatus === 'blocked') {
+          status = 'suspended';
+        }
+
+        return {
+          id: service.id,
+          serviceName: service.tariff_name || service.tariff || service.description || 'Internet Service',
+          status,
+          speed: service.speed || `${service.download_speed || '?'}/${service.upload_speed || '?'} Mbps`,
+          ipAddress: service.ip || service.ipv4 || null,
+          routerId: service.router_id || service.router || null,
+          connectionType: service.type || service.connection_type || 'unknown',
+          startDate: service.start_date || service.date_add || null,
+        };
+      });
+    } catch (error: any) {
+      console.error(`[SPLYNX getCustomerServices] Error:`, error.message);
+      return [];
+    }
+  }
+
   async executeAction(action: string, parameters: any = {}): Promise<any> {
     const { sinceDate, ...filters } = parameters;
     const parsedSinceDate = sinceDate ? new Date(sinceDate) : undefined;
@@ -1188,6 +1447,19 @@ export class SplynxService {
 
       case 'create_splynx_task':
         return await this.createSplynxTask(parameters);
+
+      // Customer context enrichment actions (for AI drafting)
+      case 'get_customer_by_id':
+        return await this.getCustomerById(parameters.customerId);
+
+      case 'get_customer_tickets':
+        return await this.getCustomerTickets(parameters.customerId, parameters.limit || 4);
+
+      case 'get_customer_balance':
+        return await this.getCustomerBalance(parameters.customerId);
+
+      case 'get_customer_services':
+        return await this.getCustomerServices(parameters.customerId);
         
       default:
         throw new Error(`Unknown Splynx action: ${action}`);

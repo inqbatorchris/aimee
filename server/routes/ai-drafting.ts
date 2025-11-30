@@ -110,6 +110,7 @@ router.get('/config', async (req, res) => {
         isEnabled: false,
         systemPromptDocumentIds: [],
         knowledgeDocumentIds: [],
+        contextSources: ['customer_info', 'ticket_history', 'account_balance', 'connection_status'],
         modelConfig: {
           model: 'gpt-4o-mini',
           temperature: 0.7,

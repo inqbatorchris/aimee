@@ -46,9 +46,17 @@ import {
   ExternalLink,
   Settings,
   XCircle,
+  Database,
 } from "lucide-react";
 import { Link } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
+
+const CONTEXT_SOURCES = [
+  { id: 'customer_info', label: 'Customer Information', description: 'Name, status, plan, contact details' },
+  { id: 'ticket_history', label: 'Ticket History', description: 'Last 4 support tickets' },
+  { id: 'account_balance', label: 'Account Balance', description: 'Balance status, payment history' },
+  { id: 'connection_status', label: 'Connection Status', description: 'Service status, speed, IP address' },
+] as const;
 
 const aiConfigSchema = z.object({
   model: z.string().min(1, "Model selection is required"),
@@ -56,6 +64,7 @@ const aiConfigSchema = z.object({
   temperature: z.number().min(0).max(2),
   maxTokens: z.number().min(100).max(4000),
   knowledgeDocumentIds: z.array(z.number()),
+  contextSources: z.array(z.string()),
   objectiveId: z.number().optional(),
   keyResultIds: z.array(z.number()),
   isEnabled: z.boolean(),
@@ -107,6 +116,7 @@ export default function AITicketDraftingSetup() {
       temperature: 0.7,
       maxTokens: 1000,
       knowledgeDocumentIds: [],
+      contextSources: ['customer_info', 'ticket_history', 'account_balance', 'connection_status'],
       objectiveId: undefined,
       keyResultIds: [],
       isEnabled: false,
@@ -121,6 +131,7 @@ export default function AITicketDraftingSetup() {
         temperature: existingConfig.modelConfig?.temperature || 0.7,
         maxTokens: existingConfig.modelConfig?.maxTokens || 1000,
         knowledgeDocumentIds: existingConfig.knowledgeDocumentIds || [],
+        contextSources: existingConfig.contextSources || ['customer_info', 'ticket_history', 'account_balance', 'connection_status'],
         objectiveId: existingConfig.linkedObjectiveId || undefined,
         keyResultIds: existingConfig.linkedKeyResultIds || [],
         isEnabled: existingConfig.isEnabled || false,
@@ -132,6 +143,7 @@ export default function AITicketDraftingSetup() {
   const availableKeyResults = allKeyResults.filter(kr => kr.objectiveId === selectedObjectiveId);
   const isEnabled = form.watch('isEnabled');
   const selectedKbDocs = form.watch('knowledgeDocumentIds');
+  const selectedContextSources = form.watch('contextSources');
 
   const saveMutation = useMutation({
     mutationFn: async (data: AIConfigFormData) => {
@@ -144,6 +156,7 @@ export default function AITicketDraftingSetup() {
           maxTokens: data.maxTokens,
         },
         knowledgeDocumentIds: data.knowledgeDocumentIds,
+        contextSources: data.contextSources,
         linkedKeyResultIds: data.keyResultIds,
         isEnabled: data.isEnabled,
       };
@@ -517,6 +530,79 @@ export default function AITicketDraftingSetup() {
                     {selectedKbDocs.length > 0 && (
                       <p className="text-sm text-muted-foreground mt-2">
                         {selectedKbDocs.length} document{selectedKbDocs.length !== 1 ? 's' : ''} selected
+                      </p>
+                    )}
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Database className="h-5 w-5" />
+                Context Sources (Splynx)
+              </CardTitle>
+              <CardDescription>
+                Select which customer data from Splynx to include when generating AI responses.
+                This helps the AI provide more personalized and context-aware responses.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <FormField
+                control={form.control}
+                name="contextSources"
+                render={({ field }) => (
+                  <FormItem>
+                    <div className="space-y-2">
+                      {CONTEXT_SOURCES.map((source) => {
+                        const isChecked = (field.value || []).includes(source.id);
+                        
+                        return (
+                          <div
+                            key={source.id}
+                            className="flex flex-row items-start space-x-3 space-y-0 rounded-md p-3 hover:bg-accent cursor-pointer border"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              const prev = field.value ?? [];
+                              if (prev.includes(source.id)) {
+                                field.onChange(prev.filter((v) => v !== source.id));
+                              } else {
+                                field.onChange([...prev, source.id]);
+                              }
+                            }}
+                          >
+                            <Checkbox
+                              checked={isChecked}
+                              onCheckedChange={(checked) => {
+                                const prev = field.value ?? [];
+                                if (checked) {
+                                  if (!prev.includes(source.id)) {
+                                    field.onChange([...prev, source.id]);
+                                  }
+                                } else {
+                                  field.onChange(prev.filter((v) => v !== source.id));
+                                }
+                              }}
+                              data-testid={`checkbox-context-${source.id}`}
+                            />
+                            <div className="flex-1 space-y-1 leading-none">
+                              <span className="text-sm font-medium cursor-pointer">
+                                {source.label}
+                              </span>
+                              <p className="text-xs text-muted-foreground">
+                                {source.description}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {selectedContextSources.length > 0 && (
+                      <p className="text-sm text-muted-foreground mt-3">
+                        {selectedContextSources.length} context source{selectedContextSources.length !== 1 ? 's' : ''} enabled
                       </p>
                     )}
                     <FormMessage />

@@ -2274,6 +2274,9 @@ export const aiAgentConfigurations = pgTable("ai_agent_configurations", {
   // Feature-specific settings
   autoGenerateOnArrival: boolean("auto_generate_on_arrival").default(true), // Auto-generate vs manual
   
+  // Context enrichment sources (for AI ticket drafting)
+  contextSources: jsonb("context_sources").default(['customer_info', 'ticket_history', 'account_balance', 'connection_status']).$type<string[]>(),
+  
   // OKR tracking
   linkedObjectiveId: integer("linked_objective_id").references(() => objectives.id),
   linkedKeyResultIds: jsonb("linked_key_result_ids").default([]).$type<number[]>(),
@@ -2989,6 +2992,7 @@ export const insertAiAgentConfigurationSchema = createInsertSchema(aiAgentConfig
     systemPrompt: 'You are a helpful support agent assistant.'
   }),
   autoGenerateOnArrival: z.boolean().default(true),
+  contextSources: z.array(z.enum(['customer_info', 'ticket_history', 'account_balance', 'connection_status'])).default(['customer_info', 'ticket_history', 'account_balance', 'connection_status']),
   linkedObjectiveId: z.number().int().positive().optional(),
   linkedKeyResultIds: z.array(z.number()).default([]),
   createdBy: z.number().int().positive().optional(),

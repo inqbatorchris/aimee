@@ -4,6 +4,7 @@ import { agentWorkflows, agentWorkflowRuns, integrations, keyResults, objectives
 import { ActionHandlers } from './ActionHandlers';
 import { storage } from '../../storage';
 import { SplynxService } from '../integrations/splynxService';
+import { contextEnrichmentService, type ContextSource } from '../ai/ContextEnrichmentService';
 import crypto from 'crypto';
 
 // Table registry for data source queries
@@ -1868,7 +1869,7 @@ export class WorkflowExecutor {
       }
       
       // Load reference knowledge base documents with security validation
-      const knowledgeDocIds = config.knowledgeBaseDocumentIds || [];
+      const knowledgeDocIds = config.knowledgeDocumentIds || [];
       const referenceKBDocs = await db
         .select()
         .from(knowledgeDocuments)
@@ -1890,7 +1891,75 @@ export class WorkflowExecutor {
       const systemPrompt = systemPromptDocs.map(doc => doc.content).join('\n\n---\n\n');
       const referenceContext = referenceKBDocs.map(doc => `# ${doc.title}\n\n${doc.content}`).join('\n\n---\n\n');
       
-      // Build user message with ticket context
+      // Context enrichment: Fetch customer data from Splynx
+      let customerContextStr = '';
+      const contextSources = (config.contextSources as string[]) || ['customer_info', 'ticket_history', 'account_balance', 'connection_status'];
+      
+      // Extract customer ID from work item metadata
+      const workflowMetadata = workItem.workflowMetadata as any;
+      const splynxCustomerId = workflowMetadata?.splynx_customer_id 
+        || workflowMetadata?.customerId 
+        || context.trigger?.customer_id
+        || context.webhookData?.data?.customer_id;
+      
+      if (splynxCustomerId && contextSources.length > 0) {
+        console.log(`[WorkflowExecutor]   🔍 Fetching customer context for Splynx customer ${splynxCustomerId}`);
+        console.log(`[WorkflowExecutor]   📊 Enabled context sources: ${contextSources.join(', ')}`);
+        
+        try {
+          // Get Splynx integration credentials
+          const [splynxIntegration] = await db
+            .select()
+            .from(integrations)
+            .where(
+              and(
+                eq(integrations.organizationId, organizationId),
+                eq(integrations.platformType, 'splynx')
+              )
+            )
+            .limit(1);
+          
+          if (splynxIntegration?.credentialsEncrypted) {
+            const creds = this.decryptCredentials(splynxIntegration.credentialsEncrypted);
+            if (creds) {
+              const splynxService = new SplynxService({
+                baseUrl: creds.baseUrl || creds.apiUrl,
+                authHeader: creds.authHeader,
+              });
+              
+              // Enrich context with per-request SplynxService instance (thread-safe)
+              const enrichedContext = await contextEnrichmentService.enrichTicketContext(
+                splynxService,
+                parseInt(String(splynxCustomerId)),
+                contextSources as ContextSource[],
+                {
+                  id: workItem.id,
+                  subject: workItem.title,
+                  description: workItem.description || '',
+                }
+              );
+              
+              // Format context for prompt injection
+              customerContextStr = contextEnrichmentService.formatContextForPrompt(enrichedContext);
+              
+              if (customerContextStr) {
+                console.log(`[WorkflowExecutor]   ✅ Customer context enriched (${customerContextStr.length} chars)`);
+              } else {
+                console.log(`[WorkflowExecutor]   ⚠️ No customer context data retrieved`);
+              }
+            }
+          } else {
+            console.log(`[WorkflowExecutor]   ⚠️ Splynx integration not configured - skipping context enrichment`);
+          }
+        } catch (contextError: any) {
+          console.error(`[WorkflowExecutor]   ⚠️ Context enrichment failed:`, contextError.message);
+          // Continue without context - don't fail the whole draft
+        }
+      } else {
+        console.log(`[WorkflowExecutor]   ℹ️ No customer ID found - skipping context enrichment`);
+      }
+      
+      // Build user message with ticket context and enriched customer data
       const userMessage = `Please draft a professional response for the following support ticket:
 
 **Ticket Title:** ${workItem.title}
@@ -1898,9 +1967,10 @@ export class WorkflowExecutor {
 **Ticket Description:**
 ${workItem.description || 'No description provided'}
 
+${customerContextStr ? `\n${customerContextStr}\n` : ''}
 ${referenceContext ? `\n**Reference Information:**\n${referenceContext}\n` : ''}
 
-Generate a draft response that addresses the customer's issue professionally and helpfully.`;
+Generate a draft response that addresses the customer's issue professionally and helpfully. Take into account any customer context provided (such as account status, recent tickets, and service information) to personalize your response.`;
       
       // Get OpenAI API key
       const openaiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
