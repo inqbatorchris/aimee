@@ -37,15 +37,22 @@ interface ObjectiveActivityTabProps {
 }
 
 export function ObjectiveActivityTab({ objectiveId }: ObjectiveActivityTabProps) {
+  console.log('[ObjectiveActivityTab] Rendering with objectiveId:', objectiveId);
+  
   // Fetch activity for this objective
-  const { data: activities = [], isLoading } = useQuery({
+  const { data: activities = [], isLoading, error } = useQuery({
     queryKey: ['/api/strategy/objectives', objectiveId, 'activity'],
     queryFn: async () => {
+      console.log('[ObjectiveActivityTab] Fetching activity for objective:', objectiveId);
       const response = await apiRequest(`/api/strategy/objectives/${objectiveId}/activity`);
-      return response.json();
+      const data = await response.json();
+      console.log('[ObjectiveActivityTab] Received activity data:', data);
+      return data;
     },
     enabled: Boolean(objectiveId),
   });
+  
+  console.log('[ObjectiveActivityTab] Query state - isLoading:', isLoading, 'error:', error, 'activities:', activities);
 
   const getActivityIcon = (type: string) => {
     switch (type) {
