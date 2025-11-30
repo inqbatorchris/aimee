@@ -5,6 +5,7 @@ import { ActionHandlers } from './ActionHandlers';
 import { storage } from '../../storage';
 import { SplynxService } from '../integrations/splynxService';
 import { contextEnrichmentService, type ContextSource } from '../ai/ContextEnrichmentService';
+import { WorkItemWorkflowService } from '../WorkItemWorkflowService';
 import crypto from 'crypto';
 
 // Table registry for data source queries
@@ -1762,6 +1763,22 @@ export class WorkflowExecutor {
           console.log(`[WorkflowExecutor]   📝 Activity logged for work item creation: ID ${workItem.id}`);
         } catch (logError: any) {
           console.error(`[WorkflowExecutor]   ⚠️ Failed to log activity for work item creation:`, logError.message);
+        }
+        
+        // Initialize workflow execution if template is attached
+        if (templateId) {
+          try {
+            const workflowService = new WorkItemWorkflowService();
+            await workflowService.startWorkflowExecution({
+              workItemId: workItem.id,
+              organizationId: parseInt(organizationId),
+              userId: context.userId
+            });
+            console.log(`[WorkflowExecutor]   ✅ Workflow execution initialized for work item: ${workItem.id}`);
+          } catch (workflowError: any) {
+            console.error(`[WorkflowExecutor]   ⚠️ Failed to initialize workflow execution:`, workflowError.message);
+            // Don't fail the work item creation if workflow initialization fails
+          }
         }
       }
       
