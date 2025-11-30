@@ -694,6 +694,8 @@ function MindMapInner({ objectives, onNodeClick }: MindMapProps) {
   const prevLayoutModeRef = useRef(layoutMode);
   // Track current layout mode for localStorage (always current, no closure issues)
   const layoutModeRef = useRef(layoutMode);
+  // Track if initial positions from database have been applied
+  const initialPositionsAppliedRef = useRef(false);
   
   // Keep layoutModeRef in sync with layoutMode state
   useEffect(() => {
@@ -808,17 +810,27 @@ function MindMapInner({ objectives, onNodeClick }: MindMapProps) {
     const layoutModeChanged = prevLayoutModeRef.current !== layoutMode;
     prevLayoutModeRef.current = layoutMode;
     
+    // Check if we need to apply initial positions from database
+    const hasSavedPositions = savedPositionsData?.positions && savedPositionsData.positions.length > 0;
+    const needsInitialPositionApply = hasSavedPositions && !initialPositionsAppliedRef.current && nodes.length > 0;
+    
     // Apply new layout when:
     // 1. Layout mode changes (tree <-> radial)
     // 2. Nodes are initially empty
     // 3. Node count changed (team grouping toggled, creating/removing team nodes)
+    // 4. Initial positions from database just became available
     const nodeCountChanged = layoutedNodes.length !== nodes.length;
     
-    if (layoutModeChanged || nodes.length === 0 || nodeCountChanged) {
+    if (layoutModeChanged || nodes.length === 0 || nodeCountChanged || needsInitialPositionApply) {
       // Try to load saved positions for this layout mode
       const savedPositions = loadNodePositions();
       
       if (savedPositions) {
+        // Mark initial positions as applied
+        if (!initialPositionsAppliedRef.current) {
+          initialPositionsAppliedRef.current = true;
+        }
+        
         // Merge saved positions with layout positions
         const nodesToSet = layoutedNodes.map(node => {
           const savedPos = savedPositions[node.id];
@@ -834,7 +846,7 @@ function MindMapInner({ objectives, onNodeClick }: MindMapProps) {
     }
     
     // Always update edges to reflect current node positions
-    const currentNodes = (layoutModeChanged || nodes.length === 0 || nodeCountChanged) ? layoutedNodes : nodes;
+    const currentNodes = (layoutModeChanged || nodes.length === 0 || nodeCountChanged || needsInitialPositionApply) ? layoutedNodes : nodes;
     const edgesWithHandles = initialEdges.map((edge) => {
       const sourceNode = currentNodes.find(n => n.id === edge.source);
       const targetNode = currentNodes.find(n => n.id === edge.target);
