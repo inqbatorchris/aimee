@@ -135,21 +135,26 @@ export default function AITicketDraftingSetup() {
 
   const saveMutation = useMutation({
     mutationFn: async (data: AIConfigFormData) => {
+      const body: Record<string, any> = {
+        featureType: 'ticket_drafting',
+        modelConfig: {
+          model: data.model,
+          systemPrompt: data.systemPrompt,
+          temperature: data.temperature,
+          maxTokens: data.maxTokens,
+        },
+        knowledgeDocumentIds: data.knowledgeDocumentIds,
+        linkedKeyResultIds: data.keyResultIds,
+        isEnabled: data.isEnabled,
+      };
+      
+      if (data.objectiveId && data.objectiveId > 0) {
+        body.linkedObjectiveId = data.objectiveId;
+      }
+      
       return await apiRequest('/api/ai-drafting/config', {
         method: 'POST',
-        body: {
-          featureType: 'ticket_drafting',
-          modelConfig: {
-            model: data.model,
-            systemPrompt: data.systemPrompt,
-            temperature: data.temperature,
-            maxTokens: data.maxTokens,
-          },
-          knowledgeDocumentIds: data.knowledgeDocumentIds,
-          linkedObjectiveId: data.objectiveId || null,
-          linkedKeyResultIds: data.keyResultIds,
-          isEnabled: data.isEnabled,
-        },
+        body,
       });
     },
     onSuccess: () => {
