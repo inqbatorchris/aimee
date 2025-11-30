@@ -2809,55 +2809,111 @@ router.get('/activity-logs', authenticateToken, async (req: AuthRequest, res: Re
     }
 
     const { objectiveId, keyResultId, limit = 50 } = req.query;
-    console.log('[Activity Logs API] Request params:', { objectiveId, keyResultId, limit, organizationId });
+    const limitNum = parseInt(limit as string);
+    console.log('[Activity Logs API] Request params:', { objectiveId, keyResultId, limit: limitNum, organizationId });
 
-    // If filtering by objectiveId, we need to include logs from child key results too
-    let keyResultIds: number[] = [];
+    let logs: any[] = [];
+
     if (objectiveId) {
       const objId = parseInt(objectiveId as string);
+      
       // Get all key results under this objective
       const childKeyResults = await db
         .select({ id: keyResults.id })
         .from(keyResults)
         .where(eq(keyResults.objectiveId, objId));
-      keyResultIds = childKeyResults.map(kr => kr.id);
+      const keyResultIds = childKeyResults.map(kr => kr.id);
       console.log('[Activity Logs API] Found child key results for objective', objId, ':', keyResultIds);
-    }
 
-    // Get all activity logs for the organization
-    const allLogs = await storage.getActivityLogs(organizationId, {
-      limit: parseInt(limit as string) * 2 // Fetch more to account for filtering
-    });
-    console.log('[Activity Logs API] Fetched', allLogs.length, 'logs from storage');
-
-    // Filter by objectiveId or keyResultId if provided
-    let filteredLogs = allLogs;
-    if (objectiveId) {
-      const objId = parseInt(objectiveId as string);
-      filteredLogs = filteredLogs.filter(log => 
-        // Direct objective logs
-        (log.entityType === 'objective' && log.entityId === objId) ||
-        // Logs with objectiveId in metadata
-        (log.metadata as any)?.objectiveId === objId ||
-        // Child key result logs
-        (log.entityType === 'key_result' && keyResultIds.includes(log.entityId))
-      );
-      console.log('[Activity Logs API] Filtered to', filteredLogs.length, 'logs for objective', objId);
+      // Query directly from database with proper filters
+      // Get objective logs + key result logs in one query
+      if (keyResultIds.length > 0) {
+        logs = await db
+          .select({
+            id: activityLogs.id,
+            organizationId: activityLogs.organizationId,
+            userId: activityLogs.userId,
+            actionType: activityLogs.actionType,
+            entityType: activityLogs.entityType,
+            entityId: activityLogs.entityId,
+            description: activityLogs.description,
+            metadata: activityLogs.metadata,
+            createdAt: activityLogs.createdAt,
+            userName: users.fullName
+          })
+          .from(activityLogs)
+          .leftJoin(users, eq(activityLogs.userId, users.id))
+          .where(and(
+            eq(activityLogs.organizationId, organizationId),
+            or(
+              // Direct objective logs
+              and(eq(activityLogs.entityType, 'objective'), eq(activityLogs.entityId, objId)),
+              // Child key result logs
+              and(eq(activityLogs.entityType, 'key_result'), inArray(activityLogs.entityId, keyResultIds))
+            )
+          ))
+          .orderBy(desc(activityLogs.createdAt))
+          .limit(limitNum);
+      } else {
+        // No key results, just get objective logs
+        logs = await db
+          .select({
+            id: activityLogs.id,
+            organizationId: activityLogs.organizationId,
+            userId: activityLogs.userId,
+            actionType: activityLogs.actionType,
+            entityType: activityLogs.entityType,
+            entityId: activityLogs.entityId,
+            description: activityLogs.description,
+            metadata: activityLogs.metadata,
+            createdAt: activityLogs.createdAt,
+            userName: users.fullName
+          })
+          .from(activityLogs)
+          .leftJoin(users, eq(activityLogs.userId, users.id))
+          .where(and(
+            eq(activityLogs.organizationId, organizationId),
+            eq(activityLogs.entityType, 'objective'),
+            eq(activityLogs.entityId, objId)
+          ))
+          .orderBy(desc(activityLogs.createdAt))
+          .limit(limitNum);
+      }
+      console.log('[Activity Logs API] Retrieved', logs.length, 'logs for objective', objId);
+      
     } else if (keyResultId) {
       const krId = parseInt(keyResultId as string);
-      filteredLogs = filteredLogs.filter(log => 
-        (log.metadata as any)?.keyResultId === krId || 
-        (log.entityType === 'key_result' && log.entityId === krId)
-      );
-      console.log('[Activity Logs API] Filtered to', filteredLogs.length, 'logs for key result', krId);
+      // Query directly for key result logs
+      logs = await db
+        .select({
+          id: activityLogs.id,
+          organizationId: activityLogs.organizationId,
+          userId: activityLogs.userId,
+          actionType: activityLogs.actionType,
+          entityType: activityLogs.entityType,
+          entityId: activityLogs.entityId,
+          description: activityLogs.description,
+          metadata: activityLogs.metadata,
+          createdAt: activityLogs.createdAt,
+          userName: users.fullName
+        })
+        .from(activityLogs)
+        .leftJoin(users, eq(activityLogs.userId, users.id))
+        .where(and(
+          eq(activityLogs.organizationId, organizationId),
+          eq(activityLogs.entityType, 'key_result'),
+          eq(activityLogs.entityId, krId)
+        ))
+        .orderBy(desc(activityLogs.createdAt))
+        .limit(limitNum);
+      console.log('[Activity Logs API] Retrieved', logs.length, 'logs for key result', krId);
+      
+    } else {
+      // No filter, get all logs using storage layer
+      logs = await storage.getActivityLogs(organizationId, { limit: limitNum });
     }
     
-    // Limit to requested amount and sort by date descending
-    filteredLogs = filteredLogs
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-      .slice(0, parseInt(limit as string));
-    
-    res.json(filteredLogs);
+    res.json(logs);
   } catch (error) {
     console.error('Error fetching activity logs:', error);
     res.status(500).json({ error: 'Failed to fetch activity logs' });
