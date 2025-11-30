@@ -758,7 +758,8 @@ export class WorkflowExecutor {
                 workflowId: context.workflowId,
                 workflowName: context.workflowName,
                 runId: context.runId
-              }
+              },
+              createdAt: new Date()
             });
             console.log(`[WorkflowExecutor] ✅ Activity log created successfully for key result ${processedTargetId}: "${description}"`);
           } catch (error: any) {
@@ -858,7 +859,8 @@ export class WorkflowExecutor {
                 workflowId: context.workflowId,
                 workflowName: context.workflowName,
                 runId: context.runId
-              }
+              },
+              createdAt: new Date()
             });
             console.log(`[WorkflowExecutor] ✅ Activity log created successfully for objective ${processedTargetId}: "${description}"`);
           } catch (error: any) {
