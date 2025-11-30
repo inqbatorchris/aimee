@@ -426,39 +426,54 @@ router.get('/objectives/:id/activity', authenticateToken, async (req: AuthReques
     const objectiveId = parseInt(req.params.id);
     const organizationId = req.user?.organizationId || 3;
     
+    console.log(`[Objective Activity API] Fetching activities for objective ${objectiveId}, org ${organizationId}`);
+    
     // Verify objective exists and belongs to user's organization
     const objective = await storage.getObjective(objectiveId);
     if (!objective) {
+      console.log(`[Objective Activity API] Objective ${objectiveId} not found`);
       return res.status(404).json({ error: 'Objective not found' });
     }
     
-    // Get all activity logs for the organization
-    const allLogs = await storage.getActivityLogs(organizationId, {
+    // Get direct objective logs filtered at database level
+    const directObjectiveLogs = await storage.getActivityLogs(organizationId, {
+      entityType: 'objective',
+      entityId: objectiveId,
       limit: 100
     });
     
-    // Filter for this specific objective - includes both direct objective logs and related activities
-    const objectiveLogs = allLogs.filter(log => {
-      // Direct entity match for objective logs
-      if (log.entityType === 'objective' && log.entityId === objectiveId) {
-        return true;
-      }
-      
-      // Metadata objectiveId match for key result or other related logs
-      try {
-        if (log.metadata) {
-          const metadata = typeof log.metadata === 'string' ? JSON.parse(log.metadata) : log.metadata;
-          return metadata.objectiveId === objectiveId || metadata.objectiveId === String(objectiveId);
-        }
-      } catch (e) {
-        // Ignore JSON parse errors and continue
-      }
-      
-      return false;
-    });
+    console.log(`[Objective Activity API] Got ${directObjectiveLogs.length} direct objective logs`);
+    
+    // Get key results for this objective to also include their activity
+    const keyResults = await storage.getKeyResultsByObjective(objectiveId);
+    const keyResultIds = keyResults.map(kr => kr.id);
+    
+    console.log(`[Objective Activity API] Found ${keyResultIds.length} key results for objective`);
+    
+    // Get key result logs for all child key results
+    let childKeyResultLogs: any[] = [];
+    for (const krId of keyResultIds) {
+      const krLogs = await storage.getActivityLogs(organizationId, {
+        entityType: 'key_result',
+        entityId: krId,
+        limit: 50
+      });
+      childKeyResultLogs = childKeyResultLogs.concat(krLogs);
+    }
+    
+    console.log(`[Objective Activity API] Got ${childKeyResultLogs.length} child key result logs`);
+    
+    // Combine all logs and sort by date
+    const allObjectiveLogs = [...directObjectiveLogs, ...childKeyResultLogs]
+      .sort((a, b) => {
+        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        return dateB - dateA; // Most recent first
+      })
+      .slice(0, 100); // Limit total to 100
     
     // Transform database format to frontend expected format
-    const transformedLogs = objectiveLogs.map(log => ({
+    const transformedLogs = allObjectiveLogs.map(log => ({
       id: log.id,
       type: log.actionType === 'creation' ? 'created' : 
             log.actionType === 'status_change' ? 'status_changed' :
@@ -467,7 +482,7 @@ router.get('/objectives/:id/activity', authenticateToken, async (req: AuthReques
             log.actionType,
       description: log.description,
       userId: log.userId,
-      userName: 'System User', // Could be enhanced to fetch actual user names
+      userName: (log as any).userName || 'System User',
       timestamp: log.createdAt,
       metadata: typeof log.metadata === 'string' ? JSON.parse(log.metadata || '{}') : (log.metadata || {})
     }));
