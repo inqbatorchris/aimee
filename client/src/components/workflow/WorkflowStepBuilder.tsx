@@ -607,6 +607,7 @@ export default function WorkflowStepBuilder({
                   <SelectContent>
                     <SelectItem value="count_leads">Count Leads</SelectItem>
                     <SelectItem value="count_customers">Count Customers</SelectItem>
+                    <SelectItem value="count_tickets">Count Support Tickets</SelectItem>
                     <SelectItem value="get_revenue">Get Revenue</SelectItem>
                     <SelectItem value="get_tickets">Get Support Tickets</SelectItem>
                     <SelectItem value="send_email_campaign">Send Email Campaign</SelectItem>
@@ -658,6 +659,103 @@ export default function WorkflowStepBuilder({
                       }
                     })}
                   />
+                </div>
+              </div>
+            )}
+
+            {step.config.action === 'count_tickets' && (
+              <div className="space-y-3">
+                <div>
+                  <Label>Date Range</Label>
+                  <Select
+                    value={step.config.parameters?.dateRange || 'last_7_days'}
+                    onValueChange={(value) => updateStep(step.id, {
+                      config: { 
+                        ...step.config, 
+                        parameters: { ...step.config.parameters, dateRange: value }
+                      }
+                    })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="last_hour">Last Hour</SelectItem>
+                      <SelectItem value="today">Today</SelectItem>
+                      <SelectItem value="last_7_days">Last 7 Days</SelectItem>
+                      <SelectItem value="last_30_days">Last 30 Days</SelectItem>
+                      <SelectItem value="this_month">This Month</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Ticket Type (optional)</Label>
+                  <Select
+                    value={step.config.parameters?.ticketType || ''}
+                    onValueChange={(value) => updateStep(step.id, {
+                      config: {
+                        ...step.config,
+                        parameters: { ...step.config.parameters, ticketType: value || undefined }
+                      }
+                    })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="All types" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">All Types</SelectItem>
+                      <SelectItem value="Support">Support</SelectItem>
+                      <SelectItem value="Sales">Sales</SelectItem>
+                      <SelectItem value="Incident">Incident</SelectItem>
+                      <SelectItem value="Problem">Problem</SelectItem>
+                      <SelectItem value="Question">Question</SelectItem>
+                      <SelectItem value="Feature Request">Feature Request</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label>Group ID (optional)</Label>
+                  <Input
+                    placeholder="e.g., 1, 2, 3"
+                    value={step.config.parameters?.groupId || ''}
+                    onChange={(e) => updateStep(step.id, {
+                      config: {
+                        ...step.config,
+                        parameters: { ...step.config.parameters, groupId: e.target.value || undefined }
+                      }
+                    })}
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Enter the ticket group ID from Splynx
+                  </p>
+                </div>
+
+                <div>
+                  <Label>Status Filter (optional)</Label>
+                  <Select
+                    value={step.config.parameters?.statusFilter || ''}
+                    onValueChange={(value) => updateStep(step.id, {
+                      config: {
+                        ...step.config,
+                        parameters: { ...step.config.parameters, statusFilter: value || undefined }
+                      }
+                    })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="All statuses" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">All Statuses</SelectItem>
+                      <SelectItem value="new">New</SelectItem>
+                      <SelectItem value="open">Open</SelectItem>
+                      <SelectItem value="work_in_progress">Work in Progress</SelectItem>
+                      <SelectItem value="waiting_on_customer">Waiting on Customer</SelectItem>
+                      <SelectItem value="resolved">Resolved</SelectItem>
+                      <SelectItem value="closed">Closed</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
             )}
