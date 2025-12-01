@@ -976,6 +976,9 @@ export const knowledgeDocuments = pgTable("knowledge_documents", {
   externalFileSource: varchar("external_file_source", { length: 50 }),
   externalFileId: varchar("external_file_id", { length: 255 }),
   
+  // Team assignment (for team-based access control)
+  teamId: integer("team_id").references(() => teams.id),
+  
   // AI and search
   searchVector: text("search_vector"), // For full-text search
   aiEmbedding: jsonb("ai_embedding"), // For semantic search
@@ -994,6 +997,7 @@ export const knowledgeDocuments = pgTable("knowledge_documents", {
   index("idx_knowledge_docs_categories").on(table.categories),
   index("idx_knowledge_docs_tags").on(table.tags),
   index("idx_knowledge_docs_status").on(table.status),
+  index("idx_knowledge_docs_team").on(table.teamId),
 ]);
 
 // Knowledge Categories - multi-tenant
@@ -2803,6 +2807,7 @@ export const insertKnowledgeDocumentSchema = createInsertSchema(knowledgeDocumen
   estimatedReadingTime: z.number().int().positive().max(240).optional(), // 1-240 minutes
   documentType: z.enum(['internal_kb', 'training_module', 'customer_kb', 'external_file_link', 'website_page', 'marketing_email', 'marketing_letter', 'attachment', 'contract', 'policy', 'public_report', 'quick_reference']).optional(),
   folderId: z.number().int().nullable().optional(),
+  teamId: z.number().int().positive().optional().nullable(),
   externalFileUrl: z.string().url().optional().nullable(),
   externalFileSource: z.string().max(50).optional().nullable(),
 });
