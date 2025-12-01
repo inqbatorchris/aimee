@@ -13,6 +13,13 @@ interface LeadFilter {
   statusFilter?: string;
 }
 
+interface TicketFilter {
+  dateRange?: 'last_hour' | 'today' | 'last_7_days' | 'last_30_days' | 'this_month';
+  statusFilter?: string;
+  ticketType?: string;
+  groupId?: number | string;
+}
+
 // Types for unified query system
 export type SplynxEntity = 'customers' | 'leads' | 'support_tickets' | 'scheduling_tasks';
 export type QueryMode = 'count' | 'list';
@@ -290,6 +297,76 @@ export class SplynxService {
     } catch (error: any) {
       console.error('Error fetching support tickets from Splynx:', error.message);
       throw new Error(`Failed to fetch support tickets from Splynx: ${error.message}`);
+    }
+  }
+
+  async getTicketCount(filters: TicketFilter = {}, sinceDate?: Date): Promise<number> {
+    try {
+      const params: any = {
+        main_attributes: {},
+        limit: 10000
+      };
+
+      if (filters.statusFilter) {
+        params.main_attributes.status = filters.statusFilter;
+      }
+
+      if (filters.ticketType) {
+        params.main_attributes.type = filters.ticketType;
+      }
+
+      if (filters.groupId) {
+        params.main_attributes.group_id = filters.groupId;
+      }
+
+      if (sinceDate) {
+        const dateStr = sinceDate.toISOString().split('T')[0];
+        params.main_attributes.date_add = ['>=', dateStr];
+        console.log(`[SPLYNX getTicketCount] 🔄 INCREMENTAL MODE: Fetching tickets since ${dateStr}`);
+      } else if (filters.dateRange) {
+        const dateFilter = this.getDateRangeFilter(filters.dateRange);
+        if (dateFilter.dateFrom) {
+          params.main_attributes.date_add = ['>=', dateFilter.dateFrom.split('T')[0]];
+        }
+      } else {
+        console.log('[SPLYNX getTicketCount] ⚠️ FULL MODE: No date filter provided, fetching all tickets');
+      }
+
+      const url = this.buildUrl('admin/support/tickets');
+      
+      console.log('[SPLYNX getTicketCount] 📡 REQUEST DETAILS:');
+      console.log('[SPLYNX getTicketCount]   URL:', url);
+      console.log('[SPLYNX getTicketCount]   Params:', JSON.stringify(params, null, 2));
+      console.log('[SPLYNX getTicketCount]   Has Auth: ✓');
+      console.log('[SPLYNX getTicketCount]   Method: GET');
+      
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+        params,
+      });
+
+      console.log('[SPLYNX getTicketCount] ✅ RESPONSE:', response.status, response.statusText);
+      console.log('[SPLYNX getTicketCount]   Data type:', Array.isArray(response.data) ? 'array' : typeof response.data);
+      console.log('[SPLYNX getTicketCount]   Data length/keys:', Array.isArray(response.data) ? response.data.length : Object.keys(response.data || {}).join(', '));
+
+      if (Array.isArray(response.data)) {
+        return response.data.length;
+      } else if (response.data?.total !== undefined) {
+        return response.data.total;
+      } else if (response.data?.count !== undefined) {
+        return response.data.count;
+      }
+      
+      console.warn('[SPLYNX getTicketCount] Unexpected response format:', response.data);
+      return 0;
+    } catch (error: any) {
+      console.error('[SPLYNX getTicketCount] ❌ ERROR:', error.message);
+      console.error('[SPLYNX getTicketCount]   Response status:', error.response?.status);
+      console.error('[SPLYNX getTicketCount]   Response data:', error.response?.data);
+      throw new Error(`Failed to fetch ticket count from Splynx: ${error.message}`);
     }
   }
 
@@ -1432,6 +1509,9 @@ export class SplynxService {
         
       case 'get_tickets':
         return await this.getSupportTickets(filters);
+
+      case 'count_tickets':
+        return await this.getTicketCount(filters, parsedSinceDate);
 
       case 'get_administrators':
         return await this.getAdministrators();
