@@ -358,7 +358,8 @@ export class SplynxService {
     try {
       const params: any = {
         main_attributes: {},
-        limit: 10000
+        limit: 10000,
+        order: { created_at: 'desc' }
       };
 
       // Status and group filters work with main_attributes
