@@ -692,11 +692,11 @@ export default function WorkflowStepBuilder({
                 <div>
                   <Label>Ticket Type (optional)</Label>
                   <Select
-                    value={step.config.parameters?.ticketType || ''}
+                    value={step.config.parameters?.ticketType || 'all'}
                     onValueChange={(value) => updateStep(step.id, {
                       config: {
                         ...step.config,
-                        parameters: { ...step.config.parameters, ticketType: value || undefined }
+                        parameters: { ...step.config.parameters, ticketType: value === 'all' ? undefined : value }
                       }
                     })}
                   >
@@ -704,7 +704,7 @@ export default function WorkflowStepBuilder({
                       <SelectValue placeholder="All types" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Types</SelectItem>
+                      <SelectItem value="all">All Types</SelectItem>
                       <SelectItem value="Support">Support</SelectItem>
                       <SelectItem value="Sales">Sales</SelectItem>
                       <SelectItem value="Incident">Incident</SelectItem>
@@ -735,11 +735,11 @@ export default function WorkflowStepBuilder({
                 <div>
                   <Label>Status Filter (optional)</Label>
                   <Select
-                    value={step.config.parameters?.statusFilter || ''}
+                    value={step.config.parameters?.statusFilter || 'all'}
                     onValueChange={(value) => updateStep(step.id, {
                       config: {
                         ...step.config,
-                        parameters: { ...step.config.parameters, statusFilter: value || undefined }
+                        parameters: { ...step.config.parameters, statusFilter: value === 'all' ? undefined : value }
                       }
                     })}
                   >
@@ -747,7 +747,7 @@ export default function WorkflowStepBuilder({
                       <SelectValue placeholder="All statuses" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">All Statuses</SelectItem>
+                      <SelectItem value="all">All Statuses</SelectItem>
                       <SelectItem value="new">New</SelectItem>
                       <SelectItem value="open">Open</SelectItem>
                       <SelectItem value="work_in_progress">Work in Progress</SelectItem>
