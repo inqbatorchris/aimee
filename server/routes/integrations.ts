@@ -1971,21 +1971,20 @@ router.post('/splynx/:integrationId/test-action', async (req, res) => {
           }
           
           const startStr = formatDate(startDate);
-          const endStr = formatDate(endDate);
-          apiParams.main_attributes.created_at = ['between', [startStr, endStr]];
-          dateFilterInfo = `API filter: created_at between "${startStr}" and "${endStr}"`;
+          apiParams.main_attributes.created_at = ['>=', startStr];
+          dateFilterInfo = `API filter: created_at >= "${startStr}"`;
         }
         
         result = await splynxService.getTicketCount(ticketFilters);
         debugInfo = {
           action: 'count_tickets',
           apiRequest: {
-            url: `${baseUrl}/api/2.0/admin/support/tickets`,
+            url: `${baseUrl}admin/support/tickets`,
             method: 'GET',
             params: apiParams,
           },
           dateFiltering: dateFilterInfo,
-          note: 'Date filtering now uses Splynx comparison operators at API level. Results are paginated.',
+          note: 'Date filtering uses Splynx >= comparison operator. Results are paginated with 500 ticket batches.',
           filters: ticketFilters,
           count: result,
         };

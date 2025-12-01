@@ -419,11 +419,9 @@ export class SplynxService {
       }
 
       // Apply date filter using Splynx comparison operator syntax
-      if (dateFromStr && dateToStr) {
-        // Use "between" operator for date range
-        params.main_attributes.created_at = ['between', [dateFromStr, dateToStr]];
-      } else if (dateFromStr) {
-        // Use ">=" operator for since date
+      // Note: Splynx API only supports >=, >, <=, <, =, != operators, NOT "between"
+      if (dateFromStr) {
+        // Use ">=" operator for date filtering - Splynx doesn't support "between"
         params.main_attributes.created_at = ['>=', dateFromStr];
       }
 
