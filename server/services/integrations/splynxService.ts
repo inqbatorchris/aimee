@@ -14,7 +14,7 @@ interface LeadFilter {
 }
 
 interface TicketFilter {
-  dateRange?: 'last_hour' | 'today' | 'last_7_days' | 'last_30_days' | 'this_month';
+  dateRange?: 'last_hour' | 'today' | 'last_7_days' | 'last_30_days' | 'this_month' | 'this_week' | 'this_quarter' | 'this_year' | 'all';
   statusFilter?: string;
   ticketType?: string;
   groupId?: number | string;
@@ -357,38 +357,74 @@ export class SplynxService {
   async getTicketCount(filters: TicketFilter = {}, sinceDate?: Date): Promise<number> {
     try {
       const params: any = {
-        main_attributes: {},
-        limit: 10000
+        main_attributes: {}
       };
 
-      // Status filter
-      if (filters.statusFilter) {
-        params.main_attributes.status_id = filters.statusFilter;
+      // Status filter - use status_id (number)
+      if (filters.statusFilter && filters.statusFilter !== 'all') {
+        params.main_attributes.status_id = parseInt(filters.statusFilter);
       }
 
-      // Group filter
+      // Group filter - use group_id (number)
       if (filters.groupId) {
-        params.main_attributes.group_id = filters.groupId;
+        params.main_attributes.group_id = typeof filters.groupId === 'number' ? filters.groupId : parseInt(filters.groupId);
       }
       
-      // Type filter - use type_id in API request
+      // Type filter - use type_id (number)
       if (filters.ticketType) {
-        params.main_attributes.type_id = filters.ticketType;
+        params.main_attributes.type_id = parseInt(filters.ticketType);
       }
 
-      // Determine date filter for local filtering (Splynx tickets API doesn't support date filtering)
-      let dateFromFilter: Date | null = null;
+      // Date filter using Splynx comparison operators
+      // Splynx supports: [">=", "value"], ["between", [start, end]], etc.
+      let dateFromStr: string | null = null;
+      let dateToStr: string | null = null;
+      
       if (sinceDate) {
-        dateFromFilter = sinceDate;
-        console.log(`[SPLYNX getTicketCount] 🔄 INCREMENTAL MODE: Will filter tickets since ${sinceDate.toISOString().split('T')[0]}`);
-      } else if (filters.dateRange) {
-        const dateFilter = this.getDateRangeFilter(filters.dateRange);
-        if (dateFilter.dateFrom) {
-          dateFromFilter = new Date(dateFilter.dateFrom);
-          console.log(`[SPLYNX getTicketCount] 📅 DATE RANGE: Will filter tickets since ${dateFilter.dateFrom.split('T')[0]}`);
+        // Incremental mode - filter from sinceDate
+        dateFromStr = this.formatSplynxDateTime(sinceDate);
+        console.log(`[SPLYNX getTicketCount] 🔄 INCREMENTAL MODE: Filtering tickets since ${dateFromStr}`);
+      } else if (filters.dateRange && filters.dateRange !== 'all') {
+        // Calculate date range based on filter
+        const now = new Date();
+        let startDate: Date;
+        let endDate: Date = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+        
+        switch (filters.dateRange) {
+          case 'today':
+            startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+            break;
+          case 'this_week':
+            startDate = new Date(now);
+            startDate.setDate(now.getDate() - now.getDay());
+            startDate.setHours(0, 0, 0, 0);
+            break;
+          case 'this_month':
+            startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
+            break;
+          case 'this_quarter':
+            const quarterMonth = Math.floor(now.getMonth() / 3) * 3;
+            startDate = new Date(now.getFullYear(), quarterMonth, 1, 0, 0, 0);
+            break;
+          case 'this_year':
+            startDate = new Date(now.getFullYear(), 0, 1, 0, 0, 0);
+            break;
+          default:
+            startDate = new Date(0); // No date filter
         }
-      } else {
-        console.log('[SPLYNX getTicketCount] ⚠️ FULL MODE: No date filter provided, fetching all tickets');
+        
+        dateFromStr = this.formatSplynxDateTime(startDate);
+        dateToStr = this.formatSplynxDateTime(endDate);
+        console.log(`[SPLYNX getTicketCount] 📅 DATE RANGE (${filters.dateRange}): ${dateFromStr} to ${dateToStr}`);
+      }
+
+      // Apply date filter using Splynx comparison operator syntax
+      if (dateFromStr && dateToStr) {
+        // Use "between" operator for date range
+        params.main_attributes.created_at = ['between', [dateFromStr, dateToStr]];
+      } else if (dateFromStr) {
+        // Use ">=" operator for since date
+        params.main_attributes.created_at = ['>=', dateFromStr];
       }
 
       const url = this.buildUrl('admin/support/tickets');
@@ -396,96 +432,69 @@ export class SplynxService {
       console.log('[SPLYNX getTicketCount] 📡 REQUEST DETAILS:');
       console.log('[SPLYNX getTicketCount]   URL:', url);
       console.log('[SPLYNX getTicketCount]   Params:', JSON.stringify(params, null, 2));
-      console.log('[SPLYNX getTicketCount]   Has Auth: ✓');
-      console.log('[SPLYNX getTicketCount]   Method: GET');
       
-      // Store debug info for return
-      const debugInfo = {
-        url,
-        params,
-        dateFilter: dateFromFilter?.toISOString() || null
-      };
-      console.log('[SPLYNX getTicketCount] 🔍 DEBUG INFO:', JSON.stringify(debugInfo, null, 2));
+      // Use pagination to count all matching tickets
+      const batchSize = 500;
+      let totalCount = 0;
+      let offset = 0;
+      let hasMore = true;
       
-      const response = await axios.get(url, {
-        headers: {
-          'Authorization': this.credentials.authHeader,
-          'Content-Type': 'application/json',
-        },
-        params,
-      });
-
-      console.log('[SPLYNX getTicketCount] ✅ RESPONSE:', response.status, response.statusText);
-      console.log('[SPLYNX getTicketCount]   Data type:', Array.isArray(response.data) ? 'array' : typeof response.data);
-      console.log('[SPLYNX getTicketCount]   Data length/keys:', Array.isArray(response.data) ? response.data.length : Object.keys(response.data || {}).join(', '));
-
-      let tickets = Array.isArray(response.data) ? response.data : [];
-      
-      // Log sample ticket to see field names
-      if (tickets.length > 0) {
-        const sample = tickets[0];
-        console.log('[SPLYNX getTicketCount]   🎫 FULL SAMPLE TICKET:', JSON.stringify(sample, null, 2));
-      }
-      
-      // Type filter is now applied at API level via main_attributes.type_id
-      console.log(`[SPLYNX getTicketCount]   Tickets received (type filter applied by API): ${tickets.length}`);
-      
-      // Apply local date filtering (Splynx ticket API doesn't support date filtering via main_attributes)
-      if (dateFromFilter) {
-        // Set filter to start of day (local time)
-        const filterStartOfDay = new Date(dateFromFilter);
-        filterStartOfDay.setHours(0, 0, 0, 0);
-        
-        console.log(`[SPLYNX getTicketCount]   Date filter comparing against: ${filterStartOfDay.toISOString()}`);
-        
-        // Helper to normalize Splynx date values (can be Unix timestamp or ISO string)
-        const normalizeTicketDate = (dateValue: any): Date | null => {
-          if (!dateValue) return null;
-          
-          // If it's a number or numeric string (Unix timestamp in seconds)
-          if (typeof dateValue === 'number' || /^\d{10}$/.test(String(dateValue))) {
-            const timestamp = typeof dateValue === 'number' ? dateValue : parseInt(dateValue, 10);
-            // Unix timestamps are in seconds, JavaScript uses milliseconds
-            return new Date(timestamp * 1000);
-          }
-          
-          // If it's a numeric string with more digits (already milliseconds)
-          if (/^\d{13}$/.test(String(dateValue))) {
-            return new Date(parseInt(dateValue, 10));
-          }
-          
-          // Otherwise try parsing as date string
-          const parsed = new Date(dateValue);
-          return isNaN(parsed.getTime()) ? null : parsed;
+      while (hasMore) {
+        const paginatedParams = {
+          ...params,
+          limit: batchSize,
+          offset: offset
         };
         
-        // Log a sample date to debug
-        if (tickets.length > 0) {
-          const sampleDate = tickets[0].date_created || tickets[0].date_add;
-          console.log(`[SPLYNX getTicketCount]   Sample raw date value: ${sampleDate}, type: ${typeof sampleDate}`);
-          const normalized = normalizeTicketDate(sampleDate);
-          console.log(`[SPLYNX getTicketCount]   Sample normalized date: ${normalized?.toISOString()}`);
+        console.log(`[SPLYNX getTicketCount]   📄 Fetching batch: offset=${offset}, limit=${batchSize}`);
+        
+        const response = await axios.get(url, {
+          headers: {
+            'Authorization': this.credentials.authHeader,
+            'Content-Type': 'application/json',
+          },
+          params: paginatedParams,
+        });
+
+        const tickets = Array.isArray(response.data) ? response.data : [];
+        const batchCount = tickets.length;
+        totalCount += batchCount;
+        
+        console.log(`[SPLYNX getTicketCount]   ✅ Batch returned: ${batchCount} tickets (total so far: ${totalCount})`);
+        
+        // If we got fewer tickets than batch size, we've reached the end
+        if (batchCount < batchSize) {
+          hasMore = false;
+        } else {
+          offset += batchSize;
         }
         
-        tickets = tickets.filter((ticket: any) => {
-          // Try multiple date field names
-          const dateValue = ticket.date_created || ticket.date_add || ticket.created_at || ticket.date;
-          const ticketDate = normalizeTicketDate(dateValue);
-          if (!ticketDate) return false;
-          
-          return ticketDate >= filterStartOfDay;
-        });
-        console.log(`[SPLYNX getTicketCount]   After date filter: ${tickets.length} tickets`);
+        // Safety limit to prevent infinite loops
+        if (offset > 100000) {
+          console.log('[SPLYNX getTicketCount]   ⚠️ Safety limit reached (100,000 tickets)');
+          hasMore = false;
+        }
       }
 
-      console.log(`[SPLYNX getTicketCount] 📊 Final count: ${tickets.length}`);
-      return tickets.length;
+      console.log(`[SPLYNX getTicketCount] 📊 Final count: ${totalCount}`);
+      return totalCount;
     } catch (error: any) {
       console.error('[SPLYNX getTicketCount] ❌ ERROR:', error.message);
       console.error('[SPLYNX getTicketCount]   Response status:', error.response?.status);
       console.error('[SPLYNX getTicketCount]   Response data:', error.response?.data);
       throw new Error(`Failed to fetch ticket count from Splynx: ${error.message}`);
     }
+  }
+  
+  private formatSplynxDateTime(date: Date): string {
+    // Format as "YYYY-MM-DD HH:mm:ss" which Splynx expects
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    const hours = String(date.getHours()).padStart(2, '0');
+    const minutes = String(date.getMinutes()).padStart(2, '0');
+    const seconds = String(date.getSeconds()).padStart(2, '0');
+    return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
   }
 
   async getAdministrators(): Promise<any[]> {
@@ -1315,7 +1324,6 @@ export class SplynxService {
       return response.data;
     } catch (error: any) {
       console.error(`Failed to add message to ticket ${ticketId}:`, error.message);
-      console.error(`[DEBUG] Request URL:`, url);
       console.error(`[DEBUG] Request payload:`, { ticket_id: ticketId, message, hide_for_customer: isInternal ? '1' : '0' });
       throw new Error(`Failed to add ticket message: ${error.message}`);
     }

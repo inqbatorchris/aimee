@@ -1918,35 +1918,62 @@ router.post('/splynx/:integrationId/test-action', async (req, res) => {
           dateRange: parameters?.dateRange,
         };
         
-        // Build the API request details for debugging
-        const apiParams: any = { main_attributes: {}, limit: 10000 };
-        if (ticketFilters.statusFilter) apiParams.main_attributes.status_id = ticketFilters.statusFilter;
-        if (ticketFilters.groupId) apiParams.main_attributes.group_id = ticketFilters.groupId;
-        if (ticketFilters.ticketType) apiParams.main_attributes.type_id = ticketFilters.ticketType;
+        // Build the API request details for debugging (mirrors what getTicketCount does)
+        const apiParams: any = { main_attributes: {} };
+        if (ticketFilters.statusFilter && ticketFilters.statusFilter !== 'all') {
+          apiParams.main_attributes.status_id = parseInt(ticketFilters.statusFilter);
+        }
+        if (ticketFilters.groupId) {
+          apiParams.main_attributes.group_id = parseInt(String(ticketFilters.groupId));
+        }
+        if (ticketFilters.ticketType) {
+          apiParams.main_attributes.type_id = parseInt(ticketFilters.ticketType);
+        }
         
-        // Calculate date filter for display
+        // Calculate date filter for display (using Splynx comparison operators)
         let dateFilterInfo = 'No date filter';
-        if (ticketFilters.dateRange) {
+        if (ticketFilters.dateRange && ticketFilters.dateRange !== 'all') {
           const now = new Date();
+          const formatDate = (d: Date) => {
+            const year = d.getFullYear();
+            const month = String(d.getMonth() + 1).padStart(2, '0');
+            const day = String(d.getDate()).padStart(2, '0');
+            const hours = String(d.getHours()).padStart(2, '0');
+            const minutes = String(d.getMinutes()).padStart(2, '0');
+            const seconds = String(d.getSeconds()).padStart(2, '0');
+            return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+          };
+          
+          let startDate: Date;
+          let endDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
+          
           switch (ticketFilters.dateRange) {
             case 'today':
-              dateFilterInfo = `Filtering locally for tickets since ${now.toISOString().split('T')[0]}`;
+              startDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
               break;
             case 'this_week':
-              const weekStart = new Date(now);
-              weekStart.setDate(now.getDate() - now.getDay());
-              dateFilterInfo = `Filtering locally for tickets since ${weekStart.toISOString().split('T')[0]}`;
+              startDate = new Date(now);
+              startDate.setDate(now.getDate() - now.getDay());
+              startDate.setHours(0, 0, 0, 0);
               break;
             case 'this_month':
-              dateFilterInfo = `Filtering locally for tickets since ${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+              startDate = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0);
               break;
             case 'this_quarter':
               const quarterMonth = Math.floor(now.getMonth() / 3) * 3;
-              dateFilterInfo = `Filtering locally for tickets since ${now.getFullYear()}-${String(quarterMonth + 1).padStart(2, '0')}-01`;
+              startDate = new Date(now.getFullYear(), quarterMonth, 1, 0, 0, 0);
+              break;
+            case 'this_year':
+              startDate = new Date(now.getFullYear(), 0, 1, 0, 0, 0);
               break;
             default:
-              dateFilterInfo = `Date range: ${ticketFilters.dateRange}`;
+              startDate = new Date(0);
           }
+          
+          const startStr = formatDate(startDate);
+          const endStr = formatDate(endDate);
+          apiParams.main_attributes.created_at = ['between', [startStr, endStr]];
+          dateFilterInfo = `API filter: created_at between "${startStr}" and "${endStr}"`;
         }
         
         result = await splynxService.getTicketCount(ticketFilters);
@@ -1958,7 +1985,7 @@ router.post('/splynx/:integrationId/test-action', async (req, res) => {
             params: apiParams,
           },
           dateFiltering: dateFilterInfo,
-          note: 'Date filtering is applied locally after fetching (Splynx API limitation). API returns oldest 10,000 tickets first.',
+          note: 'Date filtering now uses Splynx comparison operators at API level. Results are paginated.',
           filters: ticketFilters,
           count: result,
         };
