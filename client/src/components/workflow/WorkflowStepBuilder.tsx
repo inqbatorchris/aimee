@@ -349,10 +349,9 @@ function TestActionButton({ integrationId, action, parameters }: TestActionButto
     mutationFn: async () => {
       const response = await apiRequest(`/api/integrations/splynx/${integrationId}/test-action`, {
         method: 'POST',
-        body: JSON.stringify({ action, parameters }),
-        headers: { 'Content-Type': 'application/json' },
+        body: { action, parameters },
       });
-      return response;
+      return response.json();
     },
     onSuccess: (data: any) => {
       setTestResult(data.result);
