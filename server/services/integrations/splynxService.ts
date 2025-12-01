@@ -307,26 +307,25 @@ export class SplynxService {
         limit: 10000
       };
 
+      // Status and group filters work with main_attributes
       if (filters.statusFilter) {
         params.main_attributes.status = filters.statusFilter;
-      }
-
-      if (filters.ticketType) {
-        params.main_attributes.type = filters.ticketType;
       }
 
       if (filters.groupId) {
         params.main_attributes.group_id = filters.groupId;
       }
 
+      // Determine date filter for local filtering (Splynx tickets API doesn't support date filtering)
+      let dateFromFilter: Date | null = null;
       if (sinceDate) {
-        const dateStr = sinceDate.toISOString().split('T')[0];
-        params.main_attributes.date_created = ['>=', dateStr];
-        console.log(`[SPLYNX getTicketCount] 🔄 INCREMENTAL MODE: Fetching tickets since ${dateStr}`);
+        dateFromFilter = sinceDate;
+        console.log(`[SPLYNX getTicketCount] 🔄 INCREMENTAL MODE: Will filter tickets since ${sinceDate.toISOString().split('T')[0]}`);
       } else if (filters.dateRange) {
         const dateFilter = this.getDateRangeFilter(filters.dateRange);
         if (dateFilter.dateFrom) {
-          params.main_attributes.date_created = ['>=', dateFilter.dateFrom.split('T')[0]];
+          dateFromFilter = new Date(dateFilter.dateFrom);
+          console.log(`[SPLYNX getTicketCount] 📅 DATE RANGE: Will filter tickets since ${dateFilter.dateFrom.split('T')[0]}`);
         }
       } else {
         console.log('[SPLYNX getTicketCount] ⚠️ FULL MODE: No date filter provided, fetching all tickets');
@@ -352,16 +351,28 @@ export class SplynxService {
       console.log('[SPLYNX getTicketCount]   Data type:', Array.isArray(response.data) ? 'array' : typeof response.data);
       console.log('[SPLYNX getTicketCount]   Data length/keys:', Array.isArray(response.data) ? response.data.length : Object.keys(response.data || {}).join(', '));
 
-      if (Array.isArray(response.data)) {
-        return response.data.length;
-      } else if (response.data?.total !== undefined) {
-        return response.data.total;
-      } else if (response.data?.count !== undefined) {
-        return response.data.count;
+      let tickets = Array.isArray(response.data) ? response.data : [];
+      
+      // Apply local filtering for ticket type (Splynx uses different field names)
+      if (filters.ticketType) {
+        tickets = tickets.filter((ticket: any) => 
+          ticket.type === filters.ticketType || 
+          ticket.type_name === filters.ticketType
+        );
+        console.log(`[SPLYNX getTicketCount]   After type filter (${filters.ticketType}): ${tickets.length} tickets`);
       }
       
-      console.warn('[SPLYNX getTicketCount] Unexpected response format:', response.data);
-      return 0;
+      // Apply local date filtering (Splynx ticket API doesn't support date filtering via main_attributes)
+      if (dateFromFilter) {
+        tickets = tickets.filter((ticket: any) => {
+          const ticketDate = new Date(ticket.date_created || ticket.date_add || 0);
+          return ticketDate >= dateFromFilter!;
+        });
+        console.log(`[SPLYNX getTicketCount]   After date filter: ${tickets.length} tickets`);
+      }
+
+      console.log(`[SPLYNX getTicketCount] 📊 Final count: ${tickets.length}`);
+      return tickets.length;
     } catch (error: any) {
       console.error('[SPLYNX getTicketCount] ❌ ERROR:', error.message);
       console.error('[SPLYNX getTicketCount]   Response status:', error.response?.status);
