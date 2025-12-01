@@ -407,23 +407,31 @@ export class SplynxService {
 
       let tickets = Array.isArray(response.data) ? response.data : [];
       
-      // Log sample ticket to see date field names
+      // Log sample ticket to see field names
       if (tickets.length > 0) {
         const sample = tickets[0];
-        console.log('[SPLYNX getTicketCount]   Sample ticket date fields:', {
+        console.log('[SPLYNX getTicketCount]   Sample ticket fields:', {
           date_created: sample.date_created,
           date_add: sample.date_add,
           created_at: sample.created_at,
           date: sample.date,
+          type: sample.type,
+          type_id: sample.type_id,
+          type_name: sample.type_name,
+          ticket_type: sample.ticket_type,
+          ticket_type_id: sample.ticket_type_id,
         });
       }
       
-      // Apply local filtering for ticket type (Splynx uses different field names)
+      // Apply local filtering for ticket type (comparing by ID or name)
       if (filters.ticketType) {
-        tickets = tickets.filter((ticket: any) => 
-          ticket.type === filters.ticketType || 
-          ticket.type_name === filters.ticketType
-        );
+        const typeFilter = String(filters.ticketType);
+        tickets = tickets.filter((ticket: any) => {
+          // Compare against various possible field names for type ID
+          const typeId = String(ticket.type_id || ticket.ticket_type_id || ticket.type || '');
+          const typeName = String(ticket.type_name || ticket.ticket_type || '');
+          return typeId === typeFilter || typeName === typeFilter;
+        });
         console.log(`[SPLYNX getTicketCount]   After type filter (${filters.ticketType}): ${tickets.length} tickets`);
       }
       
