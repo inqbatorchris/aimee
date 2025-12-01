@@ -358,17 +358,22 @@ export class SplynxService {
     try {
       const params: any = {
         main_attributes: {},
-        limit: 10000,
-        order: { created_at: 'desc' }
+        limit: 10000
       };
 
-      // Status and group filters work with main_attributes
+      // Status filter
       if (filters.statusFilter) {
-        params.main_attributes.status = filters.statusFilter;
+        params.main_attributes.status_id = filters.statusFilter;
       }
 
+      // Group filter
       if (filters.groupId) {
         params.main_attributes.group_id = filters.groupId;
+      }
+      
+      // Type filter - use type_id in API request
+      if (filters.ticketType) {
+        params.main_attributes.type_id = filters.ticketType;
       }
 
       // Determine date filter for local filtering (Splynx tickets API doesn't support date filtering)
@@ -414,17 +419,8 @@ export class SplynxService {
         console.log('[SPLYNX getTicketCount]   🎫 FULL SAMPLE TICKET:', JSON.stringify(sample, null, 2));
       }
       
-      // Apply local filtering for ticket type (comparing by ID or name)
-      if (filters.ticketType) {
-        const typeFilter = String(filters.ticketType);
-        tickets = tickets.filter((ticket: any) => {
-          // Compare against various possible field names for type ID
-          const typeId = String(ticket.type_id || ticket.ticket_type_id || ticket.type || '');
-          const typeName = String(ticket.type_name || ticket.ticket_type || '');
-          return typeId === typeFilter || typeName === typeFilter;
-        });
-        console.log(`[SPLYNX getTicketCount]   After type filter (${filters.ticketType}): ${tickets.length} tickets`);
-      }
+      // Type filter is now applied at API level via main_attributes.type_id
+      console.log(`[SPLYNX getTicketCount]   Tickets received (type filter applied by API): ${tickets.length}`);
       
       // Apply local date filtering (Splynx ticket API doesn't support date filtering via main_attributes)
       if (dateFromFilter) {
