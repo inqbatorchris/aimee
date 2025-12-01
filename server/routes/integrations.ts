@@ -1971,8 +1971,8 @@ router.post('/splynx/:integrationId/test-action', async (req, res) => {
           }
           
           const startStr = formatDate(startDate);
-          apiParams.main_attributes.created_at = ['>=', startStr];
-          dateFilterInfo = `API filter: created_at >= "${startStr}"`;
+          const endStr = formatDate(endDate);
+          dateFilterInfo = `Client-side: created_at >= "${startStr}" AND created_at <= "${endStr}"`;
         }
         
         result = await splynxService.getTicketCount(ticketFilters);
@@ -1984,7 +1984,7 @@ router.post('/splynx/:integrationId/test-action', async (req, res) => {
             params: apiParams,
           },
           dateFiltering: dateFilterInfo,
-          note: 'Date filtering uses Splynx >= comparison operator. Results are paginated with 500 ticket batches.',
+          note: 'Type/status/group filters applied server-side. Date filtering is done client-side (Splynx API limitation). Results are paginated with 500 ticket batches.',
           filters: ticketFilters,
           count: result,
         };

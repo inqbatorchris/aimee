@@ -418,24 +418,28 @@ export class SplynxService {
         console.log(`[SPLYNX getTicketCount] 📅 DATE RANGE (${filters.dateRange}): ${dateFromStr} to ${dateToStr}`);
       }
 
-      // Apply date filter using Splynx comparison operator syntax
-      // Note: Splynx API only supports >=, >, <=, <, =, != operators, NOT "between"
-      if (dateFromStr) {
-        // Use ">=" operator for date filtering - Splynx doesn't support "between"
-        params.main_attributes.created_at = ['>=', dateFromStr];
-      }
-
+      // Use the list endpoint with type/status/group filters (these work)
+      // Date filtering is done client-side because Splynx API doesn't support date filtering
       const url = this.buildUrl('admin/support/tickets');
       
       console.log('[SPLYNX getTicketCount] 📡 REQUEST DETAILS:');
       console.log('[SPLYNX getTicketCount]   URL:', url);
+      console.log('[SPLYNX getTicketCount]   Method: GET');
       console.log('[SPLYNX getTicketCount]   Params:', JSON.stringify(params, null, 2));
+      console.log('[SPLYNX getTicketCount]   Date filter (client-side):', dateFromStr, 'to', dateToStr);
       
-      // Use pagination to count all matching tickets
+      // Paginate through all matching tickets and apply client-side date filtering
+      // Note: Splynx API doesn't support date filtering or custom ordering, so we must scan all tickets
       const batchSize = 500;
       let totalCount = 0;
       let offset = 0;
       let hasMore = true;
+      
+      // Parse date filters once
+      const dateFrom = dateFromStr ? new Date(dateFromStr.replace(' ', 'T')) : null;
+      const dateTo = dateToStr ? new Date(dateToStr.replace(' ', 'T')) : null;
+      
+      console.log(`[SPLYNX getTicketCount] 🔍 Filter range: ${dateFrom?.toISOString() || 'none'} to ${dateTo?.toISOString() || 'none'}`);
       
       while (hasMore) {
         const paginatedParams = {
@@ -443,8 +447,6 @@ export class SplynxService {
           limit: batchSize,
           offset: offset
         };
-        
-        console.log(`[SPLYNX getTicketCount]   📄 Fetching batch: offset=${offset}, limit=${batchSize}`);
         
         const response = await axios.get(url, {
           headers: {
@@ -454,20 +456,43 @@ export class SplynxService {
           params: paginatedParams,
         });
 
-        const tickets = Array.isArray(response.data) ? response.data : [];
-        const batchCount = tickets.length;
-        totalCount += batchCount;
+        let tickets = Array.isArray(response.data) ? response.data : [];
         
-        console.log(`[SPLYNX getTicketCount]   ✅ Batch returned: ${batchCount} tickets (total so far: ${totalCount})`);
+        // Apply client-side date filtering if date range is specified
+        let matchCount = 0;
+        
+        if (dateFrom || dateTo) {
+          for (const ticket of tickets) {
+            if (!ticket.created_at) continue;
+            const ticketDate = new Date(ticket.created_at.replace(' ', 'T'));
+            
+            // Check if ticket is within date range
+            const afterFrom = !dateFrom || ticketDate >= dateFrom;
+            const beforeTo = !dateTo || ticketDate <= dateTo;
+            
+            if (afterFrom && beforeTo) {
+              matchCount++;
+            }
+          }
+        } else {
+          matchCount = tickets.length;
+        }
+        
+        totalCount += matchCount;
+        
+        // Log progress every 10 batches to reduce console noise
+        if (offset === 0 || offset % 5000 === 0 || tickets.length < batchSize) {
+          console.log(`[SPLYNX getTicketCount]   📄 Progress: offset=${offset}, batch=${tickets.length}, matched=${matchCount}, total=${totalCount}`);
+        }
         
         // If we got fewer tickets than batch size, we've reached the end
-        if (batchCount < batchSize) {
+        if (tickets.length < batchSize) {
           hasMore = false;
         } else {
           offset += batchSize;
         }
         
-        // Safety limit to prevent infinite loops
+        // Safety limit
         if (offset > 100000) {
           console.log('[SPLYNX getTicketCount]   ⚠️ Safety limit reached (100,000 tickets)');
           hasMore = false;
