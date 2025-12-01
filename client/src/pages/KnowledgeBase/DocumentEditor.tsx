@@ -15,7 +15,7 @@ import { apiRequest } from '@/lib/queryClient';
 import { useAuth } from '@/contexts/AuthContext';
 import { DocumentFormWrapper } from '@/components/document-editor/DocumentFormWrapper';
 import { AIComposePanel } from '@/components/knowledge-hub/AIComposePanel';
-import type { KnowledgeFolder } from '@shared/schema';
+import type { KnowledgeFolder, Team } from '@shared/schema';
 
 const DOCUMENT_TYPES = [
   { value: 'internal_kb', label: 'Knowledge Article', icon: FileText, description: 'Standard knowledge base article' },
@@ -47,6 +47,7 @@ export default function DocumentEditor() {
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [documentType, setDocumentType] = useState<string>(initialType || 'internal_kb');
   const [folderId, setFolderId] = useState<number | null>(null);
+  const [teamId, setTeamId] = useState<number | null>(null);
   
   // External file link fields
   const [externalFileUrl, setExternalFileUrl] = useState('');
@@ -65,6 +66,11 @@ export default function DocumentEditor() {
   // Fetch folders for folder selector
   const { data: folders = [] } = useQuery<KnowledgeFolder[]>({
     queryKey: ['/api/knowledge-base/folders'],
+  });
+
+  // Fetch teams for team selector
+  const { data: teams = [] } = useQuery<Team[]>({
+    queryKey: ['/api/teams'],
   });
 
   // Fetch existing document if editing
@@ -105,9 +111,10 @@ export default function DocumentEditor() {
         setEstimatedReadingTime(doc.estimatedReadingTime || 5);
         setDocumentType(doc.documentType || 'internal_kb');
         setFolderId(doc.folderId || null);
+        setTeamId(doc.teamId || null);
         setExternalFileUrl(doc.externalFileUrl || '');
         setExternalFileSource(doc.externalFileSource || '');
-        console.log('Document data loaded:', { title: doc.title, hasContent: !!doc.content, documentType: doc.documentType });
+        console.log('Document data loaded:', { title: doc.title, hasContent: !!doc.content, documentType: doc.documentType, teamId: doc.teamId });
       }
     }
   }, [document, isLoading]);
@@ -123,6 +130,7 @@ export default function DocumentEditor() {
       setEstimatedReadingTime(5);
       setDocumentType(initialType || 'internal_kb');
       setFolderId(null);
+      setTeamId(null);
       setExternalFileUrl('');
       setExternalFileSource('');
     }
@@ -139,6 +147,7 @@ export default function DocumentEditor() {
       estimatedReadingTime: number;
       documentType: string;
       folderId: number | null;
+      teamId: number | null;
       externalFileUrl?: string;
       externalFileSource?: string;
     }) => {
@@ -225,6 +234,7 @@ export default function DocumentEditor() {
       estimatedReadingTime,
       documentType,
       folderId,
+      teamId,
     };
 
     // Add external file fields if external link type
@@ -530,6 +540,30 @@ export default function DocumentEditor() {
                             <Folder className="h-4 w-4" style={{ color: folder.color || undefined }} />
                             <span>{folder.name}</span>
                           </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {/* Team Selector */}
+                <div>
+                  <Label className="flex items-center gap-1.5 text-sm">
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                    Team
+                  </Label>
+                  <Select 
+                    value={teamId?.toString() || 'none'} 
+                    onValueChange={(value) => setTeamId(value === 'none' ? null : parseInt(value))}
+                  >
+                    <SelectTrigger className="text-sm" data-testid="team-selector">
+                      <SelectValue placeholder="No team assigned" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="none">No team assigned</SelectItem>
+                      {teams.map((team) => (
+                        <SelectItem key={team.id} value={team.id.toString()}>
+                          {team.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
