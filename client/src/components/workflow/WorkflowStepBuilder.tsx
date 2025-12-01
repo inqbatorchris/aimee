@@ -335,6 +335,78 @@ function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
   );
 }
 
+interface TestActionButtonProps {
+  integrationId: number;
+  action: string;
+  parameters: any;
+}
+
+function TestActionButton({ integrationId, action, parameters }: TestActionButtonProps) {
+  const { toast } = useToast();
+  const [testResult, setTestResult] = useState<number | null>(null);
+
+  const testMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest(`/api/integrations/splynx/${integrationId}/test-action`, {
+        method: 'POST',
+        body: JSON.stringify({ action, parameters }),
+        headers: { 'Content-Type': 'application/json' },
+      });
+      return response;
+    },
+    onSuccess: (data: any) => {
+      setTestResult(data.result);
+      toast({
+        title: 'Test Complete',
+        description: `Query returned: ${data.result} items`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Test Failed',
+        description: error.message || 'Failed to test query',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  if (!integrationId) {
+    return null;
+  }
+
+  return (
+    <div className="pt-2 border-t mt-4">
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        onClick={() => testMutation.mutate()}
+        disabled={testMutation.isPending}
+        className="w-full"
+        data-testid="button-test-action"
+      >
+        {testMutation.isPending ? (
+          <>
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            Testing...
+          </>
+        ) : (
+          <>
+            <Zap className="h-4 w-4 mr-2" />
+            Test Query
+          </>
+        )}
+      </Button>
+      {testResult !== null && (
+        <div className="mt-2 p-2 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded text-sm">
+          <span className="font-medium text-green-900 dark:text-green-100">Result: </span>
+          <span className="text-green-800 dark:text-green-200">{testResult} items</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 const STEP_TYPES = {
   integration_action: {
     label: 'Integration Action',
@@ -757,6 +829,12 @@ export default function WorkflowStepBuilder({
                     </SelectContent>
                   </Select>
                 </div>
+
+                <TestActionButton
+                  integrationId={step.config.integrationId}
+                  action={step.config.action}
+                  parameters={step.config.parameters}
+                />
               </div>
             )}
 

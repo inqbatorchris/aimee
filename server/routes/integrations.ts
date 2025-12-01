@@ -1860,4 +1860,112 @@ router.patch('/splynx/entity/ticket/:ticketId/status', async (req, res) => {
   }
 });
 
+// Test Splynx action (for workflow builder testing)
+router.post('/splynx/:integrationId/test-action', async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const { integrationId } = req.params;
+    const { action, parameters } = req.body;
+
+    console.log(`[SPLYNX TEST ACTION] Testing action: ${action}`);
+    console.log(`[SPLYNX TEST ACTION] Parameters:`, parameters);
+
+    // Get integration
+    const [splynxIntegration] = await db
+      .select()
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.id, parseInt(integrationId)),
+          eq(integrations.organizationId, user.organizationId),
+          eq(integrations.platformType, 'splynx')
+        )
+      )
+      .limit(1);
+
+    if (!splynxIntegration) {
+      return res.status(404).json({ error: 'Splynx integration not found' });
+    }
+
+    if (!splynxIntegration.credentialsEncrypted) {
+      return res.status(400).json({ error: 'Splynx credentials not configured' });
+    }
+
+    // Decrypt credentials
+    const credentials = JSON.parse(decrypt(splynxIntegration.credentialsEncrypted));
+    const { baseUrl, authHeader } = credentials;
+
+    if (!baseUrl || !authHeader) {
+      return res.status(400).json({ error: 'Splynx credentials incomplete' });
+    }
+
+    // Create Splynx service and execute action
+    const splynxService = new SplynxService({ baseUrl, authHeader });
+    
+    let result: any;
+    let debugInfo: any = {};
+
+    switch (action) {
+      case 'count_tickets':
+        const ticketFilters = {
+          statusFilter: parameters?.statusFilter,
+          ticketType: parameters?.ticketType,
+          groupId: parameters?.groupId,
+          dateRange: parameters?.dateRange,
+        };
+        result = await splynxService.getTicketCount(ticketFilters);
+        debugInfo = {
+          action: 'count_tickets',
+          filters: ticketFilters,
+          count: result,
+        };
+        break;
+        
+      case 'count_leads':
+        const leadFilters = {
+          statusFilter: parameters?.statusFilter,
+          dateRange: parameters?.dateRange,
+        };
+        result = await splynxService.getLeadCount(leadFilters);
+        debugInfo = {
+          action: 'count_leads',
+          filters: leadFilters,
+          count: result,
+        };
+        break;
+        
+      case 'count_customers':
+        const customerFilters = {
+          statusFilter: parameters?.statusFilter,
+          dateRange: parameters?.dateRange,
+        };
+        result = await splynxService.getCustomerCount(customerFilters);
+        debugInfo = {
+          action: 'count_customers',
+          filters: customerFilters,
+          count: result,
+        };
+        break;
+        
+      default:
+        return res.status(400).json({ error: `Unsupported action for testing: ${action}` });
+    }
+
+    console.log(`[SPLYNX TEST ACTION] Result:`, result);
+
+    res.json({ 
+      success: true,
+      result,
+      debugInfo,
+    });
+  } catch (error: any) {
+    console.error(`[SPLYNX TEST ACTION] Error:`, error);
+    res.status(500).json({ error: 'Failed to test action', details: error.message });
+  }
+});
+
 export default router;

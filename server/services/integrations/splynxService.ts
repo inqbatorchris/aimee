@@ -353,6 +353,17 @@ export class SplynxService {
 
       let tickets = Array.isArray(response.data) ? response.data : [];
       
+      // Log sample ticket to see date field names
+      if (tickets.length > 0) {
+        const sample = tickets[0];
+        console.log('[SPLYNX getTicketCount]   Sample ticket date fields:', {
+          date_created: sample.date_created,
+          date_add: sample.date_add,
+          created_at: sample.created_at,
+          date: sample.date,
+        });
+      }
+      
       // Apply local filtering for ticket type (Splynx uses different field names)
       if (filters.ticketType) {
         tickets = tickets.filter((ticket: any) => 
@@ -364,9 +375,48 @@ export class SplynxService {
       
       // Apply local date filtering (Splynx ticket API doesn't support date filtering via main_attributes)
       if (dateFromFilter) {
+        // Set filter to start of day (local time)
+        const filterStartOfDay = new Date(dateFromFilter);
+        filterStartOfDay.setHours(0, 0, 0, 0);
+        
+        console.log(`[SPLYNX getTicketCount]   Date filter comparing against: ${filterStartOfDay.toISOString()}`);
+        
+        // Helper to normalize Splynx date values (can be Unix timestamp or ISO string)
+        const normalizeTicketDate = (dateValue: any): Date | null => {
+          if (!dateValue) return null;
+          
+          // If it's a number or numeric string (Unix timestamp in seconds)
+          if (typeof dateValue === 'number' || /^\d{10}$/.test(String(dateValue))) {
+            const timestamp = typeof dateValue === 'number' ? dateValue : parseInt(dateValue, 10);
+            // Unix timestamps are in seconds, JavaScript uses milliseconds
+            return new Date(timestamp * 1000);
+          }
+          
+          // If it's a numeric string with more digits (already milliseconds)
+          if (/^\d{13}$/.test(String(dateValue))) {
+            return new Date(parseInt(dateValue, 10));
+          }
+          
+          // Otherwise try parsing as date string
+          const parsed = new Date(dateValue);
+          return isNaN(parsed.getTime()) ? null : parsed;
+        };
+        
+        // Log a sample date to debug
+        if (tickets.length > 0) {
+          const sampleDate = tickets[0].date_created || tickets[0].date_add;
+          console.log(`[SPLYNX getTicketCount]   Sample raw date value: ${sampleDate}, type: ${typeof sampleDate}`);
+          const normalized = normalizeTicketDate(sampleDate);
+          console.log(`[SPLYNX getTicketCount]   Sample normalized date: ${normalized?.toISOString()}`);
+        }
+        
         tickets = tickets.filter((ticket: any) => {
-          const ticketDate = new Date(ticket.date_created || ticket.date_add || 0);
-          return ticketDate >= dateFromFilter!;
+          // Try multiple date field names
+          const dateValue = ticket.date_created || ticket.date_add || ticket.created_at || ticket.date;
+          const ticketDate = normalizeTicketDate(dateValue);
+          if (!ticketDate) return false;
+          
+          return ticketDate >= filterStartOfDay;
         });
         console.log(`[SPLYNX getTicketCount]   After date filter: ${tickets.length} tickets`);
       }
