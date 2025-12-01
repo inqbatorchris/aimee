@@ -426,6 +426,8 @@ interface TestActionButtonProps {
 function TestActionButton({ integrationId, action, parameters }: TestActionButtonProps) {
   const { toast } = useToast();
   const [testResult, setTestResult] = useState<number | null>(null);
+  const [debugInfo, setDebugInfo] = useState<any>(null);
+  const [showDebug, setShowDebug] = useState(false);
 
   const testMutation = useMutation({
     mutationFn: async () => {
@@ -437,6 +439,7 @@ function TestActionButton({ integrationId, action, parameters }: TestActionButto
     },
     onSuccess: (data: any) => {
       setTestResult(data.result);
+      setDebugInfo(data.debugInfo);
       toast({
         title: 'Test Complete',
         description: `Query returned: ${data.result} items`,
@@ -482,6 +485,21 @@ function TestActionButton({ integrationId, action, parameters }: TestActionButto
         <div className="mt-2 p-2 bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded text-sm">
           <span className="font-medium text-green-900 dark:text-green-100">Result: </span>
           <span className="text-green-800 dark:text-green-200">{testResult} items</span>
+          {debugInfo && (
+            <button 
+              onClick={() => setShowDebug(!showDebug)} 
+              className="ml-2 text-xs text-blue-600 dark:text-blue-400 underline"
+            >
+              {showDebug ? 'Hide' : 'Show'} API Details
+            </button>
+          )}
+        </div>
+      )}
+      {showDebug && debugInfo && (
+        <div className="mt-2 p-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded text-xs font-mono overflow-auto max-h-48">
+          <pre className="whitespace-pre-wrap text-gray-700 dark:text-gray-300">
+            {JSON.stringify(debugInfo, null, 2)}
+          </pre>
         </div>
       )}
     </div>

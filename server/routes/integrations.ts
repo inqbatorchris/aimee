@@ -1917,9 +1917,48 @@ router.post('/splynx/:integrationId/test-action', async (req, res) => {
           groupId: parameters?.groupId,
           dateRange: parameters?.dateRange,
         };
+        
+        // Build the API request details for debugging
+        const apiParams: any = { main_attributes: {}, limit: 10000 };
+        if (ticketFilters.statusFilter) apiParams.main_attributes.status_id = ticketFilters.statusFilter;
+        if (ticketFilters.groupId) apiParams.main_attributes.group_id = ticketFilters.groupId;
+        if (ticketFilters.ticketType) apiParams.main_attributes.type_id = ticketFilters.ticketType;
+        
+        // Calculate date filter for display
+        let dateFilterInfo = 'No date filter';
+        if (ticketFilters.dateRange) {
+          const now = new Date();
+          switch (ticketFilters.dateRange) {
+            case 'today':
+              dateFilterInfo = `Filtering locally for tickets since ${now.toISOString().split('T')[0]}`;
+              break;
+            case 'this_week':
+              const weekStart = new Date(now);
+              weekStart.setDate(now.getDate() - now.getDay());
+              dateFilterInfo = `Filtering locally for tickets since ${weekStart.toISOString().split('T')[0]}`;
+              break;
+            case 'this_month':
+              dateFilterInfo = `Filtering locally for tickets since ${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+              break;
+            case 'this_quarter':
+              const quarterMonth = Math.floor(now.getMonth() / 3) * 3;
+              dateFilterInfo = `Filtering locally for tickets since ${now.getFullYear()}-${String(quarterMonth + 1).padStart(2, '0')}-01`;
+              break;
+            default:
+              dateFilterInfo = `Date range: ${ticketFilters.dateRange}`;
+          }
+        }
+        
         result = await splynxService.getTicketCount(ticketFilters);
         debugInfo = {
           action: 'count_tickets',
+          apiRequest: {
+            url: `${baseUrl}/api/2.0/admin/support/tickets`,
+            method: 'GET',
+            params: apiParams,
+          },
+          dateFiltering: dateFilterInfo,
+          note: 'Date filtering is applied locally after fetching (Splynx API limitation). API returns oldest 10,000 tickets first.',
           filters: ticketFilters,
           count: result,
         };

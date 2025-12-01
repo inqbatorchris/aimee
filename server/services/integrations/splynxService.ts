@@ -399,6 +399,14 @@ export class SplynxService {
       console.log('[SPLYNX getTicketCount]   Has Auth: ✓');
       console.log('[SPLYNX getTicketCount]   Method: GET');
       
+      // Store debug info for return
+      const debugInfo = {
+        url,
+        params,
+        dateFilter: dateFromFilter?.toISOString() || null
+      };
+      console.log('[SPLYNX getTicketCount] 🔍 DEBUG INFO:', JSON.stringify(debugInfo, null, 2));
+      
       const response = await axios.get(url, {
         headers: {
           'Authorization': this.credentials.authHeader,
