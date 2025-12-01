@@ -286,6 +286,9 @@ export class WorkflowExecutor {
         case 'condition':
           return await this.executeCondition(step, context);
         
+        case 'conditional':
+          return await this.executeConditional(step, context);
+        
         case 'integration_action':
           return await this.executeIntegrationAction(step, context);
         
@@ -522,6 +525,132 @@ export class WorkflowExecutor {
         error: error.message,
       };
     }
+  }
+
+  private async executeConditional(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      const { conditions, defaultPath } = step.config || {};
+      
+      console.log(`[WorkflowExecutor] 🔀 Evaluating conditional step: ${step.name}`);
+      
+      // Evaluate each condition in order
+      for (const condition of conditions || []) {
+        const { field, operator, value, pathSteps } = condition;
+        
+        // Get field value from context (supports dot notation for nested fields)
+        const fieldValue = this.getNestedValue(context, field);
+        
+        console.log(`[WorkflowExecutor]   Checking: ${field} ${operator} ${value}`);
+        console.log(`[WorkflowExecutor]   Field value: ${JSON.stringify(fieldValue)}`);
+        
+        const matches = this.evaluateConditionOperator(fieldValue, operator, value);
+        
+        if (matches) {
+          console.log(`[WorkflowExecutor]   ✅ Condition matched! Executing path steps...`);
+          
+          // Execute steps for this path
+          let pathContext = { ...context };
+          const pathResults: any[] = [];
+          
+          for (const pathStep of pathSteps || []) {
+            const result = await this.executeStep(pathStep, pathContext);
+            if (!result.success) {
+              return result;
+            }
+            if (result.output) {
+              pathResults.push(result.output);
+              pathContext = { ...pathContext, lastOutput: result.output };
+            }
+          }
+          
+          return {
+            success: true,
+            output: {
+              matchedCondition: { field, operator, value },
+              pathExecuted: true,
+              pathResults,
+              pathContext
+            }
+          };
+        }
+      }
+      
+      // No conditions matched - execute default path
+      console.log(`[WorkflowExecutor]   No conditions matched, executing default path...`);
+      if (defaultPath?.steps) {
+        let pathContext = { ...context };
+        const pathResults: any[] = [];
+        
+        for (const pathStep of defaultPath.steps) {
+          const result = await this.executeStep(pathStep, pathContext);
+          if (!result.success) {
+            return result;
+          }
+          if (result.output) {
+            pathResults.push(result.output);
+            pathContext = { ...pathContext, lastOutput: result.output };
+          }
+        }
+        
+        return {
+          success: true,
+          output: { matchedCondition: null, defaultPathExecuted: true, pathResults, pathContext }
+        };
+      }
+      
+      return {
+        success: true,
+        output: { matchedCondition: null, noPathExecuted: true }
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        error: error.message
+      };
+    }
+  }
+
+  private evaluateConditionOperator(fieldValue: any, operator: string, compareValue: any): boolean {
+    switch (operator) {
+      case 'equals':
+        return String(fieldValue) === String(compareValue);
+      case 'not_equals':
+        return String(fieldValue) !== String(compareValue);
+      case 'contains':
+        return String(fieldValue).toLowerCase().includes(String(compareValue).toLowerCase());
+      case 'not_contains':
+        return !String(fieldValue).toLowerCase().includes(String(compareValue).toLowerCase());
+      case 'in':
+        const values = String(compareValue).split(',').map(v => v.trim());
+        return values.includes(String(fieldValue));
+      case 'not_in':
+        const notInValues = String(compareValue).split(',').map(v => v.trim());
+        return !notInValues.includes(String(fieldValue));
+      case 'greater_than':
+        return Number(fieldValue) > Number(compareValue);
+      case 'less_than':
+        return Number(fieldValue) < Number(compareValue);
+      case 'greater_than_or_equal':
+        return Number(fieldValue) >= Number(compareValue);
+      case 'less_than_or_equal':
+        return Number(fieldValue) <= Number(compareValue);
+      case 'starts_with':
+        return String(fieldValue).startsWith(String(compareValue));
+      case 'ends_with':
+        return String(fieldValue).endsWith(String(compareValue));
+      case 'is_empty':
+        return !fieldValue || String(fieldValue).trim() === '';
+      case 'is_not_empty':
+        return fieldValue && String(fieldValue).trim() !== '';
+      default:
+        console.warn(`[WorkflowExecutor] Unknown operator: ${operator}, defaulting to false`);
+        return false;
+    }
+  }
+
+  private getNestedValue(obj: any, path: string): any {
+    // Support dot notation for nested fields (e.g., "trigger.ticket.type_id")
+    return path.split('.').reduce((current, key) => current?.[key], obj);
   }
 
   private async executeIntegrationAction(step: any, context: any): Promise<StepExecutionResult> {
@@ -1465,10 +1594,6 @@ export class WorkflowExecutor {
     
     // Return primitive values as-is (numbers, booleans, etc.)
     return params;
-  }
-
-  private getNestedValue(obj: any, path: string): any {
-    return path.split('.').reduce((current, key) => current?.[key], obj);
   }
 
   private extractJsonPath(data: any, path: string): any {

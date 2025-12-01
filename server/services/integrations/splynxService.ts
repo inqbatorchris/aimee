@@ -1630,6 +1630,132 @@ export class SplynxService {
     }
   }
 
+  /**
+   * Get available time slots for booking appointments
+   * Used by public booking page to show available times
+   */
+  async getAvailableSlots(params: {
+    projectId: number;
+    startDate: string;
+    endDate: string;
+    duration: string;
+    travelTime?: number;
+  }): Promise<any[]> {
+    try {
+      console.log(`[SPLYNX getAvailableSlots] Fetching slots for project ${params.projectId}`);
+      
+      // Query existing tasks to find busy periods
+      const existingTasks = await this.getSchedulingTasks({
+        project_id: params.projectId,
+        date_from: params.startDate,
+        date_to: params.endDate,
+        is_scheduled: 1
+      });
+
+      console.log(`[SPLYNX getAvailableSlots] Found ${existingTasks.length} existing tasks`);
+      
+      // Generate available slots (9 AM - 5 PM, avoiding existing tasks)
+      const slots = this.calculateAvailableSlots(
+        params.startDate,
+        params.endDate,
+        existingTasks,
+        params.duration,
+        params.travelTime || 0
+      );
+      
+      console.log(`[SPLYNX getAvailableSlots] Generated ${slots.length} available slots`);
+      
+      return slots;
+    } catch (error: any) {
+      console.error(`[SPLYNX getAvailableSlots] Error:`, error.message);
+      throw new Error(`Failed to fetch available slots: ${error.message}`);
+    }
+  }
+
+  /**
+   * Calculate available time slots based on existing bookings
+   * Private helper method
+   */
+  private calculateAvailableSlots(
+    startDate: string,
+    endDate: string,
+    existingTasks: any[],
+    duration: string,
+    travelTime: number
+  ): any[] {
+    const slots: any[] = [];
+    const durationMinutes = this.parseDuration(duration);
+    const totalMinutes = durationMinutes + (travelTime * 2);
+    
+    // Business hours: 9 AM - 5 PM
+    const workStart = 9;
+    const workEnd = 17;
+    
+    let currentDate = new Date(startDate);
+    const endDateTime = new Date(endDate);
+    
+    while (currentDate <= endDateTime) {
+      // Skip weekends
+      if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6) {
+        // Generate slots for this day
+        for (let hour = workStart; hour < workEnd; hour++) {
+          for (let minute of [0, 30]) {
+            const slotStart = new Date(currentDate);
+            slotStart.setHours(hour, minute, 0, 0);
+            
+            const slotEnd = new Date(slotStart.getTime() + totalMinutes * 60000);
+            
+            // Check if slot fits within work hours
+            if (slotEnd.getHours() < workEnd || (slotEnd.getHours() === workEnd && slotEnd.getMinutes() === 0)) {
+              // Check for conflicts with existing tasks
+              const hasConflict = existingTasks.some(task => {
+                const taskStart = new Date(task.scheduled_from || task.date_from);
+                const taskEnd = new Date(task.scheduled_to || task.date_to || taskStart.getTime() + 60 * 60000);
+                return slotStart < taskEnd && slotEnd > taskStart;
+              });
+              
+              if (!hasConflict && slotStart > new Date()) {
+                slots.push({
+                  datetime: slotStart.toISOString(),
+                  displayTime: slotStart.toLocaleTimeString('en-US', { 
+                    hour: 'numeric', 
+                    minute: '2-digit', 
+                    hour12: true 
+                  }),
+                  displayDate: slotStart.toLocaleDateString('en-US', {
+                    weekday: 'short',
+                    month: 'short',
+                    day: 'numeric'
+                  })
+                });
+              }
+            }
+          }
+        }
+      }
+      
+      // Move to next day
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    return slots;
+  }
+
+  /**
+   * Parse duration string to minutes
+   * Private helper method
+   */
+  private parseDuration(duration: string): number {
+    // Parse "2h 30m" format to minutes
+    const hourMatch = duration.match(/(\d+)h/);
+    const minuteMatch = duration.match(/(\d+)m/);
+    
+    const hours = hourMatch ? parseInt(hourMatch[1]) : 0;
+    const minutes = minuteMatch ? parseInt(minuteMatch[1]) : 0;
+    
+    return (hours * 60) + minutes;
+  }
+
   async executeAction(action: string, parameters: any = {}): Promise<any> {
     const { sinceDate, ...filters } = parameters;
     const parsedSinceDate = sinceDate ? new Date(sinceDate) : undefined;
@@ -1689,6 +1815,9 @@ export class SplynxService {
 
       case 'get_customer_services':
         return await this.getCustomerServices(parameters.customerId);
+
+      case 'get_available_slots':
+        return await this.getAvailableSlots(parameters);
         
       default:
         throw new Error(`Unknown Splynx action: ${action}`);

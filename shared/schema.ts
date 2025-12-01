@@ -5720,6 +5720,90 @@ export const vapiKnowledgeFiles = pgTable("vapi_knowledge_files", {
   index("idx_vapi_knowledge_active").on(table.isActive),
 ]);
 
+// ========================================
+// BOOKING SYSTEM TABLES
+// ========================================
+
+// Bookable Task Types - Configuration for customer appointment booking
+export const bookableTaskTypes = pgTable("bookable_task_types", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  
+  // Basic Info
+  name: varchar("name", { length: 255 }).notNull(),
+  taskCategory: varchar("task_category", { length: 50 }).notNull(), // 'support_session', 'field_visit', 'custom'
+  
+  // Splynx Integration
+  splynxProjectId: integer("splynx_project_id").notNull(),
+  splynxWorkflowStatusId: integer("splynx_workflow_status_id").notNull(),
+  splynxTaskTypeId: integer("splynx_task_type_id"),
+  
+  // Booking Configuration
+  defaultDuration: varchar("default_duration", { length: 50 }).default("2h 30m"),
+  defaultTravelTimeTo: integer("default_travel_time_to").default(15),
+  defaultTravelTimeFrom: integer("default_travel_time_from").default(15),
+  bufferTimeMinutes: integer("buffer_time_minutes").default(30),
+  
+  // Trigger Conditions (JSONB)
+  triggerConditions: jsonb("trigger_conditions").default({}),
+  
+  // UI Configuration
+  buttonLabel: varchar("button_label", { length: 100 }).notNull(),
+  buttonColor: varchar("button_color", { length: 20 }),
+  confirmationMessage: text("confirmation_message"),
+  isActive: boolean("is_active").default(true),
+  displayOrder: integer("display_order").default(0),
+  
+  // Audit
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_bookable_task_types_org").on(table.organizationId),
+  index("idx_bookable_task_types_active").on(table.isActive),
+  index("idx_bookable_task_types_display").on(table.displayOrder),
+]);
+
+// Booking Tokens - Track customer appointment booking requests
+export const bookingTokens = pgTable("booking_tokens", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  
+  // Token
+  token: varchar("token", { length: 100 }).unique().notNull(),
+  
+  // Links
+  workItemId: integer("work_item_id").references(() => workItems.id).notNull(),
+  bookableTaskTypeId: integer("bookable_task_type_id").references(() => bookableTaskTypes.id).notNull(),
+  
+  // Customer Info
+  customerId: integer("customer_id").notNull(), // Splynx customer ID
+  customerEmail: varchar("customer_email", { length: 255 }),
+  customerName: varchar("customer_name", { length: 255 }),
+  serviceAddress: text("service_address"),
+  
+  // Booking Details
+  status: varchar("status", { length: 50 }).default("pending"), // 'pending', 'confirmed', 'expired', 'cancelled'
+  selectedDatetime: timestamp("selected_datetime"),
+  additionalNotes: text("additional_notes"),
+  contactNumber: varchar("contact_number", { length: 50 }),
+  
+  // Splynx Task
+  splynxTaskId: integer("splynx_task_id"),
+  
+  // Expiry
+  expiresAt: timestamp("expires_at"),
+  confirmedAt: timestamp("confirmed_at"),
+  
+  // Audit
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_booking_tokens_org").on(table.organizationId),
+  index("idx_booking_tokens_work_item").on(table.workItemId),
+  index("idx_booking_tokens_status").on(table.status),
+  index("idx_booking_tokens_customer").on(table.customerId),
+]);
+
 // Insert schemas
 export const insertVapiCallSchema = createInsertSchema(vapiCalls).omit({
   id: true,
@@ -5748,3 +5832,23 @@ export type InsertVapiAssistant = z.infer<typeof insertVapiAssistantSchema>;
 
 export type VapiKnowledgeFile = typeof vapiKnowledgeFiles.$inferSelect;
 export type InsertVapiKnowledgeFile = z.infer<typeof insertVapiKnowledgeFileSchema>;
+
+// Booking system insert schemas
+export const insertBookableTaskTypeSchema = createInsertSchema(bookableTaskTypes).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertBookingTokenSchema = createInsertSchema(bookingTokens).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Booking system types
+export type BookableTaskType = typeof bookableTaskTypes.$inferSelect;
+export type InsertBookableTaskType = z.infer<typeof insertBookableTaskTypeSchema>;
+
+export type BookingToken = typeof bookingTokens.$inferSelect;
+export type InsertBookingToken = z.infer<typeof insertBookingTokenSchema>;

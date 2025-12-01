@@ -79,6 +79,7 @@ import {
 } from '@/lib/workItems.api';
 import { WorkflowExecutionPanel } from '@/components/work-items/WorkflowExecutionPanel';
 import { DraftResponsePanel } from '@/components/work-items/DraftResponsePanel';
+import { CustomerContextPanel } from '@/components/work-items/CustomerContextPanel';
 
 interface WorkItemPanelProps {
   isOpen: boolean;
@@ -863,6 +864,14 @@ export default function WorkItemPanel({
                       </div>
                     </SelectItem>
                   )}
+                  {formData.workItemType === 'support_ticket' && workItemId && (currentWorkItem as any)?.sourceTicket?.customer_id && (
+                    <SelectItem value="customer">
+                      <div className="flex items-center gap-2">
+                        <User className="h-4 w-4" />
+                        Customer
+                      </div>
+                    </SelectItem>
+                  )}
                   {currentWorkItem?.workflowTemplateId && (
                     <SelectItem value="workflow">
                       <div className="flex items-center gap-2">
@@ -902,6 +911,12 @@ export default function WorkItemPanel({
                 <TabsTrigger value="draft" className="gap-2" data-testid="tab-draft">
                   <MessageSquare className="h-4 w-4" />
                   Draft Response
+                </TabsTrigger>
+              )}
+              {formData.workItemType === 'support_ticket' && workItemId && (currentWorkItem as any)?.sourceTicket?.customer_id && (
+                <TabsTrigger value="customer" className="gap-2" data-testid="tab-customer">
+                  <User className="h-4 w-4" />
+                  Customer
                 </TabsTrigger>
               )}
               {currentWorkItem?.workflowTemplateId && (
@@ -1320,6 +1335,19 @@ export default function WorkItemPanel({
                 <DraftResponsePanel
                   workItemId={workItemId}
                   workItemType={formData.workItemType}
+                />
+              </TabsContent>
+            )}
+
+            {/* Customer Context Tab */}
+            {formData.workItemType === 'support_ticket' && workItemId && (currentWorkItem as any)?.sourceTicket?.customer_id && (
+              <TabsContent value="customer" className="flex-1 overflow-y-auto m-0" data-testid="work-item-customer-tab">
+                <CustomerContextPanel
+                  workItem={currentWorkItem}
+                  onGenerateBookingLink={() => {
+                    // TODO: Implement booking link generation
+                    console.log('Generate booking link');
+                  }}
                 />
               </TabsContent>
             )}
