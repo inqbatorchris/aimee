@@ -300,6 +300,60 @@ export class SplynxService {
     }
   }
 
+  async getTicketTypes(): Promise<Array<{ id: number; title: string }>> {
+    try {
+      const url = this.buildUrl('admin/support/tickets-types');
+      
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('[SPLYNX getTicketTypes] Raw response:', JSON.stringify(response.data).substring(0, 500));
+
+      if (Array.isArray(response.data)) {
+        return response.data.map((type: any) => ({
+          id: parseInt(type.id),
+          title: type.title || type.name || `Type ${type.id}`,
+        }));
+      }
+      
+      return [];
+    } catch (error: any) {
+      console.error('Error fetching ticket types from Splynx:', error.message);
+      throw new Error(`Failed to fetch ticket types from Splynx: ${error.message}`);
+    }
+  }
+
+  async getTicketStatuses(): Promise<Array<{ id: number; name: string }>> {
+    try {
+      const url = this.buildUrl('admin/support/tickets-statuses');
+      
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('[SPLYNX getTicketStatuses] Raw response:', JSON.stringify(response.data).substring(0, 500));
+
+      if (Array.isArray(response.data)) {
+        return response.data.map((status: any) => ({
+          id: parseInt(status.id),
+          name: status.name || status.title || `Status ${status.id}`,
+        }));
+      }
+      
+      return [];
+    } catch (error: any) {
+      console.error('Error fetching ticket statuses from Splynx:', error.message);
+      throw new Error(`Failed to fetch ticket statuses from Splynx: ${error.message}`);
+    }
+  }
+
   async getTicketCount(filters: TicketFilter = {}, sinceDate?: Date): Promise<number> {
     try {
       const params: any = {

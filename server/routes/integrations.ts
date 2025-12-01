@@ -1968,4 +1968,104 @@ router.post('/splynx/:integrationId/test-action', async (req, res) => {
   }
 });
 
+// Fetch Splynx ticket types
+router.get('/splynx/:integrationId/ticket-types', async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const { integrationId } = req.params;
+
+    // Get integration
+    const [splynxIntegration] = await db
+      .select()
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.id, parseInt(integrationId)),
+          eq(integrations.organizationId, user.organizationId),
+          eq(integrations.platformType, 'splynx')
+        )
+      )
+      .limit(1);
+
+    if (!splynxIntegration) {
+      return res.status(404).json({ error: 'Splynx integration not found' });
+    }
+
+    if (!splynxIntegration.credentialsEncrypted) {
+      return res.status(400).json({ error: 'Splynx credentials not configured' });
+    }
+
+    // Decrypt credentials
+    const credentials = JSON.parse(decrypt(splynxIntegration.credentialsEncrypted));
+    const { baseUrl, authHeader } = credentials;
+
+    if (!baseUrl || !authHeader) {
+      return res.status(400).json({ error: 'Splynx credentials incomplete' });
+    }
+
+    // Create Splynx service and fetch ticket types
+    const splynxService = new SplynxService({ baseUrl, authHeader });
+    const ticketTypes = await splynxService.getTicketTypes();
+
+    res.json({ ticketTypes });
+  } catch (error: any) {
+    console.error(`Error fetching Splynx ticket types:`, error);
+    res.status(500).json({ error: 'Failed to fetch ticket types', details: error.message });
+  }
+});
+
+// Fetch Splynx ticket statuses
+router.get('/splynx/:integrationId/ticket-statuses', async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const { integrationId } = req.params;
+
+    // Get integration
+    const [splynxIntegration] = await db
+      .select()
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.id, parseInt(integrationId)),
+          eq(integrations.organizationId, user.organizationId),
+          eq(integrations.platformType, 'splynx')
+        )
+      )
+      .limit(1);
+
+    if (!splynxIntegration) {
+      return res.status(404).json({ error: 'Splynx integration not found' });
+    }
+
+    if (!splynxIntegration.credentialsEncrypted) {
+      return res.status(400).json({ error: 'Splynx credentials not configured' });
+    }
+
+    // Decrypt credentials
+    const credentials = JSON.parse(decrypt(splynxIntegration.credentialsEncrypted));
+    const { baseUrl, authHeader } = credentials;
+
+    if (!baseUrl || !authHeader) {
+      return res.status(400).json({ error: 'Splynx credentials incomplete' });
+    }
+
+    // Create Splynx service and fetch ticket statuses
+    const splynxService = new SplynxService({ baseUrl, authHeader });
+    const ticketStatuses = await splynxService.getTicketStatuses();
+
+    res.json({ ticketStatuses });
+  } catch (error: any) {
+    console.error(`Error fetching Splynx ticket statuses:`, error);
+    res.status(500).json({ error: 'Failed to fetch ticket statuses', details: error.message });
+  }
+});
+
 export default router;

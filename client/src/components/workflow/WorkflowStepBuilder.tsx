@@ -335,6 +335,88 @@ function EmailCampaignConfig({ step, updateStep }: EmailCampaignConfigProps) {
   );
 }
 
+interface SplynxTicketTypeSelectorProps {
+  integrationId: number;
+  value: string;
+  onChange: (value: string) => void;
+}
+
+function SplynxTicketTypeSelector({ integrationId, value, onChange }: SplynxTicketTypeSelectorProps) {
+  const { data, isLoading } = useQuery<{ ticketTypes: Array<{ id: number; title: string }> }>({
+    queryKey: ['/api/integrations/splynx', integrationId, 'ticket-types'],
+    queryFn: async () => {
+      const response = await apiRequest(`/api/integrations/splynx/${integrationId}/ticket-types`);
+      return response.json();
+    },
+    enabled: !!integrationId,
+  });
+
+  const ticketTypes = data?.ticketTypes || [];
+
+  return (
+    <Select value={value || 'all'} onValueChange={onChange}>
+      <SelectTrigger>
+        <SelectValue placeholder={isLoading ? "Loading types..." : "All types"} />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All Types</SelectItem>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+          </div>
+        ) : (
+          ticketTypes.map((type) => (
+            <SelectItem key={type.id} value={type.id.toString()}>
+              {type.title}
+            </SelectItem>
+          ))
+        )}
+      </SelectContent>
+    </Select>
+  );
+}
+
+interface SplynxTicketStatusSelectorProps {
+  integrationId: number;
+  value: string;
+  onChange: (value: string) => void;
+}
+
+function SplynxTicketStatusSelector({ integrationId, value, onChange }: SplynxTicketStatusSelectorProps) {
+  const { data, isLoading } = useQuery<{ ticketStatuses: Array<{ id: number; name: string }> }>({
+    queryKey: ['/api/integrations/splynx', integrationId, 'ticket-statuses'],
+    queryFn: async () => {
+      const response = await apiRequest(`/api/integrations/splynx/${integrationId}/ticket-statuses`);
+      return response.json();
+    },
+    enabled: !!integrationId,
+  });
+
+  const ticketStatuses = data?.ticketStatuses || [];
+
+  return (
+    <Select value={value || 'all'} onValueChange={onChange}>
+      <SelectTrigger>
+        <SelectValue placeholder={isLoading ? "Loading statuses..." : "All statuses"} />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">All Statuses</SelectItem>
+        {isLoading ? (
+          <div className="flex items-center justify-center py-2">
+            <Loader2 className="h-4 w-4 animate-spin" />
+          </div>
+        ) : (
+          ticketStatuses.map((status) => (
+            <SelectItem key={status.id} value={status.id.toString()}>
+              {status.name}
+            </SelectItem>
+          ))
+        )}
+      </SelectContent>
+    </Select>
+  );
+}
+
 interface TestActionButtonProps {
   integrationId: number;
   action: string;
@@ -762,28 +844,16 @@ export default function WorkflowStepBuilder({
 
                 <div>
                   <Label>Ticket Type (optional)</Label>
-                  <Select
+                  <SplynxTicketTypeSelector
+                    integrationId={step.config.integrationId}
                     value={step.config.parameters?.ticketType || 'all'}
-                    onValueChange={(value) => updateStep(step.id, {
+                    onChange={(value) => updateStep(step.id, {
                       config: {
                         ...step.config,
                         parameters: { ...step.config.parameters, ticketType: value === 'all' ? undefined : value }
                       }
                     })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="All types" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Types</SelectItem>
-                      <SelectItem value="Support">Support</SelectItem>
-                      <SelectItem value="Sales">Sales</SelectItem>
-                      <SelectItem value="Incident">Incident</SelectItem>
-                      <SelectItem value="Problem">Problem</SelectItem>
-                      <SelectItem value="Question">Question</SelectItem>
-                      <SelectItem value="Feature Request">Feature Request</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  />
                 </div>
 
                 <div>
@@ -805,28 +875,16 @@ export default function WorkflowStepBuilder({
 
                 <div>
                   <Label>Status Filter (optional)</Label>
-                  <Select
+                  <SplynxTicketStatusSelector
+                    integrationId={step.config.integrationId}
                     value={step.config.parameters?.statusFilter || 'all'}
-                    onValueChange={(value) => updateStep(step.id, {
+                    onChange={(value) => updateStep(step.id, {
                       config: {
                         ...step.config,
                         parameters: { ...step.config.parameters, statusFilter: value === 'all' ? undefined : value }
                       }
                     })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="All statuses" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Statuses</SelectItem>
-                      <SelectItem value="new">New</SelectItem>
-                      <SelectItem value="open">Open</SelectItem>
-                      <SelectItem value="work_in_progress">Work in Progress</SelectItem>
-                      <SelectItem value="waiting_on_customer">Waiting on Customer</SelectItem>
-                      <SelectItem value="resolved">Resolved</SelectItem>
-                      <SelectItem value="closed">Closed</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  />
                 </div>
 
                 <TestActionButton
