@@ -410,17 +410,7 @@ export class SplynxService {
       // Log sample ticket to see field names
       if (tickets.length > 0) {
         const sample = tickets[0];
-        console.log('[SPLYNX getTicketCount]   Sample ticket fields:', {
-          date_created: sample.date_created,
-          date_add: sample.date_add,
-          created_at: sample.created_at,
-          date: sample.date,
-          type: sample.type,
-          type_id: sample.type_id,
-          type_name: sample.type_name,
-          ticket_type: sample.ticket_type,
-          ticket_type_id: sample.ticket_type_id,
-        });
+        console.log('[SPLYNX getTicketCount]   🎫 FULL SAMPLE TICKET:', JSON.stringify(sample, null, 2));
       }
       
       // Apply local filtering for ticket type (comparing by ID or name)
