@@ -321,12 +321,12 @@ export class SplynxService {
 
       if (sinceDate) {
         const dateStr = sinceDate.toISOString().split('T')[0];
-        params.main_attributes.date_add = ['>=', dateStr];
+        params.main_attributes.date_created = ['>=', dateStr];
         console.log(`[SPLYNX getTicketCount] 🔄 INCREMENTAL MODE: Fetching tickets since ${dateStr}`);
       } else if (filters.dateRange) {
         const dateFilter = this.getDateRangeFilter(filters.dateRange);
         if (dateFilter.dateFrom) {
-          params.main_attributes.date_add = ['>=', dateFilter.dateFrom.split('T')[0]];
+          params.main_attributes.date_created = ['>=', dateFilter.dateFrom.split('T')[0]];
         }
       } else {
         console.log('[SPLYNX getTicketCount] ⚠️ FULL MODE: No date filter provided, fetching all tickets');
