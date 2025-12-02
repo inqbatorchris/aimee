@@ -1328,8 +1328,25 @@ export class WorkflowExecutor {
         : customerId;
       const numericCustomerId = parseInt(String(processedCustomerId));
       
-      if (isNaN(numericCustomerId)) {
-        throw new Error(`Invalid customer ID: ${processedCustomerId}`);
+      // Handle empty/invalid customer ID gracefully for getCustomerById
+      // This allows the routing logic to work correctly (Path A for missing customer ID)
+      if (isNaN(numericCustomerId) || !processedCustomerId || processedCustomerId === '0') {
+        console.log(`[WorkflowExecutor]   ⚠️ No valid customer ID provided: "${processedCustomerId}"`);
+        
+        // Return success with null customer data to allow routing to proceed
+        return {
+          success: true,
+          output: {
+            action: action,
+            customerId: null,
+            found: false,
+            customer: null,
+            category: null,
+            name: null,
+            status: null,
+            noCustomerId: true,
+          },
+        };
       }
       
       switch (action) {
