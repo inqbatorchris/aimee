@@ -1339,21 +1339,23 @@ export class SplynxService {
     try {
       const url = this.buildUrl(`admin/support/ticket-messages`);
       
-      // Splynx ticket-messages API format:
-      // - message must be a plain string (NOT nested object)
-      // - hidden: true/false to control visibility to customer
+      // Splynx ticket-messages API format (from API docs):
+      // - ticket_id: number - Ticket ID
+      // - message: string - Message text (plain string)
+      // - hide_for_customer: boolean - Is message hidden for customer
+      // - customer_id: number - Customer ID (optional)
       const payload: any = {
-        ticket_id: ticketId,
+        ticket_id: parseInt(ticketId),
         message: message,
-        hidden: isHidden,
+        hide_for_customer: isHidden,
       };
       
       // Add optional customer_id if provided
       if (options?.customerId) {
-        payload.customer_id = options.customerId;
+        payload.customer_id = parseInt(options.customerId);
       }
       
-      console.log(`[Splynx] Adding message to ticket ${ticketId} (hide_for_customer: ${isHidden ? 1 : 0})`);
+      console.log(`[Splynx] Adding message to ticket ${ticketId} (hide_for_customer: ${isHidden})`);
       console.log(`[Splynx] Payload:`, JSON.stringify(payload, null, 2));
       
       const response = await axios.post(url, payload, {
