@@ -1145,10 +1145,16 @@ export class WorkflowExecutor {
 
   private async executeSplynxQuery(step: any, context: any): Promise<StepExecutionResult> {
     try {
-      const { entity, mode = 'count', filters = [], dateRange, limit, resultVariable, updateKeyResult } = step.config || {};
+      const { action, entity, mode = 'count', filters = [], dateRange, limit, resultVariable, updateKeyResult, customerId } = step.config || {};
+      
+      // Support action-based queries (e.g., getCustomerServices)
+      if (action) {
+        console.log(`[WorkflowExecutor] 🔍 Executing Splynx action: ${action}`);
+        return await this.executeSplynxAction(step, context);
+      }
       
       if (!entity) {
-        throw new Error('Splynx query requires entity type');
+        throw new Error('Splynx query requires entity type or action');
       }
       
       console.log(`[WorkflowExecutor] 🔍 Executing Splynx query`);
@@ -1252,6 +1258,103 @@ export class WorkflowExecutor {
       };
     } catch (error: any) {
       console.error(`[WorkflowExecutor] ❌ Splynx query failed: ${error.message}`);
+      return {
+        success: false,
+        error: error.message,
+        stack: error.stack,
+      };
+    }
+  }
+
+  private async executeSplynxAction(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      const { action, customerId } = step.config || {};
+      
+      console.log(`[WorkflowExecutor] 🔧 Executing Splynx action: ${action}`);
+      
+      // Get Splynx integration credentials
+      const orgId = parseInt(context.organizationId);
+      const [splynxIntegration] = await db
+        .select()
+        .from(integrations)
+        .where(
+          and(
+            eq(integrations.organizationId, orgId),
+            eq(integrations.platformType, 'splynx')
+          )
+        )
+        .limit(1);
+      
+      if (!splynxIntegration || !splynxIntegration.credentialsEncrypted) {
+        throw new Error('Splynx integration not configured for this organization');
+      }
+      
+      // Decrypt credentials
+      const credentials = this.decryptCredentials(splynxIntegration.credentialsEncrypted);
+      const { baseUrl, authHeader } = credentials;
+      
+      if (!baseUrl || !authHeader) {
+        throw new Error('Splynx credentials incomplete');
+      }
+      
+      console.log(`[WorkflowExecutor]   ✓ Splynx credentials loaded and validated`);
+      
+      // Create Splynx service
+      const splynxService = new SplynxService({ baseUrl, authHeader });
+      
+      // Process customerId from context if template variable (handles {{...}} syntax)
+      const processedCustomerId = typeof customerId === 'string' 
+        ? this.processTemplate(customerId, context)
+        : customerId;
+      const numericCustomerId = parseInt(String(processedCustomerId));
+      
+      if (isNaN(numericCustomerId)) {
+        throw new Error(`Invalid customer ID: ${processedCustomerId}`);
+      }
+      
+      switch (action) {
+        case 'getCustomerServices': {
+          console.log(`[WorkflowExecutor]   📡 Fetching services for customer ${numericCustomerId}`);
+          
+          const services = await splynxService.getCustomerServices(numericCustomerId);
+          
+          console.log(`[WorkflowExecutor]   📊 Retrieved ${services.length} services`);
+          
+          // Determine overall service status
+          // Service is considered "active" if ANY service is active
+          const hasActiveService = services.some(s => s.status === 'active');
+          const hasSuspendedService = services.some(s => s.status === 'suspended');
+          
+          let overallStatus: 'active' | 'inactive' | 'suspended' | 'unknown' = 'unknown';
+          if (hasActiveService) {
+            overallStatus = 'active';
+          } else if (hasSuspendedService) {
+            overallStatus = 'suspended';
+          } else if (services.length > 0) {
+            overallStatus = 'inactive';
+          }
+          
+          console.log(`[WorkflowExecutor]   📌 Overall status: ${overallStatus}`);
+          
+          return {
+            success: true,
+            output: {
+              action: 'getCustomerServices',
+              customerId: numericCustomerId,
+              services,
+              serviceCount: services.length,
+              status: overallStatus,
+              hasActiveService,
+              hasSuspendedService,
+            },
+          };
+        }
+        
+        default:
+          throw new Error(`Unknown Splynx action: ${action}`);
+      }
+    } catch (error: any) {
+      console.error(`[WorkflowExecutor] ❌ Splynx action failed: ${error.message}`);
       return {
         success: false,
         error: error.message,
