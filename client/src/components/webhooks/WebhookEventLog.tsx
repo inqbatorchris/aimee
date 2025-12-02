@@ -17,10 +17,14 @@ interface WebhookEventLogProps {
 export function WebhookEventLog({ open, onClose, organizationId, workflowId }: WebhookEventLogProps) {
   const [expandedEventId, setExpandedEventId] = useState<number | null>(null);
   
+  console.log('[WebhookEventLog] Render:', { open, organizationId, workflowId, enabled: open && !!organizationId });
+  
   const { data: events = [], isLoading, error, refetch } = useQuery({
     queryKey: ['/api/webhooks/events', organizationId],
     queryFn: async () => {
+      console.log('[WebhookEventLog] Fetching events...');
       const token = localStorage.getItem('authToken');
+      console.log('[WebhookEventLog] Token present:', !!token);
       const response = await fetch(`/api/webhooks/events/${organizationId}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
@@ -28,20 +32,26 @@ export function WebhookEventLog({ open, onClose, organizationId, workflowId }: W
         },
         credentials: 'include'
       });
+      console.log('[WebhookEventLog] Response status:', response.status);
       if (!response.ok) {
+        const text = await response.text();
+        console.error('[WebhookEventLog] Error response:', text);
         throw new Error('Failed to fetch webhook events');
       }
-      return response.json();
+      const data = await response.json();
+      console.log('[WebhookEventLog] Got events:', data.length);
+      return data;
     },
     enabled: open && !!organizationId,
     staleTime: 0,
     refetchOnMount: 'always',
   });
+  
+  console.log('[WebhookEventLog] Query state:', { isLoading, error: error?.message, eventsCount: events?.length });
 
-  // Filter events by workflow if workflowId is provided
-  const filteredEvents = workflowId 
-    ? events.filter((e: any) => e.workflowRunId && e.workflowId === workflowId)
-    : events;
+  // Don't filter by workflowId - show all events for the organization
+  // The workflowId filter was checking a non-existent field (e.workflowId instead of e.workflowRunId)
+  const filteredEvents = events;
 
   return (
     <Dialog open={open} onOpenChange={onClose}>
