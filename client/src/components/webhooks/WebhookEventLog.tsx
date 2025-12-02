@@ -20,7 +20,13 @@ export function WebhookEventLog({ open, onClose, organizationId, workflowId }: W
   const { data: events = [], isLoading, refetch } = useQuery({
     queryKey: ['/api/webhooks/events', organizationId],
     queryFn: async () => {
-      const response = await fetch(`/api/webhooks/events/${organizationId}`);
+      const token = localStorage.getItem('auth_token');
+      const response = await fetch(`/api/webhooks/events/${organizationId}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
+        }
+      });
       if (!response.ok) {
         throw new Error('Failed to fetch webhook events');
       }
