@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database, Calculator, Loader2, Eye, Cloud, Repeat, ClipboardList, FileText, Hash, User, Bot, GitBranch } from 'lucide-react';
+import { Plus, Trash2, GripVertical, Settings, Zap, Target, AlertCircle, Database, Calculator, Loader2, Eye, Cloud, Repeat, ClipboardList, FileText, Hash, User, Bot, GitBranch, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -2123,38 +2123,88 @@ export default function WorkflowStepBuilder({
         const conditions = step.config.conditions || [];
         const defaultPath = step.config.defaultPath || { steps: [] };
         
-        const addCondition = () => {
-          const newCondition = {
-            id: `cond-${Date.now()}`,
-            field: '',
-            operator: 'equals',
-            value: '',
+        const addConditionPath = () => {
+          const newConditionPath = {
+            id: `path-${Date.now()}`,
+            conditions: [{ field: '', operator: 'equals', value: '' }],
             pathSteps: []
           };
           updateStep(step.id, {
             config: {
               ...step.config,
-              conditions: [...conditions, newCondition]
+              conditions: [...conditions, newConditionPath]
             }
           });
         };
         
-        const updateCondition = (condIndex: number, updates: any) => {
+        const updateConditionPath = (pathIndex: number, updates: any) => {
           const updated = [...conditions];
-          updated[condIndex] = { ...updated[condIndex], ...updates };
+          updated[pathIndex] = { ...updated[pathIndex], ...updates };
           updateStep(step.id, {
             config: { ...step.config, conditions: updated }
           });
         };
         
-        const removeCondition = (condIndex: number) => {
-          const updated = conditions.filter((_: any, i: number) => i !== condIndex);
+        const removeConditionPath = (pathIndex: number) => {
+          const updated = conditions.filter((_: any, i: number) => i !== pathIndex);
           updateStep(step.id, {
             config: { ...step.config, conditions: updated }
           });
         };
         
-        const addPathStep = (condIndex: number) => {
+        const addConditionToPath = (pathIndex: number) => {
+          const updated = [...conditions];
+          const currentPath = updated[pathIndex];
+          const pathConditions = currentPath.conditions && Array.isArray(currentPath.conditions)
+            ? currentPath.conditions
+            : currentPath.field
+              ? [{ field: currentPath.field, operator: currentPath.operator, value: currentPath.value }]
+              : [];
+          const { field: _f, operator: _o, value: _v, ...pathWithoutLegacy } = currentPath;
+          updated[pathIndex] = {
+            ...pathWithoutLegacy,
+            conditions: [...pathConditions, { field: '', operator: 'equals', value: '' }]
+          };
+          updateStep(step.id, {
+            config: { ...step.config, conditions: updated }
+          });
+        };
+        
+        const updateConditionInPath = (pathIndex: number, condIndex: number, updates: any) => {
+          const updated = [...conditions];
+          const currentPath = updated[pathIndex];
+          const pathConditions = currentPath.conditions && Array.isArray(currentPath.conditions)
+            ? [...currentPath.conditions]
+            : currentPath.field
+              ? [{ field: currentPath.field, operator: currentPath.operator, value: currentPath.value }]
+              : [];
+          pathConditions[condIndex] = { ...pathConditions[condIndex], ...updates };
+          const { field: _f, operator: _o, value: _v, ...pathWithoutLegacy } = currentPath;
+          updated[pathIndex] = { ...pathWithoutLegacy, conditions: pathConditions };
+          updateStep(step.id, {
+            config: { ...step.config, conditions: updated }
+          });
+        };
+        
+        const removeConditionFromPath = (pathIndex: number, condIndex: number) => {
+          const updated = [...conditions];
+          const currentPath = updated[pathIndex];
+          const pathConditions = currentPath.conditions && Array.isArray(currentPath.conditions)
+            ? currentPath.conditions
+            : currentPath.field
+              ? [{ field: currentPath.field, operator: currentPath.operator, value: currentPath.value }]
+              : [];
+          const { field: _f, operator: _o, value: _v, ...pathWithoutLegacy } = currentPath;
+          updated[pathIndex] = {
+            ...pathWithoutLegacy,
+            conditions: pathConditions.filter((_: any, i: number) => i !== condIndex)
+          };
+          updateStep(step.id, {
+            config: { ...step.config, conditions: updated }
+          });
+        };
+        
+        const addPathStep = (pathIndex: number) => {
           const newStep = {
             id: `step-${Date.now()}`,
             type: 'create_work_item',
@@ -2162,30 +2212,30 @@ export default function WorkflowStepBuilder({
             config: {}
           };
           const updated = [...conditions];
-          updated[condIndex] = {
-            ...updated[condIndex],
-            pathSteps: [...(updated[condIndex].pathSteps || []), newStep]
+          updated[pathIndex] = {
+            ...updated[pathIndex],
+            pathSteps: [...(updated[pathIndex].pathSteps || []), newStep]
           };
           updateStep(step.id, {
             config: { ...step.config, conditions: updated }
           });
         };
         
-        const updatePathStep = (condIndex: number, stepIndex: number, updates: any) => {
+        const updatePathStep = (pathIndex: number, stepIndex: number, updates: any) => {
           const updated = [...conditions];
-          const pathSteps = [...(updated[condIndex].pathSteps || [])];
+          const pathSteps = [...(updated[pathIndex].pathSteps || [])];
           pathSteps[stepIndex] = { ...pathSteps[stepIndex], ...updates };
-          updated[condIndex] = { ...updated[condIndex], pathSteps };
+          updated[pathIndex] = { ...updated[pathIndex], pathSteps };
           updateStep(step.id, {
             config: { ...step.config, conditions: updated }
           });
         };
         
-        const removePathStep = (condIndex: number, stepIndex: number) => {
+        const removePathStep = (pathIndex: number, stepIndex: number) => {
           const updated = [...conditions];
-          updated[condIndex] = {
-            ...updated[condIndex],
-            pathSteps: updated[condIndex].pathSteps.filter((_: any, i: number) => i !== stepIndex)
+          updated[pathIndex] = {
+            ...updated[pathIndex],
+            pathSteps: updated[pathIndex].pathSteps.filter((_: any, i: number) => i !== stepIndex)
           };
           updateStep(step.id, {
             config: { ...step.config, conditions: updated }
@@ -2233,125 +2283,169 @@ export default function WorkflowStepBuilder({
           });
         };
         
+        const getPathConditions = (path: any) => {
+          if (path.conditions && Array.isArray(path.conditions)) {
+            return path.conditions;
+          }
+          if (path.field) {
+            return [{ field: path.field, operator: path.operator, value: path.value }];
+          }
+          return [];
+        };
+
         return (
           <div className="space-y-4">
             <p className="text-sm text-muted-foreground">
-              Define conditions to route the workflow based on field values. Each condition can execute different steps.
+              Define conditions to route the workflow. Each path can have multiple conditions (all must match - AND logic).
             </p>
             
-            {conditions.map((condition: any, condIndex: number) => (
-              <Card key={condition.id || condIndex} className="p-4 border-l-4 border-l-amber-500">
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <Badge variant="outline" className="bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
-                      Path {condIndex + 1}
-                    </Badge>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => removeCondition(condIndex)}
-                    >
-                      <Trash2 className="h-4 w-4 text-destructive" />
-                    </Button>
-                  </div>
-                  
-                  <div className="grid grid-cols-3 gap-2">
-                    <div>
-                      <Label className="text-xs">Field</Label>
-                      <Input
-                        placeholder="e.g., webhookData.ticket_type"
-                        value={condition.field || ''}
-                        onChange={(e) => updateCondition(condIndex, { field: e.target.value })}
-                      />
-                    </div>
-                    <div>
-                      <Label className="text-xs">Operator</Label>
-                      <Select
-                        value={condition.operator || 'equals'}
-                        onValueChange={(value) => updateCondition(condIndex, { operator: value })}
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="equals">Equals</SelectItem>
-                          <SelectItem value="not_equals">Not Equals</SelectItem>
-                          <SelectItem value="in">In List (comma-separated)</SelectItem>
-                          <SelectItem value="not_in">Not In List</SelectItem>
-                          <SelectItem value="contains">Contains</SelectItem>
-                          <SelectItem value="not_contains">Not Contains</SelectItem>
-                          <SelectItem value="starts_with">Starts With</SelectItem>
-                          <SelectItem value="ends_with">Ends With</SelectItem>
-                          <SelectItem value="greater_than">Greater Than</SelectItem>
-                          <SelectItem value="less_than">Less Than</SelectItem>
-                          <SelectItem value="is_empty">Is Empty</SelectItem>
-                          <SelectItem value="is_not_empty">Is Not Empty</SelectItem>
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    <div>
-                      <Label className="text-xs">Value</Label>
-                      <Input
-                        placeholder="e.g., support"
-                        value={condition.value || ''}
-                        onChange={(e) => updateCondition(condIndex, { value: e.target.value })}
-                      />
-                    </div>
-                  </div>
-                  
-                  <div className="mt-3 pl-4 border-l-2 border-amber-200 dark:border-amber-800">
-                    <Label className="text-xs text-muted-foreground mb-2 block">Steps to execute when condition matches:</Label>
-                    
-                    {(condition.pathSteps || []).map((pathStep: any, stepIndex: number) => (
-                      <div key={pathStep.id || stepIndex} className="flex items-center gap-2 mb-2 p-2 bg-gray-50 dark:bg-gray-900 rounded">
-                        <Select
-                          value={pathStep.type}
-                          onValueChange={(value) => updatePathStep(condIndex, stepIndex, { type: value, config: {} })}
-                        >
-                          <SelectTrigger className="w-40">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="create_work_item">Create Work Item</SelectItem>
-                            <SelectItem value="integration_action">Integration Action</SelectItem>
-                            <SelectItem value="splynx_query">Splynx Query</SelectItem>
-                            <SelectItem value="ai_draft_response">AI Draft Response</SelectItem>
-                            <SelectItem value="log_event">Log Event</SelectItem>
-                          </SelectContent>
-                        </Select>
-                        <Input
-                          placeholder="Step name"
-                          value={pathStep.name}
-                          onChange={(e) => updatePathStep(condIndex, stepIndex, { name: e.target.value })}
-                          className="flex-1"
-                        />
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => removePathStep(condIndex, stepIndex)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
+            {conditions.map((conditionPath: any, pathIndex: number) => {
+              const pathConditions = getPathConditions(conditionPath);
+              
+              return (
+                <Card key={conditionPath.id || pathIndex} className="p-4 border-l-4 border-l-amber-500">
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <Badge variant="outline" className="bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300">
+                          Path {pathIndex + 1}
+                        </Badge>
+                        {pathConditions.length > 1 && (
+                          <Badge variant="secondary" className="text-xs">
+                            {pathConditions.length} conditions (AND)
+                          </Badge>
+                        )}
                       </div>
-                    ))}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => removeConditionPath(pathIndex)}
+                      >
+                        <Trash2 className="h-4 w-4 text-destructive" />
+                      </Button>
+                    </div>
                     
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => addPathStep(condIndex)}
-                      className="mt-1"
-                    >
-                      <Plus className="h-3 w-3 mr-1" />
-                      Add Step
-                    </Button>
+                    <div className="space-y-2 bg-gray-50 dark:bg-gray-900 rounded p-3">
+                      <Label className="text-xs text-muted-foreground">Conditions (all must match):</Label>
+                      {pathConditions.map((cond: any, condIndex: number) => (
+                        <div key={condIndex} className="flex items-center gap-2">
+                          {condIndex > 0 && (
+                            <Badge variant="secondary" className="text-xs shrink-0">AND</Badge>
+                          )}
+                          <div className="grid grid-cols-3 gap-2 flex-1">
+                            <Input
+                              placeholder="e.g., trigger.category"
+                              value={cond.field || ''}
+                              onChange={(e) => updateConditionInPath(pathIndex, condIndex, { field: e.target.value })}
+                            />
+                            <Select
+                              value={cond.operator || 'equals'}
+                              onValueChange={(value) => updateConditionInPath(pathIndex, condIndex, { operator: value })}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="equals">Equals</SelectItem>
+                                <SelectItem value="not_equals">Not Equals</SelectItem>
+                                <SelectItem value="in">In List (comma-separated)</SelectItem>
+                                <SelectItem value="not_in">Not In List</SelectItem>
+                                <SelectItem value="contains">Contains</SelectItem>
+                                <SelectItem value="not_contains">Not Contains</SelectItem>
+                                <SelectItem value="starts_with">Starts With</SelectItem>
+                                <SelectItem value="ends_with">Ends With</SelectItem>
+                                <SelectItem value="greater_than">Greater Than</SelectItem>
+                                <SelectItem value="less_than">Less Than</SelectItem>
+                                <SelectItem value="is_empty">Is Empty</SelectItem>
+                                <SelectItem value="is_not_empty">Is Not Empty</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <div className="flex gap-1">
+                              <Input
+                                placeholder="e.g., support"
+                                value={cond.value || ''}
+                                onChange={(e) => updateConditionInPath(pathIndex, condIndex, { value: e.target.value })}
+                                className="flex-1"
+                              />
+                              {pathConditions.length > 1 && (
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  onClick={() => removeConditionFromPath(pathIndex, condIndex)}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => addConditionToPath(pathIndex)}
+                        className="mt-2"
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        Add Condition (AND)
+                      </Button>
+                    </div>
+                    
+                    <div className="mt-3 pl-4 border-l-2 border-amber-200 dark:border-amber-800">
+                      <Label className="text-xs text-muted-foreground mb-2 block">Steps to execute when all conditions match:</Label>
+                      
+                      {(conditionPath.pathSteps || []).map((pathStep: any, stepIndex: number) => (
+                        <div key={pathStep.id || stepIndex} className="flex items-center gap-2 mb-2 p-2 bg-gray-50 dark:bg-gray-900 rounded">
+                          <Select
+                            value={pathStep.type}
+                            onValueChange={(value) => updatePathStep(pathIndex, stepIndex, { type: value, config: {} })}
+                          >
+                            <SelectTrigger className="w-40">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="create_work_item">Create Work Item</SelectItem>
+                              <SelectItem value="integration_action">Integration Action</SelectItem>
+                              <SelectItem value="splynx_query">Splynx Query</SelectItem>
+                              <SelectItem value="ai_draft_response">AI Draft Response</SelectItem>
+                              <SelectItem value="conditional_paths">Nested Conditional</SelectItem>
+                              <SelectItem value="log_event">Log Event</SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <Input
+                            placeholder="Step name"
+                            value={pathStep.name}
+                            onChange={(e) => updatePathStep(pathIndex, stepIndex, { name: e.target.value })}
+                            className="flex-1"
+                          />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => removePathStep(pathIndex, stepIndex)}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
+                      ))}
+                      
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => addPathStep(pathIndex)}
+                        className="mt-1"
+                      >
+                        <Plus className="h-3 w-3 mr-1" />
+                        Add Step
+                      </Button>
+                    </div>
                   </div>
-                </div>
-              </Card>
-            ))}
+                </Card>
+              );
+            })}
             
             <Button
               variant="outline"
-              onClick={addCondition}
+              onClick={addConditionPath}
               className="w-full border-dashed"
             >
               <Plus className="h-4 w-4 mr-1" />
