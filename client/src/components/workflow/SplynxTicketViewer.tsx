@@ -314,7 +314,7 @@ export function SplynxTicketViewer({
                 data-testid="link-customer-splynx"
               >
                 <User className="h-3 w-3" />
-                #{ticket.customer_id}
+                {ticket.customer_name || `Customer #${ticket.customer_id}`}
               </a>
             ) : (
               <span className="text-[10px] text-amber-600 dark:text-amber-400">No customer</span>
@@ -528,11 +528,11 @@ export function SplynxTicketViewer({
                   className="text-primary hover:underline flex items-center gap-1"
                   data-testid="link-customer-splynx"
                 >
-                  Customer #{ticket.customer_id}
+                  {ticket.customer_name || `Customer #${ticket.customer_id}`}
                   <ExternalLink className="h-3 w-3" />
                 </a>
               ) : (
-                <span className="text-amber-600 dark:text-amber-400">Customer ID: N/A - Link in Splynx</span>
+                <span className="text-amber-600 dark:text-amber-400">No customer linked</span>
               )}
             </div>
             <div className="flex items-center gap-2 text-muted-foreground">

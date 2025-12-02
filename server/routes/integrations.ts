@@ -1717,6 +1717,19 @@ router.get('/splynx/entity/:entityType/:entityId', async (req, res) => {
       // CRITICAL FIX: Return the actual ticket data as entityData
       entityData = ticketData;
       
+      // Enrich with customer name if customer_id exists
+      if (ticketData?.customer_id) {
+        try {
+          const customerData = await splynxService.getCustomerById(ticketData.customer_id);
+          if (customerData) {
+            entityData.customer_name = customerData.name;
+            console.log(`[TICKET ${entityId}] Enriched with customer name: ${customerData.name}`);
+          }
+        } catch (customerError: any) {
+          console.log(`Could not fetch customer name for ticket ${entityId}:`, customerError.message);
+        }
+      }
+      
       // Try to get comments (messages) using the correct Splynx endpoint
       try {
         messages = await splynxService.getTicketComments(entityId);
