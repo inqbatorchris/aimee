@@ -2627,8 +2627,19 @@ Generate a draft response that addresses the customer's issue professionally and
         authHeader: creds.authHeader,
       });
       
-      // Send the message
-      const result = await splynxService.addTicketMessage(String(ticketId), message, isHidden);
+      // Extract customer_id from context for the message payload
+      const customerId = context.trigger?.customer_id 
+        || context.webhookData?.data?.customer_id
+        || context.step1Output?.customer?.id
+        || '';
+      
+      // Send the message with customer_id for proper Splynx API format
+      const result = await splynxService.addTicketMessage(
+        String(ticketId), 
+        message, 
+        isHidden,
+        { customerId: String(customerId) }
+      );
       
       console.log(`[WorkflowExecutor]   ✅ Message sent to ticket ${ticketId}`);
       

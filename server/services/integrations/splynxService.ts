@@ -1339,28 +1339,20 @@ export class SplynxService {
     try {
       const url = this.buildUrl(`admin/support/ticket-messages`);
       
-      // Splynx v2 API format for ticket messages:
-      // - ticket_id: the existing ticket to add message to
-      // - message: the message text (string)
-      // - hide_for_customer: 1 to hide from customer, 0 to show (integer)
+      // Splynx API format for adding ticket messages:
+      // Required: customer_id, subject, priority, hidden, message (nested)
       const payload: any = {
         ticket_id: ticketId,
-        message: message,
-        hide_for_customer: isHidden ? 1 : 0,
+        customer_id: options?.customerId || '',
+        subject: options?.subject || 'AI Workflow Note',
+        priority: options?.priority || 'medium',
+        hidden: isHidden,
+        message: {
+          message: message,
+        },
       };
       
-      // Add optional fields if provided
-      if (options?.customerId) {
-        payload.customer_id = options.customerId;
-      }
-      if (options?.subject) {
-        payload.subject = options.subject;
-      }
-      if (options?.priority) {
-        payload.priority = options.priority;
-      }
-      
-      console.log(`[Splynx] Adding message to ticket ${ticketId} (hide_for_customer: ${isHidden ? 1 : 0})`);
+      console.log(`[Splynx] Adding message to ticket ${ticketId} (hidden: ${isHidden})`);
       console.log(`[Splynx] Payload:`, JSON.stringify(payload, null, 2));
       
       const response = await axios.post(url, payload, {
