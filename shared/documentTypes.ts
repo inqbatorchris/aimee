@@ -28,6 +28,16 @@ export const documentTypeConfig = {
     label: 'Attachment', 
     icon: 'Paperclip', 
     color: 'slate' 
+  },
+  ai_prompt: { 
+    label: 'AI Prompt', 
+    icon: 'Bot', 
+    color: 'cyan' 
+  },
+  system_prompt: { 
+    label: 'System Prompt', 
+    icon: 'Terminal', 
+    color: 'indigo' 
   }
 } as const;
 

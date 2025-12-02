@@ -972,34 +972,12 @@ function NestedConditionalEditor({
                                   <SelectItem value="create_work_item">Create Work Item</SelectItem>
                                   <SelectItem value="ai_draft_response">AI Draft Response</SelectItem>
                                   <SelectItem value="splynx_query">Splynx Query</SelectItem>
+                                  <SelectItem value="splynx_ticket_message">Send Ticket Message</SelectItem>
                                   <SelectItem value="log_event">Log Event</SelectItem>
                                 </SelectContent>
                               </Select>
                             </div>
                           </div>
-                          
-                          {nestedStep.type === 'ai_draft_response' && (
-                            <div className="space-y-2 pt-1 border-t">
-                              <div>
-                                <Label className="text-xs">Booking Link Type</Label>
-                                <Select
-                                  value={nestedStep.config?.bookingLinkType || 'none'}
-                                  onValueChange={(value) => updateNestedPathStep(nestedPathIndex, nestedStepIndex, {
-                                    config: { ...nestedStep.config, bookingLinkType: value === 'none' ? undefined : value }
-                                  })}
-                                >
-                                  <SelectTrigger className="h-7 text-xs">
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="none">No booking link</SelectItem>
-                                    <SelectItem value="engineer-visit">Engineer Visit</SelectItem>
-                                    <SelectItem value="support-call">Support Call</SelectItem>
-                                  </SelectContent>
-                                </Select>
-                              </div>
-                            </div>
-                          )}
                           
                           {nestedStep.type === 'create_work_item' && (
                             <div className="space-y-2 pt-1 border-t">
@@ -1046,6 +1024,47 @@ function NestedConditionalEditor({
                                 placeholder="Log message"
                                 className="h-7 text-xs"
                               />
+                            </div>
+                          )}
+                          
+                          {nestedStep.type === 'splynx_ticket_message' && (
+                            <div className="space-y-2 pt-1 border-t">
+                              <div>
+                                <Label className="text-xs">Ticket ID</Label>
+                                <Input
+                                  value={nestedStep.config?.ticketId || ''}
+                                  onChange={(e) => updateNestedPathStep(nestedPathIndex, nestedStepIndex, {
+                                    config: { ...nestedStep.config, ticketId: e.target.value }
+                                  })}
+                                  placeholder="{{trigger.id}} or leave empty to auto-detect"
+                                  className="h-7 text-xs"
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs">Message</Label>
+                                <textarea
+                                  value={nestedStep.config?.message || ''}
+                                  onChange={(e) => updateNestedPathStep(nestedPathIndex, nestedStepIndex, {
+                                    config: { ...nestedStep.config, message: e.target.value }
+                                  })}
+                                  placeholder="Message content (supports {{variables}})"
+                                  className="w-full h-20 text-xs border rounded-md p-2 resize-none"
+                                />
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <input
+                                  type="checkbox"
+                                  id={`hidden-${nestedPathIndex}-${nestedStepIndex}`}
+                                  checked={nestedStep.config?.isHidden !== false}
+                                  onChange={(e) => updateNestedPathStep(nestedPathIndex, nestedStepIndex, {
+                                    config: { ...nestedStep.config, isHidden: e.target.checked }
+                                  })}
+                                  className="h-3 w-3"
+                                />
+                                <Label htmlFor={`hidden-${nestedPathIndex}-${nestedStepIndex}`} className="text-xs">
+                                  Private message (hidden from customer)
+                                </Label>
+                              </div>
                             </div>
                           )}
                         </div>
@@ -1140,31 +1159,50 @@ function NestedConditionalEditor({
                               <SelectItem value="create_work_item">Create Work Item</SelectItem>
                               <SelectItem value="ai_draft_response">AI Draft Response</SelectItem>
                               <SelectItem value="splynx_query">Splynx Query</SelectItem>
+                              <SelectItem value="splynx_ticket_message">Send Ticket Message</SelectItem>
                               <SelectItem value="log_event">Log Event</SelectItem>
                             </SelectContent>
                           </Select>
                         </div>
                       </div>
                       
-                      {nestedStep.type === 'ai_draft_response' && (
+                      {nestedStep.type === 'splynx_ticket_message' && (
                         <div className="space-y-2 pt-1 border-t">
                           <div>
-                            <Label className="text-xs">Booking Link Type</Label>
-                            <Select
-                              value={nestedStep.config?.bookingLinkType || 'none'}
-                              onValueChange={(value) => updateNestedDefaultPathStep(nestedStepIndex, {
-                                config: { ...nestedStep.config, bookingLinkType: value === 'none' ? undefined : value }
+                            <Label className="text-xs">Ticket ID</Label>
+                            <Input
+                              value={nestedStep.config?.ticketId || ''}
+                              onChange={(e) => updateNestedDefaultPathStep(nestedStepIndex, {
+                                config: { ...nestedStep.config, ticketId: e.target.value }
                               })}
-                            >
-                              <SelectTrigger className="h-7 text-xs">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">No booking link</SelectItem>
-                                <SelectItem value="engineer-visit">Engineer Visit</SelectItem>
-                                <SelectItem value="support-call">Support Call</SelectItem>
-                              </SelectContent>
-                            </Select>
+                              placeholder="{{trigger.id}} or leave empty to auto-detect"
+                              className="h-7 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Message</Label>
+                            <textarea
+                              value={nestedStep.config?.message || ''}
+                              onChange={(e) => updateNestedDefaultPathStep(nestedStepIndex, {
+                                config: { ...nestedStep.config, message: e.target.value }
+                              })}
+                              placeholder="Message content (supports {{variables}})"
+                              className="w-full h-20 text-xs border rounded-md p-2 resize-none"
+                            />
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              id={`hidden-default-${nestedStepIndex}`}
+                              checked={nestedStep.config?.isHidden !== false}
+                              onChange={(e) => updateNestedDefaultPathStep(nestedStepIndex, {
+                                config: { ...nestedStep.config, isHidden: e.target.checked }
+                              })}
+                              className="h-3 w-3"
+                            />
+                            <Label htmlFor={`hidden-default-${nestedStepIndex}`} className="text-xs">
+                              Private message (hidden from customer)
+                            </Label>
                           </div>
                         </div>
                       )}
@@ -1260,6 +1298,11 @@ export default function WorkflowStepBuilder({
   // Fetch users for Create Work Item step
   const { data: users = [] } = useQuery<Array<{ id: number; fullName: string; email: string }>>({
     queryKey: ['/api/users'],
+  });
+
+  // Fetch knowledge base documents for AI Draft Response step
+  const { data: kbDocuments = [] } = useQuery<Array<{ id: number; title: string; summary?: string; documentType?: string }>>({
+    queryKey: ['/api/knowledge-base/documents'],
   });
 
   const togglePathStepExpanded = (stepId: string) => {
@@ -3134,6 +3177,7 @@ export default function WorkflowStepBuilder({
                                         <SelectItem value="create_work_item">Create Work Item</SelectItem>
                                         <SelectItem value="integration_action">Integration Action</SelectItem>
                                         <SelectItem value="splynx_query">Splynx Query</SelectItem>
+                                        <SelectItem value="splynx_ticket_message">Send Ticket Message</SelectItem>
                                         <SelectItem value="ai_draft_response">AI Draft Response</SelectItem>
                                         <SelectItem value="conditional_paths">Nested Conditional</SelectItem>
                                         <SelectItem value="log_event">Log Event</SelectItem>
@@ -3300,25 +3344,54 @@ export default function WorkflowStepBuilder({
                                       />
                                     </div>
                                     <div>
-                                      <Label className="text-xs">Booking Link Type</Label>
-                                      <Select
-                                        value={pathStep.config?.bookingLinkType || 'none'}
-                                        onValueChange={(value) => updatePathStep(pathIndex, stepIndex, {
-                                          config: { ...pathStep.config, bookingLinkType: value === 'none' ? undefined : value }
-                                        })}
-                                      >
-                                        <SelectTrigger>
-                                          <SelectValue placeholder="No booking link" />
-                                        </SelectTrigger>
-                                        <SelectContent>
-                                          <SelectItem value="none">No booking link</SelectItem>
-                                          <SelectItem value="engineer-visit">Engineer Visit</SelectItem>
-                                          <SelectItem value="support-call">Support Call</SelectItem>
-                                        </SelectContent>
-                                      </Select>
-                                      <p className="text-xs text-muted-foreground mt-1">
-                                        Inject a booking link into the AI draft
-                                      </p>
+                                      <Label className="text-xs">AI Instructions Documents</Label>
+                                      <p className="text-xs text-muted-foreground mb-2">Select KB documents to use as AI instructions</p>
+                                      {kbDocuments.length > 0 ? (
+                                        <div className="space-y-1 max-h-32 overflow-y-auto border rounded-md p-2">
+                                          {kbDocuments
+                                            .filter(doc => doc.documentType === 'ai_prompt' || doc.documentType === 'system_prompt')
+                                            .length > 0 ? (
+                                            kbDocuments
+                                              .filter(doc => doc.documentType === 'ai_prompt' || doc.documentType === 'system_prompt')
+                                              .map(doc => {
+                                                const selectedDocs = pathStep.config?.instructionDocIds || [];
+                                                const isSelected = selectedDocs.includes(doc.id);
+                                                return (
+                                                  <div
+                                                    key={doc.id}
+                                                    className="flex items-start gap-2 p-2 hover:bg-accent rounded cursor-pointer"
+                                                    onClick={() => {
+                                                      const current = pathStep.config?.instructionDocIds || [];
+                                                      const updated = isSelected
+                                                        ? current.filter((id: number) => id !== doc.id)
+                                                        : [...current, doc.id];
+                                                      updatePathStep(pathIndex, stepIndex, {
+                                                        config: { ...pathStep.config, instructionDocIds: updated }
+                                                      });
+                                                    }}
+                                                  >
+                                                    <Checkbox checked={isSelected} className="mt-0.5" />
+                                                    <div className="flex-1 min-w-0">
+                                                      <span className="text-xs font-medium">{doc.title}</span>
+                                                      {doc.summary && (
+                                                        <p className="text-xs text-muted-foreground line-clamp-1">{doc.summary}</p>
+                                                      )}
+                                                    </div>
+                                                  </div>
+                                                );
+                                              })
+                                          ) : (
+                                            <p className="text-xs text-muted-foreground p-2">No AI instruction documents found. Create one with type "AI Prompt" or "System Prompt".</p>
+                                          )}
+                                        </div>
+                                      ) : (
+                                        <p className="text-xs text-muted-foreground p-2 border rounded">Loading documents...</p>
+                                      )}
+                                      {(pathStep.config?.instructionDocIds?.length || 0) > 0 && (
+                                        <p className="text-xs text-muted-foreground mt-1">
+                                          {pathStep.config?.instructionDocIds?.length} document(s) selected
+                                        </p>
+                                      )}
                                     </div>
                                     <div className="flex items-center space-x-2">
                                       <Checkbox
@@ -3327,7 +3400,7 @@ export default function WorkflowStepBuilder({
                                           config: { ...pathStep.config, useKnowledgeBase: checked }
                                         })}
                                       />
-                                      <Label className="text-xs">Use Knowledge Base</Label>
+                                      <Label className="text-xs">Use Knowledge Base (reference docs)</Label>
                                     </div>
                                   </div>
                                 )}
@@ -3362,6 +3435,41 @@ export default function WorkflowStepBuilder({
                                         })}
                                         placeholder="{{trigger.customer_id}}"
                                       />
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                {pathStep.type === 'splynx_ticket_message' && (
+                                  <div className="space-y-3 pt-2 border-t">
+                                    <div>
+                                      <Label className="text-xs">Ticket ID</Label>
+                                      <VariableFieldPicker
+                                        value={pathStep.config?.ticketId || ''}
+                                        onChange={(value) => updatePathStep(pathIndex, stepIndex, {
+                                          config: { ...pathStep.config, ticketId: value }
+                                        })}
+                                        placeholder="{{trigger.id}} or leave empty to auto-detect"
+                                      />
+                                    </div>
+                                    <div>
+                                      <Label className="text-xs">Message</Label>
+                                      <Textarea
+                                        value={pathStep.config?.message || ''}
+                                        onChange={(e) => updatePathStep(pathIndex, stepIndex, {
+                                          config: { ...pathStep.config, message: e.target.value }
+                                        })}
+                                        placeholder="Message content (supports {{variables}})"
+                                        rows={4}
+                                      />
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                      <Checkbox
+                                        checked={pathStep.config?.isHidden !== false}
+                                        onCheckedChange={(checked) => updatePathStep(pathIndex, stepIndex, {
+                                          config: { ...pathStep.config, isHidden: checked }
+                                        })}
+                                      />
+                                      <Label className="text-xs">Private message (hidden from customer)</Label>
                                     </div>
                                   </div>
                                 )}
@@ -3507,6 +3615,7 @@ export default function WorkflowStepBuilder({
                                     <SelectItem value="create_work_item">Create Work Item</SelectItem>
                                     <SelectItem value="integration_action">Integration Action</SelectItem>
                                     <SelectItem value="splynx_query">Splynx Query</SelectItem>
+                                    <SelectItem value="splynx_ticket_message">Send Ticket Message</SelectItem>
                                     <SelectItem value="ai_draft_response">AI Draft Response</SelectItem>
                                     <SelectItem value="log_event">Log Event</SelectItem>
                                   </SelectContent>
@@ -3672,22 +3781,54 @@ export default function WorkflowStepBuilder({
                                   />
                                 </div>
                                 <div>
-                                  <Label className="text-xs">Booking Link Type</Label>
-                                  <Select
-                                    value={pathStep.config?.bookingLinkType || 'none'}
-                                    onValueChange={(value) => updateDefaultPathStep(stepIndex, {
-                                      config: { ...pathStep.config, bookingLinkType: value === 'none' ? undefined : value }
-                                    })}
-                                  >
-                                    <SelectTrigger>
-                                      <SelectValue placeholder="No booking link" />
-                                    </SelectTrigger>
-                                    <SelectContent>
-                                      <SelectItem value="none">No booking link</SelectItem>
-                                      <SelectItem value="engineer-visit">Engineer Visit</SelectItem>
-                                      <SelectItem value="support-call">Support Call</SelectItem>
-                                    </SelectContent>
-                                  </Select>
+                                  <Label className="text-xs">AI Instructions Documents</Label>
+                                  <p className="text-xs text-muted-foreground mb-2">Select KB documents to use as AI instructions</p>
+                                  {kbDocuments.length > 0 ? (
+                                    <div className="space-y-1 max-h-32 overflow-y-auto border rounded-md p-2">
+                                      {kbDocuments
+                                        .filter(doc => doc.documentType === 'ai_prompt' || doc.documentType === 'system_prompt')
+                                        .length > 0 ? (
+                                        kbDocuments
+                                          .filter(doc => doc.documentType === 'ai_prompt' || doc.documentType === 'system_prompt')
+                                          .map(doc => {
+                                            const selectedDocs = pathStep.config?.instructionDocIds || [];
+                                            const isSelected = selectedDocs.includes(doc.id);
+                                            return (
+                                              <div
+                                                key={doc.id}
+                                                className="flex items-start gap-2 p-2 hover:bg-accent rounded cursor-pointer"
+                                                onClick={() => {
+                                                  const current = pathStep.config?.instructionDocIds || [];
+                                                  const updated = isSelected
+                                                    ? current.filter((id: number) => id !== doc.id)
+                                                    : [...current, doc.id];
+                                                  updateDefaultPathStep(stepIndex, {
+                                                    config: { ...pathStep.config, instructionDocIds: updated }
+                                                  });
+                                                }}
+                                              >
+                                                <Checkbox checked={isSelected} className="mt-0.5" />
+                                                <div className="flex-1 min-w-0">
+                                                  <span className="text-xs font-medium">{doc.title}</span>
+                                                  {doc.summary && (
+                                                    <p className="text-xs text-muted-foreground line-clamp-1">{doc.summary}</p>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            );
+                                          })
+                                      ) : (
+                                        <p className="text-xs text-muted-foreground p-2">No AI instruction documents found. Create one with type "AI Prompt" or "System Prompt".</p>
+                                      )}
+                                    </div>
+                                  ) : (
+                                    <p className="text-xs text-muted-foreground p-2 border rounded">Loading documents...</p>
+                                  )}
+                                  {(pathStep.config?.instructionDocIds?.length || 0) > 0 && (
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                      {pathStep.config?.instructionDocIds?.length} document(s) selected
+                                    </p>
+                                  )}
                                 </div>
                                 <div className="flex items-center space-x-2">
                                   <Checkbox
@@ -3696,7 +3837,7 @@ export default function WorkflowStepBuilder({
                                       config: { ...pathStep.config, useKnowledgeBase: checked }
                                     })}
                                   />
-                                  <Label className="text-xs">Use Knowledge Base</Label>
+                                  <Label className="text-xs">Use Knowledge Base (reference docs)</Label>
                                 </div>
                               </div>
                             )}
@@ -3731,6 +3872,41 @@ export default function WorkflowStepBuilder({
                                     })}
                                     placeholder="{{trigger.customer_id}}"
                                   />
+                                </div>
+                              </div>
+                            )}
+                            
+                            {pathStep.type === 'splynx_ticket_message' && (
+                              <div className="space-y-3 pt-2 border-t">
+                                <div>
+                                  <Label className="text-xs">Ticket ID</Label>
+                                  <VariableFieldPicker
+                                    value={pathStep.config?.ticketId || ''}
+                                    onChange={(value) => updateDefaultPathStep(stepIndex, {
+                                      config: { ...pathStep.config, ticketId: value }
+                                    })}
+                                    placeholder="{{trigger.id}} or leave empty to auto-detect"
+                                  />
+                                </div>
+                                <div>
+                                  <Label className="text-xs">Message</Label>
+                                  <Textarea
+                                    value={pathStep.config?.message || ''}
+                                    onChange={(e) => updateDefaultPathStep(stepIndex, {
+                                      config: { ...pathStep.config, message: e.target.value }
+                                    })}
+                                    placeholder="Message content (supports {{variables}})"
+                                    rows={4}
+                                  />
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                  <Checkbox
+                                    checked={pathStep.config?.isHidden !== false}
+                                    onCheckedChange={(checked) => updateDefaultPathStep(stepIndex, {
+                                      config: { ...pathStep.config, isHidden: checked }
+                                    })}
+                                  />
+                                  <Label className="text-xs">Private message (hidden from customer)</Label>
                                 </div>
                               </div>
                             )}

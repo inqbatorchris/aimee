@@ -1,6 +1,6 @@
 import { db } from '../../db';
 import { eq, and, or, sql, count, sum, avg, min, max, ilike, isNull, isNotNull, gt, lt, gte, lte, inArray, notInArray, ne } from 'drizzle-orm';
-import { agentWorkflows, agentWorkflowRuns, integrations, keyResults, objectives, activityLogs, users, addressRecords, workItems, fieldTasks, ragStatusRecords, tariffRecords, aiAgentConfigurations, knowledgeDocuments, ticketDraftResponses, bookingTokens, bookableTaskTypes } from '@shared/schema';
+import { agentWorkflows, agentWorkflowRuns, integrations, keyResults, objectives, activityLogs, users, addressRecords, workItems, fieldTasks, ragStatusRecords, tariffRecords, aiAgentConfigurations, knowledgeDocuments, ticketDraftResponses } from '@shared/schema';
 import { ActionHandlers } from './ActionHandlers';
 import { storage } from '../../storage';
 import { SplynxService } from '../integrations/splynxService';
@@ -316,6 +316,9 @@ export class WorkflowExecutor {
         
         case 'ai_draft_response':
           return await this.executeAIDraftResponse(step, context);
+        
+        case 'splynx_ticket_message':
+          return await this.executeSplynxTicketMessage(step, context);
         
         default:
           throw new Error(`Unknown step type: ${step.type}`);
@@ -2315,108 +2318,6 @@ export class WorkflowExecutor {
         console.log(`[WorkflowExecutor]   ℹ️ No customer ID found - skipping context enrichment`);
       }
       
-      // Generate booking link if bookingLinkType is specified
-      let bookingLinkStr = '';
-      const bookingLinkType = step.config?.bookingLinkType;
-      if (bookingLinkType && splynxCustomerId) {
-        try {
-          console.log(`[WorkflowExecutor]   📅 Generating booking link (type: ${bookingLinkType})...`);
-          
-          // Ensure numeric values for database queries
-          const numericOrgId = typeof organizationId === 'string' ? parseInt(organizationId) : organizationId;
-          const numericCustomerId = parseInt(String(splynxCustomerId));
-          
-          if (isNaN(numericOrgId) || isNaN(numericCustomerId)) {
-            throw new Error(`Invalid organizationId (${organizationId}) or customerId (${splynxCustomerId})`);
-          }
-          
-          // Map bookingLinkType to task type name for precise matching
-          const taskTypeName = bookingLinkType === 'engineer-visit' 
-            ? 'Engineer Visit' 
-            : 'Support Call';
-          const taskCategory = bookingLinkType === 'engineer-visit' ? 'field_visit' : 'support_session';
-          
-          console.log(`[WorkflowExecutor]   🔍 Looking up task type: "${taskTypeName}" (category: ${taskCategory}) for org ${numericOrgId}`);
-          
-          // Look up bookable task type by name first, then by category
-          let [taskType] = await db
-            .select()
-            .from(bookableTaskTypes)
-            .where(
-              and(
-                eq(bookableTaskTypes.organizationId, numericOrgId),
-                ilike(bookableTaskTypes.name, `%${taskTypeName}%`)
-              )
-            )
-            .limit(1);
-          
-          // Fallback to category search if name search fails
-          if (!taskType) {
-            console.log(`[WorkflowExecutor]   🔍 Name search failed, trying category search...`);
-            [taskType] = await db
-              .select()
-              .from(bookableTaskTypes)
-              .where(
-                and(
-                  eq(bookableTaskTypes.organizationId, numericOrgId),
-                  eq(bookableTaskTypes.taskCategory, taskCategory)
-                )
-              )
-              .limit(1);
-          }
-          
-          if (taskType) {
-            console.log(`[WorkflowExecutor]   ✓ Found task type: ${taskType.name} (ID: ${taskType.id})`);
-            
-            // Generate unique booking token
-            const token = crypto.randomBytes(32).toString('hex');
-            
-            // Get customer info from work item metadata
-            const metadata = workItem.workflowMetadata as any || {};
-            const customerEmail = metadata.customerEmail || metadata.email || '';
-            const customerName = metadata.customerName || metadata.name || '';
-            const serviceAddress = metadata.address || '';
-            
-            // Create booking token
-            const [bookingToken] = await db
-              .insert(bookingTokens)
-              .values({
-                organizationId: numericOrgId,
-                token,
-                workItemId: workItem.id,
-                bookableTaskTypeId: taskType.id,
-                customerId: numericCustomerId,
-                customerEmail,
-                customerName,
-                serviceAddress,
-                status: 'pending',
-                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
-                maxUses: 1,
-                usageCount: 0,
-              })
-              .returning();
-            
-            // Build booking URL
-            const baseUrl = process.env.BASE_URL || `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
-            const bookingUrl = `${baseUrl}/book/${token}`;
-            
-            const bookingTypeLabel = bookingLinkType === 'engineer-visit' 
-              ? 'Engineer Visit' 
-              : 'Support Call';
-            
-            bookingLinkStr = `\n\n**BOOKING LINK TO INCLUDE:**\nInclude this link in your response for the customer to book a ${bookingTypeLabel}: ${bookingUrl}\n\nFormat this link naturally in your response, for example: "Click here to book a ${bookingTypeLabel.toLowerCase()}: [Book ${bookingTypeLabel}](${bookingUrl})"`;
-            
-            console.log(`[WorkflowExecutor]   ✅ Booking link generated: ${bookingUrl}`);
-          } else {
-            console.warn(`[WorkflowExecutor]   ⚠️ No bookable task type found for "${taskTypeName}" (category: ${taskCategory}) in org ${numericOrgId}. Booking link will not be included in draft.`);
-          }
-        } catch (bookingError: any) {
-          console.error(`[WorkflowExecutor]   ❌ Booking link generation failed:`, bookingError.message);
-          console.error(`[WorkflowExecutor]   Stack:`, bookingError.stack);
-          // Log but continue without booking link - don't fail the whole draft
-        }
-      }
-      
       // Build user message with ticket context and enriched customer data
       // Use step-level system prompt if provided, otherwise use default
       const stepSystemPrompt = step.config?.systemPrompt;
@@ -2430,7 +2331,6 @@ ${workItem.description || 'No description provided'}
 
 ${customerContextStr ? `\n${customerContextStr}\n` : ''}
 ${referenceContext ? `\n**Reference Information:**\n${referenceContext}\n` : ''}
-${bookingLinkStr}
 ${stepSystemPrompt ? `\n**Special Instructions:**\n${stepSystemPrompt}\n` : ''}
 
 Generate a draft response that addresses the customer's issue professionally and helpfully. Take into account any customer context provided (such as account status, recent tickets, and service information) to personalize your response.`;
@@ -2498,84 +2398,6 @@ Generate a draft response that addresses the customer's issue professionally and
       
       console.log(`[WorkflowExecutor]   💾 Draft saved: ID ${savedDraft.id}`);
       
-      // Add private audit message to Splynx ticket with all context data used
-      const splynxTicketId = workflowMetadata?.splynx_ticket_id || workflowMetadata?.ticketId;
-      if (splynxTicketId) {
-        try {
-          // Get Splynx integration credentials
-          const [splynxIntegration] = await db
-            .select()
-            .from(integrations)
-            .where(
-              and(
-                eq(integrations.organizationId, organizationId),
-                eq(integrations.platformType, 'splynx')
-              )
-            )
-            .limit(1);
-          
-          if (splynxIntegration?.credentialsEncrypted) {
-            const creds = this.decryptCredentials(splynxIntegration.credentialsEncrypted);
-            if (creds) {
-              const splynxService = new SplynxService({
-                baseUrl: creds.baseUrl || creds.apiUrl,
-                authHeader: creds.authHeader,
-              });
-              
-              // Build audit message with all context data
-              const auditTimestamp = new Date().toISOString();
-              const auditMessage = `
-═══════════════════════════════════════════
-🤖 AI DRAFT GENERATED - AUDIT LOG
-═══════════════════════════════════════════
-Generated: ${auditTimestamp}
-Model: ${modelType}
-Draft ID: ${savedDraft.id}
-Work Item ID: ${workItemId}
-
-📋 TICKET INFORMATION USED:
-─────────────────────────────────────
-Title: ${workItem.title}
-Description: ${workItem.description || 'None provided'}
-
-${splynxCustomerId ? `
-👤 CUSTOMER CONTEXT GATHERED:
-─────────────────────────────────────
-Customer ID: ${splynxCustomerId}
-Context Sources Enabled: ${contextSources.join(', ')}
-
-${customerContextStr || 'No customer context data retrieved'}
-` : 'No customer ID available - context enrichment skipped'}
-
-${referenceKBDocs.length > 0 ? `
-📚 KNOWLEDGE BASE DOCUMENTS REFERENCED:
-─────────────────────────────────────
-${referenceKBDocs.map(doc => `• ${doc.title}`).join('\n')}
-` : ''}
-
-${systemPromptDocs.length > 0 ? `
-📝 SYSTEM PROMPT DOCUMENTS USED:
-─────────────────────────────────────
-${systemPromptDocs.map(doc => `• ${doc.title}`).join('\n')}
-` : ''}
-
-═══════════════════════════════════════════
-This is an automated audit log. The AI draft
-is pending human review before sending.
-═══════════════════════════════════════════
-`.trim();
-              
-              // Add as private/hidden message (isInternal = true)
-              await splynxService.addTicketMessage(String(splynxTicketId), auditMessage, true);
-              console.log(`[WorkflowExecutor]   📝 Private audit message added to ticket ${splynxTicketId}`);
-            }
-          }
-        } catch (auditError: any) {
-          console.error(`[WorkflowExecutor]   ⚠️ Failed to add audit message to ticket:`, auditError.message);
-          // Don't fail the draft generation if audit message fails
-        }
-      }
-      
       // Return structured output for downstream steps
       return {
         success: true,
@@ -2590,6 +2412,127 @@ is pending human review before sending.
       };
     } catch (error: any) {
       console.error(`[WorkflowExecutor]   ❌ AI draft response failed: ${error.message}`);
+      return {
+        success: false,
+        error: error.message,
+        stack: error.stack,
+      };
+    }
+  }
+
+  private async executeSplynxTicketMessage(step: any, context: any): Promise<StepExecutionResult> {
+    try {
+      console.log(`[WorkflowExecutor] 📨 Sending Splynx ticket message for step: ${step.name || 'Send Ticket Message'}`);
+      
+      // Get organization ID
+      let organizationId: number;
+      if (typeof context.organizationId === 'number') {
+        organizationId = context.organizationId;
+      } else if (typeof context.organizationId === 'string') {
+        organizationId = parseInt(context.organizationId);
+        if (isNaN(organizationId)) {
+          throw new Error('Invalid organization ID format');
+        }
+      } else {
+        throw new Error('Organization ID is required');
+      }
+      
+      // Get ticket ID from config or context
+      let ticketId = step.config?.ticketId;
+      if (typeof ticketId === 'string' && ticketId.includes('{{')) {
+        ticketId = this.processTemplate(ticketId, context);
+      }
+      
+      // Fallback: search context for ticket ID
+      if (!ticketId) {
+        ticketId = context.trigger?.id 
+          || context.webhookData?.data?.id
+          || context.lastOutput?.splynx_ticket_id;
+        
+        // Search work item metadata if we have a work item ID
+        if (!ticketId) {
+          for (let i = 1; i <= 20; i++) {
+            const stepOutput = context[`step${i}Output`];
+            if (stepOutput?.workItemId) {
+              const [workItem] = await db
+                .select()
+                .from(workItems)
+                .where(eq(workItems.id, stepOutput.workItemId))
+                .limit(1);
+              
+              if (workItem) {
+                const metadata = workItem.workflowMetadata as any;
+                ticketId = metadata?.splynx_ticket_id || metadata?.ticketId;
+                if (ticketId) break;
+              }
+            }
+          }
+        }
+      }
+      
+      if (!ticketId) {
+        throw new Error('Ticket ID is required. Configure ticketId or ensure ticket data is in context.');
+      }
+      
+      console.log(`[WorkflowExecutor]   🎫 Ticket ID: ${ticketId}`);
+      
+      // Get message content from config
+      let message = step.config?.message || '';
+      if (typeof message === 'string' && message.includes('{{')) {
+        message = this.processTemplate(message, context);
+      }
+      
+      if (!message.trim()) {
+        throw new Error('Message content is required');
+      }
+      
+      // Get visibility setting (default to private/hidden)
+      const isHidden = step.config?.isHidden !== false; // Default true
+      
+      console.log(`[WorkflowExecutor]   📝 Message visibility: ${isHidden ? 'Private (hidden from customer)' : 'Public'}`);
+      
+      // Get Splynx integration
+      const [splynxIntegration] = await db
+        .select()
+        .from(integrations)
+        .where(
+          and(
+            eq(integrations.organizationId, organizationId),
+            eq(integrations.platformType, 'splynx')
+          )
+        )
+        .limit(1);
+      
+      if (!splynxIntegration?.credentialsEncrypted) {
+        throw new Error('Splynx integration not configured');
+      }
+      
+      const creds = this.decryptCredentials(splynxIntegration.credentialsEncrypted);
+      if (!creds) {
+        throw new Error('Failed to decrypt Splynx credentials');
+      }
+      
+      const splynxService = new SplynxService({
+        baseUrl: creds.baseUrl || creds.apiUrl,
+        authHeader: creds.authHeader,
+      });
+      
+      // Send the message
+      const result = await splynxService.addTicketMessage(String(ticketId), message, isHidden);
+      
+      console.log(`[WorkflowExecutor]   ✅ Message sent to ticket ${ticketId}`);
+      
+      return {
+        success: true,
+        output: {
+          ticketId,
+          messageId: result?.id,
+          isHidden,
+          messageSent: true,
+        },
+      };
+    } catch (error: any) {
+      console.error(`[WorkflowExecutor]   ❌ Send ticket message failed: ${error.message}`);
       return {
         success: false,
         error: error.message,
