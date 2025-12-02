@@ -111,31 +111,14 @@ export function SplynxTicketViewer({
   }, [aiDraft, draftLoaded]);
 
   // Derive completion state from actual ticket data
+  // IMPORTANT: Never auto-complete - always require explicit user action
   const isModeCompleted = useMemo(() => {
     if (!ticketData?.entityData) return false;
     
-    // Overview and resolution modes don't require action
-    if (mode === 'overview' || mode === 'resolution') return true;
-    
-    // Unified mode: Require user to send message or update status before completing
-    // This prevents auto-completion when the step is first loaded
-    if (mode === 'unified') {
-      return localActionCompleted;
-    }
-    
-    // Respond mode: Check if there are any non-customer messages
-    if (mode === 'respond') {
-      const hasAgentMessages = ticketData.messages?.some((msg: any) => msg.type !== 'customer');
-      return localActionCompleted || hasAgentMessages;
-    }
-    
-    // Status mode: Require explicit status change in this session
-    if (mode === 'status') {
-      return localActionCompleted;
-    }
-    
-    return false;
-  }, [ticketData, mode, localActionCompleted]);
+    // All modes now require explicit user action to complete
+    // This prevents the workflow step from auto-completing when first loaded
+    return localActionCompleted;
+  }, [ticketData, localActionCompleted]);
 
   // Reset local action state when ticket changes
   useEffect(() => {

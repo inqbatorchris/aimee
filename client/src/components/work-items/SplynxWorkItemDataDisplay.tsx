@@ -1,11 +1,21 @@
 import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { Loader2, ExternalLink, Calendar, User, AlertCircle } from 'lucide-react';
 import { format } from 'date-fns';
 
 interface SplynxWorkItemDataDisplayProps {
   workItemId: number;
+}
+
+interface Integration {
+  id: number;
+  type: string;
+  configuration: {
+    apiUrl?: string;
+    splynxUrl?: string;
+  };
 }
 
 interface SplynxTicketData {
@@ -62,6 +72,17 @@ export function SplynxWorkItemDataDisplay({ workItemId }: SplynxWorkItemDataDisp
   const splynxTicketId = workItem?.workflowMetadata?.splynx_ticket_id;
   const splynxTaskId = workItem?.workflowMetadata?.splynx_task_id;
 
+  // Fetch integrations to get Splynx base URL
+  const { data: integrations = [] } = useQuery<Integration[]>({
+    queryKey: ['/api/integrations'],
+  });
+
+  // Get Splynx base URL from integration config
+  const splynxIntegration = integrations.find(i => i.type === 'splynx');
+  const splynxBaseUrl = splynxIntegration?.configuration?.apiUrl?.replace('/api/2.0', '') 
+    || splynxIntegration?.configuration?.splynxUrl 
+    || '';
+
   // Fetch Splynx ticket data if ticket ID exists
   const { data: ticketData, isLoading: ticketLoading } = useQuery<SplynxTicketData>({
     queryKey: [`/api/integrations/splynx/entity/ticket/${splynxTicketId}`],
@@ -73,6 +94,13 @@ export function SplynxWorkItemDataDisplay({ workItemId }: SplynxWorkItemDataDisp
     queryKey: [`/api/integrations/splynx/entity/task/${splynxTaskId}`],
     enabled: !!splynxTaskId,
   });
+
+  // Build Splynx URLs
+  const getTicketUrl = (ticketId: string | number) => 
+    splynxBaseUrl ? `${splynxBaseUrl}/admin/support/tickets/view/${ticketId}` : null;
+  
+  const getCustomerUrl = (customerId: string | number) => 
+    splynxBaseUrl ? `${splynxBaseUrl}/admin/customers/view/${customerId}` : null;
 
   // Don't render anything if no Splynx linkage
   if (!splynxTicketId && !splynxTaskId) {
@@ -91,8 +119,20 @@ export function SplynxWorkItemDataDisplay({ workItemId }: SplynxWorkItemDataDisp
         <Card data-testid="splynx-ticket-card">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Support Ticket #{splynxTicketId}</CardTitle>
-              <ExternalLink className="h-4 w-4 text-muted-foreground" />
+              {getTicketUrl(splynxTicketId) ? (
+                <a 
+                  href={getTicketUrl(splynxTicketId)!}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex items-center gap-2 hover:text-primary transition-colors"
+                  data-testid="link-splynx-ticket"
+                >
+                  <CardTitle className="text-base">Support Ticket #{splynxTicketId}</CardTitle>
+                  <ExternalLink className="h-4 w-4" />
+                </a>
+              ) : (
+                <CardTitle className="text-base">Support Ticket #{splynxTicketId}</CardTitle>
+              )}
             </div>
           </CardHeader>
           <CardContent>
@@ -123,6 +163,28 @@ export function SplynxWorkItemDataDisplay({ workItemId }: SplynxWorkItemDataDisp
                     </Badge>
                   </div>
                 </div>
+
+                {/* Customer ID - clickable link to Splynx */}
+                {ticketData.customer_id && (
+                  <div className="flex items-center gap-2 text-sm">
+                    <User className="h-4 w-4 text-muted-foreground" />
+                    <span className="text-muted-foreground">Customer:</span>
+                    {getCustomerUrl(ticketData.customer_id) ? (
+                      <a
+                        href={getCustomerUrl(ticketData.customer_id)!}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="font-medium text-primary hover:underline flex items-center gap-1"
+                        data-testid="link-splynx-customer"
+                      >
+                        #{ticketData.customer_id}
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
+                    ) : (
+                      <span className="font-medium">#{ticketData.customer_id}</span>
+                    )}
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <div className="flex items-center gap-2 text-sm">
