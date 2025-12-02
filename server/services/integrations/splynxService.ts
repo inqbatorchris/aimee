@@ -1341,11 +1341,10 @@ export class SplynxService {
       
       // Splynx ticket-messages API format:
       // - message must be a plain string (NOT nested object)
-      // - Include both hide_for_customer (integer) and hidden (boolean) for compatibility
+      // - hidden: true/false to control visibility to customer
       const payload: any = {
         ticket_id: ticketId,
         message: message,
-        hide_for_customer: isHidden ? 1 : 0,
         hidden: isHidden,
       };
       
