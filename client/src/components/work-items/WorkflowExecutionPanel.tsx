@@ -986,7 +986,7 @@ export function WorkflowExecutionPanel({ workItemId }: WorkflowExecutionPanelPro
                       workItemId={workItemId}
                       ticketId={workItem.workflowMetadata.splynx_ticket_id}
                       organizationId={workItem.organizationId}
-                      mode={(step.evidence as any)?.config?.mode || 'overview'}
+                      mode={(step.evidence as any)?.config?.mode || 'respond'}
                       onMessageSent={() => {}}
                       onStatusChanged={() => {}}
                       onModeCompleted={() => {
