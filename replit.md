@@ -48,6 +48,7 @@ Side Panels (canonical): Use Sheet from shadcn/ui for all slide-out detail/edit 
 -   **Fiber Status Visibility System**: Real-time fiber utilization tracking across the network, aggregating data from terminations, connections, and work items, displayed with status badges and utilization progress bars.
 -   **OCR Data Extraction**: Automatically extracts equipment data (serial numbers, MAC addresses, models) from photos during field installations and writes to source records.
 -   **Manual Equipment Data Editing**: Allows manual correction or entry of equipment data with inline editing, individual field saves, and full activity tracking.
+-   **Customer Appointment Booking System**: Secure token-based booking flow with production-grade security features including atomic token validation, race-condition prevention, usage tracking (single-use or multi-use tokens), expiry enforcement, organization scoping, and retry-safe confirmation flow. Integrates with Splynx for task creation and supports conditional workflows based on ticket type. Public booking page with calendar interface enables self-service scheduling without customer login.
 
 ## External Dependencies
 
