@@ -1050,7 +1050,7 @@ function NestedConditionalEditor({
                                     config: { ...nestedStep.config, message: e.target.value }
                                   })}
                                   placeholder="Message content (supports {{variables}})"
-                                  className="w-full h-20 text-xs border rounded-md p-2 resize-none"
+                                  className="w-full h-20 text-xs border rounded-md p-2 resize-none dark:bg-slate-950 dark:text-white"
                                 />
                               </div>
                               <div className="flex items-center gap-2">
@@ -1239,7 +1239,7 @@ function NestedConditionalEditor({
                                 config: { ...nestedStep.config, message: e.target.value }
                               })}
                               placeholder="Message content (supports {{variables}})"
-                              className="w-full h-20 text-xs border rounded-md p-2 resize-none"
+                              className="w-full h-20 text-xs border rounded-md p-2 resize-none dark:bg-slate-950 dark:text-white"
                             />
                           </div>
                           <div className="flex items-center gap-2">
