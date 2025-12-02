@@ -180,11 +180,10 @@ router.post('/vapi/:organizationId', async (req: Request, res: Response) => {
     // Log the webhook event
     await storage.createWebhookEvent({
       organizationId: orgId,
-      source: 'vapi',
-      eventType: type,
+      integrationId: 0, // Vapi webhook - no specific integration ID
+      triggerKey: type, // Use Vapi event type as trigger key
       payload,
       processedAt: new Date(),
-      processingTimeMs: Date.now() - startTime,
     });
 
     res.json({ success: true, processingTime: Date.now() - startTime });
@@ -493,53 +492,84 @@ async function handleWebhookRequest(req: any, res: Response, integrationType: st
       try {
         const ticketData = payload.data?.attributes || payload;
         const ticketId = ticketData.id || payload.id;
-        const ticketStatus = ticketData.status_name || ticketData.status;
+        const ticketStatusId = ticketData.status_id || ticketData.status;
+        const ticketStatusName = ticketData.status_name;
         
-        if (ticketId && ticketStatus) {
-          console.log(`[WEBHOOK] Syncing work item status for ticket #${ticketId}, status: ${ticketStatus}`);
+        if (ticketId && (ticketStatusName || ticketStatusId)) {
+          console.log(`[WEBHOOK] Syncing work item status for ticket #${ticketId}, status: ${ticketStatusName || ticketStatusId}`);
           
           // Status mapping from Splynx ticket status to work item status
-          const statusMapping: Record<string, string> = {
+          // Using valid work item status values
+          const statusMapping: Record<string, 'Planning' | 'Ready' | 'In Progress' | 'Stuck' | 'Completed' | 'Archived'> = {
             'new': 'Planning',
+            'work_in_progress': 'In Progress',
             'open': 'In Progress',
             'waiting_on_customer': 'In Progress',
             'waiting_on_agent': 'In Progress',
+            'site_visit_required': 'In Progress',
+            'monitoring': 'In Progress',
             'resolved': 'Completed',
             'closed': 'Completed'
           };
           
-          const normalizedStatus = ticketStatus.toLowerCase().replace(/[^a-z_]/g, '_');
-          const workItemStatus = statusMapping[normalizedStatus] || 'In Progress';
+          // Splynx status ID to name mapping (based on frontend statusOptions)
+          const statusIdToName: Record<string, string> = {
+            '1': 'new',
+            '2': 'work_in_progress',
+            '3': 'resolved',
+            '4': 'waiting_on_customer',
+            '5': 'waiting_on_agent',
+            '6': 'site_visit_required',
+            '7': 'monitoring'
+          };
           
-          // Find work items linked to this ticket
-          const linkedWorkItems = await storage.getWorkItemsBySource(String(ticketId));
+          // Get status name: prefer status_name from webhook, fallback to ID lookup
+          let resolvedStatusName = ticketStatusName;
+          if (!resolvedStatusName || !isNaN(Number(resolvedStatusName))) {
+            const idKey = String(ticketStatusId);
+            resolvedStatusName = statusIdToName[idKey] || ticketStatusName || ticketStatusId;
+          }
+          const normalizedStatus = String(resolvedStatusName).toLowerCase().replace(/[^a-z_]/g, '_');
+          const workItemStatus = statusMapping[normalizedStatus];
           
-          if (linkedWorkItems && linkedWorkItems.length > 0) {
-            for (const workItem of linkedWorkItems) {
-              console.log(`[WEBHOOK] Syncing work item #${workItem.id} status to: ${workItemStatus}`);
-              
-              await storage.updateWorkItem(workItem.id, {
-                status: workItemStatus,
-                updatedAt: new Date()
-              });
-              
-              // Log activity
-              await storage.logActivity({
-                organizationId: integration.organizationId,
-                userId: null, // System action
-                actionType: 'status_change',
-                entityType: 'work_item',
-                entityId: workItem.id,
-                description: `Work item status automatically synced to "${workItemStatus}" from ticket status "${ticketStatus}"`,
-                metadata: {
-                  ticketId,
-                  ticketStatus,
-                  workItemStatus,
-                  syncedAt: new Date().toISOString()
-                }
-              });
+          // If no valid mapping found, log warning and skip sync
+          if (!workItemStatus) {
+            console.warn(`[WEBHOOK] Unknown ticket status "${resolvedStatusName}" (ID: ${ticketStatusId}) - skipping work item sync`);
+          } else {
+            // Find work item linked to this ticket using the correct storage method
+            const linkedWorkItem = await storage.getWorkItemBySplynxTicketId(integration.organizationId, String(ticketId));
+            
+            if (linkedWorkItem) {
+              // Only update if status is actually different
+              if (linkedWorkItem.status !== workItemStatus) {
+                console.log(`[WEBHOOK] Syncing work item #${linkedWorkItem.id} status to: ${workItemStatus}`);
+                
+                await storage.updateWorkItem(linkedWorkItem.id, {
+                  status: workItemStatus,
+                  updatedAt: new Date()
+                });
+                
+                // Log activity
+                await storage.logActivity({
+                  organizationId: integration.organizationId,
+                  userId: null, // System action
+                  actionType: 'status_change',
+                  entityType: 'work_item',
+                  entityId: linkedWorkItem.id,
+                  description: `Work item status automatically synced to "${workItemStatus}" from ticket status "${resolvedStatusName}"`,
+                  metadata: {
+                    ticketId,
+                    ticketStatusId,
+                    ticketStatusName: resolvedStatusName,
+                    workItemStatus,
+                    syncDirection: 'webhook_to_workitem',
+                    syncedAt: new Date().toISOString()
+                  }
+                });
+                
+                console.log(`[WEBHOOK] Status synced for work item #${linkedWorkItem.id}`);
+              }
             }
-            console.log(`[WEBHOOK] Status synced for ${linkedWorkItems.length} work item(s)`);
           }
         }
       } catch (syncError: any) {

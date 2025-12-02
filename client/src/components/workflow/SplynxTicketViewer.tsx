@@ -195,13 +195,14 @@ export function SplynxTicketViewer({
   });
 
   const updateStatusMutation = useMutation({
-    mutationFn: async ({ statusId }: { statusId: string }) => {
+    mutationFn: async ({ statusId, statusName }: { statusId: string; statusName: string }) => {
       if (!integrationId) throw new Error('No Splynx integration found');
       return await apiRequest(`/api/integrations/splynx/entity/ticket/${ticketId}/status`, {
         method: 'PATCH',
         body: {
           integrationId,
-          statusId: parseInt(statusId)
+          statusId: parseInt(statusId),
+          statusName // Pass status name for bidirectional work item sync
         }
       });
     },
@@ -232,7 +233,10 @@ export function SplynxTicketViewer({
 
   const handleUpdateStatus = async () => {
     if (!selectedStatus) return;
-    updateStatusMutation.mutate({ statusId: selectedStatus });
+    // Find the status name from our options to pass for bidirectional sync
+    const statusOption = statusOptions.find(s => s.value === selectedStatus);
+    const statusName = statusOption?.label || selectedStatus;
+    updateStatusMutation.mutate({ statusId: selectedStatus, statusName });
   };
 
   if (isLoadingIntegrations || isLoading) {

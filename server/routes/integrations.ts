@@ -1807,7 +1807,7 @@ router.patch('/splynx/entity/ticket/:ticketId/status', async (req, res) => {
     }
 
     const { ticketId } = req.params;
-    const { integrationId, statusId } = req.body;
+    const { integrationId, statusId, statusName } = req.body;
 
     if (!integrationId) {
       return res.status(400).json({ error: 'integrationId is required' });
@@ -1849,6 +1849,87 @@ router.patch('/splynx/entity/ticket/:ticketId/status', async (req, res) => {
     // Create Splynx service and update ticket status
     const splynxService = new SplynxService({ baseUrl, authHeader });
     const result = await splynxService.updateTicketStatus(ticketId, statusId);
+
+    // BIDIRECTIONAL SYNC: Also update linked work item status
+    try {
+      // Status mapping from Splynx ticket status to work item status
+      // Using valid work item status values
+      const statusMapping: Record<string, 'Planning' | 'Ready' | 'In Progress' | 'Stuck' | 'Completed' | 'Archived'> = {
+        'new': 'Planning',
+        'work_in_progress': 'In Progress',
+        'open': 'In Progress',
+        'waiting_on_customer': 'In Progress',
+        'waiting_on_agent': 'In Progress',
+        'site_visit_required': 'In Progress',
+        'monitoring': 'In Progress',
+        'resolved': 'Completed',
+        'closed': 'Completed'
+      };
+      
+      // Splynx status ID to name mapping (based on frontend statusOptions)
+      const statusIdToName: Record<string, string> = {
+        '1': 'new',
+        '2': 'work_in_progress',
+        '3': 'resolved',
+        '4': 'waiting_on_customer',
+        '5': 'waiting_on_agent',
+        '6': 'site_visit_required',
+        '7': 'monitoring'
+      };
+      
+      // Get status name: prefer statusName from request, fallback to ID lookup
+      let ticketStatusName = statusName;
+      if (!ticketStatusName || !isNaN(Number(ticketStatusName))) {
+        // If statusName is missing or looks like a number, look up by ID
+        const idKey = String(statusId);
+        ticketStatusName = statusIdToName[idKey] || statusName || statusId;
+      }
+      const normalizedStatus = String(ticketStatusName).toLowerCase().replace(/[^a-z_]/g, '_');
+      const workItemStatus = statusMapping[normalizedStatus];
+      
+      // If no valid mapping found, log warning and skip sync
+      if (!workItemStatus) {
+        console.warn(`[BIDIRECTIONAL SYNC] Unknown ticket status "${ticketStatusName}" (ID: ${statusId}) - skipping work item sync`);
+      } else {
+        // Find work item linked to this ticket using the correct storage method
+        const linkedWorkItem = await storage.getWorkItemBySplynxTicketId(req.user.organizationId, String(ticketId));
+        
+        if (linkedWorkItem) {
+          // Only update if status is actually different
+          if (linkedWorkItem.status !== workItemStatus) {
+            console.log(`[BIDIRECTIONAL SYNC] Updating work item #${linkedWorkItem.id} status: ${linkedWorkItem.status} → ${workItemStatus}`);
+            
+            await storage.updateWorkItem(linkedWorkItem.id, {
+              status: workItemStatus,
+              updatedAt: new Date()
+            });
+            
+            // Log activity
+            await storage.logActivity({
+              organizationId: req.user.organizationId,
+              userId: req.user.id,
+              actionType: 'status_change',
+              entityType: 'work_item',
+              entityId: linkedWorkItem.id,
+              description: `Work item status synced to "${workItemStatus}" when ticket status changed to "${ticketStatusName}"`,
+              metadata: {
+                ticketId,
+                ticketStatus: ticketStatusName,
+                oldWorkItemStatus: linkedWorkItem.status,
+                newWorkItemStatus: workItemStatus,
+                syncDirection: 'ui_to_workitem',
+                syncedAt: new Date().toISOString()
+              }
+            });
+            
+            console.log(`[BIDIRECTIONAL SYNC] Synced status for work item #${linkedWorkItem.id}`);
+          }
+        }
+      }
+    } catch (syncError: any) {
+      // Don't fail the main request if work item sync fails
+      console.error(`[BIDIRECTIONAL SYNC] Error syncing work item status:`, syncError.message);
+    }
 
     res.json({ 
       success: true,
