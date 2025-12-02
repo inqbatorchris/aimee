@@ -9,7 +9,7 @@ import {
 } from '@shared/schema';
 import { eq, and, or, gte, lte, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '../db';
-import { workItems, checkInCycles, checkInMeetings, users, keyResultTasks, teams, keyResults, objectives, knowledgeDocumentAttachments, knowledgeDocuments, workItemWorkflowExecutions, workItemWorkflowExecutionSteps, workItemSources, addresses, activityLogs } from '@shared/schema';
+import { workItems, checkInCycles, checkInMeetings, users, keyResultTasks, teams, keyResults, objectives, knowledgeDocumentAttachments, knowledgeDocuments, workItemWorkflowExecutions, workItemWorkflowExecutionSteps, workItemSources, addresses, activityLogs, bookingTokens } from '@shared/schema';
 
 const router = Router();
 
@@ -1383,6 +1383,9 @@ router.delete('/:id', authenticateToken, async (req: Request, res: Response) => 
         error: 'You do not have permission to delete this work item. Only admins, managers, the creator, or the assignee can delete work items.' 
       });
     }
+    
+    // Delete related booking tokens first (foreign key constraint)
+    await db.delete(bookingTokens).where(eq(bookingTokens.workItemId, workItemId));
     
     // Perform the deletion
     await db
