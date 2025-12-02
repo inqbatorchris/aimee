@@ -3226,7 +3226,10 @@ export class CleanDatabaseStorage implements ICleanStorage {
   }
 
   async createWebhookEvent(data: InsertWebhookEvent): Promise<WebhookEvent> {
-    const [created] = await db.insert(webhookEvents).values(data).returning();
+    const [created] = await db.insert(webhookEvents).values({
+      ...data,
+      createdAt: new Date(), // Explicitly set to ensure it's never null
+    }).returning();
     return created;
   }
 

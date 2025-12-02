@@ -130,7 +130,9 @@ export function WebhookEventLog({ open, onClose, organizationId, workflowId }: W
                           <div>Event ID: {event.eventId || 'N/A'}</div>
                           <div>Source: {event.sourceIp}</div>
                           <div>
-                            {formatDistanceToNow(new Date(event.createdAt), { addSuffix: true })}
+                            {event.createdAt 
+                              ? formatDistanceToNow(new Date(event.createdAt), { addSuffix: true })
+                              : 'Unknown time'}
                           </div>
                         </div>
                       </div>
