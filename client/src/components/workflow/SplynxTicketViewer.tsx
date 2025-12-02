@@ -304,6 +304,21 @@ export function SplynxTicketViewer({
             <h3 className="font-medium text-sm truncate">{ticket?.subject || 'Support Ticket'}</h3>
           </div>
           <div className="flex items-center gap-1.5">
+            {/* Customer link */}
+            {ticket?.customer_id ? (
+              <a
+                href={customerUrl!}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 text-[10px] text-primary hover:underline"
+                data-testid="link-customer-splynx"
+              >
+                <User className="h-3 w-3" />
+                #{ticket.customer_id}
+              </a>
+            ) : (
+              <span className="text-[10px] text-amber-600 dark:text-amber-400">No customer</span>
+            )}
             <Badge className={`${priorityColors[ticket?.priority?.toLowerCase()]} text-[10px] px-1.5 py-0.5`}>
               {priorityLabel}
             </Badge>
