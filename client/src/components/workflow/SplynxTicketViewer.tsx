@@ -480,7 +480,16 @@ export function SplynxTicketViewer({
                 <Ticket className="h-5 w-5" />
                 {ticket?.subject || 'Support Ticket'}
               </CardTitle>
-              <CardDescription>Ticket #{ticketId}</CardDescription>
+              <a 
+                href={ticketUrl} 
+                target="_blank" 
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-sm text-primary hover:underline"
+                data-testid="link-open-ticket-splynx"
+              >
+                Ticket #{ticketId}
+                <ExternalLink className="h-3 w-3" />
+              </a>
             </div>
             <div className="flex gap-2">
               <Badge className={priorityColors[ticket?.priority?.toLowerCase()] || 'bg-gray-100'}>
@@ -496,7 +505,20 @@ export function SplynxTicketViewer({
           <div className="grid grid-cols-2 gap-4 text-sm">
             <div className="flex items-center gap-2 text-muted-foreground">
               <User className="h-4 w-4" />
-              <span>Customer ID: {ticket?.customer_id || 'N/A'}</span>
+              {ticket?.customer_id ? (
+                <a
+                  href={customerUrl!}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:underline flex items-center gap-1"
+                  data-testid="link-customer-splynx"
+                >
+                  Customer #{ticket.customer_id}
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              ) : (
+                <span className="text-amber-600 dark:text-amber-400">Customer ID: N/A - Link in Splynx</span>
+              )}
             </div>
             <div className="flex items-center gap-2 text-muted-foreground">
               <Clock className="h-4 w-4" />
