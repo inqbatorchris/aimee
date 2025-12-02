@@ -2498,6 +2498,84 @@ Generate a draft response that addresses the customer's issue professionally and
       
       console.log(`[WorkflowExecutor]   💾 Draft saved: ID ${savedDraft.id}`);
       
+      // Add private audit message to Splynx ticket with all context data used
+      const splynxTicketId = workflowMetadata?.splynx_ticket_id || workflowMetadata?.ticketId;
+      if (splynxTicketId) {
+        try {
+          // Get Splynx integration credentials
+          const [splynxIntegration] = await db
+            .select()
+            .from(integrations)
+            .where(
+              and(
+                eq(integrations.organizationId, organizationId),
+                eq(integrations.platformType, 'splynx')
+              )
+            )
+            .limit(1);
+          
+          if (splynxIntegration?.credentialsEncrypted) {
+            const creds = this.decryptCredentials(splynxIntegration.credentialsEncrypted);
+            if (creds) {
+              const splynxService = new SplynxService({
+                baseUrl: creds.baseUrl || creds.apiUrl,
+                authHeader: creds.authHeader,
+              });
+              
+              // Build audit message with all context data
+              const auditTimestamp = new Date().toISOString();
+              const auditMessage = `
+═══════════════════════════════════════════
+🤖 AI DRAFT GENERATED - AUDIT LOG
+═══════════════════════════════════════════
+Generated: ${auditTimestamp}
+Model: ${modelType}
+Draft ID: ${savedDraft.id}
+Work Item ID: ${workItemId}
+
+📋 TICKET INFORMATION USED:
+─────────────────────────────────────
+Title: ${workItem.title}
+Description: ${workItem.description || 'None provided'}
+
+${splynxCustomerId ? `
+👤 CUSTOMER CONTEXT GATHERED:
+─────────────────────────────────────
+Customer ID: ${splynxCustomerId}
+Context Sources Enabled: ${contextSources.join(', ')}
+
+${customerContextStr || 'No customer context data retrieved'}
+` : 'No customer ID available - context enrichment skipped'}
+
+${referenceKBDocs.length > 0 ? `
+📚 KNOWLEDGE BASE DOCUMENTS REFERENCED:
+─────────────────────────────────────
+${referenceKBDocs.map(doc => `• ${doc.title}`).join('\n')}
+` : ''}
+
+${systemPromptDocs.length > 0 ? `
+📝 SYSTEM PROMPT DOCUMENTS USED:
+─────────────────────────────────────
+${systemPromptDocs.map(doc => `• ${doc.title}`).join('\n')}
+` : ''}
+
+═══════════════════════════════════════════
+This is an automated audit log. The AI draft
+is pending human review before sending.
+═══════════════════════════════════════════
+`.trim();
+              
+              // Add as private/hidden message (isInternal = true)
+              await splynxService.addTicketMessage(String(splynxTicketId), auditMessage, true);
+              console.log(`[WorkflowExecutor]   📝 Private audit message added to ticket ${splynxTicketId}`);
+            }
+          }
+        } catch (auditError: any) {
+          console.error(`[WorkflowExecutor]   ⚠️ Failed to add audit message to ticket:`, auditError.message);
+          // Don't fail the draft generation if audit message fails
+        }
+      }
+      
       // Return structured output for downstream steps
       return {
         success: true,
