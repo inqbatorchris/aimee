@@ -585,9 +585,22 @@ export default function WorkflowStepBuilder({
   selectedTrigger
 }: WorkflowStepBuilderProps) {
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
+  const [expandedPathSteps, setExpandedPathSteps] = useState<Set<string>>(new Set());
   const [splynxProjects, setSplynxProjects] = useState<Array<{ id: number; title: string }>>([]);
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [projectsError, setProjectsError] = useState<string | null>(null);
+
+  const togglePathStepExpanded = (stepId: string) => {
+    setExpandedPathSteps(prev => {
+      const next = new Set(prev);
+      if (next.has(stepId)) {
+        next.delete(stepId);
+      } else {
+        next.add(stepId);
+      }
+      return next;
+    });
+  };
 
   // Generate available fields based on trigger type
   const getAvailableFields = () => {
@@ -2394,39 +2407,288 @@ export default function WorkflowStepBuilder({
                     <div className="mt-3 pl-4 border-l-2 border-amber-200 dark:border-amber-800">
                       <Label className="text-xs text-muted-foreground mb-2 block">Steps to execute when all conditions match:</Label>
                       
-                      {(conditionPath.pathSteps || []).map((pathStep: any, stepIndex: number) => (
-                        <div key={pathStep.id || stepIndex} className="flex items-center gap-2 mb-2 p-2 bg-gray-50 dark:bg-gray-900 rounded">
-                          <Select
-                            value={pathStep.type}
-                            onValueChange={(value) => updatePathStep(pathIndex, stepIndex, { type: value, config: {} })}
-                          >
-                            <SelectTrigger className="w-40">
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="create_work_item">Create Work Item</SelectItem>
-                              <SelectItem value="integration_action">Integration Action</SelectItem>
-                              <SelectItem value="splynx_query">Splynx Query</SelectItem>
-                              <SelectItem value="ai_draft_response">AI Draft Response</SelectItem>
-                              <SelectItem value="conditional_paths">Nested Conditional</SelectItem>
-                              <SelectItem value="log_event">Log Event</SelectItem>
-                            </SelectContent>
-                          </Select>
-                          <Input
-                            placeholder="Step name"
-                            value={pathStep.name}
-                            onChange={(e) => updatePathStep(pathIndex, stepIndex, { name: e.target.value })}
-                            className="flex-1"
-                          />
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            onClick={() => removePathStep(pathIndex, stepIndex)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      ))}
+                      {(conditionPath.pathSteps || []).map((pathStep: any, stepIndex: number) => {
+                        const pathStepType = STEP_TYPES[pathStep.type as keyof typeof STEP_TYPES];
+                        const stableStepId = pathStep.id || `path-${pathIndex}-step-${stepIndex}`;
+                        const isPathStepExpanded = expandedPathSteps.has(stableStepId);
+                        
+                        return (
+                          <div key={stableStepId} className="mb-2 bg-gray-50 dark:bg-gray-900 rounded border">
+                            <div 
+                              className="flex items-center gap-2 p-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                              onClick={() => togglePathStepExpanded(stableStepId)}
+                            >
+                              <div className={`p-1.5 rounded ${pathStepType?.color || 'bg-gray-500'} text-white`}>
+                                {pathStepType?.icon && <pathStepType.icon className="h-3 w-3" />}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium truncate">{pathStep.name || 'Unnamed Step'}</div>
+                                <div className="text-xs text-muted-foreground">{pathStepType?.label || pathStep.type}</div>
+                              </div>
+                              <Settings className={`h-4 w-4 text-muted-foreground transition-transform ${isPathStepExpanded ? 'rotate-90' : ''}`} />
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  removePathStep(pathIndex, stepIndex);
+                                }}
+                              >
+                                <Trash2 className="h-4 w-4 text-destructive" />
+                              </Button>
+                            </div>
+                            
+                            {isPathStepExpanded && (
+                              <div className="p-3 border-t space-y-3">
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div>
+                                    <Label className="text-xs">Step Name</Label>
+                                    <Input
+                                      placeholder="Step name"
+                                      value={pathStep.name}
+                                      onChange={(e) => updatePathStep(pathIndex, stepIndex, { name: e.target.value })}
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs">Step Type</Label>
+                                    <Select
+                                      value={pathStep.type}
+                                      onValueChange={(value) => updatePathStep(pathIndex, stepIndex, { type: value, config: {} })}
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="create_work_item">Create Work Item</SelectItem>
+                                        <SelectItem value="integration_action">Integration Action</SelectItem>
+                                        <SelectItem value="splynx_query">Splynx Query</SelectItem>
+                                        <SelectItem value="ai_draft_response">AI Draft Response</SelectItem>
+                                        <SelectItem value="conditional_paths">Nested Conditional</SelectItem>
+                                        <SelectItem value="log_event">Log Event</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                </div>
+                                
+                                {pathStep.type === 'create_work_item' && (
+                                  <div className="space-y-3 pt-2 border-t">
+                                    <div>
+                                      <Label className="text-xs">Title</Label>
+                                      <VariableFieldPicker
+                                        value={pathStep.config?.title || ''}
+                                        onChange={(value) => updatePathStep(pathIndex, stepIndex, {
+                                          config: { ...pathStep.config, title: value }
+                                        })}
+                                        placeholder="e.g., Support Ticket: {{trigger.subject}}"
+                                        availableFields={getAvailableFields()}
+                                        variablePrefix={triggerType === 'webhook' ? 'trigger' : 'currentItem'}
+                                      />
+                                    </div>
+                                    <div>
+                                      <Label className="text-xs">Description</Label>
+                                      <VariableFieldPicker
+                                        value={pathStep.config?.description || ''}
+                                        onChange={(value) => updatePathStep(pathIndex, stepIndex, {
+                                          config: { ...pathStep.config, description: value }
+                                        })}
+                                        placeholder="e.g., Customer: {{trigger.customer_id}}"
+                                        multiline
+                                        availableFields={getAvailableFields()}
+                                        variablePrefix={triggerType === 'webhook' ? 'trigger' : 'currentItem'}
+                                      />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <div>
+                                        <Label className="text-xs">Status</Label>
+                                        <Select
+                                          value={pathStep.config?.status || 'Planning'}
+                                          onValueChange={(value) => updatePathStep(pathIndex, stepIndex, {
+                                            config: { ...pathStep.config, status: value }
+                                          })}
+                                        >
+                                          <SelectTrigger>
+                                            <SelectValue />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="Planning">Planning</SelectItem>
+                                            <SelectItem value="Pending Customer ID">Pending Customer ID</SelectItem>
+                                            <SelectItem value="In Progress">In Progress</SelectItem>
+                                            <SelectItem value="Blocked">Blocked</SelectItem>
+                                            <SelectItem value="Completed">Completed</SelectItem>
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      <div>
+                                        <Label className="text-xs">Due Date</Label>
+                                        <Input
+                                          placeholder="+7 days or YYYY-MM-DD"
+                                          value={pathStep.config?.dueDate || ''}
+                                          onChange={(e) => updatePathStep(pathIndex, stepIndex, {
+                                            config: { ...pathStep.config, dueDate: e.target.value }
+                                          })}
+                                        />
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <WorkflowTemplateSelector
+                                        value={pathStep.config?.templateId || ''}
+                                        onChange={(value) => updatePathStep(pathIndex, stepIndex, {
+                                          config: { ...pathStep.config, templateId: value }
+                                        })}
+                                        label="Workflow Template"
+                                        placeholder="Select a template"
+                                      />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <div>
+                                        <Label className="text-xs">Splynx Ticket ID</Label>
+                                        <VariableFieldPicker
+                                          value={pathStep.config?.splynxTicketId || ''}
+                                          onChange={(value) => updatePathStep(pathIndex, stepIndex, {
+                                            config: { ...pathStep.config, splynxTicketId: value }
+                                          })}
+                                          placeholder="{{trigger.id}}"
+                                        />
+                                      </div>
+                                      <div>
+                                        <Label className="text-xs">Splynx Customer ID</Label>
+                                        <VariableFieldPicker
+                                          value={pathStep.config?.splynxCustomerId || ''}
+                                          onChange={(value) => updatePathStep(pathIndex, stepIndex, {
+                                            config: { ...pathStep.config, splynxCustomerId: value }
+                                          })}
+                                          placeholder="{{trigger.customer_id}}"
+                                        />
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                {pathStep.type === 'ai_draft_response' && (
+                                  <div className="space-y-3 pt-2 border-t">
+                                    <div className="p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded text-sm">
+                                      <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300">
+                                        <Bot className="h-4 w-4" />
+                                        <span>Uses AI settings from Integration Hub → AI Ticket Drafting</span>
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <Label className="text-xs">System Prompt Override (optional)</Label>
+                                      <Textarea
+                                        value={pathStep.config?.systemPrompt || ''}
+                                        onChange={(e) => updatePathStep(pathIndex, stepIndex, {
+                                          config: { ...pathStep.config, systemPrompt: e.target.value }
+                                        })}
+                                        placeholder="Custom prompt for this path (leave blank to use default)"
+                                        rows={3}
+                                      />
+                                    </div>
+                                    <div>
+                                      <Label className="text-xs">Booking Link Type</Label>
+                                      <Select
+                                        value={pathStep.config?.bookingLinkType || 'none'}
+                                        onValueChange={(value) => updatePathStep(pathIndex, stepIndex, {
+                                          config: { ...pathStep.config, bookingLinkType: value === 'none' ? undefined : value }
+                                        })}
+                                      >
+                                        <SelectTrigger>
+                                          <SelectValue placeholder="No booking link" />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="none">No booking link</SelectItem>
+                                          <SelectItem value="engineer-visit">Engineer Visit</SelectItem>
+                                          <SelectItem value="support-call">Support Call</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                      <p className="text-xs text-muted-foreground mt-1">
+                                        Inject a booking link into the AI draft
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center space-x-2">
+                                      <Checkbox
+                                        checked={pathStep.config?.useKnowledgeBase !== false}
+                                        onCheckedChange={(checked) => updatePathStep(pathIndex, stepIndex, {
+                                          config: { ...pathStep.config, useKnowledgeBase: checked }
+                                        })}
+                                      />
+                                      <Label className="text-xs">Use Knowledge Base</Label>
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                {pathStep.type === 'splynx_query' && (
+                                  <div className="space-y-3 pt-2 border-t">
+                                    <div>
+                                      <Label className="text-xs">Action</Label>
+                                      <Select
+                                        value={pathStep.config?.action || 'getCustomerServices'}
+                                        onValueChange={(value) => updatePathStep(pathIndex, stepIndex, {
+                                          config: { ...pathStep.config, action: value }
+                                        })}
+                                      >
+                                        <SelectTrigger>
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="getCustomerServices">Get Customer Services</SelectItem>
+                                          <SelectItem value="getCustomerBalance">Get Customer Balance</SelectItem>
+                                          <SelectItem value="getCustomerById">Get Customer Details</SelectItem>
+                                          <SelectItem value="getCustomerTickets">Get Customer Tickets</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                    <div>
+                                      <Label className="text-xs">Customer ID</Label>
+                                      <VariableFieldPicker
+                                        value={pathStep.config?.customerId || ''}
+                                        onChange={(value) => updatePathStep(pathIndex, stepIndex, {
+                                          config: { ...pathStep.config, customerId: value }
+                                        })}
+                                        placeholder="{{trigger.customer_id}}"
+                                      />
+                                    </div>
+                                  </div>
+                                )}
+                                
+                                {pathStep.type === 'log_event' && (
+                                  <div className="space-y-3 pt-2 border-t">
+                                    <div>
+                                      <Label className="text-xs">Message</Label>
+                                      <Textarea
+                                        value={pathStep.config?.message || ''}
+                                        onChange={(e) => updatePathStep(pathIndex, stepIndex, {
+                                          config: { ...pathStep.config, message: e.target.value }
+                                        })}
+                                        placeholder="Log message with {{variables}}"
+                                        rows={2}
+                                      />
+                                    </div>
+                                    <div>
+                                      <Label className="text-xs">Level</Label>
+                                      <Select
+                                        value={pathStep.config?.level || 'info'}
+                                        onValueChange={(value) => updatePathStep(pathIndex, stepIndex, {
+                                          config: { ...pathStep.config, level: value }
+                                        })}
+                                      >
+                                        <SelectTrigger>
+                                          <SelectValue />
+                                        </SelectTrigger>
+                                        <SelectContent>
+                                          <SelectItem value="debug">Debug</SelectItem>
+                                          <SelectItem value="info">Info</SelectItem>
+                                          <SelectItem value="warning">Warning</SelectItem>
+                                          <SelectItem value="error">Error</SelectItem>
+                                        </SelectContent>
+                                      </Select>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                       
                       <Button
                         size="sm"
@@ -2461,38 +2723,284 @@ export default function WorkflowStepBuilder({
                 <div className="pl-4 border-l-2 border-gray-200 dark:border-gray-700">
                   <Label className="text-xs text-muted-foreground mb-2 block">Steps to execute:</Label>
                   
-                  {(defaultPath.steps || []).map((pathStep: any, stepIndex: number) => (
-                    <div key={pathStep.id || stepIndex} className="flex items-center gap-2 mb-2 p-2 bg-gray-50 dark:bg-gray-900 rounded">
-                      <Select
-                        value={pathStep.type}
-                        onValueChange={(value) => updateDefaultPathStep(stepIndex, { type: value, config: {} })}
-                      >
-                        <SelectTrigger className="w-40">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="create_work_item">Create Work Item</SelectItem>
-                          <SelectItem value="integration_action">Integration Action</SelectItem>
-                          <SelectItem value="splynx_query">Splynx Query</SelectItem>
-                          <SelectItem value="ai_draft_response">AI Draft Response</SelectItem>
-                          <SelectItem value="log_event">Log Event</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <Input
-                        placeholder="Step name"
-                        value={pathStep.name}
-                        onChange={(e) => updateDefaultPathStep(stepIndex, { name: e.target.value })}
-                        className="flex-1"
-                      />
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => removeDefaultPathStep(stepIndex)}
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  ))}
+                  {(defaultPath.steps || []).map((pathStep: any, stepIndex: number) => {
+                    const pathStepType = STEP_TYPES[pathStep.type as keyof typeof STEP_TYPES];
+                    const stableStepId = `default-${pathStep.id || stepIndex}`;
+                    const isPathStepExpanded = expandedPathSteps.has(stableStepId);
+                    
+                    return (
+                      <div key={stableStepId} className="mb-2 bg-gray-50 dark:bg-gray-900 rounded border">
+                        <div 
+                          className="flex items-center gap-2 p-2 cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800"
+                          onClick={() => togglePathStepExpanded(stableStepId)}
+                        >
+                          <div className={`p-1.5 rounded ${pathStepType?.color || 'bg-gray-500'} text-white`}>
+                            {pathStepType?.icon && <pathStepType.icon className="h-3 w-3" />}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-sm font-medium truncate">{pathStep.name || 'Unnamed Step'}</div>
+                            <div className="text-xs text-muted-foreground">{pathStepType?.label || pathStep.type}</div>
+                          </div>
+                          <Settings className={`h-4 w-4 text-muted-foreground transition-transform ${isPathStepExpanded ? 'rotate-90' : ''}`} />
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeDefaultPathStep(stepIndex);
+                            }}
+                          >
+                            <Trash2 className="h-4 w-4 text-destructive" />
+                          </Button>
+                        </div>
+                        
+                        {isPathStepExpanded && (
+                          <div className="p-3 border-t space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <Label className="text-xs">Step Name</Label>
+                                <Input
+                                  placeholder="Step name"
+                                  value={pathStep.name}
+                                  onChange={(e) => updateDefaultPathStep(stepIndex, { name: e.target.value })}
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs">Step Type</Label>
+                                <Select
+                                  value={pathStep.type}
+                                  onValueChange={(value) => updateDefaultPathStep(stepIndex, { type: value, config: {} })}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="create_work_item">Create Work Item</SelectItem>
+                                    <SelectItem value="integration_action">Integration Action</SelectItem>
+                                    <SelectItem value="splynx_query">Splynx Query</SelectItem>
+                                    <SelectItem value="ai_draft_response">AI Draft Response</SelectItem>
+                                    <SelectItem value="log_event">Log Event</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                            
+                            {pathStep.type === 'create_work_item' && (
+                              <div className="space-y-3 pt-2 border-t">
+                                <div>
+                                  <Label className="text-xs">Title</Label>
+                                  <VariableFieldPicker
+                                    value={pathStep.config?.title || ''}
+                                    onChange={(value) => updateDefaultPathStep(stepIndex, {
+                                      config: { ...pathStep.config, title: value }
+                                    })}
+                                    placeholder="e.g., Support Ticket: {{trigger.subject}}"
+                                    availableFields={getAvailableFields()}
+                                    variablePrefix={triggerType === 'webhook' ? 'trigger' : 'currentItem'}
+                                  />
+                                </div>
+                                <div>
+                                  <Label className="text-xs">Description</Label>
+                                  <VariableFieldPicker
+                                    value={pathStep.config?.description || ''}
+                                    onChange={(value) => updateDefaultPathStep(stepIndex, {
+                                      config: { ...pathStep.config, description: value }
+                                    })}
+                                    placeholder="e.g., Customer: {{trigger.customer_id}}"
+                                    multiline
+                                    availableFields={getAvailableFields()}
+                                    variablePrefix={triggerType === 'webhook' ? 'trigger' : 'currentItem'}
+                                  />
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div>
+                                    <Label className="text-xs">Status</Label>
+                                    <Select
+                                      value={pathStep.config?.status || 'Planning'}
+                                      onValueChange={(value) => updateDefaultPathStep(stepIndex, {
+                                        config: { ...pathStep.config, status: value }
+                                      })}
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="Planning">Planning</SelectItem>
+                                        <SelectItem value="Pending Customer ID">Pending Customer ID</SelectItem>
+                                        <SelectItem value="In Progress">In Progress</SelectItem>
+                                        <SelectItem value="Blocked">Blocked</SelectItem>
+                                        <SelectItem value="Completed">Completed</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs">Due Date</Label>
+                                    <Input
+                                      placeholder="+7 days or YYYY-MM-DD"
+                                      value={pathStep.config?.dueDate || ''}
+                                      onChange={(e) => updateDefaultPathStep(stepIndex, {
+                                        config: { ...pathStep.config, dueDate: e.target.value }
+                                      })}
+                                    />
+                                  </div>
+                                </div>
+                                <div>
+                                  <WorkflowTemplateSelector
+                                    value={pathStep.config?.templateId || ''}
+                                    onChange={(value) => updateDefaultPathStep(stepIndex, {
+                                      config: { ...pathStep.config, templateId: value }
+                                    })}
+                                    label="Workflow Template"
+                                    placeholder="Select a template"
+                                  />
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div>
+                                    <Label className="text-xs">Splynx Ticket ID</Label>
+                                    <VariableFieldPicker
+                                      value={pathStep.config?.splynxTicketId || ''}
+                                      onChange={(value) => updateDefaultPathStep(stepIndex, {
+                                        config: { ...pathStep.config, splynxTicketId: value }
+                                      })}
+                                      placeholder="{{trigger.id}}"
+                                    />
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs">Splynx Customer ID</Label>
+                                    <VariableFieldPicker
+                                      value={pathStep.config?.splynxCustomerId || ''}
+                                      onChange={(value) => updateDefaultPathStep(stepIndex, {
+                                        config: { ...pathStep.config, splynxCustomerId: value }
+                                      })}
+                                      placeholder="{{trigger.customer_id}}"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            
+                            {pathStep.type === 'ai_draft_response' && (
+                              <div className="space-y-3 pt-2 border-t">
+                                <div className="p-3 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded text-sm">
+                                  <div className="flex items-center gap-2 text-blue-700 dark:text-blue-300">
+                                    <Bot className="h-4 w-4" />
+                                    <span>Uses AI settings from Integration Hub → AI Ticket Drafting</span>
+                                  </div>
+                                </div>
+                                <div>
+                                  <Label className="text-xs">System Prompt Override (optional)</Label>
+                                  <Textarea
+                                    value={pathStep.config?.systemPrompt || ''}
+                                    onChange={(e) => updateDefaultPathStep(stepIndex, {
+                                      config: { ...pathStep.config, systemPrompt: e.target.value }
+                                    })}
+                                    placeholder="Custom prompt for this path (leave blank to use default)"
+                                    rows={3}
+                                  />
+                                </div>
+                                <div>
+                                  <Label className="text-xs">Booking Link Type</Label>
+                                  <Select
+                                    value={pathStep.config?.bookingLinkType || 'none'}
+                                    onValueChange={(value) => updateDefaultPathStep(stepIndex, {
+                                      config: { ...pathStep.config, bookingLinkType: value === 'none' ? undefined : value }
+                                    })}
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="No booking link" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="none">No booking link</SelectItem>
+                                      <SelectItem value="engineer-visit">Engineer Visit</SelectItem>
+                                      <SelectItem value="support-call">Support Call</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div className="flex items-center space-x-2">
+                                  <Checkbox
+                                    checked={pathStep.config?.useKnowledgeBase !== false}
+                                    onCheckedChange={(checked) => updateDefaultPathStep(stepIndex, {
+                                      config: { ...pathStep.config, useKnowledgeBase: checked }
+                                    })}
+                                  />
+                                  <Label className="text-xs">Use Knowledge Base</Label>
+                                </div>
+                              </div>
+                            )}
+                            
+                            {pathStep.type === 'splynx_query' && (
+                              <div className="space-y-3 pt-2 border-t">
+                                <div>
+                                  <Label className="text-xs">Action</Label>
+                                  <Select
+                                    value={pathStep.config?.action || 'getCustomerServices'}
+                                    onValueChange={(value) => updateDefaultPathStep(stepIndex, {
+                                      config: { ...pathStep.config, action: value }
+                                    })}
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="getCustomerServices">Get Customer Services</SelectItem>
+                                      <SelectItem value="getCustomerBalance">Get Customer Balance</SelectItem>
+                                      <SelectItem value="getCustomerById">Get Customer Details</SelectItem>
+                                      <SelectItem value="getCustomerTickets">Get Customer Tickets</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                                <div>
+                                  <Label className="text-xs">Customer ID</Label>
+                                  <VariableFieldPicker
+                                    value={pathStep.config?.customerId || ''}
+                                    onChange={(value) => updateDefaultPathStep(stepIndex, {
+                                      config: { ...pathStep.config, customerId: value }
+                                    })}
+                                    placeholder="{{trigger.customer_id}}"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                            
+                            {pathStep.type === 'log_event' && (
+                              <div className="space-y-3 pt-2 border-t">
+                                <div>
+                                  <Label className="text-xs">Message</Label>
+                                  <Textarea
+                                    value={pathStep.config?.message || ''}
+                                    onChange={(e) => updateDefaultPathStep(stepIndex, {
+                                      config: { ...pathStep.config, message: e.target.value }
+                                    })}
+                                    placeholder="Log message with {{variables}}"
+                                    rows={2}
+                                  />
+                                </div>
+                                <div>
+                                  <Label className="text-xs">Level</Label>
+                                  <Select
+                                    value={pathStep.config?.level || 'info'}
+                                    onValueChange={(value) => updateDefaultPathStep(stepIndex, {
+                                      config: { ...pathStep.config, level: value }
+                                    })}
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="debug">Debug</SelectItem>
+                                      <SelectItem value="info">Info</SelectItem>
+                                      <SelectItem value="warning">Warning</SelectItem>
+                                      <SelectItem value="error">Error</SelectItem>
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                   
                   <Button
                     size="sm"
