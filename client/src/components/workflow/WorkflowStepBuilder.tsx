@@ -1067,6 +1067,21 @@ function NestedConditionalEditor({
                                   Private message (hidden from customer)
                                 </Label>
                               </div>
+                              <div>
+                                <Label className="text-xs">Admin ID Override (optional)</Label>
+                                <Input
+                                  type="number"
+                                  value={nestedStep.config?.adminId || ''}
+                                  onChange={(e) => updateNestedPathStep(nestedPathIndex, nestedStepIndex, {
+                                    config: { ...nestedStep.config, adminId: e.target.value ? parseInt(e.target.value) : undefined }
+                                  })}
+                                  placeholder="Leave empty to use default"
+                                  className="h-7 text-xs"
+                                />
+                                <p className="text-xs text-muted-foreground mt-0.5">
+                                  Override the Splynx Admin ID for this step
+                                </p>
+                              </div>
                             </div>
                           )}
                           
@@ -1255,6 +1270,21 @@ function NestedConditionalEditor({
                             <Label htmlFor={`hidden-default-${nestedStepIndex}`} className="text-xs">
                               Private message (hidden from customer)
                             </Label>
+                          </div>
+                          <div>
+                            <Label className="text-xs">Admin ID Override (optional)</Label>
+                            <Input
+                              type="number"
+                              value={nestedStep.config?.adminId || ''}
+                              onChange={(e) => updateNestedDefaultPathStep(nestedStepIndex, {
+                                config: { ...nestedStep.config, adminId: e.target.value ? parseInt(e.target.value) : undefined }
+                              })}
+                              placeholder="Leave empty to use default"
+                              className="h-7 text-xs"
+                            />
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              Override the Splynx Admin ID for this step
+                            </p>
                           </div>
                         </div>
                       )}
@@ -3573,6 +3603,21 @@ export default function WorkflowStepBuilder({
                                       />
                                       <Label className="text-xs">Private message (hidden from customer)</Label>
                                     </div>
+                                    <div>
+                                      <Label className="text-xs">Admin ID Override (optional)</Label>
+                                      <Input
+                                        type="number"
+                                        value={pathStep.config?.adminId || ''}
+                                        onChange={(e) => updatePathStep(pathIndex, stepIndex, {
+                                          config: { ...pathStep.config, adminId: e.target.value ? parseInt(e.target.value) : undefined }
+                                        })}
+                                        placeholder="Leave empty to use default"
+                                        className="h-8"
+                                      />
+                                      <p className="text-xs text-muted-foreground mt-0.5">
+                                        Override the Splynx Admin ID for this step
+                                      </p>
+                                    </div>
                                   </div>
                                 )}
                                 
@@ -4010,6 +4055,21 @@ export default function WorkflowStepBuilder({
                                     })}
                                   />
                                   <Label className="text-xs">Private message (hidden from customer)</Label>
+                                </div>
+                                <div>
+                                  <Label className="text-xs">Admin ID Override (optional)</Label>
+                                  <Input
+                                    type="number"
+                                    value={pathStep.config?.adminId || ''}
+                                    onChange={(e) => updateDefaultPathStep(stepIndex, {
+                                      config: { ...pathStep.config, adminId: e.target.value ? parseInt(e.target.value) : undefined }
+                                    })}
+                                    placeholder="Leave empty to use default"
+                                    className="h-8"
+                                  />
+                                  <p className="text-xs text-muted-foreground mt-0.5">
+                                    Override the Splynx Admin ID for this step
+                                  </p>
                                 </div>
                               </div>
                             )}
