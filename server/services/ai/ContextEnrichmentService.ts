@@ -49,6 +49,7 @@ export interface TicketDraftingContext {
     speed: string;
     ipAddress: string | null;
     connectionType: string;
+    lastOnline: string | null;
   }>;
   
   // Recent ticket history
@@ -180,9 +181,12 @@ export class ContextEnrichmentService {
 
     // Connection Status
     if (context.services && context.services.length > 0) {
-      const serviceLines = context.services.map(s => 
-        `- ${s.serviceName}: ${s.status.toUpperCase()} (${s.speed})${s.ipAddress ? ` - IP: ${s.ipAddress}` : ''}`
-      );
+      const serviceLines = context.services.map(s => {
+        let line = `- ${s.serviceName}: ${s.status.toUpperCase()} (${s.speed})`;
+        if (s.ipAddress) line += ` - IP: ${s.ipAddress}`;
+        if (s.lastOnline) line += ` - Last Online: ${s.lastOnline}`;
+        return line;
+      });
       sections.push(`**Connection Status:**
 ${serviceLines.join('\n')}`);
     }
@@ -240,6 +244,7 @@ ${ticketLines.join('\n')}`);
         speed: s.speed,
         ipAddress: s.ipAddress,
         connectionType: s.connectionType,
+        lastOnline: s.lastOnline,
       }));
     } catch (error: any) {
       console.error('[ContextEnrichmentService] Failed to fetch connection status:', error.message);

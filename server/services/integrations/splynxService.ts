@@ -1621,6 +1621,7 @@ export class SplynxService {
     routerId: string | null;
     connectionType: string;
     startDate: string | null;
+    lastOnline: string | null;
   }>> {
     try {
       const url = this.buildUrl(`admin/customers/customer/${customerId}/internet-services`);
@@ -1658,6 +1659,7 @@ export class SplynxService {
           routerId: service.router_id || service.router || null,
           connectionType: service.type || service.connection_type || 'unknown',
           startDate: service.start_date || service.date_add || null,
+          lastOnline: service.last_online || service.last_seen || service.lastOnline || null,
         };
       });
     } catch (error: any) {
