@@ -575,6 +575,668 @@ const STEP_TYPES = {
   }
 };
 
+interface NestedConditionalEditorProps {
+  pathStep: any;
+  pathIndex: number;
+  stepIndex: number;
+  updatePathStep: (pathIndex: number, stepIndex: number, updates: any) => void;
+  getAvailableFields: () => any[];
+  triggerType: string;
+  expandedPathSteps: Set<string>;
+  togglePathStepExpanded: (stepId: string) => void;
+}
+
+function NestedConditionalEditor({
+  pathStep,
+  pathIndex,
+  stepIndex,
+  updatePathStep,
+  getAvailableFields,
+  triggerType,
+  expandedPathSteps,
+  togglePathStepExpanded
+}: NestedConditionalEditorProps) {
+  const getLatestConfig = () => {
+    const config = pathStep.config || {};
+    return {
+      ...config,
+      conditions: Array.isArray(config.conditions) ? config.conditions : [],
+      defaultPath: config.defaultPath || { steps: [] }
+    };
+  };
+  
+  const latestConfig = getLatestConfig();
+  const nestedConditions = latestConfig.conditions;
+  const nestedDefaultPath = latestConfig.defaultPath;
+  
+  const deepCloneStep = (s: any) => ({
+    ...s,
+    config: s.config ? { ...s.config } : {}
+  });
+  
+  const deepClonePath = (path: any) => ({
+    ...path,
+    conditions: path.conditions ? path.conditions.map((c: any) => ({ ...c })) : [],
+    pathSteps: path.pathSteps ? path.pathSteps.map(deepCloneStep) : []
+  });
+  
+  const buildFullConfig = (conditionsUpdate?: any[], defaultPathUpdate?: any) => {
+    const config = getLatestConfig();
+    return {
+      ...config,
+      conditions: conditionsUpdate !== undefined ? conditionsUpdate : config.conditions.map(deepClonePath),
+      defaultPath: defaultPathUpdate !== undefined ? defaultPathUpdate : {
+        ...config.defaultPath,
+        steps: (config.defaultPath.steps || []).map(deepCloneStep)
+      }
+    };
+  };
+  
+  const addNestedConditionPath = () => {
+    const newPath = {
+      id: `nested-path-${Date.now()}`,
+      conditions: [{ field: '', operator: 'equals', value: '' }],
+      pathSteps: []
+    };
+    const config = getLatestConfig();
+    const clonedConditions = config.conditions.map(deepClonePath);
+    updatePathStep(pathIndex, stepIndex, {
+      config: buildFullConfig([...clonedConditions, newPath])
+    });
+  };
+  
+  const removeNestedConditionPath = (nestedPathIndex: number) => {
+    const config = getLatestConfig();
+    const clonedConditions = config.conditions.map(deepClonePath);
+    updatePathStep(pathIndex, stepIndex, {
+      config: buildFullConfig(clonedConditions.filter((_: any, i: number) => i !== nestedPathIndex))
+    });
+  };
+  
+  const updateNestedCondition = (nestedPathIndex: number, condIndex: number, updates: any) => {
+    const config = getLatestConfig();
+    const clonedConditions = config.conditions.map(deepClonePath);
+    if (!clonedConditions[nestedPathIndex]) return;
+    
+    const pathConditions = clonedConditions[nestedPathIndex].conditions;
+    if (pathConditions[condIndex]) {
+      pathConditions[condIndex] = { ...pathConditions[condIndex], ...updates };
+    }
+    updatePathStep(pathIndex, stepIndex, {
+      config: buildFullConfig(clonedConditions)
+    });
+  };
+  
+  const addNestedConditionToPath = (nestedPathIndex: number) => {
+    const config = getLatestConfig();
+    const clonedConditions = config.conditions.map(deepClonePath);
+    if (!clonedConditions[nestedPathIndex]) return;
+    
+    clonedConditions[nestedPathIndex].conditions.push({ field: '', operator: 'equals', value: '' });
+    updatePathStep(pathIndex, stepIndex, {
+      config: buildFullConfig(clonedConditions)
+    });
+  };
+  
+  const removeNestedConditionFromPath = (nestedPathIndex: number, condIndex: number) => {
+    const config = getLatestConfig();
+    const clonedConditions = config.conditions.map(deepClonePath);
+    if (!clonedConditions[nestedPathIndex]) return;
+    
+    clonedConditions[nestedPathIndex].conditions = clonedConditions[nestedPathIndex].conditions.filter(
+      (_: any, i: number) => i !== condIndex
+    );
+    updatePathStep(pathIndex, stepIndex, {
+      config: buildFullConfig(clonedConditions)
+    });
+  };
+  
+  const addNestedPathStep = (nestedPathIndex: number) => {
+    const newStep = {
+      id: `nested-step-${Date.now()}`,
+      type: 'create_work_item',
+      name: 'New Step',
+      config: {}
+    };
+    const config = getLatestConfig();
+    const clonedConditions = config.conditions.map(deepClonePath);
+    if (!clonedConditions[nestedPathIndex]) return;
+    
+    clonedConditions[nestedPathIndex].pathSteps.push(newStep);
+    updatePathStep(pathIndex, stepIndex, {
+      config: buildFullConfig(clonedConditions)
+    });
+  };
+  
+  const updateNestedPathStep = (nestedPathIndex: number, nestedStepIndex: number, updates: any) => {
+    const config = getLatestConfig();
+    const clonedConditions = config.conditions.map(deepClonePath);
+    if (!clonedConditions[nestedPathIndex]) return;
+    
+    const pathSteps = clonedConditions[nestedPathIndex].pathSteps;
+    if (pathSteps[nestedStepIndex]) {
+      const existingStep = pathSteps[nestedStepIndex];
+      
+      if (updates.type && updates.type !== existingStep.type) {
+        pathSteps[nestedStepIndex] = {
+          ...existingStep,
+          type: updates.type,
+          name: updates.name !== undefined ? updates.name : existingStep.name,
+          config: updates.config || {}
+        };
+      } else {
+        const existingConfig = existingStep.config || {};
+        const updatesConfig = updates.config || {};
+        
+        pathSteps[nestedStepIndex] = {
+          ...existingStep,
+          ...updates,
+          config: {
+            ...existingConfig,
+            ...updatesConfig
+          }
+        };
+      }
+    }
+    updatePathStep(pathIndex, stepIndex, {
+      config: buildFullConfig(clonedConditions)
+    });
+  };
+  
+  const removeNestedPathStep = (nestedPathIndex: number, nestedStepIndex: number) => {
+    const config = getLatestConfig();
+    const clonedConditions = config.conditions.map(deepClonePath);
+    if (!clonedConditions[nestedPathIndex]) return;
+    
+    clonedConditions[nestedPathIndex].pathSteps = clonedConditions[nestedPathIndex].pathSteps.filter(
+      (_: any, i: number) => i !== nestedStepIndex
+    );
+    updatePathStep(pathIndex, stepIndex, {
+      config: buildFullConfig(clonedConditions)
+    });
+  };
+  
+  const addNestedDefaultPathStep = () => {
+    const newStep = {
+      id: `nested-default-step-${Date.now()}`,
+      type: 'create_work_item',
+      name: 'New Step',
+      config: {}
+    };
+    const config = getLatestConfig();
+    const clonedDefaultPath = {
+      ...config.defaultPath,
+      steps: [...(config.defaultPath.steps || []).map(deepCloneStep), newStep]
+    };
+    updatePathStep(pathIndex, stepIndex, {
+      config: buildFullConfig(undefined, clonedDefaultPath)
+    });
+  };
+  
+  const updateNestedDefaultPathStep = (nestedStepIndex: number, updates: any) => {
+    const config = getLatestConfig();
+    const clonedSteps = (config.defaultPath.steps || []).map(deepCloneStep);
+    
+    if (clonedSteps[nestedStepIndex]) {
+      const existingStep = clonedSteps[nestedStepIndex];
+      
+      if (updates.type && updates.type !== existingStep.type) {
+        clonedSteps[nestedStepIndex] = {
+          ...existingStep,
+          type: updates.type,
+          name: updates.name !== undefined ? updates.name : existingStep.name,
+          config: updates.config || {}
+        };
+      } else {
+        const existingConfig = existingStep.config || {};
+        const updatesConfig = updates.config || {};
+        
+        clonedSteps[nestedStepIndex] = {
+          ...existingStep,
+          ...updates,
+          config: {
+            ...existingConfig,
+            ...updatesConfig
+          }
+        };
+      }
+    }
+    
+    const clonedDefaultPath = { ...config.defaultPath, steps: clonedSteps };
+    updatePathStep(pathIndex, stepIndex, {
+      config: buildFullConfig(undefined, clonedDefaultPath)
+    });
+  };
+  
+  const removeNestedDefaultPathStep = (nestedStepIndex: number) => {
+    const config = getLatestConfig();
+    const clonedSteps = (config.defaultPath.steps || []).map(deepCloneStep);
+    const clonedDefaultPath = {
+      ...config.defaultPath,
+      steps: clonedSteps.filter((_: any, i: number) => i !== nestedStepIndex)
+    };
+    updatePathStep(pathIndex, stepIndex, {
+      config: buildFullConfig(undefined, clonedDefaultPath)
+    });
+  };
+  
+  const getNestedPathConditions = (path: any) => {
+    if (path.conditions && Array.isArray(path.conditions)) {
+      return path.conditions;
+    }
+    if (path.field) {
+      return [{ field: path.field, operator: path.operator, value: path.value }];
+    }
+    return [];
+  };
+  
+  return (
+    <div className="space-y-3 pt-2 border-t">
+      <div className="p-2 bg-amber-50 dark:bg-amber-950 border border-amber-200 dark:border-amber-800 rounded text-sm">
+        <div className="flex items-center gap-2 text-amber-700 dark:text-amber-300">
+          <GitBranch className="h-4 w-4" />
+          <span>Nested Conditional: Define sub-paths based on conditions</span>
+        </div>
+      </div>
+      
+      {nestedConditions.map((nestedPath: any, nestedPathIndex: number) => {
+        const pathConditions = getNestedPathConditions(nestedPath);
+        
+        return (
+          <Card key={nestedPath.id || nestedPathIndex} className="p-3 border-l-4 border-l-purple-500 bg-purple-50/50 dark:bg-purple-950/20">
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <Badge variant="outline" className="bg-purple-50 text-purple-700 dark:bg-purple-950 dark:text-purple-300">
+                  Nested Path {nestedPathIndex + 1}
+                </Badge>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => removeNestedConditionPath(nestedPathIndex)}
+                  className="h-6 w-6 p-0"
+                >
+                  <Trash2 className="h-3 w-3 text-destructive" />
+                </Button>
+              </div>
+              
+              <div className="space-y-2 bg-white dark:bg-gray-900 p-2 rounded border">
+                <Label className="text-xs text-muted-foreground">Conditions (all must match):</Label>
+                {pathConditions.map((cond: any, condIndex: number) => (
+                  <div key={condIndex} className="flex items-center gap-2">
+                    {condIndex > 0 && (
+                      <Badge variant="secondary" className="h-5 text-xs">AND</Badge>
+                    )}
+                    <Input
+                      placeholder="Field (e.g., lastOutput.serviceStatus)"
+                      value={cond.field || ''}
+                      onChange={(e) => updateNestedCondition(nestedPathIndex, condIndex, { field: e.target.value })}
+                      className="flex-1 h-8 text-xs"
+                    />
+                    <Select
+                      value={cond.operator || 'equals'}
+                      onValueChange={(value) => updateNestedCondition(nestedPathIndex, condIndex, { operator: value })}
+                    >
+                      <SelectTrigger className="w-32 h-8 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="equals">Equals</SelectItem>
+                        <SelectItem value="not_equals">Not Equals</SelectItem>
+                        <SelectItem value="contains">Contains</SelectItem>
+                        <SelectItem value="in_list">In List</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      placeholder="Value"
+                      value={cond.value || ''}
+                      onChange={(e) => updateNestedCondition(nestedPathIndex, condIndex, { value: e.target.value })}
+                      className="w-28 h-8 text-xs"
+                    />
+                    {pathConditions.length > 1 && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => removeNestedConditionFromPath(nestedPathIndex, condIndex)}
+                        className="h-6 w-6 p-0"
+                      >
+                        <X className="h-3 w-3" />
+                      </Button>
+                    )}
+                  </div>
+                ))}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => addNestedConditionToPath(nestedPathIndex)}
+                  className="h-7 text-xs"
+                >
+                  <Plus className="h-3 w-3 mr-1" />
+                  Add Condition
+                </Button>
+              </div>
+              
+              <div className="pl-3 border-l-2 border-purple-200 dark:border-purple-800">
+                <Label className="text-xs text-muted-foreground mb-1 block">Steps:</Label>
+                {(nestedPath.pathSteps || []).map((nestedStep: any, nestedStepIndex: number) => {
+                  const nestedStepType = STEP_TYPES[nestedStep.type as keyof typeof STEP_TYPES];
+                  const stableNestedStepId = `nested-${pathIndex}-${stepIndex}-${nestedPathIndex}-${nestedStep.id || nestedStepIndex}`;
+                  const isNestedStepExpanded = expandedPathSteps.has(stableNestedStepId);
+                  
+                  return (
+                    <div key={stableNestedStepId} className="mb-1 bg-white dark:bg-gray-900 rounded border">
+                      <div 
+                        className="flex items-center gap-2 p-1.5 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-800"
+                        onClick={() => togglePathStepExpanded(stableNestedStepId)}
+                      >
+                        <div className={`p-1 rounded ${nestedStepType?.color || 'bg-gray-500'} text-white`}>
+                          {nestedStepType?.icon && <nestedStepType.icon className="h-2.5 w-2.5" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-xs font-medium truncate">{nestedStep.name || 'Unnamed'}</div>
+                        </div>
+                        <Settings className={`h-3 w-3 text-muted-foreground ${isNestedStepExpanded ? 'rotate-90' : ''}`} />
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeNestedPathStep(nestedPathIndex, nestedStepIndex);
+                          }}
+                          className="h-5 w-5 p-0"
+                        >
+                          <Trash2 className="h-2.5 w-2.5 text-destructive" />
+                        </Button>
+                      </div>
+                      
+                      {isNestedStepExpanded && (
+                        <div className="p-2 border-t space-y-2">
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <Label className="text-xs">Name</Label>
+                              <Input
+                                value={nestedStep.name}
+                                onChange={(e) => updateNestedPathStep(nestedPathIndex, nestedStepIndex, { name: e.target.value })}
+                                className="h-7 text-xs"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Type</Label>
+                              <Select
+                                value={nestedStep.type}
+                                onValueChange={(value) => updateNestedPathStep(nestedPathIndex, nestedStepIndex, { type: value, config: {} })}
+                              >
+                                <SelectTrigger className="h-7 text-xs">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="create_work_item">Create Work Item</SelectItem>
+                                  <SelectItem value="ai_draft_response">AI Draft Response</SelectItem>
+                                  <SelectItem value="splynx_query">Splynx Query</SelectItem>
+                                  <SelectItem value="log_event">Log Event</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                          
+                          {nestedStep.type === 'ai_draft_response' && (
+                            <div className="space-y-2 pt-1 border-t">
+                              <div>
+                                <Label className="text-xs">Booking Link Type</Label>
+                                <Select
+                                  value={nestedStep.config?.bookingLinkType || 'none'}
+                                  onValueChange={(value) => updateNestedPathStep(nestedPathIndex, nestedStepIndex, {
+                                    config: { ...nestedStep.config, bookingLinkType: value === 'none' ? undefined : value }
+                                  })}
+                                >
+                                  <SelectTrigger className="h-7 text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="none">No booking link</SelectItem>
+                                    <SelectItem value="engineer-visit">Engineer Visit</SelectItem>
+                                    <SelectItem value="support-call">Support Call</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {nestedStep.type === 'create_work_item' && (
+                            <div className="space-y-2 pt-1 border-t">
+                              <div>
+                                <Label className="text-xs">Title</Label>
+                                <Input
+                                  value={nestedStep.config?.title || ''}
+                                  onChange={(e) => updateNestedPathStep(nestedPathIndex, nestedStepIndex, {
+                                    config: { ...nestedStep.config, title: e.target.value }
+                                  })}
+                                  placeholder="{{trigger.subject}}"
+                                  className="h-7 text-xs"
+                                />
+                              </div>
+                              <div>
+                                <Label className="text-xs">Status</Label>
+                                <Select
+                                  value={nestedStep.config?.status || 'Planning'}
+                                  onValueChange={(value) => updateNestedPathStep(nestedPathIndex, nestedStepIndex, {
+                                    config: { ...nestedStep.config, status: value }
+                                  })}
+                                >
+                                  <SelectTrigger className="h-7 text-xs">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value="Planning">Planning</SelectItem>
+                                    <SelectItem value="In Progress">In Progress</SelectItem>
+                                    <SelectItem value="Completed">Completed</SelectItem>
+                                  </SelectContent>
+                                </Select>
+                              </div>
+                            </div>
+                          )}
+                          
+                          {nestedStep.type === 'log_event' && (
+                            <div className="pt-1 border-t">
+                              <Label className="text-xs">Message</Label>
+                              <Input
+                                value={nestedStep.config?.message || ''}
+                                onChange={(e) => updateNestedPathStep(nestedPathIndex, nestedStepIndex, {
+                                  config: { ...nestedStep.config, message: e.target.value }
+                                })}
+                                placeholder="Log message"
+                                className="h-7 text-xs"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => addNestedPathStep(nestedPathIndex)}
+                  className="h-6 text-xs mt-1"
+                >
+                  <Plus className="h-2.5 w-2.5 mr-1" />
+                  Add Step
+                </Button>
+              </div>
+            </div>
+          </Card>
+        );
+      })}
+      
+      <Button
+        variant="outline"
+        onClick={addNestedConditionPath}
+        className="w-full border-dashed text-sm h-8"
+      >
+        <Plus className="h-3 w-3 mr-1" />
+        Add Nested Path
+      </Button>
+      
+      <Card className="p-3 border-l-4 border-l-gray-400 bg-gray-50/50 dark:bg-gray-900/50">
+        <div className="space-y-2">
+          <Badge variant="outline" className="bg-gray-50 text-gray-700 dark:bg-gray-900 dark:text-gray-300 text-xs">
+            Nested Default Path
+          </Badge>
+          
+          <div className="pl-3 border-l-2 border-gray-200 dark:border-gray-700">
+            <Label className="text-xs text-muted-foreground mb-1 block">Steps when no nested conditions match:</Label>
+            {(nestedDefaultPath.steps || []).map((nestedStep: any, nestedStepIndex: number) => {
+              const nestedStepType = STEP_TYPES[nestedStep.type as keyof typeof STEP_TYPES];
+              const stableNestedStepId = `nested-default-${pathIndex}-${stepIndex}-${nestedStep.id || nestedStepIndex}`;
+              const isNestedStepExpanded = expandedPathSteps.has(stableNestedStepId);
+              
+              return (
+                <div key={stableNestedStepId} className="mb-1 bg-white dark:bg-gray-800 rounded border">
+                  <div 
+                    className="flex items-center gap-2 p-1.5 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700"
+                    onClick={() => togglePathStepExpanded(stableNestedStepId)}
+                  >
+                    <div className={`p-1 rounded ${nestedStepType?.color || 'bg-gray-500'} text-white`}>
+                      {nestedStepType?.icon && <nestedStepType.icon className="h-2.5 w-2.5" />}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium truncate">{nestedStep.name || 'Unnamed'}</div>
+                    </div>
+                    <Settings className={`h-3 w-3 text-muted-foreground ${isNestedStepExpanded ? 'rotate-90' : ''}`} />
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeNestedDefaultPathStep(nestedStepIndex);
+                      }}
+                      className="h-5 w-5 p-0"
+                    >
+                      <Trash2 className="h-2.5 w-2.5 text-destructive" />
+                    </Button>
+                  </div>
+                  
+                  {isNestedStepExpanded && (
+                    <div className="p-2 border-t space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          <Label className="text-xs">Name</Label>
+                          <Input
+                            value={nestedStep.name}
+                            onChange={(e) => updateNestedDefaultPathStep(nestedStepIndex, { name: e.target.value })}
+                            className="h-7 text-xs"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Type</Label>
+                          <Select
+                            value={nestedStep.type}
+                            onValueChange={(value) => updateNestedDefaultPathStep(nestedStepIndex, { type: value, config: {} })}
+                          >
+                            <SelectTrigger className="h-7 text-xs">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="create_work_item">Create Work Item</SelectItem>
+                              <SelectItem value="ai_draft_response">AI Draft Response</SelectItem>
+                              <SelectItem value="splynx_query">Splynx Query</SelectItem>
+                              <SelectItem value="log_event">Log Event</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      
+                      {nestedStep.type === 'ai_draft_response' && (
+                        <div className="space-y-2 pt-1 border-t">
+                          <div>
+                            <Label className="text-xs">Booking Link Type</Label>
+                            <Select
+                              value={nestedStep.config?.bookingLinkType || 'none'}
+                              onValueChange={(value) => updateNestedDefaultPathStep(nestedStepIndex, {
+                                config: { ...nestedStep.config, bookingLinkType: value === 'none' ? undefined : value }
+                              })}
+                            >
+                              <SelectTrigger className="h-7 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">No booking link</SelectItem>
+                                <SelectItem value="engineer-visit">Engineer Visit</SelectItem>
+                                <SelectItem value="support-call">Support Call</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {nestedStep.type === 'create_work_item' && (
+                        <div className="space-y-2 pt-1 border-t">
+                          <div>
+                            <Label className="text-xs">Title</Label>
+                            <Input
+                              value={nestedStep.config?.title || ''}
+                              onChange={(e) => updateNestedDefaultPathStep(nestedStepIndex, {
+                                config: { ...nestedStep.config, title: e.target.value }
+                              })}
+                              placeholder="{{trigger.subject}}"
+                              className="h-7 text-xs"
+                            />
+                          </div>
+                          <div>
+                            <Label className="text-xs">Status</Label>
+                            <Select
+                              value={nestedStep.config?.status || 'Planning'}
+                              onValueChange={(value) => updateNestedDefaultPathStep(nestedStepIndex, {
+                                config: { ...nestedStep.config, status: value }
+                              })}
+                            >
+                              <SelectTrigger className="h-7 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="Planning">Planning</SelectItem>
+                                <SelectItem value="In Progress">In Progress</SelectItem>
+                                <SelectItem value="Completed">Completed</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      )}
+                      
+                      {nestedStep.type === 'log_event' && (
+                        <div className="pt-1 border-t">
+                          <Label className="text-xs">Message</Label>
+                          <Input
+                            value={nestedStep.config?.message || ''}
+                            onChange={(e) => updateNestedDefaultPathStep(nestedStepIndex, {
+                              config: { ...nestedStep.config, message: e.target.value }
+                            })}
+                            placeholder="Log message"
+                            className="h-7 text-xs"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={addNestedDefaultPathStep}
+              className="h-6 text-xs mt-1"
+            >
+              <Plus className="h-2.5 w-2.5 mr-1" />
+              Add Step
+            </Button>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 export default function WorkflowStepBuilder({ 
   steps = [], 
   onChange, 
@@ -2683,6 +3345,19 @@ export default function WorkflowStepBuilder({
                                       </Select>
                                     </div>
                                   </div>
+                                )}
+                                
+                                {pathStep.type === 'conditional_paths' && (
+                                  <NestedConditionalEditor
+                                    pathStep={pathStep}
+                                    pathIndex={pathIndex}
+                                    stepIndex={stepIndex}
+                                    updatePathStep={updatePathStep}
+                                    getAvailableFields={getAvailableFields}
+                                    triggerType={triggerType}
+                                    expandedPathSteps={expandedPathSteps}
+                                    togglePathStepExpanded={togglePathStepExpanded}
+                                  />
                                 )}
                               </div>
                             )}
