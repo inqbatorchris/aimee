@@ -58,6 +58,7 @@ import {
   MapPin,
   RefreshCw,
   Mail,
+  Bot,
 } from "lucide-react";
 import { Link } from "wouter";
 import { apiRequest } from "@/lib/queryClient";
@@ -127,6 +128,7 @@ export default function SplynxSetup() {
   const [selectedActivity, setSelectedActivity] = useState<ActivityLog | null>(null);
   const [isActivitySheetOpen, setIsActivitySheetOpen] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
+  const [defaultSplynxAdminId, setDefaultSplynxAdminId] = useState<string>('72');
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -170,6 +172,11 @@ export default function SplynxSetup() {
       // Check if credentials are saved (status is 'active' means they're saved)
       if (installation.connectionStatus === 'active' || installation.hasCredentials || installation.credentials?.hasAuthHeader) {
         setIsSaved(true);
+      }
+      
+      // Initialize automation settings from metadata
+      if (installation.metadata?.defaultSplynxAdminId) {
+        setDefaultSplynxAdminId(installation.metadata.defaultSplynxAdminId.toString());
       }
     }
   }, [installation, form]);
@@ -260,6 +267,50 @@ export default function SplynxSetup() {
       });
     },
   });
+
+  // Mutation for saving automation settings
+  const saveAutomationSettingsMutation = useMutation({
+    mutationFn: async (adminId: number) => {
+      if (!installation?.id) {
+        throw new Error('No Splynx integration found');
+      }
+      
+      return apiRequest(`/api/integrations/${installation.id}/metadata`, {
+        method: 'PATCH',
+        body: {
+          defaultSplynxAdminId: adminId,
+        },
+      });
+    },
+    onSuccess: () => {
+      toast({
+        title: "Settings saved",
+        description: "Automation settings have been updated successfully.",
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/integrations'] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Save failed",
+        description: error.message || "Failed to save automation settings.",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Handle saving automation settings
+  const handleSaveAutomationSettings = () => {
+    const adminId = parseInt(defaultSplynxAdminId);
+    if (isNaN(adminId) || adminId <= 0) {
+      toast({
+        title: "Invalid Admin ID",
+        description: "Please enter a valid Splynx Admin ID.",
+        variant: "destructive",
+      });
+      return;
+    }
+    saveAutomationSettingsMutation.mutate(adminId);
+  };
 
   // Mutation for testing connection
   const testConnectionMutation = useMutation({
@@ -613,6 +664,48 @@ export default function SplynxSetup() {
             </Form>
           </CardContent>
         </Card>
+
+        {/* Automation Settings */}
+        {installation && (
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Bot className="h-5 w-5" />
+                Automation Settings
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="defaultSplynxAdminId">Default Automation Admin ID</Label>
+                <div className="flex gap-3">
+                  <Input
+                    id="defaultSplynxAdminId"
+                    type="number"
+                    value={defaultSplynxAdminId}
+                    onChange={(e) => setDefaultSplynxAdminId(e.target.value)}
+                    placeholder="72"
+                    className="max-w-[200px]"
+                    data-testid="input-default-splynx-admin-id"
+                  />
+                  <Button
+                    onClick={handleSaveAutomationSettings}
+                    disabled={saveAutomationSettingsMutation.isPending}
+                    data-testid="button-save-automation-settings"
+                  >
+                    {saveAutomationSettingsMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : null}
+                    Save
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Splynx Admin ID used for automated workflow messages (e.g., AI audit trails). 
+                  Default is 72. Individual workflow steps can override this value.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Connection Status with Full Debug Log - ALWAYS VISIBLE */}
         <Card>

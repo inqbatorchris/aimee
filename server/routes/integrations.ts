@@ -412,6 +412,66 @@ router.patch('/:id', async (req, res) => {
   }
 });
 
+// Update integration metadata (e.g., defaultSplynxAdminId for automation settings)
+router.patch('/:id/metadata', async (req, res) => {
+  console.log('PATCH /api/integrations/:id/metadata - Request body:', JSON.stringify(req.body, null, 2));
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated or missing organization' });
+    }
+
+    const integrationId = parseInt(req.params.id);
+    if (isNaN(integrationId)) {
+      return res.status(400).json({ error: 'Invalid integration ID' });
+    }
+
+    // Get existing integration to verify ownership
+    const existingIntegration = await storage.getIntegrationById(integrationId);
+    if (!existingIntegration) {
+      return res.status(404).json({ error: 'Integration not found' });
+    }
+    
+    if (existingIntegration.organizationId !== user.organizationId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Merge new metadata with existing metadata
+    const existingMetadata = (existingIntegration.metadata as any) || {};
+    const newMetadata = { ...existingMetadata, ...req.body };
+
+    const integration = await storage.updateIntegration(integrationId, {
+      metadata: newMetadata,
+    });
+
+    if (!integration) {
+      return res.status(500).json({ error: 'Failed to update integration metadata' });
+    }
+
+    // Log activity for metadata update
+    await storage.logActivity({
+      organizationId: user.organizationId,
+      userId: user.id,
+      actionType: 'status_change',
+      entityType: 'integration',
+      entityId: integration.id,
+      description: `Updated ${existingIntegration.platformType} integration settings`,
+      metadata: {
+        platformType: existingIntegration.platformType,
+        updatedFields: Object.keys(req.body),
+      }
+    });
+
+    res.json({
+      success: true,
+      metadata: integration.metadata,
+    });
+  } catch (error: any) {
+    console.error('Error updating integration metadata:', error);
+    res.status(500).json({ error: error.message || 'Failed to update integration metadata' });
+  }
+});
+
 // Test integration connection
 router.post('/:platformType/test', async (req, res) => {
   console.log(`[TEST ENDPOINT] Hit for platform: ${req.params.platformType}`);
