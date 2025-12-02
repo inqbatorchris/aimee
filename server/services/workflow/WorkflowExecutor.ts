@@ -2391,13 +2391,54 @@ export class WorkflowExecutor {
       // Use step-level system prompt if provided, otherwise use default
       const stepSystemPrompt = step.config?.systemPrompt;
       
+      // CRITICAL: Extract real-time service status from previous workflow steps
+      // This comes from splynx_query step that checks getCustomerServices
+      let serviceStatusContext = '';
+      
+      // Check pathResults for service check output (from nested conditional path)
+      if (Array.isArray(context.pathResults)) {
+        for (const result of context.pathResults) {
+          if (result?.status && result?.hasActiveService !== undefined) {
+            const serviceStatus = result.status === 'active' ? 'ACTIVE' : 'DOWN/INACTIVE';
+            const serviceCount = result.serviceCount || 0;
+            serviceStatusContext = `
+**REAL-TIME SERVICE STATUS CHECK (from workflow):**
+- Service Status: ${serviceStatus}
+- Has Active Service: ${result.hasActiveService ? 'Yes' : 'No'}
+- Total Services Found: ${serviceCount}
+${result.status === 'active' 
+  ? '⚠️ IMPORTANT: Customer\'s service IS CURRENTLY ACTIVE. Do NOT suggest the service is down.' 
+  : '⚠️ IMPORTANT: Customer\'s service IS CURRENTLY DOWN OR INACTIVE.'}
+`;
+            console.log(`[WorkflowExecutor]   📡 Injected service status from pathResults: ${result.status} (hasActiveService: ${result.hasActiveService})`);
+            break;
+          }
+        }
+      }
+      
+      // Also check lastOutput in case it's available there
+      if (!serviceStatusContext && context.lastOutput?.status && context.lastOutput?.hasActiveService !== undefined) {
+        const result = context.lastOutput;
+        const serviceStatus = result.status === 'active' ? 'ACTIVE' : 'DOWN/INACTIVE';
+        serviceStatusContext = `
+**REAL-TIME SERVICE STATUS CHECK (from workflow):**
+- Service Status: ${serviceStatus}
+- Has Active Service: ${result.hasActiveService ? 'Yes' : 'No'}
+- Total Services Found: ${result.serviceCount || 0}
+${result.status === 'active' 
+  ? '⚠️ IMPORTANT: Customer\'s service IS CURRENTLY ACTIVE. Do NOT suggest the service is down.' 
+  : '⚠️ IMPORTANT: Customer\'s service IS CURRENTLY DOWN OR INACTIVE.'}
+`;
+        console.log(`[WorkflowExecutor]   📡 Injected service status from lastOutput: ${result.status}`);
+      }
+      
       const userMessage = `Please draft a professional response for the following support ticket:
 
 **Ticket Title:** ${workItem.title}
 
 **Ticket Description:**
 ${workItem.description || 'No description provided'}
-
+${serviceStatusContext}
 ${customerContextStr ? `\n${customerContextStr}\n` : ''}
 ${referenceContext ? `\n**Reference Information:**\n${referenceContext}\n` : ''}
 ${stepSystemPrompt ? `\n**Special Instructions:**\n${stepSystemPrompt}\n` : ''}
