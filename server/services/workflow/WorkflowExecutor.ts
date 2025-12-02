@@ -1,6 +1,6 @@
 import { db } from '../../db';
 import { eq, and, or, sql, count, sum, avg, min, max, ilike, isNull, isNotNull, gt, lt, gte, lte, inArray, notInArray, ne } from 'drizzle-orm';
-import { agentWorkflows, agentWorkflowRuns, integrations, keyResults, objectives, activityLogs, users, addressRecords, workItems, fieldTasks, ragStatusRecords, tariffRecords, aiAgentConfigurations, knowledgeDocuments, ticketDraftResponses } from '@shared/schema';
+import { agentWorkflows, agentWorkflowRuns, integrations, keyResults, objectives, activityLogs, users, addressRecords, workItems, fieldTasks, ragStatusRecords, tariffRecords, aiAgentConfigurations, knowledgeDocuments, ticketDraftResponses, bookingTokens, bookableTaskTypes } from '@shared/schema';
 import { ActionHandlers } from './ActionHandlers';
 import { storage } from '../../storage';
 import { SplynxService } from '../integrations/splynxService';
@@ -2183,7 +2183,112 @@ export class WorkflowExecutor {
         console.log(`[WorkflowExecutor]   ℹ️ No customer ID found - skipping context enrichment`);
       }
       
+      // Generate booking link if bookingLinkType is specified
+      let bookingLinkStr = '';
+      const bookingLinkType = step.config?.bookingLinkType;
+      if (bookingLinkType && splynxCustomerId) {
+        try {
+          console.log(`[WorkflowExecutor]   📅 Generating booking link (type: ${bookingLinkType})...`);
+          
+          // Ensure numeric values for database queries
+          const numericOrgId = typeof organizationId === 'string' ? parseInt(organizationId) : organizationId;
+          const numericCustomerId = parseInt(String(splynxCustomerId));
+          
+          if (isNaN(numericOrgId) || isNaN(numericCustomerId)) {
+            throw new Error(`Invalid organizationId (${organizationId}) or customerId (${splynxCustomerId})`);
+          }
+          
+          // Map bookingLinkType to task type name for precise matching
+          const taskTypeName = bookingLinkType === 'engineer-visit' 
+            ? 'Engineer Visit' 
+            : 'Support Call';
+          const taskCategory = bookingLinkType === 'engineer-visit' ? 'field_visit' : 'support_session';
+          
+          console.log(`[WorkflowExecutor]   🔍 Looking up task type: "${taskTypeName}" (category: ${taskCategory}) for org ${numericOrgId}`);
+          
+          // Look up bookable task type by name first, then by category
+          let [taskType] = await db
+            .select()
+            .from(bookableTaskTypes)
+            .where(
+              and(
+                eq(bookableTaskTypes.organizationId, numericOrgId),
+                ilike(bookableTaskTypes.name, `%${taskTypeName}%`)
+              )
+            )
+            .limit(1);
+          
+          // Fallback to category search if name search fails
+          if (!taskType) {
+            console.log(`[WorkflowExecutor]   🔍 Name search failed, trying category search...`);
+            [taskType] = await db
+              .select()
+              .from(bookableTaskTypes)
+              .where(
+                and(
+                  eq(bookableTaskTypes.organizationId, numericOrgId),
+                  eq(bookableTaskTypes.taskCategory, taskCategory)
+                )
+              )
+              .limit(1);
+          }
+          
+          if (taskType) {
+            console.log(`[WorkflowExecutor]   ✓ Found task type: ${taskType.name} (ID: ${taskType.id})`);
+            
+            // Generate unique booking token
+            const token = crypto.randomBytes(32).toString('hex');
+            
+            // Get customer info from work item metadata
+            const metadata = workItem.workflowMetadata as any || {};
+            const customerEmail = metadata.customerEmail || metadata.email || '';
+            const customerName = metadata.customerName || metadata.name || '';
+            const serviceAddress = metadata.address || '';
+            
+            // Create booking token
+            const [bookingToken] = await db
+              .insert(bookingTokens)
+              .values({
+                organizationId: numericOrgId,
+                token,
+                workItemId: workItem.id,
+                bookableTaskTypeId: taskType.id,
+                customerId: numericCustomerId,
+                customerEmail,
+                customerName,
+                serviceAddress,
+                status: 'pending',
+                expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+                maxUses: 1,
+                usageCount: 0,
+              })
+              .returning();
+            
+            // Build booking URL
+            const baseUrl = process.env.BASE_URL || `https://${process.env.REPL_SLUG}.${process.env.REPL_OWNER}.repl.co`;
+            const bookingUrl = `${baseUrl}/book/${token}`;
+            
+            const bookingTypeLabel = bookingLinkType === 'engineer-visit' 
+              ? 'Engineer Visit' 
+              : 'Support Call';
+            
+            bookingLinkStr = `\n\n**BOOKING LINK TO INCLUDE:**\nInclude this link in your response for the customer to book a ${bookingTypeLabel}: ${bookingUrl}\n\nFormat this link naturally in your response, for example: "Click here to book a ${bookingTypeLabel.toLowerCase()}: [Book ${bookingTypeLabel}](${bookingUrl})"`;
+            
+            console.log(`[WorkflowExecutor]   ✅ Booking link generated: ${bookingUrl}`);
+          } else {
+            console.warn(`[WorkflowExecutor]   ⚠️ No bookable task type found for "${taskTypeName}" (category: ${taskCategory}) in org ${numericOrgId}. Booking link will not be included in draft.`);
+          }
+        } catch (bookingError: any) {
+          console.error(`[WorkflowExecutor]   ❌ Booking link generation failed:`, bookingError.message);
+          console.error(`[WorkflowExecutor]   Stack:`, bookingError.stack);
+          // Log but continue without booking link - don't fail the whole draft
+        }
+      }
+      
       // Build user message with ticket context and enriched customer data
+      // Use step-level system prompt if provided, otherwise use default
+      const stepSystemPrompt = step.config?.systemPrompt;
+      
       const userMessage = `Please draft a professional response for the following support ticket:
 
 **Ticket Title:** ${workItem.title}
@@ -2193,6 +2298,8 @@ ${workItem.description || 'No description provided'}
 
 ${customerContextStr ? `\n${customerContextStr}\n` : ''}
 ${referenceContext ? `\n**Reference Information:**\n${referenceContext}\n` : ''}
+${bookingLinkStr}
+${stepSystemPrompt ? `\n**Special Instructions:**\n${stepSystemPrompt}\n` : ''}
 
 Generate a draft response that addresses the customer's issue professionally and helpfully. Take into account any customer context provided (such as account status, recent tickets, and service information) to personalize your response.`;
       
