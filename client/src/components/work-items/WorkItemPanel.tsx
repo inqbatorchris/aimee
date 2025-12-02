@@ -80,6 +80,7 @@ import {
 import { WorkflowExecutionPanel } from '@/components/work-items/WorkflowExecutionPanel';
 import { DraftResponsePanel } from '@/components/work-items/DraftResponsePanel';
 import { CustomerContextPanel } from '@/components/work-items/CustomerContextPanel';
+import { CustomerLinkPanel } from '@/components/work-items/CustomerLinkPanel';
 
 interface WorkItemPanelProps {
   isOpen: boolean;
@@ -864,11 +865,15 @@ export default function WorkItemPanel({
                       </div>
                     </SelectItem>
                   )}
-                  {formData.workItemType === 'support_ticket' && workItemId && (currentWorkItem as any)?.sourceTicket?.customer_id && (
+                  {formData.workItemType === 'support_ticket' && workItemId && (
                     <SelectItem value="customer">
                       <div className="flex items-center gap-2">
                         <User className="h-4 w-4" />
                         Customer
+                        {!(currentWorkItem as any)?.sourceTicket?.customer_id && 
+                         !(currentWorkItem as any)?.workflowMetadata?.splynx_customer_id && (
+                          <span className="text-amber-600 text-xs">(Missing)</span>
+                        )}
                       </div>
                     </SelectItem>
                   )}
@@ -913,10 +918,14 @@ export default function WorkItemPanel({
                   Draft Response
                 </TabsTrigger>
               )}
-              {formData.workItemType === 'support_ticket' && workItemId && (currentWorkItem as any)?.sourceTicket?.customer_id && (
+              {formData.workItemType === 'support_ticket' && workItemId && (
                 <TabsTrigger value="customer" className="gap-2" data-testid="tab-customer">
                   <User className="h-4 w-4" />
                   Customer
+                  {!(currentWorkItem as any)?.sourceTicket?.customer_id && 
+                   !(currentWorkItem as any)?.workflowMetadata?.splynx_customer_id && (
+                    <span className="text-amber-600 text-xs ml-1">(Missing)</span>
+                  )}
                 </TabsTrigger>
               )}
               {currentWorkItem?.workflowTemplateId && (
@@ -1339,16 +1348,36 @@ export default function WorkItemPanel({
               </TabsContent>
             )}
 
-            {/* Customer Context Tab */}
-            {formData.workItemType === 'support_ticket' && workItemId && (currentWorkItem as any)?.sourceTicket?.customer_id && (
+            {/* Customer Context Tab - Shows either CustomerLinkPanel or CustomerContextPanel */}
+            {formData.workItemType === 'support_ticket' && workItemId && (
               <TabsContent value="customer" className="flex-1 overflow-y-auto m-0" data-testid="work-item-customer-tab">
-                <CustomerContextPanel
-                  workItem={currentWorkItem}
-                  onGenerateBookingLink={() => {
-                    // TODO: Implement booking link generation
-                    console.log('Generate booking link');
-                  }}
-                />
+                {(() => {
+                  const customerId = (currentWorkItem as any)?.sourceTicket?.customer_id || 
+                                    (currentWorkItem as any)?.workflowMetadata?.splynx_customer_id ||
+                                    (currentWorkItem as any)?.workflowMetadata?.customerId;
+                  const integrationId = (currentWorkItem as any)?.integrationId;
+                  
+                  if (customerId) {
+                    return (
+                      <CustomerContextPanel
+                        workItem={currentWorkItem}
+                        onGenerateBookingLink={() => {
+                          console.log('Generate booking link');
+                        }}
+                      />
+                    );
+                  } else {
+                    return (
+                      <CustomerLinkPanel
+                        workItemId={workItemId}
+                        integrationId={integrationId}
+                        onCustomerLinked={() => {
+                          queryClient.invalidateQueries({ queryKey: ['/api/work-items', workItemId] });
+                        }}
+                      />
+                    );
+                  }
+                })()}
               </TabsContent>
             )}
 

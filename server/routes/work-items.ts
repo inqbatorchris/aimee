@@ -9,7 +9,7 @@ import {
 } from '@shared/schema';
 import { eq, and, or, gte, lte, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '../db';
-import { workItems, checkInCycles, checkInMeetings, users, keyResultTasks, teams, keyResults, objectives, knowledgeDocumentAttachments, knowledgeDocuments, workItemWorkflowExecutions, workItemWorkflowExecutionSteps, workItemSources, addresses } from '@shared/schema';
+import { workItems, checkInCycles, checkInMeetings, users, keyResultTasks, teams, keyResults, objectives, knowledgeDocumentAttachments, knowledgeDocuments, workItemWorkflowExecutions, workItemWorkflowExecutionSteps, workItemSources, addresses, activityLogs } from '@shared/schema';
 
 const router = Router();
 
@@ -1238,6 +1238,94 @@ router.get('/:id/inherited-documents', authenticateToken, async (req: Request, r
   } catch (error) {
     console.error('Error fetching inherited documents:', error);
     res.status(500).json({ error: 'Failed to fetch inherited documents' });
+  }
+});
+
+// POST /work-items/:id/link-customer - Link a customer to a work item (for Path A tickets without customer ID)
+router.post('/:id/link-customer', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const workItemId = parseInt(req.params.id);
+    const organizationId = req.user?.organizationId || 3;
+    const userId = req.user?.id || 7;
+    const { customerId } = req.body;
+    
+    if (!customerId) {
+      return res.status(400).json({ error: 'Customer ID is required' });
+    }
+    
+    // Fetch the existing work item
+    const [existingItem] = await db
+      .select()
+      .from(workItems)
+      .where(
+        and(
+          eq(workItems.id, workItemId),
+          eq(workItems.organizationId, organizationId)
+        )
+      )
+      .limit(1);
+    
+    if (!existingItem) {
+      return res.status(404).json({ error: 'Work item not found' });
+    }
+    
+    // Update the workflowMetadata with the customer ID
+    const existingMetadata = (existingItem.workflowMetadata as any) || {};
+    const updatedMetadata = {
+      ...existingMetadata,
+      splynx_customer_id: customerId,
+      customerId: customerId,
+      customerLinkedAt: new Date().toISOString(),
+      customerLinkedBy: userId,
+    };
+    
+    // If there's a sourceTicket in the metadata, update its customer_id too
+    if (existingMetadata.sourceTicket || existingMetadata.ticket) {
+      if (existingMetadata.sourceTicket) {
+        updatedMetadata.sourceTicket = {
+          ...existingMetadata.sourceTicket,
+          customer_id: customerId,
+        };
+      }
+      if (existingMetadata.ticket) {
+        updatedMetadata.ticket = {
+          ...existingMetadata.ticket,
+          customer_id: customerId,
+        };
+      }
+    }
+    
+    // Update the work item
+    const [updatedItem] = await db
+      .update(workItems)
+      .set({
+        workflowMetadata: updatedMetadata,
+      })
+      .where(eq(workItems.id, workItemId))
+      .returning();
+    
+    // Log the activity
+    await db.insert(activityLogs).values({
+      organizationId,
+      userId,
+      entityType: 'work_item',
+      entityId: workItemId,
+      actionType: 'status_change',
+      description: `Customer ID ${customerId} linked to this work item`,
+      metadata: { customerId, action: 'customer_linked' },
+    });
+    
+    console.log(`[WorkItems] Customer ${customerId} linked to work item ${workItemId} by user ${userId}`);
+    
+    res.json({
+      success: true,
+      message: 'Customer linked successfully',
+      workItem: updatedItem,
+    });
+    
+  } catch (error: any) {
+    console.error('Error linking customer to work item:', error);
+    res.status(500).json({ error: error.message || 'Failed to link customer' });
   }
 });
 
