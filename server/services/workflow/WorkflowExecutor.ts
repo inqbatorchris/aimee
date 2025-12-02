@@ -534,20 +534,38 @@ export class WorkflowExecutor {
       
       console.log(`[WorkflowExecutor] 🔀 Evaluating conditional step: ${step.name}`);
       
-      // Evaluate each condition in order
-      for (const condition of conditions || []) {
-        const { field, operator, value, pathSteps } = condition;
+      // Evaluate each path condition in order (first match wins)
+      for (const pathCondition of conditions || []) {
+        const { pathSteps } = pathCondition;
         
-        // Get field value from context (supports dot notation for nested fields)
-        const fieldValue = this.getNestedValue(context, field);
+        // Check if this path uses compound conditions (AND logic)
+        // Compound: { conditions: [{field, operator, value}, ...], pathSteps }
+        // Simple: { field, operator, value, pathSteps }
+        const conditionsToCheck = pathCondition.conditions || [pathCondition];
         
-        console.log(`[WorkflowExecutor]   Checking: ${field} ${operator} ${value}`);
-        console.log(`[WorkflowExecutor]   Field value: ${JSON.stringify(fieldValue)}`);
+        let allMatch = true;
+        const matchDetails: any[] = [];
         
-        const matches = this.evaluateConditionOperator(fieldValue, operator, value);
+        for (const cond of conditionsToCheck) {
+          const { field, operator, value } = cond;
+          if (!field) continue; // Skip if no field defined
+          
+          const fieldValue = this.getNestedValue(context, field);
+          
+          console.log(`[WorkflowExecutor]   Checking: ${field} ${operator} ${value}`);
+          console.log(`[WorkflowExecutor]   Field value: ${JSON.stringify(fieldValue)}`);
+          
+          const matches = this.evaluateConditionOperator(fieldValue, operator, value);
+          matchDetails.push({ field, operator, value, fieldValue, matches });
+          
+          if (!matches) {
+            allMatch = false;
+            break; // No need to check remaining conditions for this path
+          }
+        }
         
-        if (matches) {
-          console.log(`[WorkflowExecutor]   ✅ Condition matched! Executing path steps...`);
+        if (allMatch && conditionsToCheck.length > 0) {
+          console.log(`[WorkflowExecutor]   ✅ All conditions matched! Executing path steps...`);
           
           // Execute steps for this path
           let pathContext = { ...context };
@@ -567,12 +585,14 @@ export class WorkflowExecutor {
           return {
             success: true,
             output: {
-              matchedCondition: { field, operator, value },
+              matchedCondition: matchDetails,
               pathExecuted: true,
               pathResults,
               pathContext
             }
           };
+        } else {
+          console.log(`[WorkflowExecutor]   ❌ Condition(s) not matched, trying next path...`);
         }
       }
       

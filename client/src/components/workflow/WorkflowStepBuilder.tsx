@@ -2276,6 +2276,8 @@ export default function WorkflowStepBuilder({
                         <SelectContent>
                           <SelectItem value="equals">Equals</SelectItem>
                           <SelectItem value="not_equals">Not Equals</SelectItem>
+                          <SelectItem value="in">In List (comma-separated)</SelectItem>
+                          <SelectItem value="not_in">Not In List</SelectItem>
                           <SelectItem value="contains">Contains</SelectItem>
                           <SelectItem value="not_contains">Not Contains</SelectItem>
                           <SelectItem value="starts_with">Starts With</SelectItem>
@@ -2312,6 +2314,7 @@ export default function WorkflowStepBuilder({
                           <SelectContent>
                             <SelectItem value="create_work_item">Create Work Item</SelectItem>
                             <SelectItem value="integration_action">Integration Action</SelectItem>
+                            <SelectItem value="splynx_query">Splynx Query</SelectItem>
                             <SelectItem value="ai_draft_response">AI Draft Response</SelectItem>
                             <SelectItem value="log_event">Log Event</SelectItem>
                           </SelectContent>
@@ -2376,6 +2379,7 @@ export default function WorkflowStepBuilder({
                         <SelectContent>
                           <SelectItem value="create_work_item">Create Work Item</SelectItem>
                           <SelectItem value="integration_action">Integration Action</SelectItem>
+                          <SelectItem value="splynx_query">Splynx Query</SelectItem>
                           <SelectItem value="ai_draft_response">AI Draft Response</SelectItem>
                           <SelectItem value="log_event">Log Event</SelectItem>
                         </SelectContent>
