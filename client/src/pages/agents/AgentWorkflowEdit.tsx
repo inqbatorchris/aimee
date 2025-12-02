@@ -25,7 +25,7 @@ interface ProcessFolder {
 
 interface WorkflowStep {
   id: string;
-  type: 'integration_action' | 'strategy_update' | 'log_event' | 'notification' | 'data_source_query' | 'data_transformation' | 'splynx_query' | 'for_each' | 'create_work_item' | 'ai_draft_response';
+  type: 'integration_action' | 'strategy_update' | 'log_event' | 'notification' | 'data_source_query' | 'data_transformation' | 'splynx_query' | 'for_each' | 'create_work_item' | 'ai_draft_response' | 'conditional_paths';
   name: string;
   config?: any;
 }

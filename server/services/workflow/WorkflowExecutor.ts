@@ -287,6 +287,7 @@ export class WorkflowExecutor {
           return await this.executeCondition(step, context);
         
         case 'conditional':
+        case 'conditional_paths':
           return await this.executeConditional(step, context);
         
         case 'integration_action':
