@@ -1330,24 +1330,51 @@ export class SplynxService {
     }
   }
 
-  async addTicketMessage(ticketId: string, message: string, isInternal: boolean = false): Promise<any> {
+  async addTicketMessage(
+    ticketId: string, 
+    message: string, 
+    isHidden: boolean = true,
+    options?: { customerId?: string; subject?: string; priority?: string }
+  ): Promise<any> {
     try {
       const url = this.buildUrl(`admin/support/ticket-messages`);
-      const response = await axios.post(url, {
+      
+      const payload: any = {
         ticket_id: ticketId,
-        message,
-        hide_for_customer: isInternal ? '1' : '0',
-      }, {
+        hidden: isHidden,
+        message: {
+          message: message,
+        },
+      };
+      
+      // Add optional fields if provided
+      if (options?.customerId) {
+        payload.customer_id = options.customerId;
+      }
+      if (options?.subject) {
+        payload.subject = options.subject;
+      }
+      if (options?.priority) {
+        payload.priority = options.priority;
+      }
+      
+      console.log(`[Splynx] Adding message to ticket ${ticketId} (hidden: ${isHidden})`);
+      console.log(`[Splynx] Payload:`, JSON.stringify(payload, null, 2));
+      
+      const response = await axios.post(url, payload, {
         headers: {
           'Authorization': this.credentials.authHeader,
           'Content-Type': 'application/json',
         },
       });
-      console.log(`Successfully added message to ticket ${ticketId} (hide_for_customer: ${isInternal ? '1' : '0'})`);
+      
+      console.log(`[Splynx] Successfully added message to ticket ${ticketId}`);
       return response.data;
     } catch (error: any) {
-      console.error(`Failed to add message to ticket ${ticketId}:`, error.message);
-      console.error(`[DEBUG] Request payload:`, { ticket_id: ticketId, message, hide_for_customer: isInternal ? '1' : '0' });
+      console.error(`[Splynx] Failed to add message to ticket ${ticketId}:`, error.message);
+      if (error.response?.data) {
+        console.error(`[Splynx] Response data:`, JSON.stringify(error.response.data, null, 2));
+      }
       throw new Error(`Failed to add ticket message: ${error.message}`);
     }
   }
