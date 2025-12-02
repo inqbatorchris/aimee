@@ -1001,13 +1001,14 @@ router.put('/user/avatar', authenticateToken, async (req: any, res: Response) =>
 router.patch('/user/profile', authenticateToken, async (req: any, res: Response) => {
   try {
     const userId = req.user.id;
-    const { fullName, email, avatarUrl, emailNotifications, pushNotifications, securityAlerts } = req.body;
+    const { fullName, email, avatarUrl, splynxAdminId, emailNotifications, pushNotifications, securityAlerts } = req.body;
     
     // Build update object with only provided fields
     const updateData: any = {};
     if (fullName !== undefined) updateData.fullName = fullName;
     if (email !== undefined) updateData.email = email;
     if (avatarUrl !== undefined) updateData.avatarUrl = avatarUrl;
+    if (splynxAdminId !== undefined) updateData.splynxAdminId = splynxAdminId;
     
     // Update user in database
     const updatedUser = await storage.updateUser(userId, updateData);

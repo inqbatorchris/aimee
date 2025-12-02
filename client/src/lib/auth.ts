@@ -21,6 +21,7 @@ export interface User {
   isActive: boolean;
   isEmailVerified: boolean;
   avatarUrl?: string;
+  splynxAdminId?: number | null;
 }
 
 export interface AuthResponse {

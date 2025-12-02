@@ -71,6 +71,7 @@ export default function UserProfile() {
   // Form state - initialize with current user data
   const [fullName, setFullName] = useState(currentUser?.fullName || '');
   const [email, setEmail] = useState(currentUser?.email || '');
+  const [splynxAdminId, setSplynxAdminId] = useState<string>(currentUser?.splynxAdminId?.toString() || '');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -85,6 +86,7 @@ export default function UserProfile() {
     if (currentUser) {
       setFullName(currentUser.fullName || '');
       setEmail(currentUser.email || '');
+      setSplynxAdminId(currentUser.splynxAdminId?.toString() || '');
     }
   }, [currentUser]);
 
@@ -172,6 +174,7 @@ export default function UserProfile() {
     updateProfileMutation.mutate({
       fullName,
       email,
+      splynxAdminId: splynxAdminId ? parseInt(splynxAdminId) : null,
       emailNotifications,
       pushNotifications,
       securityAlerts
@@ -444,6 +447,35 @@ export default function UserProfile() {
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="Enter your email"
                   />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card>
+            <CardHeader>
+              <CardTitle className="font-semibold tracking-tight flex items-center gap-2 text-[18px] mt-[0px] mb-[0px]">
+                <Building2 className="h-5 w-5" />
+                Integration Settings
+              </CardTitle>
+              <CardDescription>
+                Configure your external system connections for proper message attribution
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label>Splynx Admin ID</Label>
+                  <Input
+                    type="number"
+                    value={splynxAdminId}
+                    onChange={(e) => setSplynxAdminId(e.target.value)}
+                    placeholder="Enter your Splynx admin ID"
+                    data-testid="input-splynx-admin-id"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Your Splynx administrator ID. Messages you send from tickets will appear from this account.
+                  </p>
                 </div>
               </div>
             </CardContent>
