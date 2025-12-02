@@ -1334,7 +1334,7 @@ export class SplynxService {
     ticketId: string, 
     message: string, 
     isHidden: boolean = true,
-    options?: { customerId?: string; subject?: string; priority?: string }
+    options?: { customerId?: string; subject?: string; priority?: string; adminId?: number }
   ): Promise<any> {
     try {
       const url = this.buildUrl(`admin/support/ticket-messages`);
@@ -1344,6 +1344,7 @@ export class SplynxService {
       // - message: string - Message text (plain string)
       // - hide_for_customer: boolean - Is message hidden for customer
       // - customer_id: number - Customer ID (optional)
+      // - admin_id: number - Admin user ID for message attribution (optional)
       
       // Convert newlines to HTML breaks to preserve formatting in Splynx
       const formattedMessage = message.replace(/\n/g, '<br>');
@@ -1359,7 +1360,13 @@ export class SplynxService {
         payload.customer_id = parseInt(options.customerId);
       }
       
-      console.log(`[Splynx] Adding message to ticket ${ticketId} (hide_for_customer: ${isHidden})`);
+      // Add admin_id for message attribution (controls which Splynx user the message appears from)
+      if (options?.adminId) {
+        payload.admin_id = options.adminId;
+        console.log(`[Splynx] Using admin_id: ${options.adminId} for message attribution`);
+      }
+      
+      console.log(`[Splynx] Adding message to ticket ${ticketId} (hide_for_customer: ${isHidden}, admin_id: ${options?.adminId || 'not set'})`);
       console.log(`[Splynx] Payload:`, JSON.stringify(payload, null, 2));
       
       const response = await axios.post(url, payload, {

@@ -2633,12 +2633,26 @@ Generate a draft response that addresses the customer's issue professionally and
         || context.step1Output?.customer?.id
         || '';
       
-      // Send the message with customer_id for proper Splynx API format
+      // Determine Splynx admin ID for message attribution
+      // Priority: 1. Step config override, 2. Integration default, 3. System default (72)
+      const integrationMetadata = splynxIntegration.metadata as any;
+      const defaultSplynxAdminId = integrationMetadata?.defaultSplynxAdminId ?? 72;
+      
+      // Check for step-level override first
+      let adminId = step.config?.adminId;
+      if (typeof adminId === 'string' && adminId.includes('{{')) {
+        adminId = this.processTemplate(adminId, context);
+      }
+      adminId = adminId ? parseInt(String(adminId)) : defaultSplynxAdminId;
+      
+      console.log(`[WorkflowExecutor]   👤 Admin ID for attribution: ${adminId} (step override: ${step.config?.adminId || 'none'}, integration default: ${integrationMetadata?.defaultSplynxAdminId || 'not set'})`);
+      
+      // Send the message with customer_id and admin_id for proper Splynx API format
       const result = await splynxService.addTicketMessage(
         String(ticketId), 
         message, 
         isHidden,
-        { customerId: String(customerId) }
+        { customerId: String(customerId), adminId }
       );
       
       console.log(`[WorkflowExecutor]   ✅ Message sent to ticket ${ticketId}`);

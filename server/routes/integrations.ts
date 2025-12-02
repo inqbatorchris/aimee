@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { storage } from '../storage';
 import { authenticateToken } from '../auth';
-import { insertIntegrationSchema, insertDatabaseConnectionSchema, type InsertIntegration, integrations } from '../../shared/schema';
+import { insertIntegrationSchema, insertDatabaseConnectionSchema, type InsertIntegration, integrations, users } from '../../shared/schema';
 import { z } from 'zod';
 import crypto from 'crypto';
 import axios from 'axios';
@@ -1799,13 +1799,41 @@ router.post('/splynx/entity/ticket/:ticketId/message', async (req, res) => {
       return res.status(400).json({ error: 'Splynx credentials incomplete' });
     }
 
-    // Create Splynx service and send message
+    // Look up the current user's splynxAdminId for message attribution
+    let splynxAdminId: number | undefined;
+    
+    if (req.user?.id) {
+      const [currentUser] = await db
+        .select({ splynxAdminId: users.splynxAdminId })
+        .from(users)
+        .where(eq(users.id, req.user.id))
+        .limit(1);
+      
+      splynxAdminId = currentUser?.splynxAdminId ?? undefined;
+    }
+    
+    // Get default automation admin ID from integration metadata, fallback to 72
+    const integrationMetadata = splynxIntegration.metadata as any;
+    const defaultSplynxAdminId = integrationMetadata?.defaultSplynxAdminId ?? 72;
+    
+    // Use user's splynxAdminId if set, otherwise use default (72)
+    const adminIdToUse = splynxAdminId ?? defaultSplynxAdminId;
+    
+    console.log(`[Splynx Message] User ${req.user?.id} splynxAdminId: ${splynxAdminId || 'not set'}, using: ${adminIdToUse}`);
+
+    // Create Splynx service and send message with admin attribution
     const splynxService = new SplynxService({ baseUrl, authHeader });
-    const result = await splynxService.addTicketMessage(ticketId, message, isInternal === 'true' || isInternal === true);
+    const result = await splynxService.addTicketMessage(
+      ticketId, 
+      message, 
+      isInternal === 'true' || isInternal === true,
+      { adminId: adminIdToUse }
+    );
 
     res.json({ 
       success: true,
-      result
+      result,
+      adminIdUsed: adminIdToUse
     });
   } catch (error: any) {
     console.error(`Error sending message to Splynx ticket:`, error);
