@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../db';
-import { eq, and, gte } from 'drizzle-orm';
+import { eq, and, gte, sql } from 'drizzle-orm';
 import { bookableTaskTypes, bookingTokens, workItems, organizations, activityLogs } from '@shared/schema';
 import { SplynxService } from '../services/integrations/splynxService';
 import crypto from 'crypto';
@@ -370,13 +370,13 @@ router.post('/public/bookings/:token/confirm', async (req, res) => {
       return res.status(400).json({ error: 'Selected datetime is required' });
     }
     
-    // Validate token
+    // Validate token (no DB changes - cheap validation first)
     const validation = await validateBookingToken(token);
     if (!validation.valid) {
       return res.status(validation.status).json({ error: validation.error });
     }
     
-    // Get work item and organization data
+    // Get work item and organization data BEFORE any external calls
     const [workItem] = await db
       .select()
       .from(workItems)
@@ -402,7 +402,7 @@ router.post('/public/bookings/:token/confirm', async (req, res) => {
       return res.status(500).json({ error: 'Splynx credentials not configured' });
     }
     
-    // Create Splynx task
+    // Create Splynx task FIRST (if this fails, token remains usable for retry)
     const splynxService = new SplynxService({
       baseUrl: splynxUrl,
       apiKey: splynxApiKey,
@@ -424,9 +424,10 @@ router.post('/public/bookings/:token/confirm', async (req, res) => {
       priority: 'normal'
     });
     
-    // Update booking token with usage tracking and redemption
-    const newUsageCount = validation.booking!.booking.usageCount + 1;
-    await db
+    // ATOMIC TOKEN CONFIRMATION: Only claim token after successful Splynx task creation
+    // This single UPDATE both increments usage_count AND sets all confirmation fields atomically
+    // The WHERE clause ensures only ONE request can successfully claim the token (race-safe)
+    const [confirmedToken] = await db
       .update(bookingTokens)
       .set({
         status: 'confirmed',
@@ -436,10 +437,25 @@ router.post('/public/bookings/:token/confirm', async (req, res) => {
         splynxTaskId: splynxTask.id,
         confirmedAt: new Date(),
         redeemedAt: new Date(),
-        usageCount: newUsageCount,
+        usageCount: sql`${bookingTokens.usageCount} + 1`,
         updatedAt: new Date()
       })
-      .where(eq(bookingTokens.id, validation.booking!.booking.id));
+      .where(
+        and(
+          eq(bookingTokens.id, validation.booking!.booking.id),
+          sql`${bookingTokens.usageCount} < ${bookingTokens.maxUses}`
+        )
+      )
+      .returning();
+    
+    // If no rows returned, another request already claimed this token (race condition)
+    if (!confirmedToken) {
+      // Note: Splynx task was created but token claim failed due to race
+      // The Splynx task may need manual cleanup, but customer can't confirm twice
+      return res.status(410).json({ 
+        error: 'Booking link has already been used. If you just confirmed, please check your email for confirmation details.' 
+      });
+    }
     
     // Update work item metadata
     const updatedMetadata = {
