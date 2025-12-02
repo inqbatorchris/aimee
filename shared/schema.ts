@@ -1900,6 +1900,7 @@ export const integrations = pgTable("integrations", {
   name: varchar("name", { length: 255 }).notNull(),
   connectionConfig: jsonb("connection_config").default({}).notNull(), // Platform-specific config
   credentialsEncrypted: text("credentials_encrypted"), // Encrypted credentials
+  metadata: jsonb("metadata").default({}), // Additional integration-specific settings (e.g. defaultSplynxAdminId for Splynx)
   
   // Connection status
   connectionStatus: varchar("connection_status", { length: 20 }).default("disconnected").notNull(),
