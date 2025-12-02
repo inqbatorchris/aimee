@@ -17,33 +17,26 @@ interface WebhookEventLogProps {
 export function WebhookEventLog({ open, onClose, organizationId, workflowId }: WebhookEventLogProps) {
   const [expandedEventId, setExpandedEventId] = useState<number | null>(null);
   
-  console.log('[WebhookEventLog] Props:', { open, organizationId, workflowId });
-  
   const { data: events = [], isLoading, error, refetch } = useQuery({
     queryKey: ['/api/webhooks/events', organizationId],
     queryFn: async () => {
-      const token = localStorage.getItem('auth_token');
-      console.log('[WebhookEventLog] Fetching events for org:', organizationId);
+      const token = localStorage.getItem('authToken');
       const response = await fetch(`/api/webhooks/events/${organizationId}`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        }
+        },
+        credentials: 'include'
       });
       if (!response.ok) {
-        console.error('[WebhookEventLog] Error:', response.status);
         throw new Error('Failed to fetch webhook events');
       }
-      const data = await response.json();
-      console.log('[WebhookEventLog] Got events:', data.length);
-      return data;
+      return response.json();
     },
     enabled: open && !!organizationId,
     staleTime: 0,
     refetchOnMount: 'always',
   });
-  
-  console.log('[WebhookEventLog] State:', { open, organizationId, isLoading, eventsCount: events.length });
 
   // Filter events by workflow if workflowId is provided
   const filteredEvents = workflowId 
