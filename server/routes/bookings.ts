@@ -8,6 +8,63 @@ import crypto from 'crypto';
 const router = Router();
 
 /**
+ * Helper function to validate booking tokens
+ * Checks expiry, usage limits, and organization scoping
+ */
+async function validateBookingToken(token: string, expectedOrgId?: number) {
+  const [booking] = await db
+    .select({
+      booking: bookingTokens,
+      taskType: bookableTaskTypes,
+    })
+    .from(bookingTokens)
+    .innerJoin(bookableTaskTypes, eq(bookingTokens.bookableTaskTypeId, bookableTaskTypes.id))
+    .where(eq(bookingTokens.token, token))
+    .limit(1);
+  
+  if (!booking) {
+    return { valid: false, error: 'Booking not found', status: 404 };
+  }
+  
+  // Validate organization scoping if provided
+  if (expectedOrgId && booking.booking.organizationId !== expectedOrgId) {
+    return { valid: false, error: 'Unauthorized access', status: 403 };
+  }
+  
+  // Check if expired
+  if (booking.booking.expiresAt && new Date() > booking.booking.expiresAt) {
+    await db
+      .update(bookingTokens)
+      .set({ status: 'expired' })
+      .where(eq(bookingTokens.id, booking.booking.id));
+    
+    return { valid: false, error: 'Booking link has expired', status: 410 };
+  }
+  
+  // Check usage limits
+  if (booking.booking.usageCount >= booking.booking.maxUses) {
+    return { 
+      valid: false, 
+      error: 'Booking link has been used the maximum number of times', 
+      status: 410 
+    };
+  }
+  
+  // Check if already confirmed (special case for single-use tokens)
+  if (booking.booking.status === 'confirmed' && booking.booking.maxUses === 1) {
+    return { 
+      valid: false, 
+      error: 'Booking already confirmed',
+      status: 410,
+      confirmedAt: booking.booking.confirmedAt,
+      selectedDatetime: booking.booking.selectedDatetime
+    };
+  }
+  
+  return { valid: true, booking };
+}
+
+/**
  * Get bookable task types for an organization
  */
 router.get('/bookable-task-types', async (req, res) => {
@@ -213,44 +270,31 @@ router.get('/public/bookings/:token', async (req, res) => {
   try {
     const { token } = req.params;
     
-    const [booking] = await db
-      .select({
-        booking: bookingTokens,
-        taskType: bookableTaskTypes,
-        workItem: workItems,
-      })
-      .from(bookingTokens)
-      .innerJoin(bookableTaskTypes, eq(bookingTokens.bookableTaskTypeId, bookableTaskTypes.id))
-      .innerJoin(workItems, eq(bookingTokens.workItemId, workItems.id))
-      .where(eq(bookingTokens.token, token))
-      .limit(1);
-    
-    if (!booking) {
-      return res.status(404).json({ error: 'Booking not found' });
-    }
-    
-    // Check if expired
-    if (booking.booking.expiresAt && new Date() > booking.booking.expiresAt) {
-      return res.status(410).json({ error: 'Booking link has expired' });
-    }
-    
-    // Check if already confirmed
-    if (booking.booking.status === 'confirmed') {
-      return res.status(410).json({ 
-        error: 'Booking already confirmed',
-        confirmedAt: booking.booking.confirmedAt,
-        selectedDatetime: booking.booking.selectedDatetime
+    // Validate token
+    const validation = await validateBookingToken(token);
+    if (!validation.valid) {
+      return res.status(validation.status).json({ 
+        error: validation.error,
+        confirmedAt: validation.confirmedAt,
+        selectedDatetime: validation.selectedDatetime
       });
     }
     
+    // Get additional work item data
+    const [workItem] = await db
+      .select()
+      .from(workItems)
+      .where(eq(workItems.id, validation.booking!.booking.workItemId))
+      .limit(1);
+    
     res.json({
-      customerName: booking.booking.customerName,
-      serviceAddress: booking.booking.serviceAddress,
-      taskTypeName: booking.taskType.name,
-      taskCategory: booking.taskType.taskCategory,
-      duration: booking.taskType.defaultDuration,
-      ticketNumber: booking.workItem.sourceEntityId,
-      ticketSubject: booking.workItem.title,
+      customerName: validation.booking!.booking.customerName,
+      serviceAddress: validation.booking!.booking.serviceAddress,
+      taskTypeName: validation.booking!.taskType.name,
+      taskCategory: validation.booking!.taskType.taskCategory,
+      duration: validation.booking!.taskType.defaultDuration,
+      ticketNumber: workItem?.sourceEntityId || 'N/A',
+      ticketSubject: workItem?.title || 'N/A',
     });
   } catch (error: any) {
     console.error('Error fetching booking details:', error);
@@ -266,40 +310,45 @@ router.post('/public/bookings/:token/available-slots', async (req, res) => {
     const { token } = req.params;
     const { startDate, endDate } = req.body;
     
-    const [booking] = await db
-      .select({
-        booking: bookingTokens,
-        taskType: bookableTaskTypes,
-        org: organizations
-      })
-      .from(bookingTokens)
-      .innerJoin(bookableTaskTypes, eq(bookingTokens.bookableTaskTypeId, bookableTaskTypes.id))
-      .innerJoin(organizations, eq(bookingTokens.organizationId, organizations.id))
-      .where(eq(bookingTokens.token, token))
+    // Validate token
+    const validation = await validateBookingToken(token);
+    if (!validation.valid) {
+      return res.status(validation.status).json({ error: validation.error });
+    }
+    
+    // Get organization data
+    const [org] = await db
+      .select()
+      .from(organizations)
+      .where(eq(organizations.id, validation.booking!.booking.organizationId))
       .limit(1);
     
-    if (!booking) {
-      return res.status(404).json({ error: 'Booking not found' });
+    if (!org) {
+      return res.status(500).json({ error: 'Organization not found' });
     }
     
     // Get Splynx credentials
-    if (!booking.org.splynxUrl || !booking.org.splynxApiKey || !booking.org.splynxApiSecret) {
+    const splynxUrl = (org as any).splynxUrl;
+    const splynxApiKey = (org as any).splynxApiKey;
+    const splynxApiSecret = (org as any).splynxApiSecret;
+    
+    if (!splynxUrl || !splynxApiKey || !splynxApiSecret) {
       return res.status(500).json({ error: 'Splynx credentials not configured' });
     }
     
     const splynxService = new SplynxService({
-      url: booking.org.splynxUrl,
-      apiKey: booking.org.splynxApiKey,
-      apiSecret: booking.org.splynxApiSecret
+      baseUrl: splynxUrl,
+      apiKey: splynxApiKey,
+      apiSecret: splynxApiSecret
     });
     
     // Fetch available slots
     const slots = await splynxService.getAvailableSlots({
-      projectId: booking.taskType.splynxProjectId,
+      projectId: validation.booking!.taskType.splynxProjectId,
       startDate: startDate || new Date().toISOString().split('T')[0],
       endDate: endDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      duration: booking.taskType.defaultDuration || '2h 30m',
-      travelTime: booking.taskType.defaultTravelTimeTo || 0
+      duration: validation.booking!.taskType.defaultDuration || '2h 30m',
+      travelTime: validation.booking!.taskType.defaultTravelTimeTo || 0
     });
     
     res.json({ slots });
@@ -321,75 +370,84 @@ router.post('/public/bookings/:token/confirm', async (req, res) => {
       return res.status(400).json({ error: 'Selected datetime is required' });
     }
     
-    const [booking] = await db
-      .select({
-        booking: bookingTokens,
-        taskType: bookableTaskTypes,
-        workItem: workItems,
-        org: organizations
-      })
-      .from(bookingTokens)
-      .innerJoin(bookableTaskTypes, eq(bookingTokens.bookableTaskTypeId, bookableTaskTypes.id))
-      .innerJoin(workItems, eq(bookingTokens.workItemId, workItems.id))
-      .innerJoin(organizations, eq(bookingTokens.organizationId, organizations.id))
-      .where(eq(bookingTokens.token, token))
+    // Validate token
+    const validation = await validateBookingToken(token);
+    if (!validation.valid) {
+      return res.status(validation.status).json({ error: validation.error });
+    }
+    
+    // Get work item and organization data
+    const [workItem] = await db
+      .select()
+      .from(workItems)
+      .where(eq(workItems.id, validation.booking!.booking.workItemId))
       .limit(1);
     
-    if (!booking) {
-      return res.status(404).json({ error: 'Booking not found' });
+    const [org] = await db
+      .select()
+      .from(organizations)
+      .where(eq(organizations.id, validation.booking!.booking.organizationId))
+      .limit(1);
+    
+    if (!workItem || !org) {
+      return res.status(500).json({ error: 'Work item or organization not found' });
     }
     
-    if (booking.booking.status === 'confirmed') {
-      return res.status(400).json({ error: 'Booking already confirmed' });
-    }
+    // Get Splynx credentials
+    const splynxUrl = (org as any).splynxUrl;
+    const splynxApiKey = (org as any).splynxApiKey;
+    const splynxApiSecret = (org as any).splynxApiSecret;
     
-    // Create Splynx task
-    if (!booking.org.splynxUrl || !booking.org.splynxApiKey || !booking.org.splynxApiSecret) {
+    if (!splynxUrl || !splynxApiKey || !splynxApiSecret) {
       return res.status(500).json({ error: 'Splynx credentials not configured' });
     }
     
+    // Create Splynx task
     const splynxService = new SplynxService({
-      url: booking.org.splynxUrl,
-      apiKey: booking.org.splynxApiKey,
-      apiSecret: booking.org.splynxApiSecret
+      baseUrl: splynxUrl,
+      apiKey: splynxApiKey,
+      apiSecret: splynxApiSecret
     });
     
     const splynxTask = await splynxService.createSplynxTask({
-      taskName: `${booking.taskType.name} - ${booking.booking.customerName}`,
-      projectId: booking.taskType.splynxProjectId,
-      workflowStatusId: booking.taskType.splynxWorkflowStatusId,
-      customerId: booking.booking.customerId,
-      description: `${booking.workItem.title}\n\nTicket #${booking.workItem.sourceEntityId}\n\n${additionalNotes || ''}`,
-      address: booking.booking.serviceAddress,
+      taskName: `${validation.booking!.taskType.name} - ${validation.booking!.booking.customerName}`,
+      projectId: validation.booking!.taskType.splynxProjectId,
+      workflowStatusId: validation.booking!.taskType.splynxWorkflowStatusId,
+      customerId: validation.booking!.booking.customerId,
+      description: `${workItem.title}\n\nTicket #${(workItem as any).sourceEntityId || 'N/A'}\n\n${additionalNotes || ''}`,
+      address: validation.booking!.booking.serviceAddress || undefined,
       isScheduled: true,
       scheduledFrom: selectedDatetime,
-      duration: booking.taskType.defaultDuration,
-      travelTimeTo: booking.taskType.defaultTravelTimeTo,
-      travelTimeFrom: booking.taskType.defaultTravelTimeFrom,
+      duration: validation.booking!.taskType.defaultDuration || undefined,
+      travelTimeTo: validation.booking!.taskType.defaultTravelTimeTo || undefined,
+      travelTimeFrom: validation.booking!.taskType.defaultTravelTimeFrom || undefined,
       priority: 'normal'
     });
     
-    // Update booking token
+    // Update booking token with usage tracking and redemption
+    const newUsageCount = validation.booking!.booking.usageCount + 1;
     await db
       .update(bookingTokens)
       .set({
         status: 'confirmed',
         selectedDatetime: new Date(selectedDatetime),
-        contactNumber,
-        additionalNotes,
+        contactNumber: contactNumber || null,
+        additionalNotes: additionalNotes || null,
         splynxTaskId: splynxTask.id,
         confirmedAt: new Date(),
+        redeemedAt: new Date(),
+        usageCount: newUsageCount,
         updatedAt: new Date()
       })
-      .where(eq(bookingTokens.id, booking.booking.id));
+      .where(eq(bookingTokens.id, validation.booking!.booking.id));
     
     // Update work item metadata
     const updatedMetadata = {
-      ...(booking.workItem.workflowMetadata as any || {}),
+      ...(workItem.workflowMetadata as any || {}),
       bookedAppointment: {
         taskId: splynxTask.id,
         datetime: selectedDatetime,
-        taskType: booking.taskType.name,
+        taskType: validation.booking!.taskType.name,
         confirmedAt: new Date().toISOString()
       }
     };
@@ -401,20 +459,20 @@ router.post('/public/bookings/:token/confirm', async (req, res) => {
         status: 'In Progress',
         updatedAt: new Date()
       })
-      .where(eq(workItems.id, booking.workItem.id));
+      .where(eq(workItems.id, workItem.id));
     
     // Log activity
     await db.insert(activityLogs).values({
-      organizationId: booking.booking.organizationId,
-      userId: null, // Customer action
+      organizationId: validation.booking!.booking.organizationId,
+      userId: null,
       actionType: 'completion',
       entityType: 'booking_token',
-      entityId: booking.booking.id,
-      description: `Customer confirmed ${booking.taskType.name} for ${selectedDatetime}`,
+      entityId: validation.booking!.booking.id,
+      description: `Customer confirmed ${validation.booking!.taskType.name} for ${selectedDatetime}`,
       metadata: {
         splynxTaskId: splynxTask.id,
-        customerName: booking.booking.customerName,
-        workItemId: booking.workItem.id
+        customerName: validation.booking!.booking.customerName,
+        workItemId: workItem.id
       }
     });
     
@@ -422,7 +480,7 @@ router.post('/public/bookings/:token/confirm', async (req, res) => {
       success: true,
       splynxTaskId: splynxTask.id,
       selectedDatetime,
-      confirmationMessage: booking.taskType.confirmationMessage
+      confirmationMessage: validation.booking!.taskType.confirmationMessage
     });
   } catch (error: any) {
     console.error('Error confirming booking:', error);
