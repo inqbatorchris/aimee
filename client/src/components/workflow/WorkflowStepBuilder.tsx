@@ -1252,6 +1252,16 @@ export default function WorkflowStepBuilder({
   const [loadingProjects, setLoadingProjects] = useState(false);
   const [projectsError, setProjectsError] = useState<string | null>(null);
 
+  // Fetch teams for Create Work Item step
+  const { data: teams = [] } = useQuery<Array<{ id: number; name: string }>>({
+    queryKey: ['/api/teams'],
+  });
+
+  // Fetch users for Create Work Item step
+  const { data: users = [] } = useQuery<Array<{ id: number; fullName: string; email: string }>>({
+    queryKey: ['/api/users'],
+  });
+
   const togglePathStepExpanded = (stepId: string) => {
     setExpandedPathSteps(prev => {
       const next = new Set(prev);
@@ -3223,6 +3233,50 @@ export default function WorkflowStepBuilder({
                                         />
                                       </div>
                                     </div>
+                                    <div className="grid grid-cols-2 gap-3">
+                                      <div>
+                                        <Label className="text-xs">Assign to Team</Label>
+                                        <Select
+                                          value={pathStep.config?.teamId?.toString() || ''}
+                                          onValueChange={(value) => updatePathStep(pathIndex, stepIndex, {
+                                            config: { ...pathStep.config, teamId: value ? parseInt(value) : undefined }
+                                          })}
+                                        >
+                                          <SelectTrigger>
+                                            <SelectValue placeholder="Select team (optional)" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="">No team</SelectItem>
+                                            {teams.map((team) => (
+                                              <SelectItem key={team.id} value={team.id.toString()}>
+                                                {team.name}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                      <div>
+                                        <Label className="text-xs">Assign to User</Label>
+                                        <Select
+                                          value={pathStep.config?.assigneeId?.toString() || ''}
+                                          onValueChange={(value) => updatePathStep(pathIndex, stepIndex, {
+                                            config: { ...pathStep.config, assigneeId: value ? parseInt(value) : undefined }
+                                          })}
+                                        >
+                                          <SelectTrigger>
+                                            <SelectValue placeholder="Select user (optional)" />
+                                          </SelectTrigger>
+                                          <SelectContent>
+                                            <SelectItem value="">No user</SelectItem>
+                                            {users.map((user) => (
+                                              <SelectItem key={user.id} value={user.id.toString()}>
+                                                {user.fullName || user.email}
+                                              </SelectItem>
+                                            ))}
+                                          </SelectContent>
+                                        </Select>
+                                      </div>
+                                    </div>
                                   </div>
                                 )}
                                 
@@ -3549,6 +3603,50 @@ export default function WorkflowStepBuilder({
                                       })}
                                       placeholder="{{trigger.customer_id}}"
                                     />
+                                  </div>
+                                </div>
+                                <div className="grid grid-cols-2 gap-3">
+                                  <div>
+                                    <Label className="text-xs">Assign to Team</Label>
+                                    <Select
+                                      value={pathStep.config?.teamId?.toString() || ''}
+                                      onValueChange={(value) => updateDefaultPathStep(stepIndex, {
+                                        config: { ...pathStep.config, teamId: value ? parseInt(value) : undefined }
+                                      })}
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Select team (optional)" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="">No team</SelectItem>
+                                        {teams.map((team) => (
+                                          <SelectItem key={team.id} value={team.id.toString()}>
+                                            {team.name}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                  <div>
+                                    <Label className="text-xs">Assign to User</Label>
+                                    <Select
+                                      value={pathStep.config?.assigneeId?.toString() || ''}
+                                      onValueChange={(value) => updateDefaultPathStep(stepIndex, {
+                                        config: { ...pathStep.config, assigneeId: value ? parseInt(value) : undefined }
+                                      })}
+                                    >
+                                      <SelectTrigger>
+                                        <SelectValue placeholder="Select user (optional)" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="">No user</SelectItem>
+                                        {users.map((user) => (
+                                          <SelectItem key={user.id} value={user.id.toString()}>
+                                            {user.fullName || user.email}
+                                          </SelectItem>
+                                        ))}
+                                      </SelectContent>
+                                    </Select>
                                   </div>
                                 </div>
                               </div>
