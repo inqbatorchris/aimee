@@ -584,6 +584,7 @@ interface NestedConditionalEditorProps {
   triggerType: string;
   expandedPathSteps: Set<string>;
   togglePathStepExpanded: (stepId: string) => void;
+  kbDocuments: Array<{ id: number; title: string; summary?: string; documentType?: string }>;
 }
 
 function NestedConditionalEditor({
@@ -594,7 +595,8 @@ function NestedConditionalEditor({
   getAvailableFields,
   triggerType,
   expandedPathSteps,
-  togglePathStepExpanded
+  togglePathStepExpanded,
+  kbDocuments
 }: NestedConditionalEditorProps) {
   const getLatestConfig = () => {
     const config = pathStep.config || {};
@@ -1067,6 +1069,56 @@ function NestedConditionalEditor({
                               </div>
                             </div>
                           )}
+                          
+                          {nestedStep.type === 'ai_draft_response' && (
+                            <div className="space-y-2 pt-1 border-t">
+                              <div>
+                                <Label className="text-xs">AI Instructions (KB Documents)</Label>
+                                <div className="text-xs text-muted-foreground mb-1">
+                                  Select documents containing instructions for AI response generation
+                                </div>
+                                {kbDocuments.length > 0 ? (
+                                  <div className="space-y-1 max-h-32 overflow-y-auto border rounded p-1">
+                                    {kbDocuments
+                                      .filter(doc => doc.documentType === 'internal_kb')
+                                      .map((doc) => {
+                                        const selectedDocs = nestedStep.config?.instructionDocIds || [];
+                                        const isSelected = selectedDocs.includes(doc.id);
+                                        return (
+                                          <div key={doc.id} className="flex items-center gap-2">
+                                            <input
+                                              type="checkbox"
+                                              id={`nested-doc-${nestedPathIndex}-${nestedStepIndex}-${doc.id}`}
+                                              checked={isSelected}
+                                              onChange={(e) => {
+                                                const current = nestedStep.config?.instructionDocIds || [];
+                                                const updated = e.target.checked
+                                                  ? [...current, doc.id]
+                                                  : current.filter((id: number) => id !== doc.id);
+                                                updateNestedPathStep(nestedPathIndex, nestedStepIndex, {
+                                                  config: { ...nestedStep.config, instructionDocIds: updated }
+                                                });
+                                              }}
+                                              className="h-3 w-3"
+                                            />
+                                            <Label htmlFor={`nested-doc-${nestedPathIndex}-${nestedStepIndex}-${doc.id}`} className="text-xs cursor-pointer truncate">
+                                              {doc.title}
+                                            </Label>
+                                          </div>
+                                        );
+                                      })}
+                                  </div>
+                                ) : (
+                                  <p className="text-xs text-muted-foreground">No KB documents available</p>
+                                )}
+                                {(nestedStep.config?.instructionDocIds?.length || 0) > 0 && (
+                                  <p className="text-xs text-muted-foreground mt-1">
+                                    {nestedStep.config?.instructionDocIds?.length} document(s) selected
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1252,6 +1304,56 @@ function NestedConditionalEditor({
                             placeholder="Log message"
                             className="h-7 text-xs"
                           />
+                        </div>
+                      )}
+                      
+                      {nestedStep.type === 'ai_draft_response' && (
+                        <div className="space-y-2 pt-1 border-t">
+                          <div>
+                            <Label className="text-xs">AI Instructions (KB Documents)</Label>
+                            <div className="text-xs text-muted-foreground mb-1">
+                              Select documents containing instructions for AI response generation
+                            </div>
+                            {kbDocuments.length > 0 ? (
+                              <div className="space-y-1 max-h-32 overflow-y-auto border rounded p-1">
+                                {kbDocuments
+                                  .filter(doc => doc.documentType === 'internal_kb')
+                                  .map((doc) => {
+                                    const selectedDocs = nestedStep.config?.instructionDocIds || [];
+                                    const isSelected = selectedDocs.includes(doc.id);
+                                    return (
+                                      <div key={doc.id} className="flex items-center gap-2">
+                                        <input
+                                          type="checkbox"
+                                          id={`nested-default-doc-${nestedStepIndex}-${doc.id}`}
+                                          checked={isSelected}
+                                          onChange={(e) => {
+                                            const current = nestedStep.config?.instructionDocIds || [];
+                                            const updated = e.target.checked
+                                              ? [...current, doc.id]
+                                              : current.filter((id: number) => id !== doc.id);
+                                            updateNestedDefaultPathStep(nestedStepIndex, {
+                                              config: { ...nestedStep.config, instructionDocIds: updated }
+                                            });
+                                          }}
+                                          className="h-3 w-3"
+                                        />
+                                        <Label htmlFor={`nested-default-doc-${nestedStepIndex}-${doc.id}`} className="text-xs cursor-pointer truncate">
+                                          {doc.title}
+                                        </Label>
+                                      </div>
+                                    );
+                                  })}
+                              </div>
+                            ) : (
+                              <p className="text-xs text-muted-foreground">No KB documents available</p>
+                            )}
+                            {(nestedStep.config?.instructionDocIds?.length || 0) > 0 && (
+                              <p className="text-xs text-muted-foreground mt-1">
+                                {nestedStep.config?.instructionDocIds?.length} document(s) selected
+                              </p>
+                            )}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -3519,6 +3621,7 @@ export default function WorkflowStepBuilder({
                                     triggerType={triggerType}
                                     expandedPathSteps={expandedPathSteps}
                                     togglePathStepExpanded={togglePathStepExpanded}
+                                    kbDocuments={kbDocuments}
                                   />
                                 )}
                               </div>
