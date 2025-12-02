@@ -3237,16 +3237,16 @@ export default function WorkflowStepBuilder({
                                       <div>
                                         <Label className="text-xs">Assign to Team</Label>
                                         <Select
-                                          value={pathStep.config?.teamId?.toString() || ''}
+                                          value={pathStep.config?.teamId?.toString() || 'none'}
                                           onValueChange={(value) => updatePathStep(pathIndex, stepIndex, {
-                                            config: { ...pathStep.config, teamId: value ? parseInt(value) : undefined }
+                                            config: { ...pathStep.config, teamId: value !== 'none' ? parseInt(value) : undefined }
                                           })}
                                         >
                                           <SelectTrigger>
                                             <SelectValue placeholder="Select team (optional)" />
                                           </SelectTrigger>
                                           <SelectContent>
-                                            <SelectItem value="">No team</SelectItem>
+                                            <SelectItem value="none">No team</SelectItem>
                                             {teams.map((team) => (
                                               <SelectItem key={team.id} value={team.id.toString()}>
                                                 {team.name}
@@ -3258,16 +3258,16 @@ export default function WorkflowStepBuilder({
                                       <div>
                                         <Label className="text-xs">Assign to User</Label>
                                         <Select
-                                          value={pathStep.config?.assigneeId?.toString() || ''}
+                                          value={pathStep.config?.assigneeId?.toString() || 'none'}
                                           onValueChange={(value) => updatePathStep(pathIndex, stepIndex, {
-                                            config: { ...pathStep.config, assigneeId: value ? parseInt(value) : undefined }
+                                            config: { ...pathStep.config, assigneeId: value !== 'none' ? parseInt(value) : undefined }
                                           })}
                                         >
                                           <SelectTrigger>
                                             <SelectValue placeholder="Select user (optional)" />
                                           </SelectTrigger>
                                           <SelectContent>
-                                            <SelectItem value="">No user</SelectItem>
+                                            <SelectItem value="none">No user</SelectItem>
                                             {users.map((user) => (
                                               <SelectItem key={user.id} value={user.id.toString()}>
                                                 {user.fullName || user.email}
@@ -3609,16 +3609,16 @@ export default function WorkflowStepBuilder({
                                   <div>
                                     <Label className="text-xs">Assign to Team</Label>
                                     <Select
-                                      value={pathStep.config?.teamId?.toString() || ''}
+                                      value={pathStep.config?.teamId?.toString() || 'none'}
                                       onValueChange={(value) => updateDefaultPathStep(stepIndex, {
-                                        config: { ...pathStep.config, teamId: value ? parseInt(value) : undefined }
+                                        config: { ...pathStep.config, teamId: value !== 'none' ? parseInt(value) : undefined }
                                       })}
                                     >
                                       <SelectTrigger>
                                         <SelectValue placeholder="Select team (optional)" />
                                       </SelectTrigger>
                                       <SelectContent>
-                                        <SelectItem value="">No team</SelectItem>
+                                        <SelectItem value="none">No team</SelectItem>
                                         {teams.map((team) => (
                                           <SelectItem key={team.id} value={team.id.toString()}>
                                             {team.name}
@@ -3630,16 +3630,16 @@ export default function WorkflowStepBuilder({
                                   <div>
                                     <Label className="text-xs">Assign to User</Label>
                                     <Select
-                                      value={pathStep.config?.assigneeId?.toString() || ''}
+                                      value={pathStep.config?.assigneeId?.toString() || 'none'}
                                       onValueChange={(value) => updateDefaultPathStep(stepIndex, {
-                                        config: { ...pathStep.config, assigneeId: value ? parseInt(value) : undefined }
+                                        config: { ...pathStep.config, assigneeId: value !== 'none' ? parseInt(value) : undefined }
                                       })}
                                     >
                                       <SelectTrigger>
                                         <SelectValue placeholder="Select user (optional)" />
                                       </SelectTrigger>
                                       <SelectContent>
-                                        <SelectItem value="">No user</SelectItem>
+                                        <SelectItem value="none">No user</SelectItem>
                                         {users.map((user) => (
                                           <SelectItem key={user.id} value={user.id.toString()}>
                                             {user.fullName || user.email}
