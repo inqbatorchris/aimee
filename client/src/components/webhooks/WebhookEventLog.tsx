@@ -19,7 +19,14 @@ export function WebhookEventLog({ open, onClose, organizationId, workflowId }: W
   
   const { data: events = [], isLoading, refetch } = useQuery({
     queryKey: ['/api/webhooks/events', organizationId],
-    enabled: open,
+    queryFn: async () => {
+      const response = await fetch(`/api/webhooks/events/${organizationId}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch webhook events');
+      }
+      return response.json();
+    },
+    enabled: open && !!organizationId,
   });
 
   // Filter events by workflow if workflowId is provided
