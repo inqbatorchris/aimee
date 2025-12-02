@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Link, useLocation } from 'wouter';
+import { Link, useLocation, useSearch } from 'wouter';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -125,6 +125,21 @@ export default function AgentBuilder() {
   const { toast} = useToast();
   const [, setLocation] = useLocation();
   const navigate = (path: string) => setLocation(path);
+  const searchString = useSearch();
+
+  // Handle runId query parameter from URL (e.g., from webhook event log)
+  useEffect(() => {
+    const params = new URLSearchParams(searchString);
+    const runIdParam = params.get('runId');
+    if (runIdParam) {
+      const runId = parseInt(runIdParam, 10);
+      if (!isNaN(runId)) {
+        // Switch to runs tab and expand the specified run
+        setSelectedTab('runs');
+        setExpandedRunId(runId);
+      }
+    }
+  }, [searchString]);
 
   // Drag and drop sensors
   const sensors = useSensors(
