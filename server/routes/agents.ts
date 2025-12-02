@@ -379,10 +379,12 @@ router.post('/workflows/:id/execute', async (req, res) => {
     const executor = new WorkflowExecutor();
     
     // Execute asynchronously (don't wait for completion)
+    // Spread request body data (like trigger) directly into context for template resolution
     executor.executeWorkflow(workflowWithConfig, {
       organizationId: String(user.organizationId),
       userId: user.id,
       triggerSource: `Manual execution by user ${user.id}`,
+      ...req.body,
       manualData: req.body
     }).catch(error => {
       console.error('Workflow execution failed:', error);

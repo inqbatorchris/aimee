@@ -569,10 +569,12 @@ export class WorkflowExecutor {
           
           // Execute steps for this path
           let pathContext = { ...context };
-          const pathResults: any[] = [];
+          // Inherit parent pathResults if they exist (for nested conditionals)
+          const pathResults: any[] = [...(context.pathResults || [])];
           
           for (const pathStep of pathSteps || []) {
-            const result = await this.executeStep(pathStep, pathContext);
+            // Pass pathResults to nested steps so they can access work item IDs
+            const result = await this.executeStep(pathStep, { ...pathContext, pathResults });
             if (!result.success) {
               return result;
             }
@@ -582,13 +584,15 @@ export class WorkflowExecutor {
             }
           }
           
+          // Remove pathResults from pathContext to avoid circular reference when serializing
+          const { pathResults: _, ...cleanPathContext } = pathContext;
           return {
             success: true,
             output: {
               matchedCondition: matchDetails,
               pathExecuted: true,
               pathResults,
-              pathContext
+              pathContext: cleanPathContext
             }
           };
         } else {
@@ -600,10 +604,12 @@ export class WorkflowExecutor {
       console.log(`[WorkflowExecutor]   No conditions matched, executing default path...`);
       if (defaultPath?.steps) {
         let pathContext = { ...context };
-        const pathResults: any[] = [];
+        // Inherit parent pathResults if they exist (for nested conditionals)
+        const pathResults: any[] = [...(context.pathResults || [])];
         
         for (const pathStep of defaultPath.steps) {
-          const result = await this.executeStep(pathStep, pathContext);
+          // Pass pathResults to nested steps so they can access work item IDs
+          const result = await this.executeStep(pathStep, { ...pathContext, pathResults });
           if (!result.success) {
             return result;
           }
@@ -613,9 +619,11 @@ export class WorkflowExecutor {
           }
         }
         
+        // Remove pathResults from pathContext to avoid circular reference when serializing
+        const { pathResults: _, ...cleanPathContext } = pathContext;
         return {
           success: true,
-          output: { matchedCondition: null, defaultPathExecuted: true, pathResults, pathContext }
+          output: { matchedCondition: null, defaultPathExecuted: true, pathResults, pathContext: cleanPathContext }
         };
       }
       
@@ -2084,12 +2092,33 @@ export class WorkflowExecutor {
       // 2. If not in config, search through all previous step outputs for a create_work_item result
       if (!workItemId) {
         console.log(`[WorkflowExecutor]   🔍 No explicit work item ID - searching previous step outputs...`);
-        for (let i = 1; i <= 20; i++) { // Check up to 20 previous steps
-          const stepOutput = context[`step${i}Output`];
-          if (stepOutput?.workItemId) {
-            workItemId = stepOutput.workItemId;
-            console.log(`[WorkflowExecutor]   ✓ Found work item ID from step ${i}: ${workItemId}`);
-            break;
+        
+        // First check lastOutput (set by conditional/default path steps)
+        if (context.lastOutput?.workItemId) {
+          workItemId = context.lastOutput.workItemId;
+          console.log(`[WorkflowExecutor]   ✓ Found work item ID from lastOutput: ${workItemId}`);
+        }
+        
+        // If not found, search through pathResults array (nested path step outputs)
+        if (!workItemId && Array.isArray(context.pathResults)) {
+          for (const result of context.pathResults) {
+            if (result?.workItemId) {
+              workItemId = result.workItemId;
+              console.log(`[WorkflowExecutor]   ✓ Found work item ID from pathResults: ${workItemId}`);
+              break;
+            }
+          }
+        }
+        
+        // If not found, search through numbered step outputs
+        if (!workItemId) {
+          for (let i = 1; i <= 20; i++) { // Check up to 20 previous steps
+            const stepOutput = context[`step${i}Output`];
+            if (stepOutput?.workItemId) {
+              workItemId = stepOutput.workItemId;
+              console.log(`[WorkflowExecutor]   ✓ Found work item ID from step ${i}: ${workItemId}`);
+              break;
+            }
           }
         }
       }
