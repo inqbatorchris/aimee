@@ -1339,12 +1339,14 @@ export class SplynxService {
     try {
       const url = this.buildUrl(`admin/support/ticket-messages`);
       
+      // Splynx ticket-messages API format:
+      // - ticket_id: the existing ticket to add message to
+      // - message: the message text (string)
+      // - hidden: boolean to hide from customer
       const payload: any = {
         ticket_id: ticketId,
+        message: message,
         hidden: isHidden,
-        message: {
-          message: message,
-        },
       };
       
       // Add optional fields if provided
