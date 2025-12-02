@@ -3173,9 +3173,9 @@ export default function WorkflowStepBuilder({
                                           </SelectTrigger>
                                           <SelectContent>
                                             <SelectItem value="Planning">Planning</SelectItem>
-                                            <SelectItem value="Pending Customer ID">Pending Customer ID</SelectItem>
+                                            <SelectItem value="Ready">Ready</SelectItem>
                                             <SelectItem value="In Progress">In Progress</SelectItem>
-                                            <SelectItem value="Blocked">Blocked</SelectItem>
+                                            <SelectItem value="Stuck">Stuck</SelectItem>
                                             <SelectItem value="Completed">Completed</SelectItem>
                                           </SelectContent>
                                         </Select>
@@ -3501,9 +3501,9 @@ export default function WorkflowStepBuilder({
                                       </SelectTrigger>
                                       <SelectContent>
                                         <SelectItem value="Planning">Planning</SelectItem>
-                                        <SelectItem value="Pending Customer ID">Pending Customer ID</SelectItem>
+                                        <SelectItem value="Ready">Ready</SelectItem>
                                         <SelectItem value="In Progress">In Progress</SelectItem>
-                                        <SelectItem value="Blocked">Blocked</SelectItem>
+                                        <SelectItem value="Stuck">Stuck</SelectItem>
                                         <SelectItem value="Completed">Completed</SelectItem>
                                       </SelectContent>
                                     </Select>
