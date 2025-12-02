@@ -1361,6 +1361,48 @@ export class WorkflowExecutor {
           };
         }
         
+        case 'getCustomerById': {
+          console.log(`[WorkflowExecutor]   👤 Fetching customer details for ID ${numericCustomerId}`);
+          
+          const customer = await splynxService.getCustomerById(numericCustomerId);
+          
+          if (!customer) {
+            console.log(`[WorkflowExecutor]   ⚠️ Customer ${numericCustomerId} not found`);
+            return {
+              success: true,
+              output: {
+                action: 'getCustomerById',
+                customerId: numericCustomerId,
+                found: false,
+                customer: null,
+                category: null,
+                name: null,
+                status: null,
+              },
+            };
+          }
+          
+          console.log(`[WorkflowExecutor]   ✅ Customer found: ${customer.name}`);
+          console.log(`[WorkflowExecutor]   📌 Category: ${customer.raw?.category || 'unknown'}`);
+          
+          return {
+            success: true,
+            output: {
+              action: 'getCustomerById',
+              customerId: numericCustomerId,
+              found: true,
+              customer: customer,
+              category: customer.raw?.category || null,
+              name: customer.name,
+              status: customer.status,
+              email: customer.email,
+              phone: customer.phone,
+              address: customer.address,
+              raw: customer.raw,
+            },
+          };
+        }
+        
         default:
           throw new Error(`Unknown Splynx action: ${action}`);
       }
