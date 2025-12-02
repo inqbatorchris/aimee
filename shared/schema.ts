@@ -5790,9 +5790,12 @@ export const bookingTokens = pgTable("booking_tokens", {
   // Splynx Task
   splynxTaskId: integer("splynx_task_id"),
   
-  // Expiry
+  // Expiry and Security
   expiresAt: timestamp("expires_at"),
   confirmedAt: timestamp("confirmed_at"),
+  redeemedAt: timestamp("redeemed_at"),
+  maxUses: integer("max_uses").default(1).notNull(),
+  usageCount: integer("usage_count").default(0).notNull(),
   
   // Audit
   createdAt: timestamp("created_at").defaultNow(),
