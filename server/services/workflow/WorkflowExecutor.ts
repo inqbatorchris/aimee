@@ -2443,7 +2443,13 @@ ${customerContextStr ? `\n${customerContextStr}\n` : ''}
 ${referenceContext ? `\n**Reference Information:**\n${referenceContext}\n` : ''}
 ${stepSystemPrompt ? `\n**Special Instructions:**\n${stepSystemPrompt}\n` : ''}
 
-Generate a draft response that addresses the customer's issue professionally and helpfully. Take into account any customer context provided (such as account status, recent tickets, and service information) to personalize your response.`;
+Generate a draft response that addresses the customer's issue professionally and helpfully. Take into account any customer context provided (such as account status, balance, last online time, recent tickets, and service information) to personalize your response.
+
+**IMPORTANT FORMAT REQUIREMENTS:**
+- Do NOT include a subject line - the subject is added automatically by the system
+- Do NOT include an email footer or signature block (e.g., "Best regards, [Name], Company Support Team, Phone, Email") - the footer is added automatically by the system
+- Start directly with the greeting and message body
+- End with a closing statement but NO signature`;
       
       // Get OpenAI API key
       const openaiKey = process.env.AI_INTEGRATIONS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
