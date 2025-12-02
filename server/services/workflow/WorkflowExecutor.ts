@@ -681,8 +681,17 @@ export class WorkflowExecutor {
   }
 
   private getNestedValue(obj: any, path: string): any {
-    // Support dot notation for nested fields (e.g., "trigger.ticket.type_id")
-    return path.split('.').reduce((current, key) => current?.[key], obj);
+    // Support dot notation and array bracket notation for nested fields
+    // e.g., "trigger.ticket.type_id" or "pathResults[0].workItemId"
+    
+    // First, normalize bracket notation to dot notation for easier processing
+    // Convert pathResults[0].workItemId to pathResults.0.workItemId
+    const normalizedPath = path.replace(/\[(\d+)\]/g, '.$1');
+    
+    return normalizedPath.split('.').reduce((current, key) => {
+      if (current === null || current === undefined) return undefined;
+      return current[key];
+    }, obj);
   }
 
   private async executeIntegrationAction(step: any, context: any): Promise<StepExecutionResult> {
@@ -1734,7 +1743,8 @@ export class WorkflowExecutor {
     if (typeof template !== 'string') return template;
     
     // Replace {{variable}} with context values
-    return template.replace(/\{\{(\w+(?:\.\w+)*)\}\}/g, (match, path) => {
+    // Supports: {{trigger.id}}, {{step1Output.name}}, {{pathResults[0].workItemId}}
+    return template.replace(/\{\{([\w\[\]]+(?:\.[\w\[\]]+)*)\}\}/g, (match, path) => {
       const value = this.getNestedValue(context, path);
       if (value === undefined || value === null) {
         console.warn(`[WorkflowExecutor] Template variable ${match} not found in context. Available keys:`, Object.keys(context));
