@@ -1344,9 +1344,13 @@ export class SplynxService {
       // - message: string - Message text (plain string)
       // - hide_for_customer: boolean - Is message hidden for customer
       // - customer_id: number - Customer ID (optional)
+      
+      // Convert newlines to HTML breaks to preserve formatting in Splynx
+      const formattedMessage = message.replace(/\n/g, '<br>');
+      
       const payload: any = {
         ticket_id: parseInt(ticketId),
-        message: message,
+        message: formattedMessage,
         hide_for_customer: isHidden,
       };
       

@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Separator } from '@/components/ui/separator';
 import { Ticket, MessageSquare, Clock, User, AlertCircle, Loader2, Send, ExternalLink, CheckCircle, Sparkles, RefreshCw } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { format } from 'date-fns';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
@@ -72,6 +72,12 @@ export function SplynxTicketViewer({
   const [localActionCompleted, setLocalActionCompleted] = useState(false);
   const [hasNotifiedCompletion, setHasNotifiedCompletion] = useState(false);
   const [draftLoaded, setDraftLoaded] = useState(false);
+  
+  // Use ref pattern to prevent stale closures while avoiding infinite loops
+  const onModeCompletedRef = useRef(onModeCompleted);
+  useEffect(() => {
+    onModeCompletedRef.current = onModeCompleted;
+  }, [onModeCompleted]);
 
   const { data: integrations, isLoading: isLoadingIntegrations } = useQuery<any[]>({
     queryKey: ['/api/integrations'],
@@ -127,12 +133,13 @@ export function SplynxTicketViewer({
   }, [ticketId]);
 
   // Notify parent when completion state changes (ONCE)
+  // Use ref pattern to prevent infinite loop while keeping callback fresh
   useEffect(() => {
     if (isModeCompleted && !hasNotifiedCompletion) {
       setHasNotifiedCompletion(true);
-      onModeCompleted?.();
+      onModeCompletedRef.current?.();
     }
-  }, [isModeCompleted, hasNotifiedCompletion, onModeCompleted]);
+  }, [isModeCompleted, hasNotifiedCompletion]);
 
   const sendMessageMutation = useMutation({
     mutationFn: async ({ message, isInternal }: { message: string; isInternal: boolean }) => {
