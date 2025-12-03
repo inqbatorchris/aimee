@@ -2265,6 +2265,94 @@ router.get('/splynx/:integrationId/ticket-types', async (req, res) => {
   }
 });
 
+// Debug endpoint to fetch customer billing data for testing
+router.get('/splynx/:integrationId/debug-customer-billing/:customerId', async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user || !user.organizationId) {
+      return res.status(401).json({ error: 'User not authenticated' });
+    }
+
+    const { integrationId, customerId } = req.params;
+
+    // Get integration
+    const [splynxIntegration] = await db
+      .select()
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.id, parseInt(integrationId)),
+          eq(integrations.organizationId, user.organizationId),
+          eq(integrations.platformType, 'splynx')
+        )
+      )
+      .limit(1);
+
+    if (!splynxIntegration) {
+      return res.status(404).json({ error: 'Splynx integration not found' });
+    }
+
+    if (!splynxIntegration.credentialsEncrypted) {
+      return res.status(400).json({ error: 'Splynx credentials not configured' });
+    }
+
+    // Decrypt credentials
+    const credentials = JSON.parse(decrypt(splynxIntegration.credentialsEncrypted));
+    const { baseUrl, authHeader } = credentials;
+
+    if (!baseUrl || !authHeader) {
+      return res.status(400).json({ error: 'Splynx credentials incomplete' });
+    }
+
+    // Create Splynx service and fetch billing data
+    const splynxService = new SplynxService({ baseUrl, authHeader });
+    
+    // Fetch customer details
+    const customer = await splynxService.getCustomerById(parseInt(customerId));
+    
+    // Fetch billing data
+    const billing = await splynxService.getCustomerBalance(parseInt(customerId));
+    
+    // Fetch services
+    const services = await splynxService.getCustomerServices(parseInt(customerId));
+
+    res.json({
+      success: true,
+      customerId: parseInt(customerId),
+      customer: customer ? {
+        id: customer.id,
+        name: customer.name,
+        email: customer.email,
+        status: customer.status,
+        lastOnline: customer.raw?.last_online,
+        rawFields: {
+          balance: customer.raw?.balance,
+          account_balance: customer.raw?.account_balance,
+          deposit: customer.raw?.deposit,
+        }
+      } : null,
+      billing: {
+        balance: billing.balance,
+        status: billing.status,
+        lastPaymentDate: billing.lastPaymentDate,
+        lastPaymentAmount: billing.lastPaymentAmount,
+        currency: billing.currency,
+        unpaidInvoices: billing.unpaidInvoices,
+        totalUnpaid: billing.totalUnpaid,
+      },
+      services: services.map(s => ({
+        id: s.id,
+        name: s.serviceName,
+        status: s.status,
+        lastOnline: s.lastOnline,
+      })),
+    });
+  } catch (error: any) {
+    console.error(`Error fetching customer billing debug:`, error);
+    res.status(500).json({ error: 'Failed to fetch customer billing', details: error.message });
+  }
+});
+
 // Fetch Splynx ticket statuses
 router.get('/splynx/:integrationId/ticket-statuses', async (req, res) => {
   try {

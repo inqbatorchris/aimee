@@ -1446,12 +1446,15 @@ export class WorkflowExecutor {
                 paymentStatus: 'unknown',
                 lastPaymentDate: null,
                 lastPaymentAmount: null,
+                unpaidInvoices: 0,
+                totalUnpaid: 0,
               },
             };
           }
           
-          console.log(`[WorkflowExecutor]   ✅ Billing info found: Balance ${billing.balance}`);
-          console.log(`[WorkflowExecutor]   📌 Payment status: ${billing.status}`);
+          console.log(`[WorkflowExecutor]   ✅ Billing info found: Balance ${billing.balance}, Status: ${billing.status}`);
+          console.log(`[WorkflowExecutor]   💳 Last payment: ${billing.lastPaymentDate} (${billing.currency} ${billing.lastPaymentAmount})`);
+          console.log(`[WorkflowExecutor]   📋 Unpaid invoices: ${billing.unpaidInvoices || 0}, Total unpaid: ${billing.totalUnpaid || 0}`);
           
           return {
             success: true,
@@ -1464,6 +1467,8 @@ export class WorkflowExecutor {
               lastPaymentDate: billing.lastPaymentDate,
               lastPaymentAmount: billing.lastPaymentAmount,
               currency: billing.currency,
+              unpaidInvoices: billing.unpaidInvoices || 0,
+              totalUnpaid: billing.totalUnpaid || 0,
               raw: billing,
             },
           };

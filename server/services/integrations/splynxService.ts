@@ -1534,6 +1534,8 @@ export class SplynxService {
     lastPaymentDate: string | null;
     lastPaymentAmount: number | null;
     currency: string;
+    unpaidInvoices?: number;
+    totalUnpaid?: number;
   }> {
     try {
       // First try to get balance from customer details
@@ -1551,7 +1553,10 @@ export class SplynxService {
       const customer = customerResponse.data;
       const balance = parseFloat(customer.balance || customer.account_balance || '0');
       
+      console.log(`[SPLYNX getCustomerBalance] Customer balance field: ${customer.balance}, account_balance: ${customer.account_balance}`);
+      
       // Determine status based on balance
+      // In Splynx: negative balance = amount owed, positive = credit
       let status: 'current' | 'overdue' | 'credit' | 'unknown' = 'unknown';
       if (balance > 0) {
         status = 'credit';
@@ -1561,27 +1566,37 @@ export class SplynxService {
         status = 'current';
       }
 
-      // Try to get last payment
+      // Try to get last payment - SORTED BY DATE DESCENDING to get most recent first
       let lastPaymentDate: string | null = null;
       let lastPaymentAmount: number | null = null;
       
       try {
         const paymentsUrl = this.buildUrl(`admin/finance/payments`);
+        console.log(`[SPLYNX getCustomerBalance] Fetching payments for customer ${customerId} with date DESC sort`);
+        
         const paymentsResponse = await axios.get(paymentsUrl, {
           headers: {
             'Authorization': this.credentials.authHeader,
             'Content-Type': 'application/json',
           },
           params: {
-            main_attributes: {
-              customer_id: customerId,
-            },
-            limit: 1,
+            'main_attributes[customer_id]': customerId,
+            'order[date]': 'DESC',
+            limit: 10,
           },
         });
         
         const payments = Array.isArray(paymentsResponse.data) ? paymentsResponse.data : [];
+        console.log(`[SPLYNX getCustomerBalance] Fetched ${payments.length} payments`);
+        
         if (payments.length > 0) {
+          // Log first few payments to verify sorting
+          console.log(`[SPLYNX getCustomerBalance] Most recent payment:`, {
+            date: payments[0].date,
+            amount: payments[0].amount,
+            id: payments[0].id
+          });
+          
           lastPaymentDate = payments[0].date || payments[0].payment_date || null;
           lastPaymentAmount = parseFloat(payments[0].amount || '0');
         }
@@ -1589,12 +1604,41 @@ export class SplynxService {
         console.log(`[SPLYNX getCustomerBalance] Could not fetch payments:`, paymentError.message);
       }
 
+      // Also check for unpaid invoices
+      let unpaidInvoices = 0;
+      let totalUnpaid = 0;
+      
+      try {
+        const invoicesUrl = this.buildUrl(`admin/finance/invoices`);
+        const invoicesResponse = await axios.get(invoicesUrl, {
+          headers: {
+            'Authorization': this.credentials.authHeader,
+            'Content-Type': 'application/json',
+          },
+          params: {
+            'main_attributes[customer_id]': customerId,
+            'main_attributes[status]': 'unpaid',
+            limit: 50,
+          },
+        });
+        
+        const invoices = Array.isArray(invoicesResponse.data) ? invoicesResponse.data : [];
+        unpaidInvoices = invoices.length;
+        totalUnpaid = invoices.reduce((sum: number, inv: any) => sum + parseFloat(inv.total || inv.amount_due || '0'), 0);
+        
+        console.log(`[SPLYNX getCustomerBalance] Unpaid invoices: ${unpaidInvoices}, total: ${totalUnpaid}`);
+      } catch (invoiceError: any) {
+        console.log(`[SPLYNX getCustomerBalance] Could not fetch invoices:`, invoiceError.message);
+      }
+
       return {
         balance,
         status,
         lastPaymentDate,
         lastPaymentAmount,
-        currency: customer.currency || 'USD',
+        currency: customer.currency || 'GBP',
+        unpaidInvoices,
+        totalUnpaid,
       };
     } catch (error: any) {
       console.error(`[SPLYNX getCustomerBalance] Error:`, error.message);
@@ -1603,7 +1647,7 @@ export class SplynxService {
         status: 'unknown',
         lastPaymentDate: null,
         lastPaymentAmount: null,
-        currency: 'USD',
+        currency: 'GBP',
       };
     }
   }
