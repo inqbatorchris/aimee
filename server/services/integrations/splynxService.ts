@@ -1525,23 +1525,29 @@ export class SplynxService {
   }
 
   /**
-   * Get customer's account balance and payment status
+   * Get customer's comprehensive billing data from /customers/customer/ID endpoint
+   * This single endpoint returns all billing, blocking, and service status information
    * Used for AI context enrichment
    */
   async getCustomerBalance(customerId: number): Promise<{
-    balance: number;
-    status: 'current' | 'overdue' | 'credit' | 'unknown';
+    deposit: number;
+    accountStatus: string;
+    lastOnline: string | null;
+    blockingEnabled: boolean;
+    blockInNextBillingCycle: boolean;
+    blockingDate: string | null;
+    isAlreadyBlocked: boolean;
+    isAlreadyDisabled: boolean;
+    lowBalance: boolean;
+    currency: string;
     lastPaymentDate: string | null;
     lastPaymentAmount: number | null;
-    currency: string;
-    unpaidInvoices?: number;
-    totalUnpaid?: number;
   }> {
     try {
-      // First try to get balance from customer details
+      // Use the comprehensive /customers/customer/ID endpoint
       const customerUrl = this.buildUrl(`admin/customers/customer/${customerId}`);
       
-      console.log(`[SPLYNX getCustomerBalance] Fetching balance for customer ${customerId}`);
+      console.log(`[SPLYNX getCustomerBalance] Fetching comprehensive billing data for customer ${customerId}`);
       
       const customerResponse = await axios.get(customerUrl, {
         headers: {
@@ -1551,29 +1557,35 @@ export class SplynxService {
       });
 
       const customer = customerResponse.data;
-      const balance = parseFloat(customer.balance || customer.account_balance || '0');
       
-      console.log(`[SPLYNX getCustomerBalance] Customer balance field: ${customer.balance}, account_balance: ${customer.account_balance}`);
+      // Extract the key billing fields from the comprehensive endpoint
+      const deposit = parseFloat(customer.deposit || '0');
+      const accountStatus = customer.status || 'unknown';
+      const lastOnline = customer.last_online || null;
+      const blockingEnabled = customer.blockingEnabled === true || customer.blockingEnabled === 'true';
+      const blockInNextBillingCycle = customer.blockInNextBillingCycle === true || customer.blockInNextBillingCycle === 'true';
+      const blockingDate = customer.blocking_date || null;
+      const isAlreadyBlocked = customer.is_already_blocked === true || customer.is_already_blocked === 'true';
+      const isAlreadyDisabled = customer.is_already_disabled === true || customer.is_already_disabled === 'true';
+      const lowBalance = customer.lowBalance === true || customer.lowBalance === 'true';
       
-      // Determine status based on balance
-      // In Splynx: negative balance = amount owed, positive = credit
-      let status: 'current' | 'overdue' | 'credit' | 'unknown' = 'unknown';
-      if (balance > 0) {
-        status = 'credit';
-      } else if (balance < 0) {
-        status = 'overdue';
-      } else {
-        status = 'current';
-      }
+      console.log(`[SPLYNX getCustomerBalance] Customer ${customerId} billing data:`, {
+        deposit,
+        accountStatus,
+        lastOnline,
+        blockingEnabled,
+        blockInNextBillingCycle,
+        isAlreadyBlocked,
+        isAlreadyDisabled,
+        lowBalance
+      });
 
-      // Try to get last payment - SORTED BY DATE DESCENDING to get most recent first
+      // Also get most recent payment for context
       let lastPaymentDate: string | null = null;
       let lastPaymentAmount: number | null = null;
       
       try {
         const paymentsUrl = this.buildUrl(`admin/finance/payments`);
-        console.log(`[SPLYNX getCustomerBalance] Fetching payments for customer ${customerId} with date DESC sort`);
-        
         const paymentsResponse = await axios.get(paymentsUrl, {
           headers: {
             'Authorization': this.credentials.authHeader,
@@ -1582,72 +1594,49 @@ export class SplynxService {
           params: {
             'main_attributes[customer_id]': customerId,
             'order[date]': 'DESC',
-            limit: 10,
+            limit: 1,
           },
         });
         
         const payments = Array.isArray(paymentsResponse.data) ? paymentsResponse.data : [];
-        console.log(`[SPLYNX getCustomerBalance] Fetched ${payments.length} payments`);
-        
         if (payments.length > 0) {
-          // Log first few payments to verify sorting
-          console.log(`[SPLYNX getCustomerBalance] Most recent payment:`, {
-            date: payments[0].date,
-            amount: payments[0].amount,
-            id: payments[0].id
-          });
-          
           lastPaymentDate = payments[0].date || payments[0].payment_date || null;
           lastPaymentAmount = parseFloat(payments[0].amount || '0');
+          console.log(`[SPLYNX getCustomerBalance] Last payment: ${lastPaymentDate} (£${lastPaymentAmount})`);
         }
       } catch (paymentError: any) {
         console.log(`[SPLYNX getCustomerBalance] Could not fetch payments:`, paymentError.message);
       }
 
-      // Also check for unpaid invoices
-      let unpaidInvoices = 0;
-      let totalUnpaid = 0;
-      
-      try {
-        const invoicesUrl = this.buildUrl(`admin/finance/invoices`);
-        const invoicesResponse = await axios.get(invoicesUrl, {
-          headers: {
-            'Authorization': this.credentials.authHeader,
-            'Content-Type': 'application/json',
-          },
-          params: {
-            'main_attributes[customer_id]': customerId,
-            'main_attributes[status]': 'unpaid',
-            limit: 50,
-          },
-        });
-        
-        const invoices = Array.isArray(invoicesResponse.data) ? invoicesResponse.data : [];
-        unpaidInvoices = invoices.length;
-        totalUnpaid = invoices.reduce((sum: number, inv: any) => sum + parseFloat(inv.total || inv.amount_due || '0'), 0);
-        
-        console.log(`[SPLYNX getCustomerBalance] Unpaid invoices: ${unpaidInvoices}, total: ${totalUnpaid}`);
-      } catch (invoiceError: any) {
-        console.log(`[SPLYNX getCustomerBalance] Could not fetch invoices:`, invoiceError.message);
-      }
-
       return {
-        balance,
-        status,
+        deposit,
+        accountStatus,
+        lastOnline,
+        blockingEnabled,
+        blockInNextBillingCycle,
+        blockingDate,
+        isAlreadyBlocked,
+        isAlreadyDisabled,
+        lowBalance,
+        currency: 'GBP',
         lastPaymentDate,
         lastPaymentAmount,
-        currency: customer.currency || 'GBP',
-        unpaidInvoices,
-        totalUnpaid,
       };
     } catch (error: any) {
       console.error(`[SPLYNX getCustomerBalance] Error:`, error.message);
       return {
-        balance: 0,
-        status: 'unknown',
+        deposit: 0,
+        accountStatus: 'unknown',
+        lastOnline: null,
+        blockingEnabled: false,
+        blockInNextBillingCycle: false,
+        blockingDate: null,
+        isAlreadyBlocked: false,
+        isAlreadyDisabled: false,
+        lowBalance: false,
+        currency: 'GBP',
         lastPaymentDate: null,
         lastPaymentAmount: null,
-        currency: 'GBP',
       };
     }
   }

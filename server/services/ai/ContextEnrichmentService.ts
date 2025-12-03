@@ -32,13 +32,20 @@ export interface TicketDraftingContext {
     address: string;
   };
   
-  // Account balance
+  // Account balance and blocking status
   billing?: {
-    balance: number;
-    status: 'current' | 'overdue' | 'credit' | 'unknown';
+    deposit: number;
+    accountStatus: string;
+    lastOnline: string | null;
+    blockingEnabled: boolean;
+    blockInNextBillingCycle: boolean;
+    blockingDate: string | null;
+    isAlreadyBlocked: boolean;
+    isAlreadyDisabled: boolean;
+    lowBalance: boolean;
+    currency: string;
     lastPaymentDate: string | null;
     lastPaymentAmount: number | null;
-    currency: string;
   };
   
   // Connection/service status
@@ -160,20 +167,36 @@ export class ContextEnrichmentService {
 - Address: ${context.customer.address || 'Not provided'}`);
     }
 
-    // Billing Information
+    // Billing Information and Account Status
     if (context.billing) {
-      const balanceDisplay = context.billing.balance < 0 
-        ? `${context.billing.currency} ${Math.abs(context.billing.balance).toFixed(2)} (OVERDUE)`
-        : context.billing.balance > 0
-        ? `${context.billing.currency} ${context.billing.balance.toFixed(2)} (CREDIT)`
-        : `${context.billing.currency} 0.00 (Current)`;
+      const deposit = context.billing.deposit || 0;
+      const balanceDisplay = deposit > 0 
+        ? `£${deposit.toFixed(2)} (Credit on account)`
+        : deposit < 0
+        ? `£${Math.abs(deposit).toFixed(2)} (Amount owed)`
+        : `£0.00 (Nothing owed)`;
       
-      let billingSection = `**Account Balance:**
-- Balance: ${balanceDisplay}
-- Payment Status: ${context.billing.status.toUpperCase()}`;
+      let billingSection = `**Account & Billing Status:**
+- Account Balance: ${balanceDisplay}
+- Account Status: ${context.billing.accountStatus?.toUpperCase() || 'UNKNOWN'}
+- Last Online: ${context.billing.lastOnline || 'Unknown'}`;
       
       if (context.billing.lastPaymentDate) {
-        billingSection += `\n- Last Payment: ${context.billing.currency} ${context.billing.lastPaymentAmount?.toFixed(2) || '0.00'} on ${context.billing.lastPaymentDate}`;
+        billingSection += `\n- Last Payment: £${context.billing.lastPaymentAmount?.toFixed(2) || '0.00'} on ${context.billing.lastPaymentDate}`;
+      }
+      
+      // Blocking status warnings
+      if (context.billing.isAlreadyBlocked) {
+        billingSection += `\n- ⚠️ ACCOUNT BLOCKED: Customer service is currently blocked due to non-payment`;
+      } else if (context.billing.isAlreadyDisabled) {
+        billingSection += `\n- ⚠️ ACCOUNT DISABLED: Customer service is currently disabled`;
+      } else if (context.billing.blockInNextBillingCycle) {
+        billingSection += `\n- ⚠️ PENDING BLOCK: Account scheduled for blocking in next billing cycle`;
+        if (context.billing.blockingDate) {
+          billingSection += ` (Blocking date: ${context.billing.blockingDate})`;
+        }
+      } else if (context.billing.lowBalance) {
+        billingSection += `\n- ⚠️ LOW BALANCE WARNING: Customer has low balance warning`;
       }
       
       sections.push(billingSection);

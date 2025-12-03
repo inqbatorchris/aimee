@@ -1442,19 +1442,29 @@ export class WorkflowExecutor {
                 action: 'getCustomerBilling',
                 customerId: numericCustomerId,
                 found: false,
-                balance: null,
-                paymentStatus: 'unknown',
+                deposit: 0,
+                accountStatus: 'unknown',
+                lastOnline: null,
+                blockingEnabled: false,
+                blockInNextBillingCycle: false,
+                blockingDate: null,
+                isAlreadyBlocked: false,
+                isAlreadyDisabled: false,
+                lowBalance: false,
                 lastPaymentDate: null,
                 lastPaymentAmount: null,
-                unpaidInvoices: 0,
-                totalUnpaid: 0,
+                currency: 'GBP',
               },
             };
           }
           
-          console.log(`[WorkflowExecutor]   ✅ Billing info found: Balance ${billing.balance}, Status: ${billing.status}`);
-          console.log(`[WorkflowExecutor]   💳 Last payment: ${billing.lastPaymentDate} (${billing.currency} ${billing.lastPaymentAmount})`);
-          console.log(`[WorkflowExecutor]   📋 Unpaid invoices: ${billing.unpaidInvoices || 0}, Total unpaid: ${billing.totalUnpaid || 0}`);
+          console.log(`[WorkflowExecutor]   ✅ Billing data found for customer ${numericCustomerId}:`);
+          console.log(`[WorkflowExecutor]   💷 Deposit (balance): £${billing.deposit}`);
+          console.log(`[WorkflowExecutor]   📊 Account status: ${billing.accountStatus}`);
+          console.log(`[WorkflowExecutor]   🕐 Last online: ${billing.lastOnline}`);
+          console.log(`[WorkflowExecutor]   🚫 Blocking enabled: ${billing.blockingEnabled}, Block next cycle: ${billing.blockInNextBillingCycle}`);
+          console.log(`[WorkflowExecutor]   ⛔ Already blocked: ${billing.isAlreadyBlocked}, Already disabled: ${billing.isAlreadyDisabled}`);
+          console.log(`[WorkflowExecutor]   💳 Last payment: ${billing.lastPaymentDate} (£${billing.lastPaymentAmount})`);
           
           return {
             success: true,
@@ -1462,13 +1472,18 @@ export class WorkflowExecutor {
               action: 'getCustomerBilling',
               customerId: numericCustomerId,
               found: true,
-              balance: billing.balance,
-              paymentStatus: billing.status,
+              deposit: billing.deposit,
+              accountStatus: billing.accountStatus,
+              lastOnline: billing.lastOnline,
+              blockingEnabled: billing.blockingEnabled,
+              blockInNextBillingCycle: billing.blockInNextBillingCycle,
+              blockingDate: billing.blockingDate,
+              isAlreadyBlocked: billing.isAlreadyBlocked,
+              isAlreadyDisabled: billing.isAlreadyDisabled,
+              lowBalance: billing.lowBalance,
               lastPaymentDate: billing.lastPaymentDate,
               lastPaymentAmount: billing.lastPaymentAmount,
               currency: billing.currency,
-              unpaidInvoices: billing.unpaidInvoices || 0,
-              totalUnpaid: billing.totalUnpaid || 0,
               raw: billing,
             },
           };
