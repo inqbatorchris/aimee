@@ -2600,6 +2600,14 @@ Generate a draft response that addresses the customer's issue professionally and
     try {
       console.log(`[WorkflowExecutor] 📨 Sending Splynx ticket message for step: ${step.name || 'Send Ticket Message'}`);
       
+      // Debug: Log available context keys for template variable resolution
+      console.log(`[WorkflowExecutor] 📋 Context keys available for template:`, Object.keys(context));
+      if (context.step2Output) {
+        console.log(`[WorkflowExecutor] 📊 step2Output contents:`, JSON.stringify(context.step2Output, null, 2));
+      } else {
+        console.warn(`[WorkflowExecutor] ⚠️ step2Output is NOT in context!`);
+      }
+      
       // Get organization ID
       let organizationId: number;
       if (typeof context.organizationId === 'number') {

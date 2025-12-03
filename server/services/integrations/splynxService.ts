@@ -1558,16 +1558,32 @@ export class SplynxService {
 
       const customer = customerResponse.data;
       
+      // Log raw API response for debugging
+      console.log(`[SPLYNX getCustomerBalance] Raw API response for customer ${customerId}:`, JSON.stringify({
+        deposit: customer.deposit,
+        status: customer.status,
+        last_online: customer.last_online,
+        blockingEnabled: customer.blockingEnabled,
+        blockInNextBillingCycle: customer.blockInNextBillingCycle,
+        blocking_date: customer.blocking_date,
+        is_already_blocked: customer.is_already_blocked,
+        is_already_disabled: customer.is_already_disabled,
+        lowBalance: customer.lowBalance,
+      }, null, 2));
+      
       // Extract the key billing fields from the comprehensive endpoint
-      const deposit = parseFloat(customer.deposit || '0');
+      // Handle comma-formatted numbers (e.g., "-1,199,976.81") by removing commas before parsing
+      const depositRaw = String(customer.deposit || '0').replace(/,/g, '');
+      const deposit = parseFloat(depositRaw);
+      
       const accountStatus = customer.status || 'unknown';
       const lastOnline = customer.last_online || null;
-      const blockingEnabled = customer.blockingEnabled === true || customer.blockingEnabled === 'true';
-      const blockInNextBillingCycle = customer.blockInNextBillingCycle === true || customer.blockInNextBillingCycle === 'true';
+      const blockingEnabled = customer.blockingEnabled === true || customer.blockingEnabled === 'true' || customer.blockingEnabled === 1;
+      const blockInNextBillingCycle = customer.blockInNextBillingCycle === true || customer.blockInNextBillingCycle === 'true' || customer.blockInNextBillingCycle === 1;
       const blockingDate = customer.blocking_date || null;
-      const isAlreadyBlocked = customer.is_already_blocked === true || customer.is_already_blocked === 'true';
-      const isAlreadyDisabled = customer.is_already_disabled === true || customer.is_already_disabled === 'true';
-      const lowBalance = customer.lowBalance === true || customer.lowBalance === 'true';
+      const isAlreadyBlocked = customer.is_already_blocked === true || customer.is_already_blocked === 'true' || customer.is_already_blocked === 1;
+      const isAlreadyDisabled = customer.is_already_disabled === true || customer.is_already_disabled === 'true' || customer.is_already_disabled === 1;
+      const lowBalance = customer.lowBalance === true || customer.lowBalance === 'true' || customer.lowBalance === 1;
       
       console.log(`[SPLYNX getCustomerBalance] Customer ${customerId} billing data:`, {
         deposit,
