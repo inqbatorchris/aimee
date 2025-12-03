@@ -1530,7 +1530,7 @@ export class SplynxService {
    * Used for AI context enrichment
    */
   async getCustomerBalance(customerId: number): Promise<{
-    deposit: number;
+    deposit: string;
     accountStatus: string;
     lastOnline: string | null;
     blockingEnabled: boolean;
@@ -1539,62 +1539,42 @@ export class SplynxService {
     isAlreadyBlocked: boolean;
     isAlreadyDisabled: boolean;
     lowBalance: boolean;
+    howManyDaysLeft: number | null;
     currency: string;
     lastPaymentDate: string | null;
     lastPaymentAmount: number | null;
   }> {
     try {
-      // Use the comprehensive /customers/customer/ID endpoint
-      const customerUrl = this.buildUrl(`admin/customers/customer/${customerId}`);
+      // Use the billing-info endpoint which returns all blocking/balance data
+      const billingUrl = this.buildUrl(`admin/customers/billing-info/${customerId}?format_values=true`);
       
-      console.log(`[SPLYNX getCustomerBalance] Fetching comprehensive billing data for customer ${customerId}`);
+      console.log(`[SPLYNX getCustomerBalance] Fetching billing-info for customer ${customerId}`);
       
-      const customerResponse = await axios.get(customerUrl, {
+      const billingResponse = await axios.get(billingUrl, {
         headers: {
           'Authorization': this.credentials.authHeader,
           'Content-Type': 'application/json',
         },
       });
 
-      const customer = customerResponse.data;
+      const billing = billingResponse.data;
       
-      // Log raw API response for debugging
-      console.log(`[SPLYNX getCustomerBalance] Raw API response for customer ${customerId}:`, JSON.stringify({
-        deposit: customer.deposit,
-        status: customer.status,
-        last_online: customer.last_online,
-        blockingEnabled: customer.blockingEnabled,
-        blockInNextBillingCycle: customer.blockInNextBillingCycle,
-        blocking_date: customer.blocking_date,
-        is_already_blocked: customer.is_already_blocked,
-        is_already_disabled: customer.is_already_disabled,
-        lowBalance: customer.lowBalance,
-      }, null, 2));
+      console.log(`[SPLYNX getCustomerBalance] Raw billing-info response:`, JSON.stringify(billing, null, 2));
       
-      // Extract the key billing fields from the comprehensive endpoint
-      // Handle comma-formatted numbers (e.g., "-1,199,976.81") by removing commas before parsing
-      const depositRaw = String(customer.deposit || '0').replace(/,/g, '');
-      const deposit = parseFloat(depositRaw);
-      
-      const accountStatus = customer.status || 'unknown';
-      const lastOnline = customer.last_online || null;
-      const blockingEnabled = customer.blockingEnabled === true || customer.blockingEnabled === 'true' || customer.blockingEnabled === 1;
-      const blockInNextBillingCycle = customer.blockInNextBillingCycle === true || customer.blockInNextBillingCycle === 'true' || customer.blockInNextBillingCycle === 1;
-      const blockingDate = customer.blocking_date || null;
-      const isAlreadyBlocked = customer.is_already_blocked === true || customer.is_already_blocked === 'true' || customer.is_already_blocked === 1;
-      const isAlreadyDisabled = customer.is_already_disabled === true || customer.is_already_disabled === 'true' || customer.is_already_disabled === 1;
-      const lowBalance = customer.lowBalance === true || customer.lowBalance === 'true' || customer.lowBalance === 1;
-      
-      console.log(`[SPLYNX getCustomerBalance] Customer ${customerId} billing data:`, {
-        deposit,
-        accountStatus,
-        lastOnline,
-        blockingEnabled,
-        blockInNextBillingCycle,
-        isAlreadyBlocked,
-        isAlreadyDisabled,
-        lowBalance
-      });
+      // Also get customer data for last_online
+      let lastOnline: string | null = null;
+      try {
+        const customerUrl = this.buildUrl(`admin/customers/customer/${customerId}`);
+        const customerResponse = await axios.get(customerUrl, {
+          headers: {
+            'Authorization': this.credentials.authHeader,
+            'Content-Type': 'application/json',
+          },
+        });
+        lastOnline = customerResponse.data.last_online || null;
+      } catch (e) {
+        console.log(`[SPLYNX getCustomerBalance] Could not fetch customer last_online`);
+      }
 
       // Also get most recent payment for context
       let lastPaymentDate: string | null = null;
@@ -1618,22 +1598,23 @@ export class SplynxService {
         if (payments.length > 0) {
           lastPaymentDate = payments[0].date || payments[0].payment_date || null;
           lastPaymentAmount = parseFloat(payments[0].amount || '0');
-          console.log(`[SPLYNX getCustomerBalance] Last payment: ${lastPaymentDate} (£${lastPaymentAmount})`);
         }
       } catch (paymentError: any) {
         console.log(`[SPLYNX getCustomerBalance] Could not fetch payments:`, paymentError.message);
       }
 
+      // Return exactly what the billing-info endpoint gives us
       return {
-        deposit,
-        accountStatus,
+        deposit: billing.deposit || '0',
+        accountStatus: billing.status || 'unknown',
         lastOnline,
-        blockingEnabled,
-        blockInNextBillingCycle,
-        blockingDate,
-        isAlreadyBlocked,
-        isAlreadyDisabled,
-        lowBalance,
+        blockingEnabled: billing.blockingEnabled === true,
+        blockInNextBillingCycle: billing.blockInNextBillingCycle === true,
+        blockingDate: billing.blocking_date || null,
+        isAlreadyBlocked: billing.is_already_blocked === true,
+        isAlreadyDisabled: billing.is_already_disabled === true,
+        lowBalance: billing.lowBalance === true,
+        howManyDaysLeft: billing.howManyDaysLeft || null,
         currency: 'GBP',
         lastPaymentDate,
         lastPaymentAmount,
@@ -1641,7 +1622,7 @@ export class SplynxService {
     } catch (error: any) {
       console.error(`[SPLYNX getCustomerBalance] Error:`, error.message);
       return {
-        deposit: 0,
+        deposit: '0',
         accountStatus: 'unknown',
         lastOnline: null,
         blockingEnabled: false,
@@ -1650,6 +1631,7 @@ export class SplynxService {
         isAlreadyBlocked: false,
         isAlreadyDisabled: false,
         lowBalance: false,
+        howManyDaysLeft: null,
         currency: 'GBP',
         lastPaymentDate: null,
         lastPaymentAmount: null,
