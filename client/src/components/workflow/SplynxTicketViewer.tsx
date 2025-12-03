@@ -142,7 +142,7 @@ export function SplynxTicketViewer({
   }, [isModeCompleted, hasNotifiedCompletion]);
 
   const sendMessageMutation = useMutation({
-    mutationFn: async ({ message, isInternal }: { message: string; isInternal: boolean }) => {
+    mutationFn: async ({ message, isInternal, updateStatusTo }: { message: string; isInternal: boolean; updateStatusTo?: string }) => {
       if (!integrationId) throw new Error('No Splynx integration found');
       
       // Update AI draft record if one exists and hasn't been sent yet
@@ -153,7 +153,8 @@ export function SplynxTicketViewer({
         });
       }
       
-      return await apiRequest(`/api/integrations/splynx/entity/ticket/${ticketId}/message`, {
+      // Send the message
+      const messageResult = await apiRequest(`/api/integrations/splynx/entity/ticket/${ticketId}/message`, {
         method: 'POST',
         body: {
           integrationId,
@@ -161,18 +162,33 @@ export function SplynxTicketViewer({
           isInternal
         }
       });
+      
+      // If a status update was requested, also update the status
+      if (updateStatusTo) {
+        const statusOption = statusOptions.find(s => s.value === updateStatusTo);
+        const statusName = statusOption?.label || updateStatusTo;
+        await apiRequest(`/api/integrations/splynx/entity/ticket/${ticketId}/status`, {
+          method: 'PATCH',
+          body: {
+            integrationId,
+            statusId: parseInt(updateStatusTo),
+            statusName
+          }
+        });
+      }
+      
+      return messageResult;
     },
     onSuccess: () => {
       setMessage('');
+      setSelectedStatus(''); // Clear status selection after successful send+status update
       refetch();
       refetchDraft();
       onMessageSent?.();
-      if (mode === 'respond' || mode === 'unified') {
-        setLocalActionCompleted(true);
-      }
+      // DO NOT auto-complete the step - user must manually complete
       toast({
         title: 'Message sent',
-        description: 'Your message has been posted to the ticket.',
+        description: selectedStatus ? 'Your message has been posted and status updated.' : 'Your message has been posted to the ticket.',
       });
     },
     onError: (error: Error) => {
@@ -218,7 +234,12 @@ export function SplynxTicketViewer({
 
   const handleSendMessage = async () => {
     if (!message.trim()) return;
-    sendMessageMutation.mutate({ message: message.trim(), isInternal });
+    // Pass the selected status if one is selected - this will update both message AND status
+    sendMessageMutation.mutate({ 
+      message: message.trim(), 
+      isInternal,
+      updateStatusTo: selectedStatus || undefined
+    });
   };
 
   const handleUpdateStatus = async () => {
