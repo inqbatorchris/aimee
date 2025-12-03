@@ -1429,6 +1429,46 @@ export class WorkflowExecutor {
           };
         }
         
+        case 'getCustomerBilling': {
+          console.log(`[WorkflowExecutor]   💰 Fetching billing info for customer ${numericCustomerId}`);
+          
+          const billing = await splynxService.getCustomerBalance(numericCustomerId);
+          
+          if (!billing) {
+            console.log(`[WorkflowExecutor]   ⚠️ No billing data found for customer ${numericCustomerId}`);
+            return {
+              success: true,
+              output: {
+                action: 'getCustomerBilling',
+                customerId: numericCustomerId,
+                found: false,
+                balance: null,
+                paymentStatus: 'unknown',
+                lastPaymentDate: null,
+                lastPaymentAmount: null,
+              },
+            };
+          }
+          
+          console.log(`[WorkflowExecutor]   ✅ Billing info found: Balance ${billing.balance}`);
+          console.log(`[WorkflowExecutor]   📌 Payment status: ${billing.status}`);
+          
+          return {
+            success: true,
+            output: {
+              action: 'getCustomerBilling',
+              customerId: numericCustomerId,
+              found: true,
+              balance: billing.balance,
+              paymentStatus: billing.status,
+              lastPaymentDate: billing.lastPaymentDate,
+              lastPaymentAmount: billing.lastPaymentAmount,
+              currency: billing.currency,
+              raw: billing,
+            },
+          };
+        }
+        
         default:
           throw new Error(`Unknown Splynx action: ${action}`);
       }
