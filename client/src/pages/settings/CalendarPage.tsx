@@ -363,14 +363,6 @@ export default function CalendarPage() {
     }
   };
 
-  // Auto-open in edit mode when task details load
-  // Wait for both task details AND filters data (for team derivation)
-  useEffect(() => {
-    if (splynxTaskDetail?.task && filtersData?.filters?.splynxTeams && !splynxTaskEdit) {
-      initSplynxTaskEdit();
-    }
-  }, [splynxTaskDetail, filtersData]);
-
   const handleSaveSplynxTask = () => {
     if (!splynxTaskEdit) return;
     const payload: Record<string, any> = {};
@@ -421,6 +413,14 @@ export default function CalendarPage() {
       return response.json();
     },
   });
+
+  // Auto-open in edit mode when task details load
+  // Wait for both task details AND filters data (for team derivation)
+  useEffect(() => {
+    if (splynxTaskDetail?.task && filtersData?.filters?.splynxTeams && !splynxTaskEdit) {
+      initSplynxTaskEdit();
+    }
+  }, [splynxTaskDetail, filtersData]);
 
   const { data: calendarData, isLoading } = useQuery<CalendarCombinedResponse>({
     queryKey: ['/api/calendar/combined', startDate, endDate, selectedUserId, selectedTeamId],
