@@ -439,14 +439,14 @@ function AssigneeSelector({ formData, setFormData }: AssigneeSelectorProps) {
         <div>
           <Label htmlFor="defaultAssigneeUserId">Default Assignee</Label>
           <Select
-            value={formData.defaultAssigneeUserId?.toString() || ''}
-            onValueChange={(val) => setFormData({ ...formData, defaultAssigneeUserId: val ? parseInt(val) : null })}
+            value={formData.defaultAssigneeUserId?.toString() || 'none'}
+            onValueChange={(val) => setFormData({ ...formData, defaultAssigneeUserId: val === 'none' ? null : parseInt(val) })}
           >
             <SelectTrigger data-testid="select-default-assignee">
               <SelectValue placeholder={isLoading ? 'Loading...' : 'Select team member (optional)'} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">No default assignee</SelectItem>
+              <SelectItem value="none">No default assignee</SelectItem>
               {(admins || []).map((admin) => (
                 <SelectItem key={admin.id} value={admin.id.toString()}>
                   {admin.name || admin.login}
@@ -462,14 +462,14 @@ function AssigneeSelector({ formData, setFormData }: AssigneeSelectorProps) {
         <div>
           <Label htmlFor="fallbackAssigneeUserId">Fallback Assignee</Label>
           <Select
-            value={formData.fallbackAssigneeUserId?.toString() || ''}
-            onValueChange={(val) => setFormData({ ...formData, fallbackAssigneeUserId: val ? parseInt(val) : null })}
+            value={formData.fallbackAssigneeUserId?.toString() || 'none'}
+            onValueChange={(val) => setFormData({ ...formData, fallbackAssigneeUserId: val === 'none' ? null : parseInt(val) })}
           >
             <SelectTrigger data-testid="select-fallback-assignee">
               <SelectValue placeholder={isLoading ? 'Loading...' : 'Select fallback team member'} />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">No fallback assignee</SelectItem>
+              <SelectItem value="none">No fallback assignee</SelectItem>
               {(admins || []).map((admin) => (
                 <SelectItem key={admin.id} value={admin.id.toString()}>
                   {admin.name || admin.login}
