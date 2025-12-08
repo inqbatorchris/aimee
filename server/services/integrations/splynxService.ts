@@ -559,6 +559,10 @@ export class SplynxService {
         params.main_attributes.assigned_id = filters.assignedAdminId;
       }
 
+      if (filters.teamId) {
+        params.main_attributes.team_id = filters.teamId;
+      }
+
       if (filters.status) {
         params.main_attributes.status = filters.status;
       }

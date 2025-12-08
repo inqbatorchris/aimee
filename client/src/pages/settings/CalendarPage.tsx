@@ -166,6 +166,7 @@ export default function CalendarPage() {
   const [showHolidayDialog, setShowHolidayDialog] = useState(false);
   
   const [hiddenEventTypes, setHiddenEventTypes] = useState<Set<string>>(new Set());
+  const [showWeekends, setShowWeekends] = useState(true);
   
   const toggleEventTypeVisibility = (type: string) => {
     setHiddenEventTypes(prev => {
@@ -478,11 +479,18 @@ export default function CalendarPage() {
     } else if (viewMode === 'week') {
       const weekStart = startOfWeek(currentDate);
       const weekEnd = endOfWeek(currentDate);
-      return eachDayOfInterval({ start: weekStart, end: weekEnd });
+      const allDays = eachDayOfInterval({ start: weekStart, end: weekEnd });
+      if (!showWeekends) {
+        return allDays.filter(day => {
+          const dayOfWeek = day.getDay();
+          return dayOfWeek !== 0 && dayOfWeek !== 6;
+        });
+      }
+      return allDays;
     } else {
       return [currentDate];
     }
-  }, [currentDate, viewMode]);
+  }, [currentDate, viewMode, showWeekends]);
 
   const getEventsForDay = (day: Date) => {
     return events.filter((event) => {
@@ -728,6 +736,23 @@ export default function CalendarPage() {
                 <TooltipContent>Roadmap</TooltipContent>
               </Tooltip>
             </div>
+
+            {viewMode === 'week' && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={showWeekends ? 'ghost' : 'secondary'}
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => setShowWeekends(!showWeekends)}
+                    data-testid="toggle-weekends"
+                  >
+                    {showWeekends ? 'Hide Weekends' : 'Show Weekends'}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{showWeekends ? 'Hide Saturday and Sunday' : 'Show Saturday and Sunday'}</TooltipContent>
+              </Tooltip>
+            )}
 
             <div className="hidden sm:flex items-center gap-1 text-xs">
               <button
@@ -1551,14 +1576,14 @@ function WeekView({ days, events, hours, onEventClick }: WeekViewProps) {
   };
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex border-b">
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="flex border-b min-w-0">
         <div className="w-16 shrink-0" />
         {days.map((day, i) => (
           <div 
             key={i} 
             className={`
-              flex-1 p-2 text-center border-l
+              flex-1 min-w-0 p-2 text-center border-l
               ${isToday(day) ? 'bg-primary/5' : ''}
             `}
           >
@@ -1573,14 +1598,14 @@ function WeekView({ days, events, hours, onEventClick }: WeekViewProps) {
         ))}
       </div>
       
-      <div className="flex border-b bg-muted/30">
+      <div className="flex border-b bg-muted/30 min-w-0">
         <div className="w-16 shrink-0 pr-2 py-1 text-right text-[10px] text-muted-foreground">
           All day
         </div>
         {days.map((day, dayIndex) => {
           const allDayEvents = getAllDayEvents(day);
           return (
-            <div key={dayIndex} className="flex-1 border-l p-1 min-h-[60px] max-h-[100px] overflow-hidden">
+            <div key={dayIndex} className="flex-1 min-w-0 border-l p-1 min-h-[60px] max-h-[100px] overflow-hidden">
               <div className="space-y-0.5">
                 {allDayEvents.slice(0, 3).map((event) => (
                   <div
@@ -1607,8 +1632,8 @@ function WeekView({ days, events, hours, onEventClick }: WeekViewProps) {
         })}
       </div>
 
-      <ScrollArea className="flex-1">
-        <div className="flex">
+      <ScrollArea className="flex-1 overflow-hidden">
+        <div className="flex min-w-0">
           <div className="w-16 shrink-0">
             {hours.map((hour) => {
               const hourDate = new Date();
@@ -1621,7 +1646,7 @@ function WeekView({ days, events, hours, onEventClick }: WeekViewProps) {
             })}
           </div>
           {days.map((day, dayIndex) => (
-            <div key={dayIndex} className="flex-1 border-l">
+            <div key={dayIndex} className="flex-1 min-w-0 border-l">
               {hours.map((hour) => {
                 const hourEvents = getTimedEvents(day, hour);
 
