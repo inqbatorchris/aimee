@@ -331,13 +331,15 @@ export default function CalendarPage() {
 
   const initSplynxTaskEdit = () => {
     if (splynxTaskDetail?.task) {
+      // Note: Splynx uses 'assignee' for actual admin ID, 'assigned_to' is just a type string
+      // Splynx tasks don't have team_id directly - team is derived from assignee's team membership
       setSplynxTaskEdit({
         title: splynxTaskDetail.task.title || '',
         description: splynxTaskDetail.task.description || '',
         location: splynxTaskDetail.task.location || '',
         scheduled_date: splynxTaskDetail.task.scheduled_date || '',
         scheduled_time: splynxTaskDetail.task.scheduled_time || '',
-        assigned_to: splynxTaskDetail.task.assigned_to || 0,
+        assigned_to: splynxTaskDetail.task.assignee || 0, // Use 'assignee' field for actual admin ID
         team_id: splynxTaskDetail.task.team_id || 0,
       });
     }
@@ -998,23 +1000,20 @@ export default function CalendarPage() {
                               data-testid="input-task-title"
                             />
                             
-                            {/* Description with HTML preview */}
+                            {/* Description - Rendered HTML with editable content */}
                             <div className="space-y-1">
                               <div className="text-xs text-muted-foreground">Description</div>
-                              {splynxTaskEdit.description && (
-                                <div 
-                                  className="prose prose-sm max-w-none bg-muted/30 p-2 rounded text-xs [&_div]:mb-1 [&_h4]:text-xs [&_h4]:font-semibold [&_br]:hidden max-h-24 overflow-y-auto"
-                                  dangerouslySetInnerHTML={{ 
-                                    __html: DOMPurify.sanitize(splynxTaskEdit.description) 
-                                  }}
-                                />
-                              )}
-                              <Textarea 
-                                value={splynxTaskEdit.description}
-                                onChange={(e) => setSplynxTaskEdit(prev => prev ? {...prev, description: e.target.value} : null)}
-                                placeholder="Enter description (HTML supported)..."
-                                rows={2}
-                                className="text-sm resize-none font-mono text-xs"
+                              <div 
+                                contentEditable
+                                suppressContentEditableWarning
+                                onBlur={(e) => {
+                                  const newHtml = e.currentTarget.innerHTML;
+                                  setSplynxTaskEdit(prev => prev ? {...prev, description: newHtml} : null);
+                                }}
+                                className="prose prose-sm max-w-none bg-background border rounded-md p-2 text-sm min-h-[60px] max-h-32 overflow-y-auto focus:outline-none focus:ring-2 focus:ring-ring [&_div]:mb-1 [&_h4]:text-sm [&_h4]:font-semibold"
+                                dangerouslySetInnerHTML={{ 
+                                  __html: DOMPurify.sanitize(splynxTaskEdit.description || '<p class="text-muted-foreground">Click to add description...</p>') 
+                                }}
                                 data-testid="input-task-description"
                               />
                             </div>
@@ -1058,14 +1057,15 @@ export default function CalendarPage() {
                             {/* Team & Assignee - Compact 2-column */}
                             <div className="grid grid-cols-2 gap-2">
                               <Select 
-                                value={splynxTaskEdit.team_id?.toString() || ''} 
-                                onValueChange={(value) => setSplynxTaskEdit(prev => prev ? {...prev, team_id: parseInt(value)} : null)}
+                                value={splynxTaskEdit.team_id ? splynxTaskEdit.team_id.toString() : 'none'} 
+                                onValueChange={(value) => setSplynxTaskEdit(prev => prev ? {...prev, team_id: value === 'none' ? 0 : parseInt(value)} : null)}
                               >
                                 <SelectTrigger data-testid="select-task-team" className="h-9">
                                   <Users className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
                                   <SelectValue placeholder="Team" />
                                 </SelectTrigger>
                                 <SelectContent>
+                                  <SelectItem value="none">No team</SelectItem>
                                   {filtersData?.filters?.splynxTeams?.map((team: any) => (
                                     <SelectItem key={team.id} value={team.splynxTeamId.toString()}>
                                       {team.name}
@@ -1074,14 +1074,15 @@ export default function CalendarPage() {
                                 </SelectContent>
                               </Select>
                               <Select 
-                                value={splynxTaskEdit.assigned_to?.toString() || ''} 
-                                onValueChange={(value) => setSplynxTaskEdit(prev => prev ? {...prev, assigned_to: parseInt(value)} : null)}
+                                value={splynxTaskEdit.assigned_to ? splynxTaskEdit.assigned_to.toString() : 'none'} 
+                                onValueChange={(value) => setSplynxTaskEdit(prev => prev ? {...prev, assigned_to: value === 'none' ? 0 : parseInt(value)} : null)}
                               >
                                 <SelectTrigger data-testid="select-task-assignee" className="h-9">
                                   <User className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
                                   <SelectValue placeholder="Assignee" />
                                 </SelectTrigger>
                                 <SelectContent>
+                                  <SelectItem value="none">Unassigned</SelectItem>
                                   {filtersData?.filters?.splynxAdmins?.map((admin: any) => (
                                     <SelectItem key={admin.id} value={admin.splynxAdminId.toString()}>
                                       {admin.name}
