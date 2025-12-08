@@ -1447,15 +1447,23 @@ router.get('/calendar/combined', authenticateToken, async (req: Request, res: Re
         
         console.log(`[CALENDAR] After date filtering: ${filteredTasks.length} tasks`);
         
-        // Filter by Splynx team member admin IDs (since tasks don't have team_id field)
-        // The assignee field contains the actual admin ID, assigned_to contains the type
-        if (splynxTeamMemberAdminIds.length > 0) {
+        // Filter by Splynx team - handle both team and individual assignments
+        // When assigned_to='assigned_to_team', assignee is the team ID
+        // When assigned_to='assigned_to_administrator', assignee is the admin ID
+        if (linkedSplynxTeamIds.length > 0 || splynxTeamMemberAdminIds.length > 0) {
           filteredTasks = filteredTasks.filter((t: any) => {
-            // assignee is the actual admin ID
-            const taskAdminId = parseInt(t.assignee || '0');
-            return splynxTeamMemberAdminIds.includes(taskAdminId);
+            const assignee = parseInt(t.assignee || '0');
+            
+            if (t.assigned_to === 'assigned_to_team') {
+              // Task is assigned to a team - check if it's one of our linked Splynx teams
+              return linkedSplynxTeamIds.includes(assignee);
+            } else if (t.assigned_to === 'assigned_to_administrator') {
+              // Task is assigned to an admin - check if they're a member of our linked team
+              return splynxTeamMemberAdminIds.includes(assignee);
+            }
+            return false;
           });
-          console.log(`[CALENDAR] After team member filtering (adminIds: ${splynxTeamMemberAdminIds.join(',')}): ${filteredTasks.length} tasks`);
+          console.log(`[CALENDAR] After team filtering (teamIds: ${linkedSplynxTeamIds.join(',')}, adminIds: ${splynxTeamMemberAdminIds.join(',')}): ${filteredTasks.length} tasks`);
         }
         
         // Filter by admin IDs if specified (use assignee field, not assigned_to)
@@ -1471,8 +1479,20 @@ router.get('/calendar/combined', authenticateToken, async (req: Request, res: Re
         for (const t of filteredTasks) {
           // Use 'assignee' field for admin ID (assigned_to is just the assignment type string)
           const adminId = parseInt(t.assignee || '0');
-          const taskStart = t.scheduled_date ? `${t.scheduled_date}T${t.scheduled_time || '09:00'}:00` : '';
-          const duration = parseInt(t.scheduled_duration_hours || '1') * 60 + parseInt(t.scheduled_duration_minutes || '0');
+          
+          // Get date from scheduled_date, scheduled_from, or datetime_from (Splynx uses different field names)
+          let taskStart = '';
+          if (t.scheduled_date) {
+            taskStart = `${t.scheduled_date}T${t.scheduled_time || '09:00'}:00`;
+          } else if (t.scheduled_from) {
+            // scheduled_from may be in format "YYYY-MM-DD HH:mm:ss" or ISO format
+            taskStart = t.scheduled_from.includes('T') ? t.scheduled_from : t.scheduled_from.replace(' ', 'T');
+          } else if (t.datetime_from) {
+            taskStart = t.datetime_from.includes('T') ? t.datetime_from : t.datetime_from.replace(' ', 'T');
+          }
+          
+          const duration = parseInt(t.scheduled_duration_hours || t.duration_hours || '1') * 60 + 
+                          parseInt(t.scheduled_duration_minutes || t.duration_minutes || '0');
           const taskEnd = taskStart ? new Date(new Date(taskStart).getTime() + duration * 60000).toISOString() : '';
           
           events.push({
