@@ -1828,7 +1828,7 @@ function WeekView({ days, events, hours, onEventClick, onSlotClick }: WeekViewPr
         })}
       </div>
 
-      <ScrollArea className="flex-1 overflow-x-hidden">
+      <div className="flex-1 overflow-y-auto overflow-x-hidden">
         <div className="flex w-full">
           <div className="w-14 shrink-0 flex-none">
             {hours.map((hour) => {
@@ -1876,7 +1876,7 @@ function WeekView({ days, events, hours, onEventClick, onSlotClick }: WeekViewPr
             </div>
           ))}
         </div>
-      </ScrollArea>
+      </div>
     </div>
   );
 }
