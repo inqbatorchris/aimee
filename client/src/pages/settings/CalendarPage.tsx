@@ -951,7 +951,7 @@ export default function CalendarPage() {
                                 Customer
                               </div>
                               <a 
-                                href={`https://manage.country-connect.co.uk/admin/customers/view/${splynxTaskDetail.customer.id}`}
+                                href={`https://manage.country-connect.co.uk/admin/customers/view?id=${splynxTaskDetail.customer.id}`}
                                 target="_blank"
                                 rel="noopener noreferrer"
                                 className="text-xs text-blue-600 hover:underline flex items-center gap-1"
