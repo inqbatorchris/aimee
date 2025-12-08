@@ -838,19 +838,60 @@ router.post('/public/appointment-types/:slug/book', async (req, res) => {
       });
     }
     
+    // If no Splynx customer ID, try to find customer by email
+    let leadCreated = false;
+    let leadId: number | null = null;
+    
+    if (!splynxCustomerId && customerEmail) {
+      console.log(`[BOOKINGS] No Splynx customer ID, searching by email: ${customerEmail}`);
+      
+      const customerByEmail = await splynxService.searchCustomerByEmail(customerEmail);
+      
+      if (customerByEmail) {
+        console.log(`[BOOKINGS] Found customer by email: ${customerByEmail.id} - ${customerByEmail.name}`);
+        splynxCustomerId = customerByEmail.id;
+      } else {
+        // No customer found, create a lead
+        console.log(`[BOOKINGS] No customer found, creating lead for: ${customerEmail}`);
+        
+        const defaultAssigneeUserId = (appointmentType as any).defaultAssigneeUserId;
+        const fallbackAssigneeUserId = (appointmentType as any).fallbackAssigneeUserId;
+        const assigneeForLead = fallbackAssigneeUserId || defaultAssigneeUserId;
+        
+        const leadResult = await splynxService.createLead({
+          name: customerName,
+          email: customerEmail,
+          phone: customerPhone || undefined,
+          address: serviceAddress || undefined,
+          notes: `Created from booking: ${appointmentType.name}\n\n${additionalNotes || ''}`,
+          assignedUserId: assigneeForLead || undefined,
+        });
+        
+        if (leadResult) {
+          leadCreated = true;
+          leadId = leadResult.id;
+          console.log(`[BOOKINGS] Lead created with ID: ${leadId}`);
+        }
+      }
+    }
+    
+    // Get assignee configuration
+    const defaultAssigneeUserId = (appointmentType as any).defaultAssigneeUserId;
+    
     // Create Splynx task
     const splynxTask = await splynxService.createSplynxTask({
       taskName: `${appointmentType.name} - ${customerName}`,
       projectId: appointmentType.splynxProjectId,
       workflowStatusId: appointmentType.splynxWorkflowStatusId,
       customerId: splynxCustomerId || undefined,
-      description: `Booking: ${appointmentType.name}\n\nCustomer: ${customerName}\nEmail: ${customerEmail}\nPhone: ${customerPhone || 'Not provided'}\n\n${additionalNotes || ''}`,
+      description: `Booking: ${appointmentType.name}\n\nCustomer: ${customerName}\nEmail: ${customerEmail}\nPhone: ${customerPhone || 'Not provided'}${leadCreated ? `\n\n⚠️ Lead created (ID: ${leadId}) - customer not found in Splynx` : ''}\n\n${additionalNotes || ''}`,
       address: serviceAddress || undefined,
       isScheduled: true,
       scheduledFrom: selectedDatetime,
       duration: appointmentType.defaultDuration || undefined,
       travelTimeTo: appointmentType.defaultTravelTimeTo || undefined,
-      travelTimeFrom: appointmentType.defaultTravelTimeFrom || undefined
+      travelTimeFrom: appointmentType.defaultTravelTimeFrom || undefined,
+      assignee: defaultAssigneeUserId || undefined,
     });
     
     // Create booking record

@@ -1508,6 +1508,118 @@ export class SplynxService {
   }
 
   /**
+   * Search for a customer by email address
+   * Used for booking system to link logged-in users to Splynx customers
+   */
+  async searchCustomerByEmail(email: string): Promise<{
+    id: number;
+    name: string;
+    email: string;
+    phone: string;
+    status: string;
+  } | null> {
+    try {
+      const url = this.buildUrl('admin/customers/customer');
+      
+      console.log(`[SPLYNX searchCustomerByEmail] Searching for customer with email: ${email}`);
+      
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+        params: {
+          main_attributes: {
+            email: email,
+          },
+          limit: 1,
+        },
+      });
+
+      console.log(`[SPLYNX searchCustomerByEmail] Response status:`, response.status);
+      
+      const customers = Array.isArray(response.data) ? response.data : (response.data?.items || []);
+      
+      if (customers.length === 0) {
+        console.log(`[SPLYNX searchCustomerByEmail] No customer found with email: ${email}`);
+        return null;
+      }
+
+      const customer = customers[0];
+      return {
+        id: customer.id,
+        name: customer.name || `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 'Unknown',
+        email: customer.email || '',
+        phone: customer.phone || customer.phone_mobile || '',
+        status: customer.status || 'unknown',
+      };
+    } catch (error: any) {
+      console.error(`[SPLYNX searchCustomerByEmail] Error searching for customer:`, error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Create a lead record in Splynx
+   * Used when a booking is made by someone who doesn't have a Splynx customer account
+   */
+  async createLead(leadData: {
+    name: string;
+    email: string;
+    phone?: string;
+    address?: string;
+    notes?: string;
+    assignedUserId?: number;
+  }): Promise<{ id: number; success: boolean } | null> {
+    try {
+      const url = this.buildUrl('admin/customers/lead');
+      
+      console.log(`[SPLYNX createLead] Creating lead for: ${leadData.email}`);
+      
+      const payload: any = {
+        name: leadData.name,
+        email: leadData.email,
+        status: 'new',
+      };
+      
+      if (leadData.phone) {
+        payload.phone = leadData.phone;
+      }
+      if (leadData.address) {
+        payload.street_1 = leadData.address;
+      }
+      if (leadData.notes) {
+        payload.comment = leadData.notes;
+      }
+      if (leadData.assignedUserId) {
+        payload.owner_id = leadData.assignedUserId;
+      }
+      
+      const response = await axios.post(url, payload, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log(`[SPLYNX createLead] Response status:`, response.status);
+      
+      if (response.data && response.data.id) {
+        console.log(`[SPLYNX createLead] Lead created with ID: ${response.data.id}`);
+        return {
+          id: response.data.id,
+          success: true,
+        };
+      }
+      
+      return null;
+    } catch (error: any) {
+      console.error(`[SPLYNX createLead] Error creating lead:`, error.message);
+      return null;
+    }
+  }
+
+  /**
    * Get customer's recent support tickets
    * Used for AI context enrichment
    */
