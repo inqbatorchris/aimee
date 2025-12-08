@@ -39,7 +39,8 @@ import {
   Building2,
   Users,
   Paperclip,
-  Link2
+  Link2,
+  FolderOpen
 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { 
@@ -207,6 +208,7 @@ export default function CalendarPage() {
     scheduled_time: string;
     assigned_to: number;
     team_id: number;
+    project_id: number;
   } | null>(null);
 
   const createBlockMutation = useMutation({
@@ -341,6 +343,7 @@ export default function CalendarPage() {
         scheduled_time: splynxTaskDetail.task.scheduled_time || '',
         assigned_to: splynxTaskDetail.task.assignee || 0, // Use 'assignee' field for actual admin ID
         team_id: splynxTaskDetail.task.team_id || 0,
+        project_id: splynxTaskDetail.task.project_id || 0,
       });
     }
   };
@@ -362,6 +365,7 @@ export default function CalendarPage() {
     if (splynxTaskEdit.scheduled_time) payload.scheduled_time = splynxTaskEdit.scheduled_time;
     if (splynxTaskEdit.assigned_to && splynxTaskEdit.assigned_to > 0) payload.assigned_to = splynxTaskEdit.assigned_to;
     if (splynxTaskEdit.team_id && splynxTaskEdit.team_id > 0) payload.team_id = splynxTaskEdit.team_id;
+    if (splynxTaskEdit.project_id && splynxTaskEdit.project_id > 0) payload.project_id = splynxTaskEdit.project_id;
     updateSplynxTaskMutation.mutate(payload);
   };
 
@@ -1010,7 +1014,7 @@ export default function CalendarPage() {
                                   const newHtml = e.currentTarget.innerHTML;
                                   setSplynxTaskEdit(prev => prev ? {...prev, description: newHtml} : null);
                                 }}
-                                className="prose prose-sm max-w-none bg-background border rounded-md p-2 text-sm min-h-[60px] max-h-32 overflow-y-auto focus:outline-none focus:ring-2 focus:ring-ring [&_div]:mb-1 [&_h4]:text-sm [&_h4]:font-semibold"
+                                className="prose prose-sm max-w-none bg-background border rounded-md p-2 text-sm min-h-[60px] max-h-32 overflow-y-auto focus:outline-none focus:ring-2 focus:ring-ring [&_div]:mb-1 [&_h4]:text-sm [&_h4]:font-semibold text-foreground"
                                 dangerouslySetInnerHTML={{ 
                                   __html: DOMPurify.sanitize(splynxTaskEdit.description || '<p class="text-muted-foreground">Click to add description...</p>') 
                                 }}
@@ -1091,6 +1095,25 @@ export default function CalendarPage() {
                                 </SelectContent>
                               </Select>
                             </div>
+                            
+                            {/* Project */}
+                            <Select 
+                              value={splynxTaskEdit.project_id ? splynxTaskEdit.project_id.toString() : 'none'} 
+                              onValueChange={(value) => setSplynxTaskEdit(prev => prev ? {...prev, project_id: value === 'none' ? 0 : parseInt(value)} : null)}
+                            >
+                              <SelectTrigger data-testid="select-task-project" className="h-9">
+                                <FolderOpen className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+                                <SelectValue placeholder="Project" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">No project</SelectItem>
+                                {(filtersData?.filters as any)?.splynxProjects?.map((project: any) => (
+                                  <SelectItem key={project.id} value={project.id.toString()}>
+                                    {project.title}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                             
                             {/* Attachments - Compact */}
                             {splynxTaskDetail?.task?.attachments && splynxTaskDetail.task.attachments.length > 0 && (

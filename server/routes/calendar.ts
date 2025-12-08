@@ -1025,17 +1025,39 @@ router.get('/calendar/filters', authenticateToken, async (req: Request, res: Res
       .from(teams)
       .where(eq(teams.organizationId, organizationId));
     
-    const splynxTeamsData = await db
-      .select({
-        id: splynxTeams.id,
-        splynxTeamId: splynxTeams.splynxTeamId,
-        title: splynxTeams.title,
-        color: splynxTeams.color,
-        memberIds: splynxTeams.memberIds,
-        lastFetchedAt: splynxTeams.lastFetchedAt,
-      })
-      .from(splynxTeams)
-      .where(eq(splynxTeams.organizationId, organizationId));
+    // Try to get teams from live Splynx API first, fall back to database cache
+    let splynxTeamsData: Array<{ id: number; splynxTeamId: number; title: string; color: string | null; memberIds: number[] | null; lastFetchedAt: Date | null }> = [];
+    try {
+      const splynxService = await getSplynxServiceForOrg(organizationId);
+      const liveTeams = await splynxService.getSchedulingTeams();
+      console.log(`[CALENDAR FILTERS] Fetched ${liveTeams.length} teams from live Splynx API`);
+      splynxTeamsData = liveTeams.map((t: any) => ({
+        id: t.id,
+        splynxTeamId: t.id,
+        title: t.title || t.name,
+        color: t.color || null,
+        memberIds: t.memberIds || t.members || null,
+        lastFetchedAt: new Date(),
+      }));
+    } catch (liveError: any) {
+      console.log(`[CALENDAR FILTERS] Live Splynx API failed, using cached teams: ${liveError.message}`);
+      const cachedTeams = await db
+        .select({
+          id: splynxTeams.id,
+          splynxTeamId: splynxTeams.splynxTeamId,
+          title: splynxTeams.title,
+          color: splynxTeams.color,
+          memberIds: splynxTeams.memberIds,
+          lastFetchedAt: splynxTeams.lastFetchedAt,
+        })
+        .from(splynxTeams)
+        .where(eq(splynxTeams.organizationId, organizationId));
+      splynxTeamsData = cachedTeams.map(t => ({
+        ...t,
+        title: t.title || `Team ${t.splynxTeamId}`,
+      }));
+    }
+    console.log(`[CALENDAR FILTERS] Total splynxTeams: ${splynxTeamsData.length}`);
     
     const localUsers = await db
       .select({
@@ -1047,17 +1069,40 @@ router.get('/calendar/filters', authenticateToken, async (req: Request, res: Res
       .from(users)
       .where(eq(users.organizationId, organizationId));
     
-    const splynxAdmins = await db
-      .select({
-        id: splynxAdministrators.id,
-        splynxAdminId: splynxAdministrators.splynxAdminId,
-        fullName: splynxAdministrators.fullName,
-        email: splynxAdministrators.email,
-        isActive: splynxAdministrators.isActive,
-        lastFetchedAt: splynxAdministrators.lastFetchedAt,
-      })
-      .from(splynxAdministrators)
-      .where(eq(splynxAdministrators.organizationId, organizationId));
+    // Try to get admins from live Splynx API first, fall back to database cache
+    let splynxAdmins: Array<{ id: number; splynxAdminId: number; fullName: string; email: string | null; isActive: boolean; lastFetchedAt: Date | null }> = [];
+    try {
+      const splynxService = await getSplynxServiceForOrg(organizationId);
+      const liveAdmins = await splynxService.getAdministrators();
+      console.log(`[CALENDAR FILTERS] Fetched ${liveAdmins.length} admins from live Splynx API`);
+      splynxAdmins = liveAdmins.map((a: any) => ({
+        id: a.id,
+        splynxAdminId: a.id,
+        fullName: a.name || a.fullName || `Admin ${a.id}`,
+        email: a.email || null,
+        isActive: a.isActive !== false,
+        lastFetchedAt: new Date(),
+      }));
+    } catch (liveError: any) {
+      console.log(`[CALENDAR FILTERS] Live Splynx API failed, using cached admins: ${liveError.message}`);
+      const cachedAdmins = await db
+        .select({
+          id: splynxAdministrators.id,
+          splynxAdminId: splynxAdministrators.splynxAdminId,
+          fullName: splynxAdministrators.fullName,
+          email: splynxAdministrators.email,
+          isActive: splynxAdministrators.isActive,
+          lastFetchedAt: splynxAdministrators.lastFetchedAt,
+        })
+        .from(splynxAdministrators)
+        .where(eq(splynxAdministrators.organizationId, organizationId));
+      splynxAdmins = cachedAdmins.map(a => ({
+        ...a,
+        fullName: a.fullName || `Admin ${a.splynxAdminId}`,
+        isActive: a.isActive ?? true,
+      }));
+    }
+    console.log(`[CALENDAR FILTERS] Total splynxAdmins: ${splynxAdmins.length}`);
     
     const localTeamMemberships = await db
       .select({
@@ -1098,6 +1143,16 @@ router.get('/calendar/filters', authenticateToken, async (req: Request, res: Res
         { id: 63, title: 'Completed', color: '#22c55e' },
         { id: 64, title: 'Cancelled', color: '#ef4444' },
       ];
+    }
+    
+    // Fetch projects from Splynx
+    let splynxProjects: Array<{ id: number; title: string; description?: string; status?: string; color?: string }> = [];
+    try {
+      const splynxService = await getSplynxServiceForOrg(organizationId);
+      splynxProjects = await splynxService.getSchedulingProjects();
+      console.log(`[CALENDAR] Fetched ${splynxProjects.length} projects from Splynx`);
+    } catch (projectError: any) {
+      console.log(`[CALENDAR] Failed to fetch projects: ${projectError.message}`);
     }
     
     res.json({
@@ -1145,6 +1200,13 @@ router.get('/calendar/filters', authenticateToken, async (req: Request, res: Res
           id: s.id,
           title: s.title,
           color: s.color,
+        })),
+        splynxProjects: splynxProjects.map(p => ({
+          id: p.id,
+          title: p.title,
+          description: p.description,
+          status: p.status,
+          color: p.color,
         })),
         teamMemberships: localTeamMemberships,
         dataSources: ['splynx_tasks', 'work_items', 'holidays', 'blocks'],

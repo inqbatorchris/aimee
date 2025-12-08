@@ -836,6 +836,55 @@ export class SplynxService {
   }
 
   /**
+   * Get scheduling projects from Splynx
+   * These are used to organize tasks into projects/workflows
+   */
+  async getSchedulingProjects(): Promise<Array<{
+    id: number;
+    title: string;
+    description?: string;
+    status?: string;
+    color?: string;
+  }>> {
+    try {
+      const url = this.buildUrl('admin/scheduling/projects');
+      console.log('[SPLYNX getSchedulingProjects] Fetching from:', url);
+      
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('[SPLYNX getSchedulingProjects] Response status:', response.status);
+      
+      let projectsData: any[] = [];
+      
+      if (Array.isArray(response.data)) {
+        projectsData = response.data;
+      } else if (response.data?.items) {
+        projectsData = response.data.items;
+      } else if (typeof response.data === 'object' && response.data !== null) {
+        projectsData = Object.values(response.data);
+      }
+      
+      console.log(`[SPLYNX getSchedulingProjects] Found ${projectsData.length} projects`);
+      
+      return projectsData.map((project: any) => ({
+        id: parseInt(project.id),
+        title: project.title || project.name || `Project ${project.id}`,
+        description: project.description,
+        status: project.status,
+        color: project.color,
+      }));
+    } catch (error: any) {
+      console.error('[SPLYNX getSchedulingProjects] Error:', error.response?.status || error.message);
+      throw new Error(`Failed to fetch scheduling projects: ${error.message}`);
+    }
+  }
+
+  /**
    * Get available time slots for a specific assignee
    * Queries Splynx tasks for the assignee and calculates free slots
    */
