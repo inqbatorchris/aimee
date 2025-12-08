@@ -167,6 +167,8 @@ export default function CalendarPage() {
   
   const [showBlockDialog, setShowBlockDialog] = useState(false);
   const [showHolidayDialog, setShowHolidayDialog] = useState(false);
+  const [createMenuDay, setCreateMenuDay] = useState<Date | null>(null);
+  const [createMenuPosition, setCreateMenuPosition] = useState<{ x: number; y: number } | null>(null);
   
   const [hiddenEventTypes, setHiddenEventTypes] = useState<Set<string>>(new Set());
   const [showWeekends, setShowWeekends] = useState(true);
@@ -283,7 +285,42 @@ export default function CalendarPage() {
     setSplynxTaskEdit(null);
   };
 
-  const handleDayClick = (day: Date) => {
+  const handleDayClick = (day: Date, event?: React.MouseEvent) => {
+    if (event) {
+      event.stopPropagation();
+      setCreateMenuDay(day);
+      setCreateMenuPosition({ x: event.clientX, y: event.clientY });
+    } else {
+      setCurrentDate(day);
+      setViewMode('day');
+    }
+  };
+
+  const handleCreateBlockForDay = (day: Date) => {
+    setBlockForm(prev => ({
+      ...prev,
+      startDatetime: format(day, "yyyy-MM-dd'T'09:00"),
+      endDatetime: format(day, "yyyy-MM-dd'T'17:00"),
+    }));
+    setCreateMenuDay(null);
+    setCreateMenuPosition(null);
+    setShowBlockDialog(true);
+  };
+
+  const handleCreateHolidayForDay = (day: Date) => {
+    setHolidayForm(prev => ({
+      ...prev,
+      startDate: format(day, 'yyyy-MM-dd'),
+      endDate: format(day, 'yyyy-MM-dd'),
+    }));
+    setCreateMenuDay(null);
+    setCreateMenuPosition(null);
+    setShowHolidayDialog(true);
+  };
+
+  const handleViewDayDetails = (day: Date) => {
+    setCreateMenuDay(null);
+    setCreateMenuPosition(null);
     setCurrentDate(day);
     setViewMode('day');
   };
@@ -928,6 +965,52 @@ export default function CalendarPage() {
         )}
       </div>
 
+      {/* Day click context menu */}
+      {createMenuDay && createMenuPosition && (
+        <div 
+          className="fixed inset-0 z-50" 
+          onClick={() => { setCreateMenuDay(null); setCreateMenuPosition(null); }}
+        >
+          <div 
+            className="absolute bg-popover border rounded-lg shadow-lg py-1 min-w-[180px]"
+            style={{ 
+              left: Math.min(createMenuPosition.x, window.innerWidth - 200),
+              top: Math.min(createMenuPosition.y, window.innerHeight - 200),
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-3 py-2 border-b">
+              <div className="text-sm font-medium">{format(createMenuDay, 'EEEE, MMM d')}</div>
+            </div>
+            <button
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+              onClick={() => handleCreateBlockForDay(createMenuDay)}
+              data-testid="menu-create-block"
+            >
+              <Clock className="h-4 w-4 text-orange-500" />
+              Add Calendar Block
+            </button>
+            <button
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+              onClick={() => handleCreateHolidayForDay(createMenuDay)}
+              data-testid="menu-create-holiday"
+            >
+              <Umbrella className="h-4 w-4 text-green-500" />
+              Request Holiday
+            </button>
+            <div className="border-t my-1" />
+            <button
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted transition-colors text-left"
+              onClick={() => handleViewDayDetails(createMenuDay)}
+              data-testid="menu-view-day"
+            >
+              <CalendarDays className="h-4 w-4 text-muted-foreground" />
+              View Day Details
+            </button>
+          </div>
+        </div>
+      )}
+
       <Sheet open={!!selectedEvent} onOpenChange={(open) => !open && handleCloseEventDetail()}>
         <SheetContent className="sm:w-[640px] flex flex-col h-full p-0">
           {selectedEvent && (
@@ -1567,7 +1650,7 @@ interface MonthViewProps {
   currentDate: Date;
   getEventsForDay: (day: Date) => CalendarEvent[];
   onEventClick?: (event: CalendarEvent) => void;
-  onDayClick?: (day: Date) => void;
+  onDayClick?: (day: Date, event?: React.MouseEvent) => void;
 }
 
 function MonthView({ days, currentDate, getEventsForDay, onEventClick, onDayClick }: MonthViewProps) {
@@ -1596,7 +1679,7 @@ function MonthView({ days, currentDate, getEventsForDay, onEventClick, onDayClic
                 ${!isCurrentMonth ? 'opacity-40 bg-muted/20' : ''}
               `}
               data-testid={`day-cell-${format(day, 'yyyy-MM-dd')}`}
-              onClick={() => onDayClick?.(day)}
+              onClick={(e) => onDayClick?.(day, e)}
             >
               <div className={`
                 text-xs font-medium mb-0.5 w-6 h-6 flex items-center justify-center rounded-full
