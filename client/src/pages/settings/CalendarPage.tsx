@@ -333,23 +333,24 @@ export default function CalendarPage() {
 
   const initSplynxTaskEdit = () => {
     if (splynxTaskDetail?.task) {
-      // Note: Splynx uses 'assignee' for actual admin ID, 'assigned_to' is just a type string
-      // Splynx tasks don't have team_id directly - derive team from assignee's team membership
-      const assigneeId = splynxTaskDetail.task.assignee || 0;
+      // Splynx assignment model:
+      // - assigned_to: enum ('assigned_to_anyone', 'assigned_to_administrator', 'assigned_to_team')
+      // - assignee: the ID (interpretation depends on assigned_to)
+      const assignedTo = splynxTaskDetail.task.assigned_to;
+      const assigneeValue = splynxTaskDetail.task.assignee || 0;
       let derivedTeamId = 0;
+      let derivedAdminId = 0;
       
-      // Find which team the assignee belongs to
-      // Note: memberIds may be strings from cached JSON, so normalize to numbers
-      if (assigneeId && filtersData?.filters?.splynxTeams) {
-        const normalizedAssignee = Number(assigneeId);
-        console.log('[DEBUG] Looking for team with assignee:', normalizedAssignee);
-        console.log('[DEBUG] Teams available:', filtersData.filters.splynxTeams.map((t: any) => ({ id: t.splynxTeamId, name: t.name, memberIds: t.memberIds })));
+      if (assignedTo === 'assigned_to_team') {
+        // assignee IS the team ID directly
+        derivedTeamId = Number(assigneeValue);
+      } else if (assignedTo === 'assigned_to_administrator' && assigneeValue && filtersData?.filters?.splynxTeams) {
+        // assignee is admin ID - derive team from membership
+        derivedAdminId = Number(assigneeValue);
         for (const team of filtersData.filters.splynxTeams) {
           const normalizedMemberIds = team.memberIds ? team.memberIds.map(Number) : [];
-          console.log('[DEBUG] Team', team.name, 'memberIds:', normalizedMemberIds, 'includes', normalizedAssignee, '?', normalizedMemberIds.includes(normalizedAssignee));
-          if (normalizedMemberIds.includes(normalizedAssignee)) {
+          if (normalizedMemberIds.includes(derivedAdminId)) {
             derivedTeamId = team.splynxTeamId;
-            console.log('[DEBUG] Found team:', team.name, 'with splynxTeamId:', derivedTeamId);
             break;
           }
         }
@@ -361,7 +362,7 @@ export default function CalendarPage() {
         location: splynxTaskDetail.task.location || '',
         scheduled_date: splynxTaskDetail.task.scheduled_date || '',
         scheduled_time: splynxTaskDetail.task.scheduled_time || '',
-        assigned_to: assigneeId,
+        assigned_to: derivedAdminId,
         team_id: derivedTeamId,
         project_id: splynxTaskDetail.task.project_id || 0,
       });
