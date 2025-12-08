@@ -945,6 +945,7 @@ export default function CalendarPage() {
         </div>
 
       <div className="flex-1 overflow-hidden">
+        <div className="h-full max-w-[1600px] w-full mx-auto">
         {isLoading ? (
           <div className="p-4 grid grid-cols-7 gap-1">
             {Array.from({ length: 35 }).map((_, i) => (
@@ -982,6 +983,7 @@ export default function CalendarPage() {
             onEventClick={handleEventClick}
           />
         )}
+        </div>
       </div>
 
       {/* Day click context menu */}
