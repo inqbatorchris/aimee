@@ -988,126 +988,150 @@ export default function CalendarPage() {
                         )}
                         
                         {splynxTaskEdit ? (
-                          <div className="space-y-3 pt-2 border-t">
-                            <div className="text-sm font-medium">Edit Task</div>
-                            <div className="space-y-2">
-                              <Label htmlFor="task-title">Title</Label>
-                              <Input 
-                                id="task-title"
-                                value={splynxTaskEdit.title}
-                                onChange={(e) => setSplynxTaskEdit(prev => prev ? {...prev, title: e.target.value} : null)}
-                                data-testid="input-task-title"
-                              />
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="task-description">Description</Label>
+                          <div className="space-y-3 pt-3 border-t">
+                            {/* Title - Placeholder instead of label */}
+                            <Input 
+                              value={splynxTaskEdit.title}
+                              onChange={(e) => setSplynxTaskEdit(prev => prev ? {...prev, title: e.target.value} : null)}
+                              placeholder="Task title"
+                              className="font-medium"
+                              data-testid="input-task-title"
+                            />
+                            
+                            {/* Description with HTML preview */}
+                            <div className="space-y-1">
+                              <div className="text-xs text-muted-foreground">Description</div>
+                              {splynxTaskEdit.description && (
+                                <div 
+                                  className="prose prose-sm max-w-none bg-muted/30 p-2 rounded text-xs [&_div]:mb-1 [&_h4]:text-xs [&_h4]:font-semibold [&_br]:hidden max-h-24 overflow-y-auto"
+                                  dangerouslySetInnerHTML={{ 
+                                    __html: DOMPurify.sanitize(splynxTaskEdit.description) 
+                                  }}
+                                />
+                              )}
                               <Textarea 
-                                id="task-description"
                                 value={splynxTaskEdit.description}
                                 onChange={(e) => setSplynxTaskEdit(prev => prev ? {...prev, description: e.target.value} : null)}
-                                rows={3}
+                                placeholder="Enter description (HTML supported)..."
+                                rows={2}
+                                className="text-sm resize-none font-mono text-xs"
                                 data-testid="input-task-description"
                               />
                             </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="task-location">Location</Label>
+                            
+                            {/* Location */}
+                            <div className="relative">
+                              <MapPin className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                               <Input 
-                                id="task-location"
                                 value={splynxTaskEdit.location}
                                 onChange={(e) => setSplynxTaskEdit(prev => prev ? {...prev, location: e.target.value} : null)}
+                                placeholder="Location"
+                                className="pl-8"
                                 data-testid="input-task-location"
                               />
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
-                              <div className="space-y-2">
-                                <Label htmlFor="task-date">Date</Label>
+                            
+                            {/* Date & Time - Compact 2-column */}
+                            <div className="grid grid-cols-2 gap-2">
+                              <div className="relative">
+                                <CalendarIcon className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                                 <Input 
-                                  id="task-date"
                                   type="date"
                                   value={splynxTaskEdit.scheduled_date}
                                   onChange={(e) => setSplynxTaskEdit(prev => prev ? {...prev, scheduled_date: e.target.value} : null)}
+                                  className="pl-8"
                                   data-testid="input-task-date"
                                 />
                               </div>
-                              <div className="space-y-2">
-                                <Label htmlFor="task-time">Time</Label>
+                              <div className="relative">
+                                <Clock className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                                 <Input 
-                                  id="task-time"
                                   type="time"
                                   value={splynxTaskEdit.scheduled_time}
                                   onChange={(e) => setSplynxTaskEdit(prev => prev ? {...prev, scheduled_time: e.target.value} : null)}
+                                  className="pl-8"
                                   data-testid="input-task-time"
                                 />
                               </div>
                             </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="task-team">Team</Label>
+                            
+                            {/* Team & Assignee - Compact 2-column */}
+                            <div className="grid grid-cols-2 gap-2">
                               <Select 
                                 value={splynxTaskEdit.team_id?.toString() || ''} 
                                 onValueChange={(value) => setSplynxTaskEdit(prev => prev ? {...prev, team_id: parseInt(value)} : null)}
                               >
-                                <SelectTrigger data-testid="select-task-team">
-                                  <SelectValue placeholder="Select team" />
+                                <SelectTrigger data-testid="select-task-team" className="h-9">
+                                  <Users className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+                                  <SelectValue placeholder="Team" />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {filtersData?.filters?.splynxTeams?.map((team: any) => (
-                                    <SelectItem key={team.id} value={team.id.toString()}>
+                                    <SelectItem key={team.id} value={team.splynxTeamId.toString()}>
                                       {team.name}
                                     </SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
-                            </div>
-                            <div className="space-y-2">
-                              <Label htmlFor="task-assignee">Assignee</Label>
                               <Select 
                                 value={splynxTaskEdit.assigned_to?.toString() || ''} 
                                 onValueChange={(value) => setSplynxTaskEdit(prev => prev ? {...prev, assigned_to: parseInt(value)} : null)}
                               >
-                                <SelectTrigger data-testid="select-task-assignee">
-                                  <SelectValue placeholder="Select assignee" />
+                                <SelectTrigger data-testid="select-task-assignee" className="h-9">
+                                  <User className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+                                  <SelectValue placeholder="Assignee" />
                                 </SelectTrigger>
                                 <SelectContent>
                                   {filtersData?.filters?.splynxAdmins?.map((admin: any) => (
-                                    <SelectItem key={admin.id} value={admin.id.toString()}>
+                                    <SelectItem key={admin.id} value={admin.splynxAdminId.toString()}>
                                       {admin.name}
                                     </SelectItem>
                                   ))}
                                 </SelectContent>
                               </Select>
                             </div>
+                            
+                            {/* Attachments - Compact */}
                             {splynxTaskDetail?.task?.attachments && splynxTaskDetail.task.attachments.length > 0 && (
-                              <div className="space-y-2">
-                                <Label className="flex items-center gap-1">
+                              <div className="text-xs bg-muted/30 p-2 rounded">
+                                <div className="flex items-center gap-1 text-muted-foreground mb-1">
                                   <Paperclip className="h-3 w-3" />
-                                  Attachments
-                                </Label>
-                                <div className="text-xs text-muted-foreground bg-muted/30 p-2 rounded space-y-1">
-                                  {splynxTaskDetail.task.attachments.map((attachment: any, idx: number) => (
-                                    <div key={idx} className="flex items-center gap-1">
-                                      <Paperclip className="h-3 w-3" />
-                                      <span>{attachment.filename || attachment.name || `Attachment ${idx + 1}`}</span>
+                                  <span>{splynxTaskDetail.task.attachments.length} attachment(s)</span>
+                                </div>
+                                <div className="space-y-0.5">
+                                  {splynxTaskDetail.task.attachments.slice(0, 3).map((attachment: any, idx: number) => (
+                                    <div key={idx} className="truncate text-[11px]">
+                                      {attachment.filename || attachment.name || `Attachment ${idx + 1}`}
                                     </div>
                                   ))}
+                                  {splynxTaskDetail.task.attachments.length > 3 && (
+                                    <div className="text-[11px] text-muted-foreground">
+                                      +{splynxTaskDetail.task.attachments.length - 3} more
+                                    </div>
+                                  )}
                                 </div>
                               </div>
                             )}
-                            <div className="flex gap-2 pt-2">
+                            
+                            {/* Action buttons */}
+                            <div className="flex gap-2 pt-1">
                               <Button 
                                 onClick={handleSaveSplynxTask}
                                 disabled={updateSplynxTaskMutation.isPending}
+                                size="sm"
                                 className="flex-1"
                                 data-testid="button-save-task"
                               >
                                 {updateSplynxTaskMutation.isPending ? (
-                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
                                 ) : (
-                                  <Save className="h-4 w-4 mr-2" />
+                                  <Save className="h-3.5 w-3.5 mr-1.5" />
                                 )}
-                                Save & Sync to Splynx
+                                Save to Splynx
                               </Button>
                               <Button 
                                 variant="outline"
+                                size="sm"
                                 onClick={() => setSplynxTaskEdit(null)}
                                 data-testid="button-cancel-edit"
                               >
@@ -1117,84 +1141,50 @@ export default function CalendarPage() {
                           </div>
                         ) : (
                           <>
-                            {splynxTaskDetail.task.assigned_to && (
-                              <div>
-                                <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                                  <User className="h-3 w-3" />
-                                  Assignee
+                            {/* Read-only view - compact summary */}
+                            <div className="space-y-2 text-sm">
+                              {splynxTaskDetail.task.assignee && (
+                                <div className="flex items-center gap-1.5">
+                                  <User className="h-3.5 w-3.5 text-muted-foreground" />
+                                  <span>
+                                    {filtersData?.filters?.splynxAdmins?.find((a: any) => a.splynxAdminId === splynxTaskDetail.task.assignee)?.name || 
+                                     `Admin #${splynxTaskDetail.task.assignee}`}
+                                  </span>
                                 </div>
-                                <div className="text-sm">
-                                  {filtersData?.filters?.splynxAdmins?.find((a: any) => a.id === splynxTaskDetail.task.assigned_to)?.name || 
-                                   `Admin #${splynxTaskDetail.task.assigned_to}`}
-                                </div>
-                              </div>
-                            )}
-                            
-                            {splynxTaskDetail.task.description && (
-                              <div>
-                                <div className="text-xs text-muted-foreground mb-1">Description</div>
+                              )}
+                              
+                              {splynxTaskDetail.task.description && (
                                 <div 
-                                  className="text-sm prose prose-sm max-w-none bg-muted/30 p-2 rounded [&_div]:mb-1 [&_h4]:text-sm [&_h4]:font-semibold"
+                                  className="prose prose-sm max-w-none bg-muted/30 p-2 rounded text-xs [&_div]:mb-1 [&_h4]:text-xs [&_h4]:font-semibold"
                                   dangerouslySetInnerHTML={{ 
                                     __html: DOMPurify.sanitize(splynxTaskDetail.task.description) 
                                   }}
                                 />
-                              </div>
-                            )}
-                            
-                            {splynxTaskDetail.task.location && (
-                              <div>
-                                <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                                  <MapPin className="h-3 w-3" />
-                                  Location
+                              )}
+                              
+                              {splynxTaskDetail.task.location && (
+                                <div className="flex items-center gap-1.5">
+                                  <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                                  <span className="text-xs">{splynxTaskDetail.task.location}</span>
                                 </div>
-                                <div className="text-sm">{splynxTaskDetail.task.location}</div>
-                              </div>
-                            )}
-                            
-                            {splynxTaskDetail.task.attachments && splynxTaskDetail.task.attachments.length > 0 && (
-                              <div>
-                                <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
-                                  <Paperclip className="h-3 w-3" />
-                                  Attachments ({splynxTaskDetail.task.attachments.length})
-                                </div>
-                                <div className="text-sm bg-muted/30 p-2 rounded space-y-1">
-                                  {splynxTaskDetail.task.attachments.map((attachment: any, idx: number) => (
-                                    <div key={idx} className="flex items-center gap-1 text-xs">
-                                      <Paperclip className="h-3 w-3" />
-                                      <span>{attachment.filename || attachment.name || `Attachment ${idx + 1}`}</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                            
-                            <div className="flex gap-2 pt-2">
-                              <Button 
-                                onClick={initSplynxTaskEdit}
-                                variant="outline"
-                                className="flex-1"
-                                data-testid="button-edit-task"
-                              >
-                                Edit Task
-                              </Button>
-                              <a 
-                                href={`https://manage.country-connect.co.uk/admin/scheduling/tasks?view=details&task_id=${splynxTaskId}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="inline-flex items-center justify-center gap-1 px-3 py-2 text-sm border rounded-md hover:bg-muted"
-                                data-testid="link-splynx-task"
-                              >
-                                <ExternalLink className="h-4 w-4" />
-                                Open in Splynx
-                              </a>
+                              )}
                             </div>
+                            
+                            <Button 
+                              onClick={initSplynxTaskEdit}
+                              variant="outline"
+                              size="sm"
+                              className="w-full"
+                              data-testid="button-edit-task"
+                            >
+                              Edit Task
+                            </Button>
                           </>
                         )}
                         
-                        <div className="flex items-center justify-between pt-2 border-t">
-                          <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                            <CalendarIcon className="h-3 w-3 mr-1" />
+                        <div className="pt-2 border-t">
+                          <Badge variant="secondary" className="bg-blue-100 text-blue-800 text-[10px]">
+                            <CalendarIcon className="h-2.5 w-2.5 mr-1" />
                             Synced from Splynx
                           </Badge>
                         </div>

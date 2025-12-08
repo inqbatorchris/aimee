@@ -761,8 +761,11 @@ export class SplynxService {
     const possiblePaths = [
       'admin/config/scheduling-task-statuses',
       'admin/scheduling/task-statuses',
+      'admin/scheduling/statuses',
+      'admin/config/scheduling/statuses',
       'config/scheduling/task-statuses',
-      'scheduling/task-statuses'
+      'scheduling/task-statuses',
+      'admin/scheduling/workflows',
     ];
     
     let lastError: any = null;
@@ -791,6 +794,22 @@ export class SplynxService {
           statusesData = Object.values(response.data);
         }
         
+        // If this is workflows, extract statuses from workflow definitions
+        if (path.includes('workflows') && statusesData.length > 0) {
+          const allStatuses: any[] = [];
+          for (const workflow of statusesData) {
+            if (workflow.statuses) {
+              const workflowStatuses = Array.isArray(workflow.statuses) 
+                ? workflow.statuses 
+                : Object.values(workflow.statuses);
+              allStatuses.push(...workflowStatuses);
+            }
+          }
+          if (allStatuses.length > 0) {
+            statusesData = allStatuses;
+          }
+        }
+        
         console.log(`[SPLYNX getSchedulingTaskStatuses] Found ${statusesData.length} statuses at path: ${path}`);
         
         return statusesData.map((status: any) => ({
@@ -804,13 +823,15 @@ export class SplynxService {
       }
     }
     
-    // Return fallback statuses if API fails
-    console.log('[SPLYNX getSchedulingTaskStatuses] All paths failed, using fallback statuses');
+    // Return comprehensive fallback statuses based on common Splynx status IDs
+    console.log('[SPLYNX getSchedulingTaskStatuses] All paths failed, using comprehensive fallback statuses');
     return [
-      { id: 61, title: 'New', color: '#3b82f6' },
+      { id: 61, title: 'To Do', color: '#6b7280' },
       { id: 62, title: 'In Progress', color: '#f59e0b' },
-      { id: 63, title: 'Completed', color: '#22c55e' },
+      { id: 63, title: 'Done', color: '#22c55e' },
       { id: 64, title: 'Cancelled', color: '#ef4444' },
+      { id: 65, title: 'On Hold', color: '#8b5cf6' },
+      { id: 66, title: 'Blocked', color: '#dc2626' },
     ];
   }
 
