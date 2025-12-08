@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -435,7 +435,7 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
     splynxWorkflowStatusId: 1,
   });
 
-  useState(() => {
+  useEffect(() => {
     if (type) {
       setFormData(type);
     } else {
@@ -458,7 +458,7 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
         splynxWorkflowStatusId: 1,
       });
     }
-  });
+  }, [type]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

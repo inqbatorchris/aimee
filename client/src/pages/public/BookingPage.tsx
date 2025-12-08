@@ -301,8 +301,8 @@ export default function BookingPage() {
   const buttonOutlineClasses = "dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:hover:bg-gray-600";
   
   return (
-    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 py-8 px-4 overflow-y-auto" data-testid="booking-page">
-      <div className="max-w-3xl mx-auto">
+    <div className="h-screen bg-gray-100 dark:bg-gray-900 overflow-y-auto" data-testid="booking-page">
+      <div className="max-w-3xl mx-auto py-8 px-4 pb-16">
         <Card className="p-6 dark:bg-gray-800 dark:border-gray-700">
           <div className="flex items-start justify-between mb-6">
             <div className="flex-1">
