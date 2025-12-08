@@ -31,7 +31,14 @@ import {
   Clock,
   Umbrella,
   ExternalLink,
-  CalendarPlus
+  CalendarPlus,
+  Save,
+  Loader2,
+  MapPin,
+  Building2,
+  Users,
+  Paperclip,
+  Link2
 } from 'lucide-react';
 import { useLocation } from 'wouter';
 import { 
@@ -189,6 +196,16 @@ export default function CalendarPage() {
     isHalfDayStart: false,
     isHalfDayEnd: false,
   });
+  
+  const [splynxTaskEdit, setSplynxTaskEdit] = useState<{
+    title: string;
+    description: string;
+    location: string;
+    scheduled_date: string;
+    scheduled_time: string;
+    assigned_to: number;
+    team_id: number;
+  } | null>(null);
 
   const createBlockMutation = useMutation({
     mutationFn: async (data: typeof blockForm) => {
@@ -260,10 +277,80 @@ export default function CalendarPage() {
     setSelectedEvent(null);
   };
 
+  const handleDayClick = (day: Date) => {
+    setCurrentDate(day);
+    setViewMode('day');
+  };
+
   const handleNavigateToEvent = (event: CalendarEvent) => {
     if (event.type === 'work_item' && event.metadata?.workItemId) {
       navigate(`/strategy/work-items?id=${event.metadata.workItemId}`);
     }
+  };
+
+  const splynxTaskId = selectedEvent?.type === 'splynx_task' 
+    ? selectedEvent.id.replace('splynx-task-', '') 
+    : null;
+
+  const { data: splynxTaskDetail, isLoading: isLoadingTaskDetail } = useQuery<{
+    success: boolean;
+    task: any;
+    customer: { id: number; name: string; email: string; phone: string; status: string; address: string } | null;
+  }>({
+    queryKey: ['/api/calendar/splynx/tasks', splynxTaskId],
+    queryFn: async () => {
+      const response = await fetch(`/api/calendar/splynx/tasks/${splynxTaskId}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` },
+      });
+      if (!response.ok) throw new Error('Failed to fetch task details');
+      return response.json();
+    },
+    enabled: !!splynxTaskId,
+  });
+
+  const updateSplynxTaskMutation = useMutation({
+    mutationFn: async (updates: Record<string, any>) => {
+      return apiRequest(`/api/calendar/splynx/tasks/${splynxTaskId}`, {
+        method: 'PUT',
+        body: JSON.stringify(updates),
+      });
+    },
+    onSuccess: () => {
+      toast({ title: 'Task updated and synced to Splynx' });
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar/combined'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar/splynx/tasks', splynxTaskId] });
+      setSelectedEvent(null);
+    },
+    onError: (error: any) => {
+      toast({ title: 'Failed to update task', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const initSplynxTaskEdit = () => {
+    if (splynxTaskDetail?.task) {
+      setSplynxTaskEdit({
+        title: splynxTaskDetail.task.title || '',
+        description: splynxTaskDetail.task.description || '',
+        location: splynxTaskDetail.task.location || '',
+        scheduled_date: splynxTaskDetail.task.scheduled_date || '',
+        scheduled_time: splynxTaskDetail.task.scheduled_time || '',
+        assigned_to: splynxTaskDetail.task.assigned_to || 0,
+        team_id: splynxTaskDetail.task.team_id || 0,
+      });
+    }
+  };
+
+  const handleSaveSplynxTask = () => {
+    if (!splynxTaskEdit) return;
+    const payload: Record<string, any> = {};
+    if (splynxTaskEdit.title) payload.title = splynxTaskEdit.title;
+    if (splynxTaskEdit.description !== undefined) payload.description = splynxTaskEdit.description;
+    if (splynxTaskEdit.location) payload.location = splynxTaskEdit.location;
+    if (splynxTaskEdit.scheduled_date) payload.scheduled_date = splynxTaskEdit.scheduled_date;
+    if (splynxTaskEdit.scheduled_time) payload.scheduled_time = splynxTaskEdit.scheduled_time;
+    if (splynxTaskEdit.assigned_to && splynxTaskEdit.assigned_to > 0) payload.assigned_to = splynxTaskEdit.assigned_to;
+    if (splynxTaskEdit.team_id && splynxTaskEdit.team_id > 0) payload.team_id = splynxTaskEdit.team_id;
+    updateSplynxTaskMutation.mutate(payload);
   };
 
   const startDate = useMemo(() => {
@@ -703,6 +790,7 @@ export default function CalendarPage() {
             currentDate={currentDate} 
             getEventsForDay={getEventsForDay}
             onEventClick={handleEventClick}
+            onDayClick={handleDayClick}
           />
         ) : viewMode === 'week' ? (
           <WeekView 
@@ -780,25 +868,288 @@ export default function CalendarPage() {
                 )}
 
                 {selectedEvent.type === 'splynx_task' && (
-                  <div className="space-y-3 pt-2">
-                    {selectedEvent.metadata?.customerId && (
-                      <div>
-                        <div className="text-xs text-muted-foreground mb-1">Customer ID</div>
-                        <div className="text-sm">{selectedEvent.metadata.customerId}</div>
+                  <div className="space-y-4 pt-2">
+                    {isLoadingTaskDetail ? (
+                      <div className="flex items-center justify-center py-8">
+                        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
                       </div>
+                    ) : splynxTaskDetail?.task ? (
+                      <>
+                        {splynxTaskDetail.customer && (
+                          <div className="p-3 bg-muted/30 rounded-lg space-y-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2 text-sm font-medium">
+                                <Building2 className="h-4 w-4" />
+                                Customer
+                              </div>
+                              <a 
+                                href={`https://manage.country-connect.co.uk/admin/customers/view/${splynxTaskDetail.customer.id}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                                data-testid="link-splynx-customer"
+                              >
+                                <Link2 className="h-3 w-3" />
+                                Open in Splynx
+                              </a>
+                            </div>
+                            <div className="text-sm font-semibold">{splynxTaskDetail.customer.name}</div>
+                            {splynxTaskDetail.customer.email && (
+                              <div className="text-xs text-muted-foreground">{splynxTaskDetail.customer.email}</div>
+                            )}
+                            {splynxTaskDetail.customer.phone && (
+                              <div className="text-xs text-muted-foreground">{splynxTaskDetail.customer.phone}</div>
+                            )}
+                            {splynxTaskDetail.customer.address && (
+                              <div className="text-xs text-muted-foreground flex items-center gap-1">
+                                <MapPin className="h-3 w-3" />
+                                {splynxTaskDetail.customer.address}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        
+                        {splynxTaskDetail.task.team_id && (
+                          <div>
+                            <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                              <Users className="h-3 w-3" />
+                              Team
+                            </div>
+                            <Badge variant="outline">{splynxTaskDetail.task.team_name || `Team ${splynxTaskDetail.task.team_id}`}</Badge>
+                          </div>
+                        )}
+                        
+                        {splynxTaskEdit ? (
+                          <div className="space-y-3 pt-2 border-t">
+                            <div className="text-sm font-medium">Edit Task</div>
+                            <div className="space-y-2">
+                              <Label htmlFor="task-title">Title</Label>
+                              <Input 
+                                id="task-title"
+                                value={splynxTaskEdit.title}
+                                onChange={(e) => setSplynxTaskEdit(prev => prev ? {...prev, title: e.target.value} : null)}
+                                data-testid="input-task-title"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="task-description">Description</Label>
+                              <Textarea 
+                                id="task-description"
+                                value={splynxTaskEdit.description}
+                                onChange={(e) => setSplynxTaskEdit(prev => prev ? {...prev, description: e.target.value} : null)}
+                                rows={3}
+                                data-testid="input-task-description"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="task-location">Location</Label>
+                              <Input 
+                                id="task-location"
+                                value={splynxTaskEdit.location}
+                                onChange={(e) => setSplynxTaskEdit(prev => prev ? {...prev, location: e.target.value} : null)}
+                                data-testid="input-task-location"
+                              />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-2">
+                                <Label htmlFor="task-date">Date</Label>
+                                <Input 
+                                  id="task-date"
+                                  type="date"
+                                  value={splynxTaskEdit.scheduled_date}
+                                  onChange={(e) => setSplynxTaskEdit(prev => prev ? {...prev, scheduled_date: e.target.value} : null)}
+                                  data-testid="input-task-date"
+                                />
+                              </div>
+                              <div className="space-y-2">
+                                <Label htmlFor="task-time">Time</Label>
+                                <Input 
+                                  id="task-time"
+                                  type="time"
+                                  value={splynxTaskEdit.scheduled_time}
+                                  onChange={(e) => setSplynxTaskEdit(prev => prev ? {...prev, scheduled_time: e.target.value} : null)}
+                                  data-testid="input-task-time"
+                                />
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="task-team">Team</Label>
+                              <Select 
+                                value={splynxTaskEdit.team_id?.toString() || ''} 
+                                onValueChange={(value) => setSplynxTaskEdit(prev => prev ? {...prev, team_id: parseInt(value)} : null)}
+                              >
+                                <SelectTrigger data-testid="select-task-team">
+                                  <SelectValue placeholder="Select team" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {filtersData?.splynxTeams?.map((team) => (
+                                    <SelectItem key={team.id} value={team.id.toString()}>
+                                      {team.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-2">
+                              <Label htmlFor="task-assignee">Assignee</Label>
+                              <Select 
+                                value={splynxTaskEdit.assigned_to?.toString() || ''} 
+                                onValueChange={(value) => setSplynxTaskEdit(prev => prev ? {...prev, assigned_to: parseInt(value)} : null)}
+                              >
+                                <SelectTrigger data-testid="select-task-assignee">
+                                  <SelectValue placeholder="Select assignee" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {filtersData?.splynxAdmins?.map((admin) => (
+                                    <SelectItem key={admin.id} value={admin.id.toString()}>
+                                      {admin.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            {splynxTaskDetail?.task?.attachments && splynxTaskDetail.task.attachments.length > 0 && (
+                              <div className="space-y-2">
+                                <Label className="flex items-center gap-1">
+                                  <Paperclip className="h-3 w-3" />
+                                  Attachments
+                                </Label>
+                                <div className="text-xs text-muted-foreground bg-muted/30 p-2 rounded space-y-1">
+                                  {splynxTaskDetail.task.attachments.map((attachment: any, idx: number) => (
+                                    <div key={idx} className="flex items-center gap-1">
+                                      <Paperclip className="h-3 w-3" />
+                                      <span>{attachment.filename || attachment.name || `Attachment ${idx + 1}`}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            <div className="flex gap-2 pt-2">
+                              <Button 
+                                onClick={handleSaveSplynxTask}
+                                disabled={updateSplynxTaskMutation.isPending}
+                                className="flex-1"
+                                data-testid="button-save-task"
+                              >
+                                {updateSplynxTaskMutation.isPending ? (
+                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                ) : (
+                                  <Save className="h-4 w-4 mr-2" />
+                                )}
+                                Save & Sync to Splynx
+                              </Button>
+                              <Button 
+                                variant="outline"
+                                onClick={() => setSplynxTaskEdit(null)}
+                                data-testid="button-cancel-edit"
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <>
+                            {splynxTaskDetail.task.assigned_to && (
+                              <div>
+                                <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                                  <User className="h-3 w-3" />
+                                  Assignee
+                                </div>
+                                <div className="text-sm">
+                                  {filtersData?.splynxAdmins?.find(a => a.id === splynxTaskDetail.task.assigned_to)?.name || 
+                                   `Admin #${splynxTaskDetail.task.assigned_to}`}
+                                </div>
+                              </div>
+                            )}
+                            
+                            {splynxTaskDetail.task.description && (
+                              <div>
+                                <div className="text-xs text-muted-foreground mb-1">Description</div>
+                                <div className="text-sm whitespace-pre-wrap bg-muted/30 p-2 rounded">
+                                  {splynxTaskDetail.task.description}
+                                </div>
+                              </div>
+                            )}
+                            
+                            {splynxTaskDetail.task.location && (
+                              <div>
+                                <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                                  <MapPin className="h-3 w-3" />
+                                  Location
+                                </div>
+                                <div className="text-sm">{splynxTaskDetail.task.location}</div>
+                              </div>
+                            )}
+                            
+                            {splynxTaskDetail.task.attachments && splynxTaskDetail.task.attachments.length > 0 && (
+                              <div>
+                                <div className="text-xs text-muted-foreground mb-1 flex items-center gap-1">
+                                  <Paperclip className="h-3 w-3" />
+                                  Attachments ({splynxTaskDetail.task.attachments.length})
+                                </div>
+                                <div className="text-sm bg-muted/30 p-2 rounded space-y-1">
+                                  {splynxTaskDetail.task.attachments.map((attachment: any, idx: number) => (
+                                    <div key={idx} className="flex items-center gap-1 text-xs">
+                                      <Paperclip className="h-3 w-3" />
+                                      <span>{attachment.filename || attachment.name || `Attachment ${idx + 1}`}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                            
+                            <div className="flex gap-2 pt-2">
+                              <Button 
+                                onClick={initSplynxTaskEdit}
+                                variant="outline"
+                                className="flex-1"
+                                data-testid="button-edit-task"
+                              >
+                                Edit Task
+                              </Button>
+                              <a 
+                                href={`https://manage.country-connect.co.uk/admin/scheduling/tasks?view=details&task_id=${splynxTaskId}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center justify-center gap-1 px-3 py-2 text-sm border rounded-md hover:bg-muted"
+                                data-testid="link-splynx-task"
+                              >
+                                <ExternalLink className="h-4 w-4" />
+                                Open in Splynx
+                              </a>
+                            </div>
+                          </>
+                        )}
+                        
+                        <div className="flex items-center justify-between pt-2 border-t">
+                          <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                            <CalendarIcon className="h-3 w-3 mr-1" />
+                            Synced from Splynx
+                          </Badge>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {selectedEvent.metadata?.customerId && (
+                          <div>
+                            <div className="text-xs text-muted-foreground mb-1">Customer ID</div>
+                            <div className="text-sm">{selectedEvent.metadata.customerId}</div>
+                          </div>
+                        )}
+                        {selectedEvent.metadata?.description && (
+                          <div>
+                            <div className="text-xs text-muted-foreground mb-1">Description</div>
+                            <div className="text-sm">{selectedEvent.metadata.description}</div>
+                          </div>
+                        )}
+                        <div className="text-xs text-muted-foreground pt-2">
+                          <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                            <CalendarIcon className="h-3 w-3 mr-1" />
+                            Synced from Splynx
+                          </Badge>
+                        </div>
+                      </>
                     )}
-                    {selectedEvent.metadata?.description && (
-                      <div>
-                        <div className="text-xs text-muted-foreground mb-1">Description</div>
-                        <div className="text-sm">{selectedEvent.metadata.description}</div>
-                      </div>
-                    )}
-                    <div className="text-xs text-muted-foreground pt-2">
-                      <Badge variant="secondary" className="bg-blue-100 text-blue-800">
-                        <CalendarIcon className="h-3 w-3 mr-1" />
-                        Synced from Splynx
-                      </Badge>
-                    </div>
                   </div>
                 )}
 
@@ -1095,9 +1446,10 @@ interface MonthViewProps {
   currentDate: Date;
   getEventsForDay: (day: Date) => CalendarEvent[];
   onEventClick?: (event: CalendarEvent) => void;
+  onDayClick?: (day: Date) => void;
 }
 
-function MonthView({ days, currentDate, getEventsForDay, onEventClick }: MonthViewProps) {
+function MonthView({ days, currentDate, getEventsForDay, onEventClick, onDayClick }: MonthViewProps) {
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   return (
@@ -1123,6 +1475,7 @@ function MonthView({ days, currentDate, getEventsForDay, onEventClick }: MonthVi
                 ${!isCurrentMonth ? 'opacity-40 bg-muted/20' : ''}
               `}
               data-testid={`day-cell-${format(day, 'yyyy-MM-dd')}`}
+              onClick={() => onDayClick?.(day)}
             >
               <div className={`
                 text-xs font-medium mb-0.5 w-6 h-6 flex items-center justify-center rounded-full

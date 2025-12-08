@@ -1632,6 +1632,62 @@ export class SplynxService {
     }
   }
 
+  async updateSchedulingTask(taskId: string | number, updates: {
+    title?: string;
+    description?: string;
+    assigned_to?: number;
+    team_id?: number;
+    workflow_status_id?: number;
+    scheduled_date?: string;
+    scheduled_time?: string;
+    scheduled_duration_hours?: number;
+    scheduled_duration_minutes?: number;
+    related_customer_id?: number;
+    project_id?: number;
+    location?: string;
+  }): Promise<any> {
+    try {
+      const url = this.buildUrl(`admin/scheduling/tasks/${taskId}`);
+      console.log(`[SPLYNX updateSchedulingTask] Updating task ${taskId}:`, JSON.stringify(updates, null, 2));
+      
+      const response = await axios.put(url, updates, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      console.log(`[SPLYNX updateSchedulingTask] Successfully updated task ${taskId}`);
+      return response.data;
+    } catch (error: any) {
+      console.error(`[SPLYNX updateSchedulingTask] Failed to update task ${taskId}:`, error.message);
+      if (error.response?.data) {
+        console.error(`[SPLYNX updateSchedulingTask] Response:`, JSON.stringify(error.response.data, null, 2));
+      }
+      throw new Error(`Failed to update scheduling task: ${error.message}`);
+    }
+  }
+
+  async getSchedulingTask(taskId: string | number): Promise<any> {
+    try {
+      const url = this.buildUrl(`admin/scheduling/tasks/${taskId}`);
+      console.log(`[SPLYNX getSchedulingTask] Fetching task ${taskId}`);
+      
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      console.log(`[SPLYNX getSchedulingTask] Response status:`, response.status);
+      return response.data;
+    } catch (error: any) {
+      console.error(`[SPLYNX getSchedulingTask] Error:`, error.message);
+      throw new Error(`Failed to fetch scheduling task: ${error.message}`);
+    }
+  }
+
   /**
    * Get detailed customer information by ID
    * Used for AI context enrichment

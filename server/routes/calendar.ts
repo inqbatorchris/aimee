@@ -236,6 +236,65 @@ router.get('/calendar/splynx/tasks', authenticateToken, async (req: Request, res
   }
 });
 
+router.get('/calendar/splynx/tasks/:taskId', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const organizationId = (req as any).user.organizationId;
+    const { taskId } = req.params;
+    
+    const splynxService = await getSplynxServiceForOrg(organizationId);
+    const task = await splynxService.getSchedulingTask(taskId);
+    
+    let customer = null;
+    if (task.related_customer_id || task.customer_id) {
+      try {
+        customer = await splynxService.getCustomerById(parseInt(task.related_customer_id || task.customer_id));
+      } catch (e) {
+        console.log(`[CALENDAR] Could not fetch customer for task ${taskId}`);
+      }
+    }
+    
+    res.json({ success: true, task, customer });
+  } catch (error: any) {
+    console.error('[CALENDAR] Error fetching single task:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.put('/calendar/splynx/tasks/:taskId', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const organizationId = (req as any).user.organizationId;
+    const { taskId } = req.params;
+    const updates = req.body;
+    
+    const splynxService = await getSplynxServiceForOrg(organizationId);
+    const result = await splynxService.updateSchedulingTask(taskId, updates);
+    
+    res.json({ success: true, task: result });
+  } catch (error: any) {
+    console.error('[CALENDAR] Error updating task:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.get('/calendar/splynx/customers/:customerId', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const organizationId = (req as any).user.organizationId;
+    const { customerId } = req.params;
+    
+    const splynxService = await getSplynxServiceForOrg(organizationId);
+    const customer = await splynxService.getCustomerById(parseInt(customerId));
+    
+    if (!customer) {
+      return res.status(404).json({ success: false, error: 'Customer not found' });
+    }
+    
+    res.json({ success: true, customer });
+  } catch (error: any) {
+    console.error('[CALENDAR] Error fetching customer:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ========================================
 // AVAILABILITY ENDPOINTS
 // ========================================
@@ -1291,12 +1350,16 @@ router.get('/calendar/combined', authenticateToken, async (req: Request, res: Re
         const endDateObj = new Date(endDate as string);
         endDateObj.setHours(23, 59, 59, 999);
         
+        console.log(`[CALENDAR] Filtering ${tasks.length} Splynx tasks for date range: ${startDate} to ${endDate}`);
+        
         let filteredTasks = tasks.filter((t: any) => {
           const taskDate = t.scheduled_date || t.scheduled_from?.split(' ')[0];
           if (!taskDate) return false;
           const taskDateObj = new Date(taskDate);
           return taskDateObj >= startDateObj && taskDateObj <= endDateObj;
         });
+        
+        console.log(`[CALENDAR] After date filtering: ${filteredTasks.length} tasks`);
         
         if (effectiveSplynxAdminIds.length > 1) {
           filteredTasks = filteredTasks.filter((t: any) => 
