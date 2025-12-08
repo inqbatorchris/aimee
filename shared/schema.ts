@@ -5725,6 +5725,9 @@ export const vapiKnowledgeFiles = pgTable("vapi_knowledge_files", {
 // BOOKING SYSTEM TABLES
 // ========================================
 
+// Access mode for bookable appointment types
+export const bookingAccessModeEnum = pgEnum('booking_access_mode', ['open', 'authenticated']);
+
 // Bookable Task Types - Configuration for customer appointment booking
 export const bookableTaskTypes = pgTable("bookable_task_types", {
   id: serial("id").primaryKey(),
@@ -5732,7 +5735,13 @@ export const bookableTaskTypes = pgTable("bookable_task_types", {
   
   // Basic Info
   name: varchar("name", { length: 255 }).notNull(),
+  slug: varchar("slug", { length: 100 }).notNull(), // URL-friendly unique identifier per org
+  description: text("description"), // Public description shown on booking page
   taskCategory: varchar("task_category", { length: 50 }).notNull(), // 'support_session', 'field_visit', 'custom'
+  
+  // Access Control
+  accessMode: bookingAccessModeEnum("access_mode").default("open").notNull(), // 'open' = anyone can book, 'authenticated' = require login
+  requireCustomerAccount: boolean("require_customer_account").default(false), // For 'authenticated' mode - must have customer account
   
   // Splynx Integration
   splynxProjectId: integer("splynx_project_id").notNull(),
@@ -5762,43 +5771,70 @@ export const bookableTaskTypes = pgTable("bookable_task_types", {
   index("idx_bookable_task_types_org").on(table.organizationId),
   index("idx_bookable_task_types_active").on(table.isActive),
   index("idx_bookable_task_types_display").on(table.displayOrder),
+  index("idx_bookable_task_types_slug").on(table.slug),
 ]);
 
-// Booking Tokens - Track customer appointment booking requests
-export const bookingTokens = pgTable("booking_tokens", {
+// Bookings - Track all customer appointment bookings
+export const bookings = pgTable("bookings", {
   id: serial("id").primaryKey(),
   organizationId: integer("organization_id").references(() => organizations.id).notNull(),
   
-  // Token
-  token: varchar("token", { length: 100 }).unique().notNull(),
-  
   // Links
-  workItemId: integer("work_item_id").references(() => workItems.id).notNull(),
   bookableTaskTypeId: integer("bookable_task_type_id").references(() => bookableTaskTypes.id).notNull(),
+  workItemId: integer("work_item_id").references(() => workItems.id), // Optional - may be linked to a work item
+  userId: integer("user_id").references(() => users.id), // Optional - for authenticated bookings
   
-  // Customer Info
-  customerId: integer("customer_id").notNull(), // Splynx customer ID
-  customerEmail: varchar("customer_email", { length: 255 }),
-  customerName: varchar("customer_name", { length: 255 }),
+  // Customer Info (for open bookings or to cache authenticated user info)
+  customerId: integer("customer_id"), // Splynx customer ID - optional for open bookings
+  customerEmail: varchar("customer_email", { length: 255 }).notNull(),
+  customerName: varchar("customer_name", { length: 255 }).notNull(),
+  customerPhone: varchar("customer_phone", { length: 50 }),
   serviceAddress: text("service_address"),
   
   // Booking Details
-  status: varchar("status", { length: 50 }).default("pending"), // 'pending', 'confirmed', 'expired', 'cancelled'
-  selectedDatetime: timestamp("selected_datetime"),
+  status: varchar("status", { length: 50 }).default("confirmed").notNull(), // 'confirmed', 'cancelled', 'completed', 'no_show'
+  selectedDatetime: timestamp("selected_datetime").notNull(),
   additionalNotes: text("additional_notes"),
-  contactNumber: varchar("contact_number", { length: 50 }),
   
   // Splynx Task
   splynxTaskId: integer("splynx_task_id"),
   
-  // Expiry and Security
+  // Audit
+  confirmedAt: timestamp("confirmed_at").defaultNow(),
+  cancelledAt: timestamp("cancelled_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_bookings_org").on(table.organizationId),
+  index("idx_bookings_task_type").on(table.bookableTaskTypeId),
+  index("idx_bookings_work_item").on(table.workItemId),
+  index("idx_bookings_status").on(table.status),
+  index("idx_bookings_customer").on(table.customerId),
+  index("idx_bookings_datetime").on(table.selectedDatetime),
+]);
+
+// Legacy: Booking Tokens table - keeping for migration/compatibility
+// This table is deprecated - new bookings go directly to the bookings table
+export const bookingTokens = pgTable("booking_tokens", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  token: varchar("token", { length: 100 }).unique().notNull(),
+  workItemId: integer("work_item_id").references(() => workItems.id).notNull(),
+  bookableTaskTypeId: integer("bookable_task_type_id").references(() => bookableTaskTypes.id).notNull(),
+  customerId: integer("customer_id").notNull(),
+  customerEmail: varchar("customer_email", { length: 255 }),
+  customerName: varchar("customer_name", { length: 255 }),
+  serviceAddress: text("service_address"),
+  status: varchar("status", { length: 50 }).default("pending"),
+  selectedDatetime: timestamp("selected_datetime"),
+  additionalNotes: text("additional_notes"),
+  contactNumber: varchar("contact_number", { length: 50 }),
+  splynxTaskId: integer("splynx_task_id"),
   expiresAt: timestamp("expires_at"),
   confirmedAt: timestamp("confirmed_at"),
   redeemedAt: timestamp("redeemed_at"),
   maxUses: integer("max_uses").default(1).notNull(),
   usageCount: integer("usage_count").default(0).notNull(),
-  
-  // Audit
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
@@ -5844,6 +5880,14 @@ export const insertBookableTaskTypeSchema = createInsertSchema(bookableTaskTypes
   updatedAt: true,
 });
 
+export const insertBookingSchema = createInsertSchema(bookings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  confirmedAt: true,
+});
+
+// Legacy token schema - kept for compatibility
 export const insertBookingTokenSchema = createInsertSchema(bookingTokens).omit({
   id: true,
   createdAt: true,
@@ -5854,5 +5898,12 @@ export const insertBookingTokenSchema = createInsertSchema(bookingTokens).omit({
 export type BookableTaskType = typeof bookableTaskTypes.$inferSelect;
 export type InsertBookableTaskType = z.infer<typeof insertBookableTaskTypeSchema>;
 
+export type Booking = typeof bookings.$inferSelect;
+export type InsertBooking = z.infer<typeof insertBookingSchema>;
+
+// Legacy types - kept for compatibility
 export type BookingToken = typeof bookingTokens.$inferSelect;
 export type InsertBookingToken = z.infer<typeof insertBookingTokenSchema>;
+
+// Access mode type
+export type BookingAccessMode = 'open' | 'authenticated';
