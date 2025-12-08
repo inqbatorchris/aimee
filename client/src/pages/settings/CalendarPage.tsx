@@ -1,24 +1,23 @@
 import { useState, useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { 
   ChevronLeft, 
   ChevronRight, 
   Calendar as CalendarIcon,
-  Clock,
   User,
-  Users,
-  Sun,
-  Briefcase,
   Plus,
   Settings,
-  Filter
+  LayoutGrid,
+  List,
+  GanttChart,
+  CalendarDays,
+  Layers
 } from 'lucide-react';
 import { 
   startOfMonth, 
@@ -37,7 +36,9 @@ import {
   startOfDay,
   endOfDay,
   addDays,
-  subDays
+  subDays,
+  differenceInDays,
+  parseISO
 } from 'date-fns';
 
 interface CalendarEvent {
@@ -49,6 +50,7 @@ interface CalendarEvent {
   color?: string;
   userId?: number;
   userName?: string;
+  status?: string;
 }
 
 interface HolidayRequest {
@@ -86,9 +88,16 @@ interface WorkItem {
   assignedTo: number;
 }
 
-type ViewMode = 'month' | 'week' | 'day';
+type ViewMode = 'month' | 'week' | 'day' | 'roadmap';
 
 const eventTypeColors: Record<string, string> = {
+  task: 'bg-blue-500 text-white',
+  holiday: 'bg-green-500 text-white',
+  block: 'bg-orange-500 text-white',
+  work_item: 'bg-purple-500 text-white',
+};
+
+const eventTypeBgColors: Record<string, string> = {
   task: 'bg-blue-100 text-blue-800 border-blue-200',
   holiday: 'bg-green-100 text-green-800 border-green-200',
   block: 'bg-orange-100 text-orange-800 border-orange-200',
@@ -96,9 +105,10 @@ const eventTypeColors: Record<string, string> = {
 };
 
 const statusColors: Record<string, string> = {
-  pending: 'bg-yellow-100 text-yellow-800',
-  approved: 'bg-green-100 text-green-800',
-  rejected: 'bg-red-100 text-red-800',
+  Planning: 'bg-gray-100 text-gray-800',
+  'In Progress': 'bg-blue-100 text-blue-800',
+  Done: 'bg-green-100 text-green-800',
+  Blocked: 'bg-red-100 text-red-800',
 };
 
 export default function CalendarPage() {
@@ -107,7 +117,9 @@ export default function CalendarPage() {
   const [selectedUserId, setSelectedUserId] = useState<string>('all');
 
   const startDate = useMemo(() => {
-    if (viewMode === 'month') {
+    if (viewMode === 'roadmap') {
+      return format(startOfMonth(currentDate), 'yyyy-MM-dd');
+    } else if (viewMode === 'month') {
       return format(startOfWeek(startOfMonth(currentDate)), 'yyyy-MM-dd');
     } else if (viewMode === 'week') {
       return format(startOfWeek(currentDate), 'yyyy-MM-dd');
@@ -117,7 +129,9 @@ export default function CalendarPage() {
   }, [currentDate, viewMode]);
 
   const endDate = useMemo(() => {
-    if (viewMode === 'month') {
+    if (viewMode === 'roadmap') {
+      return format(endOfMonth(addMonths(currentDate, 2)), 'yyyy-MM-dd');
+    } else if (viewMode === 'month') {
       return format(endOfWeek(endOfMonth(currentDate)), 'yyyy-MM-dd');
     } else if (viewMode === 'week') {
       return format(endOfWeek(currentDate), 'yyyy-MM-dd');
@@ -157,7 +171,7 @@ export default function CalendarPage() {
   });
 
   const { data: teamMembers } = useQuery<Array<{ id: number; fullName: string; email: string }>>({
-    queryKey: ['/api/teams/members'],
+    queryKey: ['/api/users'],
     queryFn: async () => {
       const response = await fetch('/api/users', {
         headers: {
@@ -183,6 +197,7 @@ export default function CalendarPage() {
           type: 'holiday',
           userId: request.userId,
           userName: user?.fullName,
+          status: request.status,
         });
       });
     }
@@ -223,6 +238,7 @@ export default function CalendarPage() {
             end: new Date(item.dueDate),
             type: 'work_item',
             userId: item.assignedTo,
+            status: item.status,
           });
         }
       });
@@ -251,36 +267,41 @@ export default function CalendarPage() {
     return events.filter((event) => {
       const eventStart = new Date(event.start);
       const eventEnd = new Date(event.end);
-      return day >= eventStart && day <= eventEnd;
+      const dayStart = startOfDay(day);
+      const dayEnd = endOfDay(day);
+      return eventStart <= dayEnd && eventEnd >= dayStart;
     });
   };
 
-  const navigatePrevious = () => {
-    if (viewMode === 'month') {
-      setCurrentDate(subMonths(currentDate, 1));
+  const handleNavigatePrevious = () => {
+    if (viewMode === 'month' || viewMode === 'roadmap') {
+      setCurrentDate(prev => subMonths(prev, 1));
     } else if (viewMode === 'week') {
-      setCurrentDate(subWeeks(currentDate, 1));
+      setCurrentDate(prev => subWeeks(prev, 1));
     } else {
-      setCurrentDate(subDays(currentDate, 1));
+      setCurrentDate(prev => subDays(prev, 1));
     }
   };
 
-  const navigateNext = () => {
-    if (viewMode === 'month') {
-      setCurrentDate(addMonths(currentDate, 1));
+  const handleNavigateNext = () => {
+    if (viewMode === 'month' || viewMode === 'roadmap') {
+      setCurrentDate(prev => addMonths(prev, 1));
     } else if (viewMode === 'week') {
-      setCurrentDate(addWeeks(currentDate, 1));
+      setCurrentDate(prev => addWeeks(prev, 1));
     } else {
-      setCurrentDate(addDays(currentDate, 1));
+      setCurrentDate(prev => addDays(prev, 1));
     }
   };
 
-  const goToToday = () => {
+  const handleGoToToday = () => {
     setCurrentDate(new Date());
   };
 
   const getDateRangeLabel = () => {
-    if (viewMode === 'month') {
+    if (viewMode === 'roadmap') {
+      const endMonth = addMonths(currentDate, 2);
+      return `${format(currentDate, 'MMM')} - ${format(endMonth, 'MMM yyyy')}`;
+    } else if (viewMode === 'month') {
       return format(currentDate, 'MMMM yyyy');
     } else if (viewMode === 'week') {
       const weekStart = startOfWeek(currentDate);
@@ -291,207 +312,200 @@ export default function CalendarPage() {
     }
   };
 
-  const hours = Array.from({ length: 24 }, (_, i) => i);
+  const workingHours = Array.from({ length: 16 }, (_, i) => i + 6);
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-2xl font-bold">Calendar</h1>
-          <p className="text-muted-foreground">Manage team schedules, holidays, and appointments</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" data-testid="button-settings">
-            <Settings className="h-4 w-4 mr-2" />
-            Settings
-          </Button>
-          <Button size="sm" data-testid="button-add-event">
-            <Plus className="h-4 w-4 mr-2" />
-            Add Event
-          </Button>
-        </div>
-      </div>
+    <div className="h-full flex flex-col">
+      <div className="sticky top-0 z-10 bg-background border-b px-4 py-2">
+        <div className="flex items-center justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="icon"
+                  onClick={handleNavigatePrevious}
+                  data-testid="button-previous"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Previous</TooltipContent>
+            </Tooltip>
+            
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  variant="ghost" 
+                  size="icon"
+                  onClick={handleNavigateNext}
+                  data-testid="button-next"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Next</TooltipContent>
+            </Tooltip>
+            
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleGoToToday}
+              className="ml-1"
+              data-testid="button-today"
+            >
+              Today
+            </Button>
+            
+            <span className="text-base font-semibold ml-3" data-testid="text-date-range">
+              {getDateRangeLabel()}
+            </span>
+          </div>
 
-      <Card>
-        <CardHeader className="pb-3">
-          <div className="flex items-center justify-between flex-wrap gap-4">
-            <div className="flex items-center gap-2">
-              <Button 
-                variant="outline" 
-                size="icon"
-                onClick={navigatePrevious}
-                data-testid="button-previous"
-              >
-                <ChevronLeft className="h-4 w-4" />
-              </Button>
-              <Button 
-                variant="outline" 
-                size="icon"
-                onClick={navigateNext}
-                data-testid="button-next"
-              >
-                <ChevronRight className="h-4 w-4" />
-              </Button>
-              <Button 
-                variant="outline" 
-                onClick={goToToday}
-                data-testid="button-today"
-              >
-                Today
-              </Button>
-              <h2 className="text-lg font-semibold ml-4" data-testid="text-date-range">
-                {getDateRangeLabel()}
-              </h2>
+          <div className="flex items-center gap-2">
+            <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+              <SelectTrigger className="w-[160px] h-8" data-testid="select-user-filter">
+                <User className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+                <SelectValue placeholder="All members" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All members</SelectItem>
+                {teamMembers?.map((member) => (
+                  <SelectItem key={member.id} value={String(member.id)}>
+                    {member.fullName || member.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <div className="flex items-center border rounded-md">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant={viewMode === 'month' ? 'secondary' : 'ghost'} 
+                    size="icon"
+                    className="h-8 w-8 rounded-none rounded-l-md"
+                    onClick={() => setViewMode('month')}
+                    data-testid="tab-month"
+                  >
+                    <LayoutGrid className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Month</TooltipContent>
+              </Tooltip>
+              
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant={viewMode === 'week' ? 'secondary' : 'ghost'} 
+                    size="icon"
+                    className="h-8 w-8 rounded-none border-x"
+                    onClick={() => setViewMode('week')}
+                    data-testid="tab-week"
+                  >
+                    <CalendarDays className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Week</TooltipContent>
+              </Tooltip>
+              
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant={viewMode === 'day' ? 'secondary' : 'ghost'} 
+                    size="icon"
+                    className="h-8 w-8 rounded-none border-r"
+                    onClick={() => setViewMode('day')}
+                    data-testid="tab-day"
+                  >
+                    <List className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Day</TooltipContent>
+              </Tooltip>
+              
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    variant={viewMode === 'roadmap' ? 'secondary' : 'ghost'} 
+                    size="icon"
+                    className="h-8 w-8 rounded-none rounded-r-md"
+                    onClick={() => setViewMode('roadmap')}
+                    data-testid="tab-roadmap"
+                  >
+                    <GanttChart className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Roadmap</TooltipContent>
+              </Tooltip>
             </div>
 
-            <div className="flex items-center gap-2">
-              <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-                <SelectTrigger className="w-[180px]" data-testid="select-user-filter">
-                  <SelectValue placeholder="All team members" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All team members</SelectItem>
-                  {teamMembers?.map((member) => (
-                    <SelectItem key={member.id} value={String(member.id)}>
-                      {member.fullName || member.email}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="hidden sm:flex items-center gap-1.5 ml-2 text-xs text-muted-foreground">
+              <div className="flex items-center gap-1">
+                <div className="w-2.5 h-2.5 rounded bg-blue-500" />
+                <span>Tasks</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-2.5 h-2.5 rounded bg-green-500" />
+                <span>Leave</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-2.5 h-2.5 rounded bg-purple-500" />
+                <span>Work</span>
+              </div>
+            </div>
 
-              <Tabs value={viewMode} onValueChange={(v) => setViewMode(v as ViewMode)}>
-                <TabsList>
-                  <TabsTrigger value="month" data-testid="tab-month">Month</TabsTrigger>
-                  <TabsTrigger value="week" data-testid="tab-week">Week</TabsTrigger>
-                  <TabsTrigger value="day" data-testid="tab-day">Day</TabsTrigger>
-                </TabsList>
-              </Tabs>
+            <div className="flex items-center gap-1 ml-2">
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" data-testid="button-settings">
+                    <Settings className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Settings</TooltipContent>
+              </Tooltip>
+              
+              <Button size="sm" className="h-8" data-testid="button-add-event">
+                <Plus className="h-4 w-4 mr-1" />
+                Add
+              </Button>
             </div>
           </div>
-        </CardHeader>
-
-        <CardContent>
-          {isLoading ? (
-            <div className="grid grid-cols-7 gap-1">
-              {Array.from({ length: 35 }).map((_, i) => (
-                <Skeleton key={i} className="h-24" />
-              ))}
-            </div>
-          ) : viewMode === 'month' ? (
-            <MonthView 
-              days={days} 
-              currentDate={currentDate} 
-              getEventsForDay={getEventsForDay}
-            />
-          ) : viewMode === 'week' ? (
-            <WeekView 
-              days={days} 
-              events={events}
-              hours={hours}
-            />
-          ) : (
-            <DayView 
-              day={currentDate} 
-              events={getEventsForDay(currentDate)}
-              hours={hours}
-            />
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="grid md:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Sun className="h-5 w-5" />
-              Upcoming Holidays
-            </CardTitle>
-            <CardDescription>Team holiday requests and public holidays</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ScrollArea className="h-[300px]">
-              {calendarData?.publicHolidays?.length === 0 && calendarData?.holidayRequests?.length === 0 ? (
-                <p className="text-muted-foreground text-sm">No upcoming holidays</p>
-              ) : (
-                <div className="space-y-3">
-                  {calendarData?.publicHolidays?.map((holiday) => (
-                    <div key={holiday.id} className="flex items-center justify-between p-2 rounded-lg bg-muted">
-                      <div>
-                        <p className="font-medium text-sm">{holiday.name}</p>
-                        <p className="text-xs text-muted-foreground">{format(new Date(holiday.date), 'EEEE, MMM d')}</p>
-                      </div>
-                      <Badge variant="secondary">Public</Badge>
-                    </div>
-                  ))}
-                  {calendarData?.holidayRequests?.map(({ request, user }) => (
-                    <div key={request.id} className="flex items-center justify-between p-2 rounded-lg bg-muted">
-                      <div>
-                        <p className="font-medium text-sm">{user?.fullName || 'Team Member'}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {format(new Date(request.startDate), 'MMM d')} - {format(new Date(request.endDate), 'MMM d')}
-                        </p>
-                      </div>
-                      <Badge className={statusColors[request.status] || ''}>
-                        {request.status}
-                      </Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </ScrollArea>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Briefcase className="h-5 w-5" />
-              Work Items Due
-            </CardTitle>
-            <CardDescription>Tasks and work items with upcoming due dates</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <ScrollArea className="h-[300px]">
-              {calendarData?.workItems?.length === 0 ? (
-                <p className="text-muted-foreground text-sm">No work items due in this period</p>
-              ) : (
-                <div className="space-y-3">
-                  {calendarData?.workItems?.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between p-2 rounded-lg bg-muted">
-                      <div>
-                        <p className="font-medium text-sm">{item.title}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Due: {item.dueDate ? format(new Date(item.dueDate), 'MMM d') : 'No date'}
-                        </p>
-                      </div>
-                      <Badge variant="outline">{item.status}</Badge>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </ScrollArea>
-          </CardContent>
-        </Card>
+        </div>
       </div>
 
-      <div className="flex items-center gap-4 text-sm">
-        <span className="text-muted-foreground">Legend:</span>
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded bg-blue-500" />
-          <span>Tasks</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded bg-green-500" />
-          <span>Holidays</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded bg-orange-500" />
-          <span>Blocked Time</span>
-        </div>
-        <div className="flex items-center gap-1">
-          <div className="w-3 h-3 rounded bg-purple-500" />
-          <span>Work Items</span>
-        </div>
+      <div className="flex-1 overflow-hidden">
+        {isLoading ? (
+          <div className="p-4 grid grid-cols-7 gap-1">
+            {Array.from({ length: 35 }).map((_, i) => (
+              <Skeleton key={i} className="h-24" />
+            ))}
+          </div>
+        ) : viewMode === 'month' ? (
+          <MonthView 
+            days={days} 
+            currentDate={currentDate} 
+            getEventsForDay={getEventsForDay}
+          />
+        ) : viewMode === 'week' ? (
+          <WeekView 
+            days={days} 
+            events={events}
+            hours={workingHours}
+          />
+        ) : viewMode === 'roadmap' ? (
+          <RoadmapView
+            events={events}
+            currentDate={currentDate}
+            teamMembers={teamMembers || []}
+          />
+        ) : (
+          <DayView 
+            day={currentDate} 
+            events={getEventsForDay(currentDate)}
+            hours={workingHours}
+          />
+        )}
       </div>
     </div>
   );
@@ -507,15 +521,15 @@ function MonthView({ days, currentDate, getEventsForDay }: MonthViewProps) {
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   return (
-    <div>
-      <div className="grid grid-cols-7 gap-1 mb-1">
+    <div className="h-full flex flex-col p-2">
+      <div className="grid grid-cols-7 gap-px mb-px">
         {weekDays.map((day) => (
-          <div key={day} className="p-2 text-center text-sm font-medium text-muted-foreground">
+          <div key={day} className="p-2 text-center text-xs font-medium text-muted-foreground uppercase">
             {day}
           </div>
         ))}
       </div>
-      <div className="grid grid-cols-7 gap-1">
+      <div className="flex-1 grid grid-cols-7 grid-rows-5 gap-px bg-border">
         {days.map((day, i) => {
           const dayEvents = getEventsForDay(day);
           const isCurrentMonth = isSameMonth(day, currentDate);
@@ -525,24 +539,23 @@ function MonthView({ days, currentDate, getEventsForDay }: MonthViewProps) {
             <div
               key={i}
               className={`
-                min-h-[100px] p-1 border rounded-lg cursor-pointer hover:bg-muted/50 transition-colors
-                ${!isCurrentMonth ? 'opacity-40' : ''}
-                ${isCurrentDay ? 'border-primary bg-primary/5' : 'border-border'}
+                bg-background p-1 min-h-0 overflow-hidden cursor-pointer hover:bg-muted/30 transition-colors
+                ${!isCurrentMonth ? 'opacity-40 bg-muted/20' : ''}
               `}
               data-testid={`day-cell-${format(day, 'yyyy-MM-dd')}`}
             >
               <div className={`
-                text-sm font-medium mb-1
-                ${isCurrentDay ? 'text-primary' : ''}
+                text-xs font-medium mb-0.5 w-6 h-6 flex items-center justify-center rounded-full
+                ${isCurrentDay ? 'bg-primary text-primary-foreground' : ''}
               `}>
                 {format(day, 'd')}
               </div>
-              <div className="space-y-0.5">
+              <div className="space-y-0.5 overflow-hidden">
                 {dayEvents.slice(0, 3).map((event) => (
                   <div
                     key={event.id}
                     className={`
-                      text-xs p-0.5 px-1 rounded truncate cursor-pointer
+                      text-[10px] leading-tight px-1 py-0.5 rounded truncate
                       ${eventTypeColors[event.type]}
                     `}
                     title={event.title}
@@ -552,7 +565,7 @@ function MonthView({ days, currentDate, getEventsForDay }: MonthViewProps) {
                   </div>
                 ))}
                 {dayEvents.length > 3 && (
-                  <div className="text-xs text-muted-foreground pl-1">
+                  <div className="text-[10px] text-muted-foreground px-1">
                     +{dayEvents.length - 3} more
                   </div>
                 )}
@@ -573,71 +586,75 @@ interface WeekViewProps {
 
 function WeekView({ days, events, hours }: WeekViewProps) {
   return (
-    <div className="overflow-x-auto">
-      <div className="min-w-[800px]">
-        <div className="grid grid-cols-8 gap-1 mb-1">
-          <div className="p-2" />
-          {days.map((day, i) => (
-            <div 
-              key={i} 
-              className={`
-                p-2 text-center text-sm font-medium
-                ${isToday(day) ? 'text-primary' : 'text-muted-foreground'}
-              `}
-            >
-              <div>{format(day, 'EEE')}</div>
-              <div className={`
-                text-lg 
-                ${isToday(day) ? 'bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center mx-auto' : ''}
-              `}>
-                {format(day, 'd')}
-              </div>
+    <div className="h-full flex flex-col">
+      <div className="flex border-b">
+        <div className="w-16 shrink-0" />
+        {days.map((day, i) => (
+          <div 
+            key={i} 
+            className={`
+              flex-1 p-2 text-center border-l
+              ${isToday(day) ? 'bg-primary/5' : ''}
+            `}
+          >
+            <div className="text-xs text-muted-foreground">{format(day, 'EEE')}</div>
+            <div className={`
+              text-lg font-medium mt-0.5
+              ${isToday(day) ? 'bg-primary text-primary-foreground rounded-full w-8 h-8 flex items-center justify-center mx-auto' : ''}
+            `}>
+              {format(day, 'd')}
+            </div>
+          </div>
+        ))}
+      </div>
+      <ScrollArea className="flex-1">
+        <div className="flex">
+          <div className="w-16 shrink-0">
+            {hours.map((hour) => {
+              const hourDate = new Date();
+              hourDate.setHours(hour, 0, 0, 0);
+              return (
+                <div key={hour} className="h-12 pr-2 text-right text-xs text-muted-foreground border-b flex items-start justify-end pt-0.5">
+                  {format(hourDate, 'h a')}
+                </div>
+              );
+            })}
+          </div>
+          {days.map((day, dayIndex) => (
+            <div key={dayIndex} className="flex-1 border-l">
+              {hours.map((hour) => {
+                const hourEvents = events.filter((event) => {
+                  const eventStart = new Date(event.start);
+                  return isSameDay(eventStart, day) && eventStart.getHours() === hour;
+                });
+
+                return (
+                  <div 
+                    key={hour} 
+                    className={`
+                      h-12 border-b relative
+                      ${isToday(day) ? 'bg-primary/5' : ''}
+                    `}
+                  >
+                    {hourEvents.map((event) => (
+                      <div
+                        key={event.id}
+                        className={`
+                          absolute left-0.5 right-0.5 top-0.5 text-[10px] p-1 rounded truncate z-10
+                          ${eventTypeColors[event.type]}
+                        `}
+                        title={event.title}
+                      >
+                        {event.title}
+                      </div>
+                    ))}
+                  </div>
+                );
+              })}
             </div>
           ))}
         </div>
-        <ScrollArea className="h-[600px]">
-          <div className="grid grid-cols-8 gap-px bg-border">
-            {hours.map((hour) => (
-              <>
-                <div key={`hour-${hour}`} className="p-1 text-xs text-muted-foreground bg-background text-right pr-2">
-                  {format(new Date().setHours(hour, 0), 'ha')}
-                </div>
-                {days.map((day, dayIndex) => {
-                  const dayStart = new Date(day);
-                  dayStart.setHours(hour, 0, 0, 0);
-                  const dayEnd = new Date(day);
-                  dayEnd.setHours(hour + 1, 0, 0, 0);
-                  
-                  const hourEvents = events.filter((event) => {
-                    const eventStart = new Date(event.start);
-                    return isSameDay(eventStart, day) && eventStart.getHours() === hour;
-                  });
-
-                  return (
-                    <div 
-                      key={`${hour}-${dayIndex}`} 
-                      className="min-h-[40px] p-0.5 bg-background border-t border-border/50 relative"
-                    >
-                      {hourEvents.map((event) => (
-                        <div
-                          key={event.id}
-                          className={`
-                            text-xs p-1 rounded truncate mb-0.5
-                            ${eventTypeColors[event.type]}
-                          `}
-                          title={event.title}
-                        >
-                          {event.title}
-                        </div>
-                      ))}
-                    </div>
-                  );
-                })}
-              </>
-            ))}
-          </div>
-        </ScrollArea>
-      </div>
+      </ScrollArea>
     </div>
   );
 }
@@ -649,36 +666,49 @@ interface DayViewProps {
 }
 
 function DayView({ day, events, hours }: DayViewProps) {
-  return (
-    <div>
-      <ScrollArea className="h-[600px]">
-        <div className="space-y-px">
-          {hours.map((hour) => {
-            const hourEvents = events.filter((event) => {
-              const eventStart = new Date(event.start);
-              return eventStart.getHours() === hour;
-            });
+  const getEventsForHour = (hour: number) => {
+    return events.filter((event) => {
+      const eventStart = new Date(event.start);
+      return eventStart.getHours() === hour;
+    });
+  };
 
+  return (
+    <div className="h-full flex">
+      <ScrollArea className="flex-1">
+        <div className="max-w-4xl mx-auto p-4">
+          {hours.map((hour) => {
+            const hourEvents = getEventsForHour(hour);
+            const hourDate = new Date();
+            hourDate.setHours(hour, 0, 0, 0);
+            
             return (
-              <div key={hour} className="flex border-t border-border/50">
-                <div className="w-20 p-2 text-sm text-muted-foreground text-right shrink-0">
-                  {format(new Date().setHours(hour, 0), 'h:mm a')}
+              <div key={hour} className="flex border-b min-h-[56px]">
+                <div className="w-20 shrink-0 pr-3 py-2 text-right text-sm text-muted-foreground">
+                  {format(hourDate, 'h:mm a')}
                 </div>
-                <div className="flex-1 min-h-[60px] p-1 hover:bg-muted/30 transition-colors">
+                <div className="flex-1 py-1 px-2 hover:bg-muted/20 transition-colors">
                   {hourEvents.map((event) => (
                     <div
                       key={event.id}
                       className={`
-                        p-2 rounded mb-1
-                        ${eventTypeColors[event.type]}
+                        p-2 rounded mb-1 flex items-start gap-3
+                        ${eventTypeBgColors[event.type]}
                       `}
                     >
-                      <div className="font-medium text-sm">{event.title}</div>
-                      {event.userName && (
-                        <div className="text-xs opacity-75 flex items-center gap-1 mt-1">
-                          <User className="h-3 w-3" />
-                          {event.userName}
-                        </div>
+                      <div className="flex-1">
+                        <div className="font-medium text-sm">{event.title}</div>
+                        {event.userName && (
+                          <div className="text-xs opacity-75 flex items-center gap-1 mt-0.5">
+                            <User className="h-3 w-3" />
+                            {event.userName}
+                          </div>
+                        )}
+                      </div>
+                      {event.status && (
+                        <Badge variant="outline" className="text-xs shrink-0">
+                          {event.status}
+                        </Badge>
                       )}
                     </div>
                   ))}
@@ -686,6 +716,167 @@ function DayView({ day, events, hours }: DayViewProps) {
               </div>
             );
           })}
+        </div>
+      </ScrollArea>
+      
+      <div className="w-80 border-l p-4 hidden lg:block">
+        <h3 className="font-semibold mb-3">Today's Summary</h3>
+        <div className="space-y-2">
+          <div className="p-3 rounded-lg bg-muted">
+            <div className="text-2xl font-bold">{events.length}</div>
+            <div className="text-sm text-muted-foreground">Events scheduled</div>
+          </div>
+          <div className="space-y-2 mt-4">
+            {events.slice(0, 5).map((event) => (
+              <div 
+                key={event.id} 
+                className={`
+                  p-2 rounded text-sm
+                  ${eventTypeBgColors[event.type]}
+                `}
+              >
+                <div className="font-medium truncate">{event.title}</div>
+                <div className="text-xs opacity-75">
+                  {format(event.start, 'h:mm a')}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+interface RoadmapViewProps {
+  events: CalendarEvent[];
+  currentDate: Date;
+  teamMembers: Array<{ id: number; fullName: string; email: string }>;
+}
+
+function RoadmapView({ events, currentDate, teamMembers }: RoadmapViewProps) {
+  const months = useMemo(() => {
+    return [currentDate, addMonths(currentDate, 1), addMonths(currentDate, 2)];
+  }, [currentDate]);
+
+  const roadmapStart = startOfMonth(currentDate);
+  const roadmapEnd = endOfMonth(addMonths(currentDate, 2));
+  const totalDays = differenceInDays(roadmapEnd, roadmapStart) + 1;
+
+  const workItemEvents = events.filter(e => e.type === 'work_item');
+  const holidayEvents = events.filter(e => e.type === 'holiday');
+
+  const groupedByUser = useMemo(() => {
+    const groups: Record<number, CalendarEvent[]> = {};
+    workItemEvents.forEach(event => {
+      if (event.userId) {
+        if (!groups[event.userId]) groups[event.userId] = [];
+        groups[event.userId].push(event);
+      }
+    });
+    return groups;
+  }, [workItemEvents]);
+
+  const getBarStyle = (event: CalendarEvent) => {
+    const start = event.start < roadmapStart ? roadmapStart : event.start;
+    const end = event.end > roadmapEnd ? roadmapEnd : event.end;
+    const startOffset = differenceInDays(start, roadmapStart);
+    const duration = Math.max(differenceInDays(end, start) + 1, 1);
+    
+    return {
+      left: `${(startOffset / totalDays) * 100}%`,
+      width: `${(duration / totalDays) * 100}%`,
+    };
+  };
+
+  return (
+    <div className="h-full flex flex-col">
+      <div className="flex border-b bg-muted/30">
+        <div className="w-48 shrink-0 p-2 border-r font-medium text-sm">
+          Team Members
+        </div>
+        <div className="flex-1 flex">
+          {months.map((month, i) => (
+            <div 
+              key={i} 
+              className="flex-1 p-2 text-center border-r last:border-r-0 font-medium text-sm"
+            >
+              {format(month, 'MMMM yyyy')}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <ScrollArea className="flex-1">
+        <div>
+          {teamMembers.filter(m => groupedByUser[m.id]?.length > 0).map((member) => (
+            <div key={member.id} className="flex border-b hover:bg-muted/20">
+              <div className="w-48 shrink-0 p-3 border-r flex items-center gap-2">
+                <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-sm font-medium">
+                  {(member.fullName || member.email).charAt(0).toUpperCase()}
+                </div>
+                <span className="text-sm truncate">{member.fullName || member.email}</span>
+              </div>
+              <div className="flex-1 relative min-h-[60px] py-2">
+                {groupedByUser[member.id]?.map((event) => {
+                  const style = getBarStyle(event);
+                  return (
+                    <div
+                      key={event.id}
+                      className={`
+                        absolute h-6 rounded px-2 text-xs flex items-center truncate
+                        ${eventTypeColors[event.type]}
+                      `}
+                      style={{ ...style, top: '50%', transform: 'translateY(-50%)' }}
+                      title={event.title}
+                    >
+                      {event.title}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+
+          {holidayEvents.length > 0 && (
+            <>
+              <div className="flex border-b bg-muted/50">
+                <div className="w-48 shrink-0 p-2 border-r font-medium text-xs text-muted-foreground uppercase">
+                  Holidays & Leave
+                </div>
+                <div className="flex-1" />
+              </div>
+              {holidayEvents.map((event) => (
+                <div key={event.id} className="flex border-b hover:bg-muted/20">
+                  <div className="w-48 shrink-0 p-3 border-r">
+                    <span className="text-sm">{event.userName || 'Public Holiday'}</span>
+                  </div>
+                  <div className="flex-1 relative min-h-[50px] py-2">
+                    <div
+                      className={`
+                        absolute h-5 rounded px-2 text-xs flex items-center truncate
+                        ${eventTypeColors[event.type]}
+                      `}
+                      style={{ ...getBarStyle(event), top: '50%', transform: 'translateY(-50%)' }}
+                      title={event.title}
+                    >
+                      {event.title}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </>
+          )}
+
+          {Object.keys(groupedByUser).length === 0 && holidayEvents.length === 0 && (
+            <div className="flex items-center justify-center h-64 text-muted-foreground">
+              <div className="text-center">
+                <GanttChart className="h-12 w-12 mx-auto mb-3 opacity-50" />
+                <p>No scheduled items in this period</p>
+                <p className="text-sm">Work items and holidays will appear here</p>
+              </div>
+            </div>
+          )}
         </div>
       </ScrollArea>
     </div>
