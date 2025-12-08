@@ -137,6 +137,7 @@ const AIAssistantSettings = lazy(() => import("@/pages/AIAssistantSettings"));
 
 // Settings Pages
 const BookableAppointmentsPage = lazy(() => import("@/pages/settings/BookableAppointmentsPage"));
+const CalendarPage = lazy(() => import("@/pages/settings/CalendarPage"));
 
 // Create a wrapper component to handle errors
 class AppErrorBoundary extends React.Component<
@@ -740,6 +741,7 @@ function AppContent() {
               
               {/* Settings Pages */}
               <Route path="/settings/bookable-appointments" component={BookableAppointmentsPage} />
+              <Route path="/settings/calendar" component={CalendarPage} />
               
               {/* Other Routes */}
               {/* /profile redirects to /core/user-profile are handled above */}
