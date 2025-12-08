@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../db';
-import { eq, and, gte, lte, desc, sql, between } from 'drizzle-orm';
+import { eq, and, gte, lte, desc, sql, between, inArray } from 'drizzle-orm';
 import { 
   splynxTeams, 
   splynxAdministrators,
@@ -12,7 +12,9 @@ import {
   integrations,
   users,
   workItems,
-  organizations
+  organizations,
+  teamMembers,
+  teams
 } from '@shared/schema';
 import { SplynxService } from '../services/integrations/splynxService';
 import { authenticateToken } from '../auth';
@@ -910,14 +912,157 @@ router.get('/calendar/work-items', authenticateToken, async (req: Request, res: 
 });
 
 // ========================================
+// CALENDAR FILTERS (teams, users, sources)
+// ========================================
+
+router.get('/calendar/filters', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const organizationId = (req as any).user.organizationId;
+    
+    const localTeams = await db
+      .select({
+        id: teams.id,
+        name: teams.name,
+      })
+      .from(teams)
+      .where(eq(teams.organizationId, organizationId));
+    
+    const splynxTeamsData = await db
+      .select({
+        id: splynxTeams.id,
+        splynxTeamId: splynxTeams.splynxTeamId,
+        title: splynxTeams.title,
+        color: splynxTeams.color,
+        memberIds: splynxTeams.memberIds,
+        lastFetchedAt: splynxTeams.lastFetchedAt,
+      })
+      .from(splynxTeams)
+      .where(eq(splynxTeams.organizationId, organizationId));
+    
+    const localUsers = await db
+      .select({
+        id: users.id,
+        fullName: users.fullName,
+        email: users.email,
+        isActive: users.isActive,
+      })
+      .from(users)
+      .where(eq(users.organizationId, organizationId));
+    
+    const splynxAdmins = await db
+      .select({
+        id: splynxAdministrators.id,
+        splynxAdminId: splynxAdministrators.splynxAdminId,
+        fullName: splynxAdministrators.fullName,
+        email: splynxAdministrators.email,
+        isActive: splynxAdministrators.isActive,
+        lastFetchedAt: splynxAdministrators.lastFetchedAt,
+      })
+      .from(splynxAdministrators)
+      .where(eq(splynxAdministrators.organizationId, organizationId));
+    
+    const localTeamMemberships = await db
+      .select({
+        teamId: teamMembers.teamId,
+        userId: teamMembers.userId,
+        role: teamMembers.role,
+      })
+      .from(teamMembers)
+      .innerJoin(teams, eq(teamMembers.teamId, teams.id))
+      .where(eq(teams.organizationId, organizationId));
+    
+    const userCalSettings = await db
+      .select({
+        userId: userCalendarSettings.userId,
+        splynxAdminId: userCalendarSettings.splynxAdminId,
+      })
+      .from(userCalendarSettings)
+      .where(eq(userCalendarSettings.organizationId, organizationId));
+    
+    const userToSplynxMap: Record<number, number> = {};
+    for (const setting of userCalSettings) {
+      if (setting.splynxAdminId) {
+        userToSplynxMap[setting.userId] = setting.splynxAdminId;
+      }
+    }
+    
+    res.json({
+      success: true,
+      filters: {
+        localTeams: localTeams.map(t => ({ id: t.id, name: t.name, source: 'local' })),
+        splynxTeams: splynxTeamsData.map(t => ({ 
+          id: t.id, 
+          splynxTeamId: t.splynxTeamId,
+          name: t.title,
+          color: t.color,
+          memberIds: t.memberIds,
+          source: 'splynx',
+          lastSynced: t.lastFetchedAt,
+        })),
+        localUsers: localUsers.map(u => ({ 
+          id: u.id, 
+          name: u.fullName || u.email, 
+          email: u.email,
+          isActive: u.isActive,
+          source: 'local',
+          splynxAdminId: userToSplynxMap[u.id],
+        })),
+        splynxAdmins: splynxAdmins.map(a => ({
+          id: a.id,
+          splynxAdminId: a.splynxAdminId,
+          name: a.fullName,
+          email: a.email,
+          isActive: a.isActive,
+          source: 'splynx',
+          lastSynced: a.lastFetchedAt,
+        })),
+        teamMemberships: localTeamMemberships,
+        dataSources: ['splynx_tasks', 'work_items', 'holidays', 'blocks'],
+      }
+    });
+  } catch (error: any) {
+    console.error('[CALENDAR] Error fetching filters:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ========================================
 // COMBINED CALENDAR DATA
 // ========================================
+
+interface NormalizedCalendarEvent {
+  id: string;
+  title: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  type: 'splynx_task' | 'work_item' | 'holiday' | 'public_holiday' | 'block';
+  color: string;
+  userId?: number;
+  userName?: string;
+  splynxAdminId?: number;
+  status?: string;
+  source: string;
+  metadata?: any;
+}
 
 router.get('/calendar/combined', authenticateToken, async (req: Request, res: Response) => {
   try {
     const organizationId = (req as any).user.organizationId;
     const userId = (req as any).user.id;
-    const { startDate, endDate, userIds, includeWorkItems, includeSplynxTasks } = req.query;
+    const { 
+      startDate, 
+      endDate, 
+      userIds, 
+      teamIds,
+      splynxTeamIds,
+      splynxAdminIds,
+      sources,
+      includeWorkItems = 'true', 
+      includeSplynxTasks = 'true',
+      includeHolidays = 'true',
+      includeBlocks = 'true',
+    } = req.query;
     
     if (!startDate || !endDate) {
       return res.status(400).json({ 
@@ -926,68 +1071,274 @@ router.get('/calendar/combined', authenticateToken, async (req: Request, res: Re
       });
     }
     
-    const blocks = await db
-      .select()
-      .from(calendarBlocks)
-      .where(and(
-        eq(calendarBlocks.organizationId, organizationId),
-        gte(calendarBlocks.startDatetime, new Date(startDate as string)),
-        lte(calendarBlocks.endDatetime, new Date(endDate as string))
-      ));
+    const events: NormalizedCalendarEvent[] = [];
+    const errors: string[] = [];
+    const metadata: any = {
+      range: { startDate, endDate },
+      lastSync: new Date().toISOString(),
+      counts: { splynxTasks: 0, workItems: 0, holidays: 0, publicHolidays: 0, blocks: 0 },
+      filtersApplied: { userIds, teamIds, splynxTeamIds, splynxAdminIds, sources },
+    };
     
-    const requests = await db
-      .select()
-      .from(holidayRequests)
-      .where(and(
-        eq(holidayRequests.organizationId, organizationId),
-        eq(holidayRequests.status, 'approved'),
-        lte(holidayRequests.startDate, endDate as string),
-        gte(holidayRequests.endDate, startDate as string)
-      ));
+    const parsedUserIds = userIds ? (userIds as string).split(',').map(Number).filter(n => !isNaN(n)) : [];
+    const parsedTeamIds = teamIds ? (teamIds as string).split(',').map(Number).filter(n => !isNaN(n)) : [];
+    const parsedSplynxAdminIds = splynxAdminIds ? (splynxAdminIds as string).split(',').map(Number).filter(n => !isNaN(n)) : [];
     
-    const holidays = await db
-      .select()
-      .from(publicHolidays)
-      .where(and(
-        eq(publicHolidays.organizationId, organizationId),
-        gte(publicHolidays.date, startDate as string),
-        lte(publicHolidays.date, endDate as string)
-      ));
-    
-    let workItemsData: any[] = [];
-    if (includeWorkItems === 'true') {
-      workItemsData = await db
-        .select()
-        .from(workItems)
-        .where(and(
-          eq(workItems.organizationId, organizationId),
-          gte(workItems.dueDate, startDate as string),
-          lte(workItems.dueDate, endDate as string)
-        ));
+    let userIdsFromTeams: number[] = [];
+    if (parsedTeamIds.length > 0) {
+      const memberships = await db
+        .select({ userId: teamMembers.userId })
+        .from(teamMembers)
+        .where(inArray(teamMembers.teamId, parsedTeamIds));
+      userIdsFromTeams = memberships.map(m => m.userId);
     }
     
-    let splynxTasks: any[] = [];
+    const effectiveUserIds = Array.from(new Set([...parsedUserIds, ...userIdsFromTeams]));
+    
+    const userCalSettings = await db
+      .select()
+      .from(userCalendarSettings)
+      .where(eq(userCalendarSettings.organizationId, organizationId));
+    const userToSplynxMap: Record<number, number> = {};
+    const splynxToUserMap: Record<number, number> = {};
+    for (const s of userCalSettings) {
+      if (s.splynxAdminId) {
+        userToSplynxMap[s.userId] = s.splynxAdminId;
+        splynxToUserMap[s.splynxAdminId] = s.userId;
+      }
+    }
+    
+    let effectiveSplynxAdminIds = [...parsedSplynxAdminIds];
+    if (effectiveUserIds.length > 0) {
+      for (const uid of effectiveUserIds) {
+        if (userToSplynxMap[uid]) {
+          effectiveSplynxAdminIds.push(userToSplynxMap[uid]);
+        }
+      }
+      effectiveSplynxAdminIds = Array.from(new Set(effectiveSplynxAdminIds));
+    }
+    
+    const usersMap: Record<number, { fullName: string; email: string }> = {};
+    const allUsers = await db.select().from(users).where(eq(users.organizationId, organizationId));
+    for (const u of allUsers) {
+      usersMap[u.id] = { fullName: u.fullName || '', email: u.email };
+    }
+    
+    const adminsMap: Record<number, { fullName: string; email: string }> = {};
+    const allAdmins = await db.select().from(splynxAdministrators).where(eq(splynxAdministrators.organizationId, organizationId));
+    for (const a of allAdmins) {
+      adminsMap[a.splynxAdminId] = { fullName: a.fullName || '', email: a.email || '' };
+    }
+    
+    if (includeBlocks === 'true') {
+      try {
+        let blocksQuery = db
+          .select()
+          .from(calendarBlocks)
+          .where(and(
+            eq(calendarBlocks.organizationId, organizationId),
+            gte(calendarBlocks.startDatetime, new Date(startDate as string)),
+            lte(calendarBlocks.endDatetime, new Date(endDate as string))
+          ))
+          .$dynamic();
+        
+        if (effectiveUserIds.length > 0) {
+          blocksQuery = blocksQuery.where(inArray(calendarBlocks.userId, effectiveUserIds));
+        }
+        
+        const blocks = await blocksQuery;
+        for (const b of blocks) {
+          events.push({
+            id: `block-${b.id}`,
+            title: b.title || b.blockType,
+            start: b.startDatetime.toISOString(),
+            end: b.endDatetime.toISOString(),
+            allDay: false,
+            type: 'block',
+            color: '#F97316',
+            userId: b.userId,
+            userName: usersMap[b.userId]?.fullName || usersMap[b.userId]?.email,
+            source: 'local',
+            metadata: { blockType: b.blockType, isRecurring: b.isRecurring },
+          });
+        }
+        metadata.counts.blocks = blocks.length;
+      } catch (e: any) {
+        errors.push(`Blocks: ${e.message}`);
+      }
+    }
+    
+    if (includeHolidays === 'true') {
+      try {
+        let requestsQuery = db
+          .select()
+          .from(holidayRequests)
+          .where(and(
+            eq(holidayRequests.organizationId, organizationId),
+            eq(holidayRequests.status, 'approved'),
+            lte(holidayRequests.startDate, endDate as string),
+            gte(holidayRequests.endDate, startDate as string)
+          ))
+          .$dynamic();
+        
+        if (effectiveUserIds.length > 0) {
+          requestsQuery = requestsQuery.where(inArray(holidayRequests.userId, effectiveUserIds));
+        }
+        
+        const requests = await requestsQuery;
+        for (const r of requests) {
+          events.push({
+            id: `holiday-${r.id}`,
+            title: `${usersMap[r.userId]?.fullName || 'User'} - ${r.holidayType || 'Leave'}`,
+            start: r.startDate,
+            end: r.endDate,
+            allDay: true,
+            type: 'holiday',
+            color: '#22C55E',
+            userId: r.userId,
+            userName: usersMap[r.userId]?.fullName || usersMap[r.userId]?.email,
+            status: r.status,
+            source: 'local',
+            metadata: { holidayType: r.holidayType, daysCount: r.daysCount, notes: r.notes },
+          });
+        }
+        metadata.counts.holidays = requests.length;
+        
+        const publicHols = await db
+          .select()
+          .from(publicHolidays)
+          .where(and(
+            eq(publicHolidays.organizationId, organizationId),
+            gte(publicHolidays.date, startDate as string),
+            lte(publicHolidays.date, endDate as string)
+          ));
+        
+        for (const h of publicHols) {
+          events.push({
+            id: `public-holiday-${h.id}`,
+            title: h.name,
+            start: h.date,
+            end: h.date,
+            allDay: true,
+            type: 'public_holiday',
+            color: '#10B981',
+            source: 'local',
+            metadata: { region: h.region, country: h.country },
+          });
+        }
+        metadata.counts.publicHolidays = publicHols.length;
+      } catch (e: any) {
+        errors.push(`Holidays: ${e.message}`);
+      }
+    }
+    
+    if (includeWorkItems === 'true') {
+      try {
+        let wiQuery = db
+          .select()
+          .from(workItems)
+          .where(and(
+            eq(workItems.organizationId, organizationId),
+            gte(workItems.dueDate, startDate as string),
+            lte(workItems.dueDate, endDate as string)
+          ))
+          .$dynamic();
+        
+        if (effectiveUserIds.length > 0) {
+          wiQuery = wiQuery.where(inArray(workItems.assignedTo, effectiveUserIds));
+        }
+        if (parsedTeamIds.length > 0) {
+          wiQuery = wiQuery.where(inArray(workItems.teamId, parsedTeamIds));
+        }
+        
+        const workItemsData = await wiQuery;
+        for (const wi of workItemsData) {
+          events.push({
+            id: `work-item-${wi.id}`,
+            title: wi.title,
+            start: wi.dueDate || '',
+            end: wi.dueDate || '',
+            allDay: true,
+            type: 'work_item',
+            color: '#8B5CF6',
+            userId: wi.assignedTo || undefined,
+            userName: wi.assignedTo ? (usersMap[wi.assignedTo]?.fullName || usersMap[wi.assignedTo]?.email) : undefined,
+            status: wi.status,
+            source: 'local',
+            metadata: { 
+              teamId: wi.teamId, 
+              workItemType: wi.workItemType,
+              workflowTemplateId: wi.workflowTemplateId,
+            },
+          });
+        }
+        metadata.counts.workItems = workItemsData.length;
+      } catch (e: any) {
+        errors.push(`Work Items: ${e.message}`);
+      }
+    }
+    
     if (includeSplynxTasks === 'true') {
       try {
         const splynxService = await getSplynxServiceForOrg(organizationId);
-        splynxTasks = await splynxService.getSchedulingTasks({
+        const tasks = await splynxService.getSchedulingTasks({
           dateFrom: startDate as string,
           dateTo: endDate as string,
+          assignedAdminId: effectiveSplynxAdminIds.length === 1 ? effectiveSplynxAdminIds[0] : undefined,
         });
-      } catch (e) {
-        console.log('[CALENDAR] Could not fetch Splynx tasks:', (e as Error).message);
+        
+        let filteredTasks = tasks;
+        if (effectiveSplynxAdminIds.length > 1) {
+          filteredTasks = tasks.filter((t: any) => 
+            effectiveSplynxAdminIds.includes(parseInt(t.assigned_to || t.assigned_admin_id || '0'))
+          );
+        } else if (effectiveSplynxAdminIds.length === 0 && effectiveUserIds.length > 0) {
+          filteredTasks = [];
+        }
+        
+        for (const t of filteredTasks) {
+          const adminId = parseInt(t.assigned_to || t.assigned_admin_id || '0');
+          const taskStart = t.scheduled_date ? `${t.scheduled_date}T${t.scheduled_time || '09:00'}:00` : '';
+          const duration = parseInt(t.scheduled_duration_hours || '1') * 60 + parseInt(t.scheduled_duration_minutes || '0');
+          const taskEnd = taskStart ? new Date(new Date(taskStart).getTime() + duration * 60000).toISOString() : '';
+          
+          events.push({
+            id: `splynx-task-${t.id}`,
+            title: t.title || t.description || 'Splynx Task',
+            start: taskStart,
+            end: taskEnd,
+            allDay: false,
+            type: 'splynx_task',
+            color: '#3B82F6',
+            splynxAdminId: adminId,
+            userName: adminsMap[adminId]?.fullName || `Admin ${adminId}`,
+            userId: splynxToUserMap[adminId],
+            status: t.status || t.workflow_status_id?.toString(),
+            source: 'splynx',
+            metadata: {
+              projectId: t.project_id,
+              customerId: t.customer_id,
+              location: t.location,
+              workflowStatusId: t.workflow_status_id,
+            },
+          });
+        }
+        metadata.counts.splynxTasks = filteredTasks.length;
+        metadata.splynxLastSync = new Date().toISOString();
+      } catch (e: any) {
+        errors.push(`Splynx Tasks: ${e.message}`);
+        metadata.splynxError = e.message;
       }
     }
     
     res.json({
       success: true,
-      data: {
-        blocks,
-        holidayRequests: requests,
-        publicHolidays: holidays,
-        workItems: workItemsData,
-        splynxTasks,
-      }
+      events,
+      metadata: {
+        ...metadata,
+        totalEvents: events.length,
+        errors: errors.length > 0 ? errors : undefined,
+      },
     });
   } catch (error: any) {
     console.error('[CALENDAR] Error fetching combined data:', error.message);
