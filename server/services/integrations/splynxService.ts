@@ -665,7 +665,8 @@ export class SplynxService {
     color?: string;
   }>> {
     try {
-      const url = this.buildUrl('admin/scheduling/teams');
+      // Try config path first (correct Splynx API v2 path)
+      const url = this.buildUrl('admin/config/scheduling/teams');
       
       console.log('[SPLYNX getSchedulingTeams] Fetching teams from:', url);
       

@@ -156,21 +156,16 @@ export function TeamPanel({ team, open, onClose, onManageMembers, isAdmin }: Tea
     enabled: open && currentUser?.role === 'super_admin',
   });
   
-  // Fetch Splynx teams from calendar filters (cached from Splynx sync)
-  const { data: filtersResponse, isLoading: isLoadingSplynxTeams } = useQuery<{ 
-    filters: { 
-      splynxTeams: Array<{ id: number; splynxTeamId: number; name: string }> 
-    } 
+  // Fetch Splynx teams from live API
+  const { data: splynxTeamsResponse, isLoading: isLoadingSplynxTeams } = useQuery<{ 
+    success: boolean;
+    teams: Array<{ id: number; title: string }>;
   }>({
-    queryKey: ['/api/calendar/filters'],
+    queryKey: ['/api/calendar/splynx/teams'],
     enabled: open,
   });
   
-  // Map cached splynx teams to expected format (use splynxTeamId as the value to store)
-  const splynxTeams = (filtersResponse?.filters?.splynxTeams || []).map(t => ({
-    id: t.splynxTeamId,
-    title: t.name,
-  }));
+  const splynxTeams = splynxTeamsResponse?.teams || [];
   
   useEffect(() => {
     if (team) {
