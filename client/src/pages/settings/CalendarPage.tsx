@@ -46,62 +46,81 @@ interface CalendarEvent {
   title: string;
   start: Date;
   end: Date;
-  type: 'task' | 'holiday' | 'block' | 'work_item';
+  allDay?: boolean;
+  type: 'splynx_task' | 'work_item' | 'holiday' | 'public_holiday' | 'block';
   color?: string;
   userId?: number;
   userName?: string;
+  splynxAdminId?: number;
   status?: string;
+  source?: string;
+  metadata?: any;
 }
 
-interface HolidayRequest {
-  id: number;
-  userId: number;
-  startDate: string;
-  endDate: string;
-  status: string;
-  type: string;
-  reason: string;
-}
-
-interface CalendarBlock {
-  id: number;
-  userId: number;
+interface ApiCalendarEvent {
+  id: string;
   title: string;
-  startTime: string;
-  endTime: string;
-  isRecurring: boolean;
-  blockType: string;
+  start: string;
+  end: string;
+  allDay: boolean;
+  type: 'splynx_task' | 'work_item' | 'holiday' | 'public_holiday' | 'block';
+  color: string;
+  userId?: number;
+  userName?: string;
+  splynxAdminId?: number;
+  status?: string;
+  source: string;
+  metadata?: any;
 }
 
-interface PublicHoliday {
-  id: number;
-  name: string;
-  date: string;
-  region: string;
+interface CalendarCombinedResponse {
+  success: boolean;
+  events: ApiCalendarEvent[];
+  metadata: {
+    range: { startDate: string; endDate: string };
+    lastSync: string;
+    counts: {
+      splynxTasks: number;
+      workItems: number;
+      holidays: number;
+      publicHolidays: number;
+      blocks: number;
+    };
+    totalEvents: number;
+    errors?: string[];
+    splynxLastSync?: string;
+    splynxError?: string;
+  };
 }
 
-interface WorkItem {
-  id: number;
-  title: string;
-  status: string;
-  dueDate: string;
-  assignedTo: number;
+interface CalendarFiltersResponse {
+  success: boolean;
+  filters: {
+    localTeams: Array<{ id: number; name: string; source: string }>;
+    splynxTeams: Array<{ id: number; splynxTeamId: number; name: string; color: string; memberIds: number[]; source: string; lastSynced: string }>;
+    localUsers: Array<{ id: number; name: string; email: string; isActive: boolean; source: string; splynxAdminId?: number }>;
+    splynxAdmins: Array<{ id: number; splynxAdminId: number; name: string; email: string; isActive: boolean; source: string; lastSynced: string }>;
+    teamMemberships: Array<{ teamId: number; userId: number; role: string }>;
+    dataSources: string[];
+  };
 }
 
 type ViewMode = 'month' | 'week' | 'day' | 'roadmap';
 
 const eventTypeColors: Record<string, string> = {
-  task: 'bg-blue-500 text-white',
-  holiday: 'bg-green-500 text-white',
-  block: 'bg-orange-500 text-white',
+  splynx_task: 'bg-blue-500 text-white',
   work_item: 'bg-purple-500 text-white',
+  holiday: 'bg-green-500 text-white',
+  public_holiday: 'bg-emerald-500 text-white',
+  block: 'bg-orange-500 text-white',
 };
 
 const eventTypeBgColors: Record<string, string> = {
-  task: 'bg-blue-100 text-blue-800 border-blue-200',
-  holiday: 'bg-green-100 text-green-800 border-green-200',
-  block: 'bg-orange-100 text-orange-800 border-orange-200',
+  splynx_task: 'bg-blue-100 text-blue-800 border-blue-200',
   work_item: 'bg-purple-100 text-purple-800 border-purple-200',
+  holiday: 'bg-green-100 text-green-800 border-green-200',
+  public_holiday: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+  block: 'bg-orange-100 text-orange-800 border-orange-200',
 };
 
 const statusColors: Record<string, string> = {
@@ -115,6 +134,7 @@ export default function CalendarPage() {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [selectedUserId, setSelectedUserId] = useState<string>('all');
+  const [selectedTeamId, setSelectedTeamId] = useState<string>('all');
 
   const startDate = useMemo(() => {
     if (viewMode === 'roadmap') {
@@ -140,24 +160,35 @@ export default function CalendarPage() {
     }
   }, [currentDate, viewMode]);
 
-  const { data: calendarData, isLoading } = useQuery<{
-    holidayRequests: Array<{ request: HolidayRequest; user: { id: number; fullName: string } }>;
-    calendarBlocks: Array<{ block: CalendarBlock; user: { id: number; fullName: string } }>;
-    publicHolidays: PublicHoliday[];
-    workItems: WorkItem[];
-  }>({
-    queryKey: ['/api/calendar/combined', startDate, endDate, selectedUserId],
+  const { data: filtersData } = useQuery<CalendarFiltersResponse>({
+    queryKey: ['/api/calendar/filters'],
+    queryFn: async () => {
+      const response = await fetch('/api/calendar/filters', {
+        headers: {
+          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
+        },
+      });
+      if (!response.ok) throw new Error('Failed to fetch filters');
+      return response.json();
+    },
+  });
+
+  const { data: calendarData, isLoading } = useQuery<CalendarCombinedResponse>({
+    queryKey: ['/api/calendar/combined', startDate, endDate, selectedUserId, selectedTeamId],
     queryFn: async () => {
       const params = new URLSearchParams({
         startDate,
         endDate,
         includeHolidays: 'true',
         includeBlocks: 'true',
-        includePublicHolidays: 'true',
         includeWorkItems: 'true',
+        includeSplynxTasks: 'true',
       });
       if (selectedUserId !== 'all') {
         params.append('userIds', selectedUserId);
+      }
+      if (selectedTeamId !== 'all') {
+        params.append('teamIds', selectedTeamId);
       }
       const response = await fetch(`/api/calendar/combined?${params}`, {
         headers: {
@@ -165,86 +196,51 @@ export default function CalendarPage() {
         },
       });
       if (!response.ok) throw new Error('Failed to fetch calendar data');
-      const data = await response.json();
-      return data;
+      return response.json();
     },
   });
 
-  const { data: teamMembers } = useQuery<Array<{ id: number; fullName: string; email: string }>>({
-    queryKey: ['/api/users'],
-    queryFn: async () => {
-      const response = await fetch('/api/users', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('authToken')}`,
-        },
-      });
-      if (!response.ok) return [];
-      const data = await response.json();
-      return data.users || data || [];
-    },
-  });
+  const teams = useMemo(() => {
+    if (!filtersData?.filters) return [];
+    return filtersData.filters.localTeams;
+  }, [filtersData]);
+
+  const teamMembers = useMemo(() => {
+    if (!filtersData?.filters) return [];
+    return filtersData.filters.localUsers.map(u => ({
+      id: u.id,
+      fullName: u.name,
+      email: u.email,
+    }));
+  }, [filtersData]);
+
+  const filteredTeamMembers = useMemo(() => {
+    if (selectedTeamId === 'all') return teamMembers;
+    const teamId = parseInt(selectedTeamId);
+    const teamMemberIds = filtersData?.filters.teamMemberships
+      .filter(m => m.teamId === teamId)
+      .map(m => m.userId) || [];
+    return teamMembers.filter(u => teamMemberIds.includes(u.id));
+  }, [teamMembers, selectedTeamId, filtersData]);
 
   const events = useMemo(() => {
-    const allEvents: CalendarEvent[] = [];
-
-    if (calendarData?.holidayRequests) {
-      calendarData.holidayRequests.forEach(({ request, user }) => {
-        allEvents.push({
-          id: `holiday-${request.id}`,
-          title: `${user?.fullName || 'User'} - ${request.type}`,
-          start: new Date(request.startDate),
-          end: new Date(request.endDate),
-          type: 'holiday',
-          userId: request.userId,
-          userName: user?.fullName,
-          status: request.status,
-        });
-      });
-    }
-
-    if (calendarData?.calendarBlocks) {
-      calendarData.calendarBlocks.forEach(({ block, user }) => {
-        allEvents.push({
-          id: `block-${block.id}`,
-          title: block.title,
-          start: new Date(block.startTime),
-          end: new Date(block.endTime),
-          type: 'block',
-          userId: block.userId,
-          userName: user?.fullName,
-        });
-      });
-    }
-
-    if (calendarData?.publicHolidays) {
-      calendarData.publicHolidays.forEach((holiday) => {
-        allEvents.push({
-          id: `public-${holiday.id}`,
-          title: holiday.name,
-          start: new Date(holiday.date),
-          end: new Date(holiday.date),
-          type: 'holiday',
-        });
-      });
-    }
-
-    if (calendarData?.workItems) {
-      calendarData.workItems.forEach((item) => {
-        if (item.dueDate) {
-          allEvents.push({
-            id: `work-${item.id}`,
-            title: item.title,
-            start: new Date(item.dueDate),
-            end: new Date(item.dueDate),
-            type: 'work_item',
-            userId: item.assignedTo,
-            status: item.status,
-          });
-        }
-      });
-    }
-
-    return allEvents;
+    if (!calendarData?.events) return [];
+    
+    return calendarData.events.map((evt): CalendarEvent => ({
+      id: evt.id,
+      title: evt.title,
+      start: evt.start ? new Date(evt.start) : new Date(),
+      end: evt.end ? new Date(evt.end) : new Date(),
+      allDay: evt.allDay,
+      type: evt.type,
+      color: evt.color,
+      userId: evt.userId,
+      userName: evt.userName,
+      splynxAdminId: evt.splynxAdminId,
+      status: evt.status,
+      source: evt.source,
+      metadata: evt.metadata,
+    }));
   }, [calendarData]);
 
   const days = useMemo(() => {
@@ -371,20 +367,40 @@ export default function CalendarPage() {
         </div>
 
         <div className="flex items-center justify-between gap-2">
-          <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-            <SelectTrigger className="w-[120px] sm:w-[160px] h-8" data-testid="select-user-filter">
-              <User className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
-              <SelectValue placeholder="All..." />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All members</SelectItem>
-              {teamMembers?.map((member) => (
-                <SelectItem key={member.id} value={String(member.id)}>
-                  {member.fullName || member.email}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          <div className="flex items-center gap-1">
+            <Select value={selectedTeamId} onValueChange={(value) => {
+              setSelectedTeamId(value);
+              if (value !== 'all') setSelectedUserId('all');
+            }}>
+              <SelectTrigger className="w-[100px] sm:w-[130px] h-8" data-testid="select-team-filter">
+                <Layers className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
+                <SelectValue placeholder="Team..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All teams</SelectItem>
+                {teams.map((team) => (
+                  <SelectItem key={team.id} value={String(team.id)}>
+                    {team.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+              <SelectTrigger className="w-[100px] sm:w-[130px] h-8" data-testid="select-user-filter">
+                <User className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
+                <SelectValue placeholder="User..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All members</SelectItem>
+                {filteredTeamMembers.map((member) => (
+                  <SelectItem key={member.id} value={String(member.id)}>
+                    {member.fullName || member.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           <div className="flex items-center border rounded-md">
             <Tooltip>
@@ -451,15 +467,19 @@ export default function CalendarPage() {
             <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
               <div className="flex items-center gap-1">
                 <div className="w-2.5 h-2.5 rounded bg-blue-500" />
-                <span>Tasks</span>
+                <span>Splynx</span>
+              </div>
+              <div className="flex items-center gap-1">
+                <div className="w-2.5 h-2.5 rounded bg-purple-500" />
+                <span>Work</span>
               </div>
               <div className="flex items-center gap-1">
                 <div className="w-2.5 h-2.5 rounded bg-green-500" />
                 <span>Leave</span>
               </div>
               <div className="flex items-center gap-1">
-                <div className="w-2.5 h-2.5 rounded bg-purple-500" />
-                <span>Work</span>
+                <div className="w-2.5 h-2.5 rounded bg-orange-500" />
+                <span>Block</span>
               </div>
             </div>
           </div>
