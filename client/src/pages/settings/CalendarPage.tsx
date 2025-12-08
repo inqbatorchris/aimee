@@ -333,11 +333,12 @@ export default function CalendarPage() {
 
   const initSplynxTaskEdit = () => {
     if (splynxTaskDetail?.task) {
+      const task = splynxTaskDetail.task;
       // Splynx assignment model:
       // - assigned_to: enum ('assigned_to_anyone', 'assigned_to_administrator', 'assigned_to_team')
       // - assignee: the ID (interpretation depends on assigned_to)
-      const assignedTo = splynxTaskDetail.task.assigned_to;
-      const assigneeValue = splynxTaskDetail.task.assignee || 0;
+      const assignedTo = task.assigned_to;
+      const assigneeValue = task.assignee || 0;
       let derivedTeamId = 0;
       let derivedAdminId = 0;
       
@@ -356,15 +357,24 @@ export default function CalendarPage() {
         }
       }
       
+      // Parse scheduled_from datetime (format: "2025-12-09 13:00:00")
+      let scheduledDate = '';
+      let scheduledTime = '';
+      if (task.scheduled_from) {
+        const parts = task.scheduled_from.split(' ');
+        if (parts[0]) scheduledDate = parts[0]; // yyyy-mm-dd
+        if (parts[1]) scheduledTime = parts[1].substring(0, 5); // hh:mm
+      }
+      
       setSplynxTaskEdit({
-        title: splynxTaskDetail.task.title || '',
-        description: splynxTaskDetail.task.description || '',
-        location: splynxTaskDetail.task.location || '',
-        scheduled_date: splynxTaskDetail.task.scheduled_date || '',
-        scheduled_time: splynxTaskDetail.task.scheduled_time || '',
+        title: task.title || '',
+        description: task.description || '',
+        location: task.address || '',
+        scheduled_date: scheduledDate,
+        scheduled_time: scheduledTime,
         assigned_to: derivedAdminId,
         team_id: derivedTeamId,
-        project_id: splynxTaskDetail.task.project_id || 0,
+        project_id: task.project_id || 0,
       });
     }
   };
@@ -374,10 +384,13 @@ export default function CalendarPage() {
     const payload: Record<string, any> = {};
     if (splynxTaskEdit.title) payload.title = splynxTaskEdit.title;
     if (splynxTaskEdit.description !== undefined) payload.description = splynxTaskEdit.description;
-    if (splynxTaskEdit.location) payload.location = splynxTaskEdit.location;
-    if (splynxTaskEdit.scheduled_date) payload.scheduled_date = splynxTaskEdit.scheduled_date;
-    if (splynxTaskEdit.scheduled_time) payload.scheduled_time = splynxTaskEdit.scheduled_time;
-    if (splynxTaskEdit.assigned_to && splynxTaskEdit.assigned_to > 0) payload.assigned_to = splynxTaskEdit.assigned_to;
+    if (splynxTaskEdit.location) payload.address = splynxTaskEdit.location; // Splynx uses 'address' field
+    // Combine date and time into scheduled_from format
+    if (splynxTaskEdit.scheduled_date) {
+      const time = splynxTaskEdit.scheduled_time || '00:00';
+      payload.scheduled_from = `${splynxTaskEdit.scheduled_date} ${time}:00`;
+    }
+    if (splynxTaskEdit.assigned_to && splynxTaskEdit.assigned_to > 0) payload.assignee = splynxTaskEdit.assigned_to;
     if (splynxTaskEdit.team_id && splynxTaskEdit.team_id > 0) payload.team_id = splynxTaskEdit.team_id;
     if (splynxTaskEdit.project_id && splynxTaskEdit.project_id > 0) payload.project_id = splynxTaskEdit.project_id;
     updateSplynxTaskMutation.mutate(payload);
@@ -913,40 +926,22 @@ export default function CalendarPage() {
               
               <ScrollArea className="flex-1 px-6">
                 <div className="py-4 space-y-4">
-                  {/* Summary Section - Compact Grid */}
-                  <div className="grid grid-cols-2 gap-3 text-sm">
-                    <div className="space-y-0.5">
-                      <div className="text-xs text-muted-foreground">Start</div>
-                      <div className="font-medium">
-                        {format(selectedEvent.start, 'MMM d, yyyy')}
-                        {!selectedEvent.allDay && <span className="text-muted-foreground"> {format(selectedEvent.start, 'h:mm a')}</span>}
-                      </div>
-                    </div>
-                    <div className="space-y-0.5">
-                      <div className="text-xs text-muted-foreground">End</div>
-                      <div className="font-medium">
-                        {format(selectedEvent.end, 'MMM d, yyyy')}
-                        {!selectedEvent.allDay && <span className="text-muted-foreground"> {format(selectedEvent.end, 'h:mm a')}</span>}
-                      </div>
-                    </div>
-                  </div>
-                  
-                  {/* Assignee & Status Row */}
-                  {(selectedEvent.userName || selectedEvent.status) && (
-                    <div className="flex items-center gap-4 text-sm">
-                      {selectedEvent.userName && (
+                {selectedEvent.type === 'splynx_task' && (
+                  <div className="space-y-4 pt-2">
+                    {/* Compact date/time/status header */}
+                    <div className="flex items-center justify-between text-sm pb-2 border-b">
+                      <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1.5">
-                          <User className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span>{(() => {
-                            const assigneeId = selectedEvent.metadata?.assigneeId;
-                            if (assigneeId) {
-                              const admin = filtersData?.filters?.splynxAdmins?.find((a: any) => a.splynxAdminId === assigneeId);
-                              if (admin?.name) return admin.name;
-                            }
-                            return selectedEvent.userName;
-                          })()}</span>
+                          <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span>{format(selectedEvent.start, 'MMM d, yyyy')}</span>
                         </div>
-                      )}
+                        {!selectedEvent.allDay && (
+                          <div className="flex items-center gap-1.5 text-muted-foreground">
+                            <Clock className="h-3.5 w-3.5" />
+                            <span>{format(selectedEvent.start, 'h:mm a')} - {format(selectedEvent.end, 'h:mm a')}</span>
+                          </div>
+                        )}
+                      </div>
                       {selectedEvent.status && (
                         <Badge variant="outline" className="text-xs">
                           {(() => {
@@ -961,10 +956,7 @@ export default function CalendarPage() {
                         </Badge>
                       )}
                     </div>
-                  )}
-
-                {selectedEvent.type === 'splynx_task' && (
-                  <div className="space-y-4 pt-2">
+                    
                     {isLoadingTaskDetail ? (
                       <div className="flex items-center justify-center py-8">
                         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -1196,10 +1188,10 @@ export default function CalendarPage() {
                                 />
                               )}
                               
-                              {splynxTaskDetail.task.location && (
+                              {splynxTaskDetail.task.address && (
                                 <div className="flex items-center gap-1.5">
                                   <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
-                                  <span className="text-xs">{splynxTaskDetail.task.location}</span>
+                                  <span className="text-xs">{splynxTaskDetail.task.address}</span>
                                 </div>
                               )}
                             </div>
