@@ -660,6 +660,52 @@ export class SplynxService {
     }
   }
 
+  async getWorkflowStatuses(workflowId: number): Promise<Array<{ id: number; name: string; color?: string }>> {
+    try {
+      const url = this.buildUrl(`admin/scheduling/workflows/${workflowId}/statuses`);
+      
+      console.log('[SPLYNX getWorkflowStatuses] Fetching statuses for workflow:', workflowId);
+      console.log('[SPLYNX getWorkflowStatuses] URL:', url);
+      
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('[SPLYNX getWorkflowStatuses] Response:', response.status);
+      console.log('[SPLYNX getWorkflowStatuses] Data:', JSON.stringify(response.data).substring(0, 500));
+      
+      // Handle different Splynx response formats
+      let statusData: any[] = [];
+      
+      if (Array.isArray(response.data)) {
+        statusData = response.data;
+      } else if (response.data?.items && Array.isArray(response.data.items)) {
+        statusData = response.data.items;
+      } else if (response.data?.data && Array.isArray(response.data.data)) {
+        statusData = response.data.data;
+      } else if (typeof response.data === 'object' && response.data !== null) {
+        // Some Splynx endpoints return object with numeric keys
+        const values = Object.values(response.data);
+        if (values.length > 0 && typeof values[0] === 'object') {
+          statusData = values as any[];
+        }
+      }
+      
+      return statusData.map((status: any) => ({
+        id: parseInt(status.id),
+        name: status.name || status.title || `Status ${status.id}`,
+        color: status.color,
+      }));
+    } catch (error: any) {
+      console.error('[SPLYNX getWorkflowStatuses] Error:', error.message);
+      console.error('[SPLYNX getWorkflowStatuses] Response:', error.response?.data);
+      throw new Error(`Failed to fetch workflow statuses from Splynx: ${error.message}`);
+    }
+  }
+
   async createSplynxTask(taskData: {
     taskName?: string;
     name?: string;

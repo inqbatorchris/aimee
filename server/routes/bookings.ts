@@ -1,9 +1,128 @@
 import { Router } from 'express';
 import { db } from '../db';
 import { eq, and, gte, sql } from 'drizzle-orm';
-import { bookableTaskTypes, bookingTokens, workItems, organizations, activityLogs } from '@shared/schema';
+import { bookableTaskTypes, bookingTokens, workItems, organizations, activityLogs, integrations } from '@shared/schema';
 import { SplynxService } from '../services/integrations/splynxService';
+import { authenticateToken } from '../auth';
 import crypto from 'crypto';
+
+// Encryption helpers for Splynx credentials
+const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
+const IV_LENGTH = 16;
+
+// Validate encryption key on module load
+if (!ENCRYPTION_KEY) {
+  console.warn('[BOOKINGS] WARNING: ENCRYPTION_KEY environment variable is not set. Booking confirmations will fail.');
+}
+
+class DecryptionError extends Error {
+  constructor(message: string, public readonly cause?: Error) {
+    super(message);
+    this.name = 'DecryptionError';
+  }
+}
+
+function decrypt(text: string): string {
+  if (!text) {
+    throw new DecryptionError('No encrypted data provided');
+  }
+  
+  if (!ENCRYPTION_KEY) {
+    throw new DecryptionError('ENCRYPTION_KEY environment variable is not configured');
+  }
+  
+  try {
+    const parts = text.split(':');
+    if (parts.length !== 2) {
+      throw new DecryptionError('Invalid encrypted data format - expected IV:ciphertext');
+    }
+    
+    const iv = Buffer.from(parts[0], 'hex');
+    const encryptedText = parts[1];
+    const key = crypto.createHash('sha256').update(String(ENCRYPTION_KEY)).digest();
+    const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+    let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
+    decrypted += decipher.final('utf8');
+    return decrypted;
+  } catch (error: any) {
+    if (error instanceof DecryptionError) {
+      throw error;
+    }
+    console.error('[BOOKINGS] Decryption failed:', error?.message || 'Unknown error');
+    throw new DecryptionError(`Credential decryption failed: ${error?.message || 'Unknown error'}`, error);
+  }
+}
+
+class SplynxServiceError extends Error {
+  constructor(message: string, public readonly errorType: 'not_configured' | 'decryption_failed' | 'invalid_credentials' | 'missing_fields') {
+    super(message);
+    this.name = 'SplynxServiceError';
+  }
+}
+
+/**
+ * Helper to get Splynx service for an organization
+ * Returns the service or throws a specific error for troubleshooting
+ */
+async function getSplynxServiceForOrg(organizationId: number): Promise<SplynxService> {
+  const [splynxIntegration] = await db
+    .select()
+    .from(integrations)
+    .where(and(
+      eq(integrations.organizationId, organizationId),
+      eq(integrations.platformType, 'splynx')
+    ))
+    .limit(1);
+  
+  if (!splynxIntegration) {
+    throw new SplynxServiceError(
+      'Splynx integration not configured for this organization',
+      'not_configured'
+    );
+  }
+  
+  if (!splynxIntegration.credentialsEncrypted) {
+    throw new SplynxServiceError(
+      'Splynx integration exists but credentials are not configured',
+      'not_configured'
+    );
+  }
+  
+  let credentials: any;
+  try {
+    const decrypted = decrypt(splynxIntegration.credentialsEncrypted);
+    credentials = JSON.parse(decrypted);
+  } catch (error: any) {
+    if (error instanceof DecryptionError) {
+      throw new SplynxServiceError(
+        `Splynx credential decryption failed: ${error.message}`,
+        'decryption_failed'
+      );
+    }
+    throw new SplynxServiceError(
+      `Failed to parse Splynx credentials: ${error.message}`,
+      'invalid_credentials'
+    );
+  }
+  
+  const { baseUrl, authHeader } = credentials;
+  
+  if (!baseUrl) {
+    throw new SplynxServiceError(
+      'Splynx baseUrl is missing from credentials',
+      'missing_fields'
+    );
+  }
+  
+  if (!authHeader) {
+    throw new SplynxServiceError(
+      'Splynx authHeader is missing from credentials',
+      'missing_fields'
+    );
+  }
+  
+  return new SplynxService({ baseUrl, authHeader });
+}
 
 const router = Router();
 
@@ -67,7 +186,7 @@ async function validateBookingToken(token: string, expectedOrgId?: number) {
 /**
  * Get bookable task types for an organization
  */
-router.get('/bookable-task-types', async (req, res) => {
+router.get('/bookable-task-types', authenticateToken, async (req, res) => {
   try {
     const organizationId = (req.user as any)?.organizationId;
     
@@ -91,7 +210,7 @@ router.get('/bookable-task-types', async (req, res) => {
 /**
  * Get bookable task types that match a work item's ticket type
  */
-router.get('/work-items/:workItemId/available-bookings', async (req, res) => {
+router.get('/work-items/:workItemId/available-bookings', authenticateToken, async (req, res) => {
   try {
     const { workItemId } = req.params;
     const organizationId = (req.user as any)?.organizationId;
@@ -161,7 +280,7 @@ router.get('/work-items/:workItemId/available-bookings', async (req, res) => {
 /**
  * Create booking token and return URL
  */
-router.post('/work-items/:workItemId/create-booking', async (req, res) => {
+router.post('/work-items/:workItemId/create-booking', authenticateToken, async (req, res) => {
   try {
     const { workItemId } = req.params;
     const { bookableTaskTypeId } = req.body;
@@ -316,31 +435,19 @@ router.post('/public/bookings/:token/available-slots', async (req, res) => {
       return res.status(validation.status).json({ error: validation.error });
     }
     
-    // Get organization data
-    const [org] = await db
-      .select()
-      .from(organizations)
-      .where(eq(organizations.id, validation.booking!.booking.organizationId))
-      .limit(1);
-    
-    if (!org) {
-      return res.status(500).json({ error: 'Organization not found' });
+    // Get Splynx service for this organization
+    let splynxService: SplynxService;
+    try {
+      splynxService = await getSplynxServiceForOrg(validation.booking!.booking.organizationId);
+    } catch (error: any) {
+      const isConfigError = error instanceof SplynxServiceError && error.errorType === 'not_configured';
+      const statusCode = isConfigError ? 503 : 500;
+      console.error('[BOOKINGS] Splynx service error:', error.message);
+      return res.status(statusCode).json({ 
+        error: isConfigError ? 'Splynx integration not configured' : 'Splynx configuration error',
+        details: error.message 
+      });
     }
-    
-    // Get Splynx credentials
-    const splynxUrl = (org as any).splynxUrl;
-    const splynxApiKey = (org as any).splynxApiKey;
-    const splynxApiSecret = (org as any).splynxApiSecret;
-    
-    if (!splynxUrl || !splynxApiKey || !splynxApiSecret) {
-      return res.status(500).json({ error: 'Splynx credentials not configured' });
-    }
-    
-    const splynxService = new SplynxService({
-      baseUrl: splynxUrl,
-      apiKey: splynxApiKey,
-      apiSecret: splynxApiSecret
-    });
     
     // Fetch available slots
     const slots = await splynxService.getAvailableSlots({
@@ -376,38 +483,32 @@ router.post('/public/bookings/:token/confirm', async (req, res) => {
       return res.status(validation.status).json({ error: validation.error });
     }
     
-    // Get work item and organization data BEFORE any external calls
+    // Get work item BEFORE any external calls
     const [workItem] = await db
       .select()
       .from(workItems)
       .where(eq(workItems.id, validation.booking!.booking.workItemId))
       .limit(1);
     
-    const [org] = await db
-      .select()
-      .from(organizations)
-      .where(eq(organizations.id, validation.booking!.booking.organizationId))
-      .limit(1);
-    
-    if (!workItem || !org) {
-      return res.status(500).json({ error: 'Work item or organization not found' });
+    if (!workItem) {
+      return res.status(500).json({ error: 'Work item not found' });
     }
     
-    // Get Splynx credentials
-    const splynxUrl = (org as any).splynxUrl;
-    const splynxApiKey = (org as any).splynxApiKey;
-    const splynxApiSecret = (org as any).splynxApiSecret;
-    
-    if (!splynxUrl || !splynxApiKey || !splynxApiSecret) {
-      return res.status(500).json({ error: 'Splynx credentials not configured' });
+    // Get Splynx service for this organization
+    let splynxService: SplynxService;
+    try {
+      splynxService = await getSplynxServiceForOrg(validation.booking!.booking.organizationId);
+    } catch (error: any) {
+      const isConfigError = error instanceof SplynxServiceError && error.errorType === 'not_configured';
+      const statusCode = isConfigError ? 503 : 500;
+      console.error('[BOOKINGS] Splynx service error during confirmation:', error.message);
+      return res.status(statusCode).json({ 
+        error: isConfigError ? 'Splynx integration not configured' : 'Splynx configuration error',
+        details: error.message 
+      });
     }
     
     // Create Splynx task FIRST (if this fails, token remains usable for retry)
-    const splynxService = new SplynxService({
-      baseUrl: splynxUrl,
-      apiKey: splynxApiKey,
-      apiSecret: splynxApiSecret
-    });
     
     const splynxTask = await splynxService.createSplynxTask({
       taskName: `${validation.booking!.taskType.name} - ${validation.booking!.booking.customerName}`,
@@ -420,8 +521,7 @@ router.post('/public/bookings/:token/confirm', async (req, res) => {
       scheduledFrom: selectedDatetime,
       duration: validation.booking!.taskType.defaultDuration || undefined,
       travelTimeTo: validation.booking!.taskType.defaultTravelTimeTo || undefined,
-      travelTimeFrom: validation.booking!.taskType.defaultTravelTimeFrom || undefined,
-      priority: 'normal'
+      travelTimeFrom: validation.booking!.taskType.defaultTravelTimeFrom || undefined
     });
     
     // ATOMIC TOKEN CONFIRMATION: Only claim token after successful Splynx task creation
@@ -507,7 +607,7 @@ router.post('/public/bookings/:token/confirm', async (req, res) => {
 /**
  * CRUD for bookable task types (Admin only)
  */
-router.post('/bookable-task-types', async (req, res) => {
+router.post('/bookable-task-types', authenticateToken, async (req, res) => {
   try {
     const organizationId = (req.user as any)?.organizationId;
     const userId = (req.user as any)?.id;
@@ -543,7 +643,7 @@ router.post('/bookable-task-types', async (req, res) => {
   }
 });
 
-router.patch('/bookable-task-types/:id', async (req, res) => {
+router.patch('/bookable-task-types/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const organizationId = (req.user as any)?.organizationId;
@@ -585,7 +685,7 @@ router.patch('/bookable-task-types/:id', async (req, res) => {
   }
 });
 
-router.delete('/bookable-task-types/:id', async (req, res) => {
+router.delete('/bookable-task-types/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
     const organizationId = (req.user as any)?.organizationId;
