@@ -406,6 +406,86 @@ export default function BookableAppointmentsPage() {
   );
 }
 
+interface SplynxAdmin {
+  id: number;
+  name: string;
+  login: string;
+  email: string;
+}
+
+interface ExtendedBookableTaskType extends Partial<BookableTaskType> {
+  defaultAssigneeTeamId?: number | null;
+  defaultAssigneeUserId?: number | null;
+  fallbackAssigneeUserId?: number | null;
+}
+
+interface AssigneeSelectorProps {
+  formData: ExtendedBookableTaskType;
+  setFormData: (data: ExtendedBookableTaskType) => void;
+}
+
+function AssigneeSelector({ formData, setFormData }: AssigneeSelectorProps) {
+  const { data: admins, isLoading } = useQuery<SplynxAdmin[]>({
+    queryKey: ['/api/field-engineering/splynx-administrators'],
+  });
+
+  return (
+    <div className="border-t pt-4">
+      <h4 className="font-medium mb-3">Task Assignment</h4>
+      <p className="text-sm text-muted-foreground mb-3">
+        Configure who gets assigned when a booking is made through this appointment type.
+      </p>
+      <div className="space-y-4">
+        <div>
+          <Label htmlFor="defaultAssigneeUserId">Default Assignee</Label>
+          <Select
+            value={formData.defaultAssigneeUserId?.toString() || ''}
+            onValueChange={(val) => setFormData({ ...formData, defaultAssigneeUserId: val ? parseInt(val) : null })}
+          >
+            <SelectTrigger data-testid="select-default-assignee">
+              <SelectValue placeholder={isLoading ? 'Loading...' : 'Select team member (optional)'} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">No default assignee</SelectItem>
+              {(admins || []).map((admin) => (
+                <SelectItem key={admin.id} value={admin.id.toString()}>
+                  {admin.name || admin.login}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground mt-1">
+            Team member who will be assigned to tasks created from this booking type.
+          </p>
+        </div>
+        
+        <div>
+          <Label htmlFor="fallbackAssigneeUserId">Fallback Assignee</Label>
+          <Select
+            value={formData.fallbackAssigneeUserId?.toString() || ''}
+            onValueChange={(val) => setFormData({ ...formData, fallbackAssigneeUserId: val ? parseInt(val) : null })}
+          >
+            <SelectTrigger data-testid="select-fallback-assignee">
+              <SelectValue placeholder={isLoading ? 'Loading...' : 'Select fallback team member'} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">No fallback assignee</SelectItem>
+              {(admins || []).map((admin) => (
+                <SelectItem key={admin.id} value={admin.id.toString()}>
+                  {admin.name || admin.login}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground mt-1">
+            Used when the customer cannot be matched in Splynx (e.g., for lead creation).
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 interface AppointmentTypeSheetProps {
   isOpen: boolean;
   onClose: () => void;
@@ -416,7 +496,7 @@ interface AppointmentTypeSheetProps {
 }
 
 function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSaving }: AppointmentTypeSheetProps) {
-  const [formData, setFormData] = useState<Partial<BookableTaskType>>({
+  const [formData, setFormData] = useState<ExtendedBookableTaskType>({
     name: '',
     description: '',
     taskCategory: 'field_visit',
@@ -433,11 +513,17 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
     displayOrder: 1,
     splynxProjectId: 1,
     splynxWorkflowStatusId: 1,
+    defaultAssigneeUserId: null,
+    fallbackAssigneeUserId: null,
   });
 
   useEffect(() => {
     if (type) {
-      setFormData(type);
+      setFormData({
+        ...type,
+        defaultAssigneeUserId: (type as any).defaultAssigneeUserId ?? null,
+        fallbackAssigneeUserId: (type as any).fallbackAssigneeUserId ?? null,
+      });
     } else {
       setFormData({
         name: '',
@@ -456,6 +542,8 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
         displayOrder: 1,
         splynxProjectId: 1,
         splynxWorkflowStatusId: 1,
+        defaultAssigneeUserId: null,
+        fallbackAssigneeUserId: null,
       });
     }
   }, [type]);
@@ -632,6 +720,11 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
                 </div>
               </div>
             </div>
+
+            <AssigneeSelector 
+              formData={formData}
+              setFormData={setFormData}
+            />
 
             <div className="border-t pt-4">
               <h4 className="font-medium mb-3">Customer Facing</h4>
