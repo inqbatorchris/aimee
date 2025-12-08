@@ -141,7 +141,8 @@ router.use('/', vapiWebhooksRoutes); // Mount at root for /vapi/webhook endpoint
 console.log('🔗 Mounting fields routes');
 router.use('/fields', fieldsRoutes);
 console.log('🔗 Mounting bookings routes (authenticated endpoints at /bookings, public at /public/bookings)');
-router.use('/', bookingsRoutes); // Mount at root since routes include full paths
+router.use('/bookings', bookingsRoutes); // Authenticated routes at /api/bookings/*
+router.use('/', bookingsRoutes); // Public routes at /api/public/bookings/* (mounted at root)
 
 // Direct feature routes
 router.use('/', coreFeatureRoutes);
