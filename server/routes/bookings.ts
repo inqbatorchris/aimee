@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { db } from '../db';
 import { eq, and, gte, sql } from 'drizzle-orm';
-import { bookableTaskTypes, bookingTokens, workItems, organizations, activityLogs, integrations } from '@shared/schema';
+import { bookableTaskTypes, bookingTokens, bookings, workItems, organizations, activityLogs, integrations, users } from '@shared/schema';
 import { SplynxService } from '../services/integrations/splynxService';
 import { authenticateToken } from '../auth';
 import crypto from 'crypto';
+import jwt from 'jsonwebtoken';
 
 // Encryption helpers for Splynx credentials
 const ENCRYPTION_KEY = process.env.ENCRYPTION_KEY;
@@ -127,6 +128,22 @@ async function getSplynxServiceForOrg(organizationId: number): Promise<SplynxSer
 const router = Router();
 
 /**
+ * Generate a URL-friendly slug from a name
+ * Ensures uniqueness by appending a short random suffix
+ */
+function generateSlug(name: string): string {
+  const baseSlug = name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  
+  // Add short random suffix for uniqueness
+  const suffix = crypto.randomBytes(3).toString('hex');
+  return `${baseSlug}-${suffix}`;
+}
+
+/**
  * Helper function to validate booking tokens
  * Checks expiry, usage limits, and organization scoping
  */
@@ -184,7 +201,7 @@ async function validateBookingToken(token: string, expectedOrgId?: number) {
 }
 
 /**
- * Get bookable task types for an organization
+ * Get bookable task types for an organization (with booking URLs)
  */
 router.get('/bookable-task-types', authenticateToken, async (req, res) => {
   try {
@@ -200,7 +217,14 @@ router.get('/bookable-task-types', authenticateToken, async (req, res) => {
       .where(eq(bookableTaskTypes.organizationId, organizationId))
       .orderBy(bookableTaskTypes.displayOrder);
     
-    res.json(types);
+    // Add booking URLs to each type
+    const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
+    const typesWithUrls = types.map(type => ({
+      ...type,
+      bookingUrl: type.slug ? `${baseUrl}/book/${type.slug}` : null
+    }));
+    
+    res.json(typesWithUrls);
   } catch (error: any) {
     console.error('Error fetching bookable task types:', error);
     res.status(500).json({ error: error.message });
@@ -610,6 +634,333 @@ router.post('/public/bookings/:token/confirm', async (req, res) => {
   }
 });
 
+// ========================================
+// NEW SLUG-BASED PUBLIC BOOKING ENDPOINTS
+// These endpoints allow anyone with the link to book appointments
+// ========================================
+
+/**
+ * PUBLIC ENDPOINT: Get appointment type details by slug
+ * Returns public info needed to display the booking page
+ */
+router.get('/public/appointment-types/:slug', async (req, res) => {
+  try {
+    const { slug } = req.params;
+    
+    // Find appointment type by slug (must be active)
+    const [appointmentType] = await db
+      .select({
+        appointmentType: bookableTaskTypes,
+        organization: {
+          id: organizations.id,
+          name: organizations.name,
+          logoUrl: organizations.logoUrl,
+        }
+      })
+      .from(bookableTaskTypes)
+      .innerJoin(organizations, eq(bookableTaskTypes.organizationId, organizations.id))
+      .where(and(
+        eq(bookableTaskTypes.slug, slug),
+        eq(bookableTaskTypes.isActive, true)
+      ))
+      .limit(1);
+    
+    if (!appointmentType) {
+      return res.status(404).json({ error: 'Appointment type not found' });
+    }
+    
+    // Return public booking info
+    res.json({
+      id: appointmentType.appointmentType.id,
+      name: appointmentType.appointmentType.name,
+      slug: appointmentType.appointmentType.slug,
+      description: appointmentType.appointmentType.description,
+      taskCategory: appointmentType.appointmentType.taskCategory,
+      accessMode: appointmentType.appointmentType.accessMode,
+      requireCustomerAccount: appointmentType.appointmentType.requireCustomerAccount,
+      duration: appointmentType.appointmentType.defaultDuration,
+      buttonLabel: appointmentType.appointmentType.buttonLabel,
+      confirmationMessage: appointmentType.appointmentType.confirmationMessage,
+      organization: appointmentType.organization
+    });
+  } catch (error: any) {
+    console.error('Error fetching appointment type:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUBLIC ENDPOINT: Get available slots for a slug-based appointment
+ */
+router.post('/public/appointment-types/:slug/available-slots', async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const { startDate, endDate } = req.body;
+    
+    // Find appointment type by slug
+    const [appointmentType] = await db
+      .select()
+      .from(bookableTaskTypes)
+      .where(and(
+        eq(bookableTaskTypes.slug, slug),
+        eq(bookableTaskTypes.isActive, true)
+      ))
+      .limit(1);
+    
+    if (!appointmentType) {
+      return res.status(404).json({ error: 'Appointment type not found' });
+    }
+    
+    // Get Splynx service
+    let splynxService: SplynxService;
+    try {
+      splynxService = await getSplynxServiceForOrg(appointmentType.organizationId);
+    } catch (error: any) {
+      const isConfigError = error instanceof SplynxServiceError;
+      const statusCode = isConfigError ? 503 : 500;
+      console.error(`[BOOKINGS] Splynx error:`, error.message);
+      return res.status(statusCode).json({ 
+        error: 'Unable to fetch available slots',
+        details: isConfigError ? error.message : 'Internal error'
+      });
+    }
+    
+    // Fetch available slots
+    const slots = await splynxService.getAvailableSlots({
+      projectId: appointmentType.splynxProjectId,
+      startDate: startDate || new Date().toISOString().split('T')[0],
+      endDate: endDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      duration: appointmentType.defaultDuration || '2h 30m',
+      travelTime: appointmentType.defaultTravelTimeTo || 0
+    });
+    
+    res.json({ slots });
+  } catch (error: any) {
+    console.error('Error fetching available slots:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUBLIC ENDPOINT: Create a booking (slug-based)
+ * Supports both open bookings (anyone) and authenticated bookings (logged-in customers)
+ */
+router.post('/public/appointment-types/:slug/book', async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const { 
+      selectedDatetime, 
+      customerName, 
+      customerEmail, 
+      customerPhone,
+      serviceAddress,
+      additionalNotes,
+      authToken // Optional - for authenticated bookings
+    } = req.body;
+    
+    // Validate required fields
+    if (!selectedDatetime) {
+      return res.status(400).json({ error: 'Selected datetime is required' });
+    }
+    if (!customerName) {
+      return res.status(400).json({ error: 'Customer name is required' });
+    }
+    if (!customerEmail) {
+      return res.status(400).json({ error: 'Customer email is required' });
+    }
+    
+    // Find appointment type by slug
+    const [appointmentType] = await db
+      .select()
+      .from(bookableTaskTypes)
+      .where(and(
+        eq(bookableTaskTypes.slug, slug),
+        eq(bookableTaskTypes.isActive, true)
+      ))
+      .limit(1);
+    
+    if (!appointmentType) {
+      return res.status(404).json({ error: 'Appointment type not found' });
+    }
+    
+    // Handle access control
+    let authenticatedUserId: number | null = null;
+    let splynxCustomerId: number | null = null;
+    
+    if (appointmentType.accessMode === 'authenticated') {
+      // Require valid auth token
+      if (!authToken) {
+        return res.status(401).json({ 
+          error: 'Authentication required',
+          requiresLogin: true 
+        });
+      }
+      
+      try {
+        const decoded = jwt.verify(authToken, process.env.JWT_SECRET || 'fallback-secret') as any;
+        authenticatedUserId = decoded.userId;
+        
+        // Get user and check for Splynx customer ID
+        const [user] = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, authenticatedUserId as number))
+          .limit(1);
+        
+        if (!user) {
+          return res.status(401).json({ error: 'User not found' });
+        }
+        
+        // Use splynxCustomerId field directly from users table
+        splynxCustomerId = user.splynxCustomerId || null;
+        
+        if (appointmentType.requireCustomerAccount && !splynxCustomerId) {
+          return res.status(403).json({ 
+            error: 'This appointment type requires a linked customer account' 
+          });
+        }
+      } catch (error) {
+        return res.status(401).json({ error: 'Invalid authentication token' });
+      }
+    }
+    
+    // Get Splynx service
+    let splynxService: SplynxService;
+    try {
+      splynxService = await getSplynxServiceForOrg(appointmentType.organizationId);
+    } catch (error: any) {
+      const isConfigError = error instanceof SplynxServiceError;
+      const statusCode = isConfigError ? 503 : 500;
+      console.error(`[BOOKINGS] Splynx error during booking:`, error.message);
+      return res.status(statusCode).json({ 
+        error: 'Unable to create booking - service unavailable',
+        details: isConfigError ? error.message : 'Internal error'
+      });
+    }
+    
+    // Create Splynx task
+    const splynxTask = await splynxService.createSplynxTask({
+      taskName: `${appointmentType.name} - ${customerName}`,
+      projectId: appointmentType.splynxProjectId,
+      workflowStatusId: appointmentType.splynxWorkflowStatusId,
+      customerId: splynxCustomerId || undefined,
+      description: `Booking: ${appointmentType.name}\n\nCustomer: ${customerName}\nEmail: ${customerEmail}\nPhone: ${customerPhone || 'Not provided'}\n\n${additionalNotes || ''}`,
+      address: serviceAddress || undefined,
+      isScheduled: true,
+      scheduledFrom: selectedDatetime,
+      duration: appointmentType.defaultDuration || undefined,
+      travelTimeTo: appointmentType.defaultTravelTimeTo || undefined,
+      travelTimeFrom: appointmentType.defaultTravelTimeFrom || undefined
+    });
+    
+    // Create booking record
+    const [booking] = await db
+      .insert(bookings)
+      .values({
+        organizationId: appointmentType.organizationId,
+        bookableTaskTypeId: appointmentType.id,
+        userId: authenticatedUserId,
+        customerId: splynxCustomerId,
+        customerEmail,
+        customerName,
+        customerPhone,
+        serviceAddress,
+        status: 'confirmed',
+        selectedDatetime: new Date(selectedDatetime),
+        additionalNotes,
+        splynxTaskId: splynxTask.id,
+      })
+      .returning();
+    
+    // Log activity
+    await db.insert(activityLogs).values({
+      organizationId: appointmentType.organizationId,
+      userId: authenticatedUserId,
+      actionType: 'creation',
+      entityType: 'booking',
+      entityId: booking.id,
+      description: `New booking: ${appointmentType.name} for ${customerName}`,
+      metadata: {
+        splynxTaskId: splynxTask.id,
+        appointmentType: appointmentType.name,
+        selectedDatetime,
+        accessMode: appointmentType.accessMode
+      }
+    });
+    
+    res.json({
+      success: true,
+      bookingId: booking.id,
+      splynxTaskId: splynxTask.id,
+      selectedDatetime,
+      confirmationMessage: appointmentType.confirmationMessage || `Your ${appointmentType.name} has been scheduled.`
+    });
+  } catch (error: any) {
+    console.error('Error creating booking:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * PUBLIC ENDPOINT: Inline login for authenticated bookings
+ * Returns auth token if credentials are valid
+ */
+router.post('/public/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Email and password are required' });
+    }
+    
+    // Find user by email
+    const [user] = await db
+      .select()
+      .from(users)
+      .where(eq(users.email, email))
+      .limit(1);
+    
+    if (!user) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+    
+    // Verify password using passwordHash field
+    if (!user.passwordHash) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+    
+    const bcrypt = await import('bcrypt');
+    const valid = await bcrypt.compare(password, user.passwordHash);
+    
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid email or password' });
+    }
+    
+    // Generate JWT token
+    const token = jwt.sign(
+      { userId: user.id },
+      process.env.JWT_SECRET || 'fallback-secret',
+      { expiresIn: '1h' }
+    );
+    
+    res.json({
+      token,
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username
+      }
+    });
+  } catch (error: any) {
+    console.error('Error during login:', error);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// ========================================
+// ADMIN ENDPOINTS
+// ========================================
+
 /**
  * CRUD for bookable task types (Admin only)
  */
@@ -623,10 +974,14 @@ router.post('/bookable-task-types', authenticateToken, async (req, res) => {
       return res.status(401).json({ error: 'Unauthorized' });
     }
     
+    // Auto-generate slug if not provided
+    const slug = data.slug || generateSlug(data.name);
+    
     const [taskType] = await db
       .insert(bookableTaskTypes)
       .values({
         ...data,
+        slug,
         organizationId,
       })
       .returning();
@@ -687,6 +1042,79 @@ router.patch('/bookable-task-types/:id', authenticateToken, async (req, res) => 
     res.json(updated);
   } catch (error: any) {
     console.error('Error updating bookable task type:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Get a single bookable task type with booking URL
+ */
+router.get('/bookable-task-types/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const organizationId = (req.user as any)?.organizationId;
+    
+    if (!organizationId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    const [taskType] = await db
+      .select()
+      .from(bookableTaskTypes)
+      .where(and(
+        eq(bookableTaskTypes.id, parseInt(id)),
+        eq(bookableTaskTypes.organizationId, organizationId)
+      ))
+      .limit(1);
+    
+    if (!taskType) {
+      return res.status(404).json({ error: 'Bookable task type not found' });
+    }
+    
+    // Generate booking URL
+    const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
+    const bookingUrl = `${baseUrl}/book/${taskType.slug}`;
+    
+    res.json({
+      ...taskType,
+      bookingUrl
+    });
+  } catch (error: any) {
+    console.error('Error fetching bookable task type:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Get all bookings for the organization
+ */
+router.get('/all-bookings', authenticateToken, async (req, res) => {
+  try {
+    const organizationId = (req.user as any)?.organizationId;
+    
+    if (!organizationId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    const allBookings = await db
+      .select({
+        booking: bookings,
+        appointmentType: {
+          id: bookableTaskTypes.id,
+          name: bookableTaskTypes.name,
+          slug: bookableTaskTypes.slug,
+          taskCategory: bookableTaskTypes.taskCategory,
+        }
+      })
+      .from(bookings)
+      .innerJoin(bookableTaskTypes, eq(bookings.bookableTaskTypeId, bookableTaskTypes.id))
+      .where(eq(bookings.organizationId, organizationId))
+      .orderBy(sql`${bookings.selectedDatetime} DESC`)
+      .limit(100);
+    
+    res.json(allBookings);
+  } catch (error: any) {
+    console.error('Error fetching bookings:', error);
     res.status(500).json({ error: error.message });
   }
 });
