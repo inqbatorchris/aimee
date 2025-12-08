@@ -666,6 +666,7 @@ export class SplynxService {
   }>> {
     // Try multiple possible API paths - Splynx API versions vary
     const possiblePaths = [
+      'admin/config/scheduling-teams',  // Correct path with hyphen
       'admin/scheduling/teams',
       'admin/config/scheduling/teams', 
       'config/scheduling/teams',
