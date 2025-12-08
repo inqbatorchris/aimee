@@ -1153,13 +1153,13 @@ router.get('/calendar/combined', authenticateToken, async (req: Request, res: Re
             title: b.title || b.blockType,
             start: b.startDatetime.toISOString(),
             end: b.endDatetime.toISOString(),
-            allDay: false,
+            allDay: b.isAllDay || false,
             type: 'block',
             color: '#F97316',
             userId: b.userId,
             userName: usersMap[b.userId]?.fullName || usersMap[b.userId]?.email,
             source: 'local',
-            metadata: { blockType: b.blockType, isRecurring: b.isRecurring },
+            metadata: { blockType: b.blockType, isRecurring: b.isRecurring, description: b.description },
           });
         }
         metadata.counts.blocks = blocks.length;
@@ -1266,9 +1266,11 @@ router.get('/calendar/combined', authenticateToken, async (req: Request, res: Re
             status: wi.status,
             source: 'local',
             metadata: { 
+              workItemId: wi.id,
               teamId: wi.teamId, 
               workItemType: wi.workItemType,
               workflowTemplateId: wi.workflowTemplateId,
+              description: wi.description,
             },
           });
         }

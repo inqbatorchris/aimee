@@ -806,6 +806,9 @@ export const teams = pgTable("teams", {
   meeting_anchor_day_of_month: smallint("meeting_anchor_day_of_month"), // 1-31 (exact day option)
   meeting_anchor_month: smallint("meeting_anchor_month"), // 1-12 (used by quarterly/half_yearly/annual as the "first" anchor month)
   
+  // Splynx team mapping for calendar integration
+  splynxTeamId: integer("splynx_team_id"), // Links to splynx_teams.splynxTeamId for unified team filtering
+  
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [

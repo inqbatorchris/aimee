@@ -1,11 +1,20 @@
 import { useState, useMemo } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Checkbox } from '@/components/ui/checkbox';
+import { useToast } from '@/hooks/use-toast';
+import { apiRequest } from '@/lib/queryClient';
 import { 
   ChevronLeft, 
   ChevronRight, 
@@ -17,8 +26,14 @@ import {
   List,
   GanttChart,
   CalendarDays,
-  Layers
+  Layers,
+  CheckSquare,
+  Clock,
+  Umbrella,
+  ExternalLink,
+  CalendarPlus
 } from 'lucide-react';
+import { useLocation } from 'wouter';
 import { 
   startOfMonth, 
   endOfMonth, 
@@ -131,10 +146,111 @@ const statusColors: Record<string, string> = {
 };
 
 export default function CalendarPage() {
+  const [, navigate] = useLocation();
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [selectedUserId, setSelectedUserId] = useState<string>('all');
   const [selectedTeamId, setSelectedTeamId] = useState<string>('all');
+  const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
+  
+  const [showBlockDialog, setShowBlockDialog] = useState(false);
+  const [showHolidayDialog, setShowHolidayDialog] = useState(false);
+  
+  const [blockForm, setBlockForm] = useState({
+    title: '',
+    description: '',
+    blockType: 'other' as 'meeting' | 'focus' | 'project' | 'travel' | 'break' | 'other',
+    startDatetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+    endDatetime: format(addDays(new Date(), 0), "yyyy-MM-dd'T'17:00"),
+    isAllDay: false,
+  });
+  
+  const [holidayForm, setHolidayForm] = useState({
+    startDate: format(new Date(), 'yyyy-MM-dd'),
+    endDate: format(new Date(), 'yyyy-MM-dd'),
+    holidayType: 'annual' as 'annual' | 'sick' | 'unpaid' | 'training' | 'compassionate' | 'parental' | 'other',
+    notes: '',
+    isHalfDayStart: false,
+    isHalfDayEnd: false,
+  });
+
+  const createBlockMutation = useMutation({
+    mutationFn: async (data: typeof blockForm) => {
+      return apiRequest('/api/calendar/blocks', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...data,
+          blocksAvailability: true,
+        }),
+      });
+    },
+    onSuccess: () => {
+      toast({ title: 'Calendar block created successfully' });
+      setShowBlockDialog(false);
+      setBlockForm({
+        title: '',
+        description: '',
+        blockType: 'other',
+        startDatetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
+        endDatetime: format(new Date(), "yyyy-MM-dd'T'17:00"),
+        isAllDay: false,
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar/combined'] });
+    },
+    onError: (error: any) => {
+      toast({ title: 'Failed to create block', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const createHolidayMutation = useMutation({
+    mutationFn: async (data: typeof holidayForm) => {
+      const start = new Date(data.startDate);
+      const end = new Date(data.endDate);
+      let daysCount = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      if (data.isHalfDayStart) daysCount -= 0.5;
+      if (data.isHalfDayEnd) daysCount -= 0.5;
+      
+      return apiRequest('/api/calendar/holidays/requests', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...data,
+          daysCount,
+        }),
+      });
+    },
+    onSuccess: () => {
+      toast({ title: 'Holiday request submitted successfully' });
+      setShowHolidayDialog(false);
+      setHolidayForm({
+        startDate: format(new Date(), 'yyyy-MM-dd'),
+        endDate: format(new Date(), 'yyyy-MM-dd'),
+        holidayType: 'annual',
+        notes: '',
+        isHalfDayStart: false,
+        isHalfDayEnd: false,
+      });
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar/combined'] });
+    },
+    onError: (error: any) => {
+      toast({ title: 'Failed to submit request', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const handleEventClick = (event: CalendarEvent) => {
+    setSelectedEvent(event);
+  };
+
+  const handleCloseEventDetail = () => {
+    setSelectedEvent(null);
+  };
+
+  const handleNavigateToEvent = (event: CalendarEvent) => {
+    if (event.type === 'work_item' && event.metadata?.workItemId) {
+      navigate(`/strategy/work-items?id=${event.metadata.workItemId}`);
+    }
+  };
 
   const startDate = useMemo(() => {
     if (viewMode === 'roadmap') {
@@ -360,9 +476,44 @@ export default function CalendarPage() {
               <TooltipContent>Settings</TooltipContent>
             </Tooltip>
             
-            <Button size="icon" className="h-8 w-8" data-testid="button-add-event">
-              <Plus className="h-4 w-4" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button size="icon" className="h-8 w-8" data-testid="button-add-event">
+                  <Plus className="h-4 w-4" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuItem 
+                  onClick={() => navigate('/strategy/work-items?create=true')}
+                  data-testid="menu-add-work-item"
+                >
+                  <CheckSquare className="h-4 w-4 mr-2" />
+                  Work Item
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => setShowBlockDialog(true)}
+                  data-testid="menu-add-block"
+                >
+                  <Clock className="h-4 w-4 mr-2" />
+                  Calendar Block
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => setShowHolidayDialog(true)}
+                  data-testid="menu-add-holiday"
+                >
+                  <Umbrella className="h-4 w-4 mr-2" />
+                  Holiday Request
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem 
+                  onClick={() => navigate('/settings/bookable-appointments')}
+                  data-testid="menu-splynx-booking"
+                >
+                  <CalendarPlus className="h-4 w-4 mr-2" />
+                  Manage Appointments
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
         </div>
 
@@ -497,12 +648,14 @@ export default function CalendarPage() {
             days={days} 
             currentDate={currentDate} 
             getEventsForDay={getEventsForDay}
+            onEventClick={handleEventClick}
           />
         ) : viewMode === 'week' ? (
           <WeekView 
             days={days} 
             events={events}
             hours={workingHours}
+            onEventClick={handleEventClick}
           />
         ) : viewMode === 'roadmap' ? (
           <RoadmapView
@@ -515,9 +668,370 @@ export default function CalendarPage() {
             day={currentDate} 
             events={getEventsForDay(currentDate)}
             hours={workingHours}
+            onEventClick={handleEventClick}
           />
         )}
       </div>
+
+      <Sheet open={!!selectedEvent} onOpenChange={(open) => !open && handleCloseEventDetail()}>
+        <SheetContent className="sm:w-[640px]">
+          {selectedEvent && (
+            <>
+              <SheetHeader>
+                <SheetTitle className="flex items-center gap-2">
+                  <div className={`w-3 h-3 rounded ${eventTypeColors[selectedEvent.type].split(' ')[0]}`} />
+                  {selectedEvent.title}
+                </SheetTitle>
+                <SheetDescription>
+                  {selectedEvent.type === 'splynx_task' ? 'Splynx Task' : 
+                   selectedEvent.type === 'work_item' ? 'Work Item' :
+                   selectedEvent.type === 'holiday' ? 'Holiday' :
+                   selectedEvent.type === 'public_holiday' ? 'Public Holiday' : 'Calendar Block'}
+                </SheetDescription>
+              </SheetHeader>
+              
+              <div className="mt-6 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1">Start</div>
+                    <div className="text-sm font-medium">
+                      {format(selectedEvent.start, 'PPP')}
+                      {!selectedEvent.allDay && ` at ${format(selectedEvent.start, 'p')}`}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1">End</div>
+                    <div className="text-sm font-medium">
+                      {format(selectedEvent.end, 'PPP')}
+                      {!selectedEvent.allDay && ` at ${format(selectedEvent.end, 'p')}`}
+                    </div>
+                  </div>
+                </div>
+                
+                {selectedEvent.userName && (
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1">Assigned To</div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <User className="h-4 w-4" />
+                      {selectedEvent.userName}
+                    </div>
+                  </div>
+                )}
+                
+                {selectedEvent.status && (
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-1">Status</div>
+                    <Badge variant="outline">{selectedEvent.status}</Badge>
+                  </div>
+                )}
+
+                {selectedEvent.type === 'splynx_task' && (
+                  <div className="space-y-3 pt-2">
+                    {selectedEvent.metadata?.customerId && (
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-1">Customer ID</div>
+                        <div className="text-sm">{selectedEvent.metadata.customerId}</div>
+                      </div>
+                    )}
+                    {selectedEvent.metadata?.description && (
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-1">Description</div>
+                        <div className="text-sm">{selectedEvent.metadata.description}</div>
+                      </div>
+                    )}
+                    <div className="text-xs text-muted-foreground pt-2">
+                      <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                        <CalendarIcon className="h-3 w-3 mr-1" />
+                        Synced from Splynx
+                      </Badge>
+                    </div>
+                  </div>
+                )}
+
+                {selectedEvent.type === 'holiday' && (
+                  <div className="space-y-3 pt-2">
+                    {selectedEvent.metadata?.holidayType && (
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-1">Leave Type</div>
+                        <div className="text-sm capitalize">{selectedEvent.metadata.holidayType}</div>
+                      </div>
+                    )}
+                    {selectedEvent.metadata?.daysCount && (
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-1">Days Requested</div>
+                        <div className="text-sm">{selectedEvent.metadata.daysCount} day(s)</div>
+                      </div>
+                    )}
+                    <div className="text-xs text-muted-foreground pt-2">
+                      <Badge variant="secondary" className="bg-green-100 text-green-800">
+                        <Umbrella className="h-3 w-3 mr-1" />
+                        Holiday Request
+                      </Badge>
+                    </div>
+                  </div>
+                )}
+
+                {selectedEvent.type === 'block' && (
+                  <div className="space-y-3 pt-2">
+                    {selectedEvent.metadata?.blockType && (
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-1">Block Type</div>
+                        <div className="text-sm capitalize">{selectedEvent.metadata.blockType}</div>
+                      </div>
+                    )}
+                    {selectedEvent.metadata?.description && (
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-1">Description</div>
+                        <div className="text-sm">{selectedEvent.metadata.description}</div>
+                      </div>
+                    )}
+                    <div className="text-xs text-muted-foreground pt-2">
+                      <Badge variant="secondary" className="bg-orange-100 text-orange-800">
+                        <Clock className="h-3 w-3 mr-1" />
+                        Calendar Block
+                      </Badge>
+                    </div>
+                  </div>
+                )}
+
+                {selectedEvent.type === 'public_holiday' && (
+                  <div className="space-y-3 pt-2">
+                    <div className="text-xs text-muted-foreground pt-2">
+                      <Badge variant="secondary" className="bg-emerald-100 text-emerald-800">
+                        <CalendarDays className="h-3 w-3 mr-1" />
+                        Public Holiday
+                      </Badge>
+                    </div>
+                  </div>
+                )}
+
+                {selectedEvent.type === 'work_item' && (
+                  <div className="space-y-3 pt-2">
+                    {selectedEvent.metadata?.description && (
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-1">Description</div>
+                        <div className="text-sm">{selectedEvent.metadata.description}</div>
+                      </div>
+                    )}
+                    {selectedEvent.metadata?.workItemType && (
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-1">Type</div>
+                        <Badge variant="outline">{selectedEvent.metadata.workItemType}</Badge>
+                      </div>
+                    )}
+                    <div className="text-xs text-muted-foreground pt-2">
+                      <Badge variant="secondary" className="bg-purple-100 text-purple-800">
+                        <CheckSquare className="h-3 w-3 mr-1" />
+                        Work Item
+                      </Badge>
+                    </div>
+                    {selectedEvent.metadata?.workItemId && (
+                      <div className="pt-2">
+                        <Button 
+                          onClick={() => handleNavigateToEvent(selectedEvent)}
+                          className="w-full"
+                          data-testid="button-open-work-item"
+                        >
+                          <ExternalLink className="h-4 w-4 mr-2" />
+                          Open Work Item
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      <Dialog open={showBlockDialog} onOpenChange={setShowBlockDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Create Calendar Block</DialogTitle>
+            <DialogDescription>
+              Block time on your calendar for focus work, meetings, or other activities.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="block-title">Title</Label>
+              <Input 
+                id="block-title"
+                value={blockForm.title}
+                onChange={(e) => setBlockForm(f => ({ ...f, title: e.target.value }))}
+                placeholder="e.g., Focus time, Team meeting"
+                data-testid="input-block-title"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="block-type">Block Type</Label>
+              <Select value={blockForm.blockType} onValueChange={(v) => setBlockForm(f => ({ ...f, blockType: v as any }))}>
+                <SelectTrigger data-testid="select-block-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="meeting">Meeting</SelectItem>
+                  <SelectItem value="focus">Focus Time</SelectItem>
+                  <SelectItem value="project">Project Work</SelectItem>
+                  <SelectItem value="travel">Travel</SelectItem>
+                  <SelectItem value="break">Break</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="block-start">Start</Label>
+                <Input 
+                  id="block-start"
+                  type="datetime-local"
+                  value={blockForm.startDatetime}
+                  onChange={(e) => setBlockForm(f => ({ ...f, startDatetime: e.target.value }))}
+                  data-testid="input-block-start"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="block-end">End</Label>
+                <Input 
+                  id="block-end"
+                  type="datetime-local"
+                  value={blockForm.endDatetime}
+                  onChange={(e) => setBlockForm(f => ({ ...f, endDatetime: e.target.value }))}
+                  data-testid="input-block-end"
+                />
+              </div>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Checkbox 
+                id="block-allday"
+                checked={blockForm.isAllDay}
+                onCheckedChange={(checked) => setBlockForm(f => ({ ...f, isAllDay: !!checked }))}
+                data-testid="checkbox-block-allday"
+              />
+              <Label htmlFor="block-allday" className="text-sm">All day event</Label>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="block-description">Description (optional)</Label>
+              <Textarea 
+                id="block-description"
+                value={blockForm.description}
+                onChange={(e) => setBlockForm(f => ({ ...f, description: e.target.value }))}
+                placeholder="Additional details..."
+                rows={2}
+                data-testid="input-block-description"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowBlockDialog(false)} data-testid="button-cancel-block">
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => createBlockMutation.mutate(blockForm)}
+              disabled={!blockForm.title || createBlockMutation.isPending}
+              data-testid="button-create-block"
+            >
+              {createBlockMutation.isPending ? 'Creating...' : 'Create Block'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showHolidayDialog} onOpenChange={setShowHolidayDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Request Holiday</DialogTitle>
+            <DialogDescription>
+              Submit a holiday or time off request for approval.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="holiday-type">Holiday Type</Label>
+              <Select value={holidayForm.holidayType} onValueChange={(v) => setHolidayForm(f => ({ ...f, holidayType: v as any }))}>
+                <SelectTrigger data-testid="select-holiday-type">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="annual">Annual Leave</SelectItem>
+                  <SelectItem value="sick">Sick Leave</SelectItem>
+                  <SelectItem value="unpaid">Unpaid Leave</SelectItem>
+                  <SelectItem value="training">Training</SelectItem>
+                  <SelectItem value="compassionate">Compassionate Leave</SelectItem>
+                  <SelectItem value="parental">Parental Leave</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="holiday-start">Start Date</Label>
+                <Input 
+                  id="holiday-start"
+                  type="date"
+                  value={holidayForm.startDate}
+                  onChange={(e) => setHolidayForm(f => ({ ...f, startDate: e.target.value }))}
+                  data-testid="input-holiday-start"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="holiday-end">End Date</Label>
+                <Input 
+                  id="holiday-end"
+                  type="date"
+                  value={holidayForm.endDate}
+                  onChange={(e) => setHolidayForm(f => ({ ...f, endDate: e.target.value }))}
+                  data-testid="input-holiday-end"
+                />
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="half-day-start"
+                  checked={holidayForm.isHalfDayStart}
+                  onCheckedChange={(checked) => setHolidayForm(f => ({ ...f, isHalfDayStart: !!checked }))}
+                  data-testid="checkbox-half-day-start"
+                />
+                <Label htmlFor="half-day-start" className="text-sm">Half day (start)</Label>
+              </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="half-day-end"
+                  checked={holidayForm.isHalfDayEnd}
+                  onCheckedChange={(checked) => setHolidayForm(f => ({ ...f, isHalfDayEnd: !!checked }))}
+                  data-testid="checkbox-half-day-end"
+                />
+                <Label htmlFor="half-day-end" className="text-sm">Half day (end)</Label>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="holiday-notes">Notes (optional)</Label>
+              <Textarea 
+                id="holiday-notes"
+                value={holidayForm.notes}
+                onChange={(e) => setHolidayForm(f => ({ ...f, notes: e.target.value }))}
+                placeholder="Reason for leave..."
+                rows={2}
+                data-testid="input-holiday-notes"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowHolidayDialog(false)} data-testid="button-cancel-holiday">
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => createHolidayMutation.mutate(holidayForm)}
+              disabled={!holidayForm.startDate || !holidayForm.endDate || createHolidayMutation.isPending}
+              data-testid="button-submit-holiday"
+            >
+              {createHolidayMutation.isPending ? 'Submitting...' : 'Submit Request'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -526,9 +1040,10 @@ interface MonthViewProps {
   days: Date[];
   currentDate: Date;
   getEventsForDay: (day: Date) => CalendarEvent[];
+  onEventClick?: (event: CalendarEvent) => void;
 }
 
-function MonthView({ days, currentDate, getEventsForDay }: MonthViewProps) {
+function MonthView({ days, currentDate, getEventsForDay, onEventClick }: MonthViewProps) {
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   return (
@@ -565,8 +1080,12 @@ function MonthView({ days, currentDate, getEventsForDay }: MonthViewProps) {
                 {dayEvents.slice(0, 3).map((event) => (
                   <div
                     key={event.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onEventClick?.(event);
+                    }}
                     className={`
-                      text-[10px] leading-tight px-1 py-0.5 rounded truncate
+                      text-[10px] leading-tight px-1 py-0.5 rounded truncate cursor-pointer hover:opacity-80
                       ${eventTypeColors[event.type]}
                     `}
                     title={event.title}
@@ -593,9 +1112,32 @@ interface WeekViewProps {
   days: Date[];
   events: CalendarEvent[];
   hours: number[];
+  onEventClick?: (event: CalendarEvent) => void;
 }
 
-function WeekView({ days, events, hours }: WeekViewProps) {
+function WeekView({ days, events, hours, onEventClick }: WeekViewProps) {
+  const getEventsForDay = (day: Date) => {
+    return events.filter((event) => {
+      const eventStart = startOfDay(new Date(event.start));
+      const eventEnd = endOfDay(new Date(event.end));
+      const dayStart = startOfDay(day);
+      const dayEnd = endOfDay(day);
+      return eventStart <= dayEnd && eventEnd >= dayStart;
+    });
+  };
+
+  const getAllDayEvents = (day: Date) => {
+    return getEventsForDay(day).filter(e => e.allDay || e.type === 'work_item' || e.type === 'holiday' || e.type === 'public_holiday');
+  };
+
+  const getTimedEvents = (day: Date, hour: number) => {
+    return getEventsForDay(day).filter(e => {
+      if (e.allDay || e.type === 'work_item' || e.type === 'holiday' || e.type === 'public_holiday') return false;
+      const eventStart = new Date(e.start);
+      return eventStart.getHours() === hour;
+    });
+  };
+
   return (
     <div className="h-full flex flex-col">
       <div className="flex border-b">
@@ -618,6 +1160,41 @@ function WeekView({ days, events, hours }: WeekViewProps) {
           </div>
         ))}
       </div>
+      
+      <div className="flex border-b bg-muted/30">
+        <div className="w-16 shrink-0 pr-2 py-1 text-right text-[10px] text-muted-foreground">
+          All day
+        </div>
+        {days.map((day, dayIndex) => {
+          const allDayEvents = getAllDayEvents(day);
+          return (
+            <div key={dayIndex} className="flex-1 border-l p-1 min-h-[60px] max-h-[100px] overflow-hidden">
+              <div className="space-y-0.5">
+                {allDayEvents.slice(0, 3).map((event) => (
+                  <div
+                    key={event.id}
+                    onClick={() => onEventClick?.(event)}
+                    className={`
+                      text-[10px] px-1 py-0.5 rounded truncate cursor-pointer hover:opacity-80
+                      ${eventTypeColors[event.type]}
+                    `}
+                    title={event.title}
+                    data-testid={`event-week-${event.id}`}
+                  >
+                    {event.title}
+                  </div>
+                ))}
+                {allDayEvents.length > 3 && (
+                  <div className="text-[10px] text-muted-foreground px-1">
+                    +{allDayEvents.length - 3} more
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
       <ScrollArea className="flex-1">
         <div className="flex">
           <div className="w-16 shrink-0">
@@ -634,10 +1211,7 @@ function WeekView({ days, events, hours }: WeekViewProps) {
           {days.map((day, dayIndex) => (
             <div key={dayIndex} className="flex-1 border-l">
               {hours.map((hour) => {
-                const hourEvents = events.filter((event) => {
-                  const eventStart = new Date(event.start);
-                  return isSameDay(eventStart, day) && eventStart.getHours() === hour;
-                });
+                const hourEvents = getTimedEvents(day, hour);
 
                 return (
                   <div 
@@ -650,11 +1224,13 @@ function WeekView({ days, events, hours }: WeekViewProps) {
                     {hourEvents.map((event) => (
                       <div
                         key={event.id}
+                        onClick={() => onEventClick?.(event)}
                         className={`
-                          absolute left-0.5 right-0.5 top-0.5 text-[10px] p-1 rounded truncate z-10
+                          absolute left-0.5 right-0.5 top-0.5 text-[10px] p-1 rounded truncate z-10 cursor-pointer hover:opacity-80
                           ${eventTypeColors[event.type]}
                         `}
                         title={event.title}
+                        data-testid={`event-week-timed-${event.id}`}
                       >
                         {event.title}
                       </div>
@@ -674,11 +1250,15 @@ interface DayViewProps {
   day: Date;
   events: CalendarEvent[];
   hours: number[];
+  onEventClick?: (event: CalendarEvent) => void;
 }
 
-function DayView({ day, events, hours }: DayViewProps) {
+function DayView({ day, events, hours, onEventClick }: DayViewProps) {
+  const allDayEvents = events.filter(e => e.allDay || e.type === 'work_item' || e.type === 'holiday' || e.type === 'public_holiday');
+  const timedEvents = events.filter(e => !e.allDay && e.type !== 'work_item' && e.type !== 'holiday' && e.type !== 'public_holiday');
+
   const getEventsForHour = (hour: number) => {
-    return events.filter((event) => {
+    return timedEvents.filter((event) => {
       const eventStart = new Date(event.start);
       return eventStart.getHours() === hour;
     });
@@ -688,6 +1268,40 @@ function DayView({ day, events, hours }: DayViewProps) {
     <div className="h-full flex">
       <ScrollArea className="flex-1">
         <div className="max-w-4xl mx-auto p-4">
+          {allDayEvents.length > 0 && (
+            <div className="mb-4 p-3 bg-muted/30 rounded-lg">
+              <div className="text-xs text-muted-foreground mb-2 font-medium">All Day Events</div>
+              <div className="space-y-1">
+                {allDayEvents.map((event) => (
+                  <div
+                    key={event.id}
+                    onClick={() => onEventClick?.(event)}
+                    className={`
+                      p-2 rounded flex items-center gap-3 cursor-pointer hover:opacity-80
+                      ${eventTypeBgColors[event.type]}
+                    `}
+                    data-testid={`event-day-${event.id}`}
+                  >
+                    <div className="flex-1">
+                      <div className="font-medium text-sm">{event.title}</div>
+                      {event.userName && (
+                        <div className="text-xs opacity-75 flex items-center gap-1 mt-0.5">
+                          <User className="h-3 w-3" />
+                          {event.userName}
+                        </div>
+                      )}
+                    </div>
+                    {event.status && (
+                      <Badge variant="outline" className="text-xs shrink-0">
+                        {event.status}
+                      </Badge>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {hours.map((hour) => {
             const hourEvents = getEventsForHour(hour);
             const hourDate = new Date();
@@ -702,10 +1316,12 @@ function DayView({ day, events, hours }: DayViewProps) {
                   {hourEvents.map((event) => (
                     <div
                       key={event.id}
+                      onClick={() => onEventClick?.(event)}
                       className={`
-                        p-2 rounded mb-1 flex items-start gap-3
+                        p-2 rounded mb-1 flex items-start gap-3 cursor-pointer hover:opacity-80
                         ${eventTypeBgColors[event.type]}
                       `}
+                      data-testid={`event-day-timed-${event.id}`}
                     >
                       <div className="flex-1">
                         <div className="font-medium text-sm">{event.title}</div>
@@ -741,10 +1357,12 @@ function DayView({ day, events, hours }: DayViewProps) {
             {events.slice(0, 5).map((event) => (
               <div 
                 key={event.id} 
+                onClick={() => onEventClick?.(event)}
                 className={`
-                  p-2 rounded text-sm
+                  p-2 rounded text-sm cursor-pointer hover:opacity-80
                   ${eventTypeBgColors[event.type]}
                 `}
+                data-testid={`summary-event-${event.id}`}
               >
                 <div className="font-medium truncate">{event.title}</div>
                 <div className="text-xs opacity-75">
