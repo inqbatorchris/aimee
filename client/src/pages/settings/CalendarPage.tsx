@@ -158,6 +158,20 @@ export default function CalendarPage() {
   const [showBlockDialog, setShowBlockDialog] = useState(false);
   const [showHolidayDialog, setShowHolidayDialog] = useState(false);
   
+  const [hiddenEventTypes, setHiddenEventTypes] = useState<Set<string>>(new Set());
+  
+  const toggleEventTypeVisibility = (type: string) => {
+    setHiddenEventTypes(prev => {
+      const next = new Set(prev);
+      if (next.has(type)) {
+        next.delete(type);
+      } else {
+        next.add(type);
+      }
+      return next;
+    });
+  };
+  
   const [blockForm, setBlockForm] = useState({
     title: '',
     description: '',
@@ -342,22 +356,30 @@ export default function CalendarPage() {
   const events = useMemo(() => {
     if (!calendarData?.events) return [];
     
-    return calendarData.events.map((evt): CalendarEvent => ({
-      id: evt.id,
-      title: evt.title,
-      start: evt.start ? new Date(evt.start) : new Date(),
-      end: evt.end ? new Date(evt.end) : new Date(),
-      allDay: evt.allDay,
-      type: evt.type,
-      color: evt.color,
-      userId: evt.userId,
-      userName: evt.userName,
-      splynxAdminId: evt.splynxAdminId,
-      status: evt.status,
-      source: evt.source,
-      metadata: evt.metadata,
-    }));
-  }, [calendarData]);
+    return calendarData.events
+      .filter((evt) => {
+        if (hiddenEventTypes.has('splynx') && evt.type === 'splynx_task') return false;
+        if (hiddenEventTypes.has('work') && evt.type === 'work_item') return false;
+        if (hiddenEventTypes.has('leave') && (evt.type === 'holiday' || evt.type === 'public_holiday')) return false;
+        if (hiddenEventTypes.has('block') && evt.type === 'block') return false;
+        return true;
+      })
+      .map((evt): CalendarEvent => ({
+        id: evt.id,
+        title: evt.title,
+        start: evt.start ? new Date(evt.start) : new Date(),
+        end: evt.end ? new Date(evt.end) : new Date(),
+        allDay: evt.allDay,
+        type: evt.type,
+        color: evt.color,
+        userId: evt.userId,
+        userName: evt.userName,
+        splynxAdminId: evt.splynxAdminId,
+        status: evt.status,
+        source: evt.source,
+        metadata: evt.metadata,
+      }));
+  }, [calendarData, hiddenEventTypes]);
 
   const days = useMemo(() => {
     if (viewMode === 'month') {
@@ -615,23 +637,55 @@ export default function CalendarPage() {
               </Tooltip>
             </div>
 
-            <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
-              <div className="flex items-center gap-1">
-                <div className="w-2.5 h-2.5 rounded bg-blue-500" />
+            <div className="hidden sm:flex items-center gap-1 text-xs">
+              <button
+                onClick={() => toggleEventTypeVisibility('splynx')}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-full transition-all cursor-pointer hover:bg-muted ${
+                  hiddenEventTypes.has('splynx') 
+                    ? 'opacity-40 line-through text-muted-foreground' 
+                    : 'text-foreground'
+                }`}
+                data-testid="filter-toggle-splynx"
+              >
+                <div className={`w-2.5 h-2.5 rounded-full ${hiddenEventTypes.has('splynx') ? 'bg-gray-400' : 'bg-blue-500'}`} />
                 <span>Splynx</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-2.5 h-2.5 rounded bg-purple-500" />
+              </button>
+              <button
+                onClick={() => toggleEventTypeVisibility('work')}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-full transition-all cursor-pointer hover:bg-muted ${
+                  hiddenEventTypes.has('work') 
+                    ? 'opacity-40 line-through text-muted-foreground' 
+                    : 'text-foreground'
+                }`}
+                data-testid="filter-toggle-work"
+              >
+                <div className={`w-2.5 h-2.5 rounded-full ${hiddenEventTypes.has('work') ? 'bg-gray-400' : 'bg-purple-500'}`} />
                 <span>Work</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-2.5 h-2.5 rounded bg-green-500" />
+              </button>
+              <button
+                onClick={() => toggleEventTypeVisibility('leave')}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-full transition-all cursor-pointer hover:bg-muted ${
+                  hiddenEventTypes.has('leave') 
+                    ? 'opacity-40 line-through text-muted-foreground' 
+                    : 'text-foreground'
+                }`}
+                data-testid="filter-toggle-leave"
+              >
+                <div className={`w-2.5 h-2.5 rounded-full ${hiddenEventTypes.has('leave') ? 'bg-gray-400' : 'bg-green-500'}`} />
                 <span>Leave</span>
-              </div>
-              <div className="flex items-center gap-1">
-                <div className="w-2.5 h-2.5 rounded bg-orange-500" />
+              </button>
+              <button
+                onClick={() => toggleEventTypeVisibility('block')}
+                className={`flex items-center gap-1.5 px-2 py-1 rounded-full transition-all cursor-pointer hover:bg-muted ${
+                  hiddenEventTypes.has('block') 
+                    ? 'opacity-40 line-through text-muted-foreground' 
+                    : 'text-foreground'
+                }`}
+                data-testid="filter-toggle-block"
+              >
+                <div className={`w-2.5 h-2.5 rounded-full ${hiddenEventTypes.has('block') ? 'bg-gray-400' : 'bg-orange-500'}`} />
                 <span>Block</span>
-              </div>
+              </button>
             </div>
           </div>
         </div>
