@@ -156,13 +156,13 @@ export function TeamPanel({ team, open, onClose, onManageMembers, isAdmin }: Tea
     enabled: open && currentUser?.role === 'super_admin',
   });
   
-  // Fetch Splynx teams for team mapping
-  const { data: splynxTeamsData } = useQuery<{ filters: { splynxTeams: SplynxTeam[] } }>({
-    queryKey: ['/api/calendar/filters'],
+  // Fetch Splynx teams for team mapping (live from Splynx API)
+  const { data: splynxTeamsResponse, isLoading: isLoadingSplynxTeams } = useQuery<{ success: boolean; teams: Array<{ id: number; title: string }> }>({
+    queryKey: ['/api/calendar/splynx/teams'],
     enabled: open,
   });
   
-  const splynxTeams = splynxTeamsData?.filters?.splynxTeams || [];
+  const splynxTeams = splynxTeamsResponse?.teams || [];
   
   useEffect(() => {
     if (team) {
@@ -422,40 +422,43 @@ export function TeamPanel({ team, open, onClose, onManageMembers, isAdmin }: Tea
             )}
             
             {/* Splynx Team Mapping */}
-            {splynxTeams.length > 0 && (
-              <div className="space-y-2">
-                <Label className="flex items-center gap-2">
-                  <Link2 className="h-4 w-4" />
-                  Splynx Team Mapping
-                </Label>
-                <Select
-                  value={formData.splynxTeamId?.toString() || "none"}
-                  onValueChange={(value) => setFormData({ ...formData, splynxTeamId: value === "none" ? null : parseInt(value) })}
-                  disabled={!isAdmin}
-                >
-                  <SelectTrigger data-testid="select-splynx-team">
-                    <SelectValue placeholder="Link to Splynx team..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">No Splynx team linked</SelectItem>
-                    {splynxTeams.map((splynxTeam) => (
-                      <SelectItem key={splynxTeam.splynxTeamId} value={splynxTeam.splynxTeamId.toString()}>
-                        {splynxTeam.title}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  Link this team to a Splynx scheduling team for calendar integration and task routing.
+            <div className="space-y-2">
+              <Label className="flex items-center gap-2">
+                <Link2 className="h-4 w-4" />
+                Splynx Team Mapping
+              </Label>
+              <Select
+                value={formData.splynxTeamId?.toString() || "none"}
+                onValueChange={(value) => setFormData({ ...formData, splynxTeamId: value === "none" ? null : parseInt(value) })}
+                disabled={!isAdmin || isLoadingSplynxTeams}
+              >
+                <SelectTrigger data-testid="select-splynx-team">
+                  <SelectValue placeholder={isLoadingSplynxTeams ? "Loading teams..." : "Link to Splynx team..."} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No Splynx team linked</SelectItem>
+                  {splynxTeams.map((splynxTeam) => (
+                    <SelectItem key={splynxTeam.id} value={splynxTeam.id.toString()}>
+                      {splynxTeam.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">
+                Link this team to a Splynx scheduling team for calendar integration and task routing.
+              </p>
+              {splynxTeams.length === 0 && !isLoadingSplynxTeams && (
+                <p className="text-xs text-amber-600">
+                  No Splynx teams found. Make sure your Splynx integration is configured.
                 </p>
-                {formData.splynxTeamId && (
-                  <div className="text-xs text-green-600 flex items-center gap-1">
-                    <Link2 className="h-3 w-3" />
-                    Linked to: {splynxTeams.find(t => t.splynxTeamId === formData.splynxTeamId)?.title || `Team #${formData.splynxTeamId}`}
-                  </div>
-                )}
-              </div>
-            )}
+              )}
+              {formData.splynxTeamId && (
+                <div className="text-xs text-green-600 flex items-center gap-1">
+                  <Link2 className="h-3 w-3" />
+                  Linked to: {splynxTeams.find(t => t.id === formData.splynxTeamId)?.title || `Team #${formData.splynxTeamId}`}
+                </div>
+              )}
+            </div>
             
             {/* Cadence Section */}
             <Card>
