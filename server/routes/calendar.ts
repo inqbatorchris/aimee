@@ -982,6 +982,7 @@ router.get('/calendar/filters', authenticateToken, async (req: Request, res: Res
       .select({
         id: teams.id,
         name: teams.name,
+        splynxTeamId: teams.splynxTeamId,
       })
       .from(teams)
       .where(eq(teams.organizationId, organizationId));
@@ -1048,7 +1049,18 @@ router.get('/calendar/filters', authenticateToken, async (req: Request, res: Res
     res.json({
       success: true,
       filters: {
-        localTeams: localTeams.map(t => ({ id: t.id, name: t.name, source: 'local' })),
+        localTeams: localTeams.map(t => {
+          const linkedSplynxTeam = t.splynxTeamId 
+            ? splynxTeamsData.find(st => st.splynxTeamId === t.splynxTeamId)
+            : null;
+          return { 
+            id: t.id, 
+            name: t.name, 
+            source: 'local',
+            splynxTeamId: t.splynxTeamId,
+            linkedSplynxTeamName: linkedSplynxTeam?.title || null,
+          };
+        }),
         splynxTeams: splynxTeamsData.map(t => ({ 
           id: t.id, 
           splynxTeamId: t.splynxTeamId,

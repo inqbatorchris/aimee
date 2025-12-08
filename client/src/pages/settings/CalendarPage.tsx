@@ -638,9 +638,14 @@ export default function CalendarPage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All teams</SelectItem>
-                {teams.map((team) => (
+                {teams.map((team: any) => (
                   <SelectItem key={team.id} value={String(team.id)}>
                     {team.name}
+                    {team.linkedSplynxTeamName && (
+                      <span className="text-muted-foreground text-xs ml-1">
+                        → {team.linkedSplynxTeamName}
+                      </span>
+                    )}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -982,7 +987,7 @@ export default function CalendarPage() {
                                   <SelectValue placeholder="Select team" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {filtersData?.splynxTeams?.map((team) => (
+                                  {filtersData?.filters?.splynxTeams?.map((team: any) => (
                                     <SelectItem key={team.id} value={team.id.toString()}>
                                       {team.name}
                                     </SelectItem>
@@ -1000,7 +1005,7 @@ export default function CalendarPage() {
                                   <SelectValue placeholder="Select assignee" />
                                 </SelectTrigger>
                                 <SelectContent>
-                                  {filtersData?.splynxAdmins?.map((admin) => (
+                                  {filtersData?.filters?.splynxAdmins?.map((admin: any) => (
                                     <SelectItem key={admin.id} value={admin.id.toString()}>
                                       {admin.name}
                                     </SelectItem>
@@ -1056,7 +1061,7 @@ export default function CalendarPage() {
                                   Assignee
                                 </div>
                                 <div className="text-sm">
-                                  {filtersData?.splynxAdmins?.find(a => a.id === splynxTaskDetail.task.assigned_to)?.name || 
+                                  {filtersData?.filters?.splynxAdmins?.find((a: any) => a.id === splynxTaskDetail.task.assigned_to)?.name || 
                                    `Admin #${splynxTaskDetail.task.assigned_to}`}
                                 </div>
                               </div>

@@ -6,7 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Users, Calendar, Clock, Globe, Trash2 } from "lucide-react";
+import { Users, Calendar, Clock, Globe, Trash2, Link2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -38,11 +38,19 @@ interface TeamPanelProps {
     defaultMeetingLengthMinutes?: string;
     organizationId: number;
     organizationName?: string;
+    splynxTeamId?: number | null;
   } | null;
   open: boolean;
   onClose: () => void;
   onManageMembers?: () => void;
   isAdmin: boolean;
+}
+
+interface SplynxTeam {
+  id: number;
+  splynxTeamId: number;
+  title: string;
+  color?: string;
 }
 
 // Helper function to calculate next meeting dates
@@ -139,6 +147,7 @@ export function TeamPanel({ team, open, onClose, onManageMembers, isAdmin }: Tea
     periodNth: "1",
     periodWeekday: "mon",
     defaultMeetingLengthMinutes: "15",
+    splynxTeamId: null as number | null,
   });
   
   // Fetch organizations for super admins
@@ -146,6 +155,14 @@ export function TeamPanel({ team, open, onClose, onManageMembers, isAdmin }: Tea
     queryKey: ['/api/core/organizations/list'],
     enabled: open && currentUser?.role === 'super_admin',
   });
+  
+  // Fetch Splynx teams for team mapping
+  const { data: splynxTeamsData } = useQuery<{ filters: { splynxTeams: SplynxTeam[] } }>({
+    queryKey: ['/api/calendar/filters'],
+    enabled: open,
+  });
+  
+  const splynxTeams = splynxTeamsData?.filters?.splynxTeams || [];
   
   useEffect(() => {
     if (team) {
@@ -163,6 +180,7 @@ export function TeamPanel({ team, open, onClose, onManageMembers, isAdmin }: Tea
         periodNth: team.periodNth || "1",
         periodWeekday: team.periodWeekday || "mon",
         defaultMeetingLengthMinutes: team.defaultMeetingLengthMinutes || "15",
+        splynxTeamId: team.splynxTeamId || null,
       });
       setSelectedOrganizationId(team.organizationId);
     } else {
@@ -180,6 +198,7 @@ export function TeamPanel({ team, open, onClose, onManageMembers, isAdmin }: Tea
         periodNth: "1",
         periodWeekday: "mon",
         defaultMeetingLengthMinutes: "15",
+        splynxTeamId: null,
       });
       // Initialize organization for new teams
       setSelectedOrganizationId(currentUser?.organizationId || null);
@@ -397,6 +416,42 @@ export function TeamPanel({ team, open, onClose, onManageMembers, isAdmin }: Tea
                 ) : (
                   <div className="text-sm p-2 border rounded">
                     Loading organisations...
+                  </div>
+                )}
+              </div>
+            )}
+            
+            {/* Splynx Team Mapping */}
+            {splynxTeams.length > 0 && (
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <Link2 className="h-4 w-4" />
+                  Splynx Team Mapping
+                </Label>
+                <Select
+                  value={formData.splynxTeamId?.toString() || "none"}
+                  onValueChange={(value) => setFormData({ ...formData, splynxTeamId: value === "none" ? null : parseInt(value) })}
+                  disabled={!isAdmin}
+                >
+                  <SelectTrigger data-testid="select-splynx-team">
+                    <SelectValue placeholder="Link to Splynx team..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No Splynx team linked</SelectItem>
+                    {splynxTeams.map((splynxTeam) => (
+                      <SelectItem key={splynxTeam.splynxTeamId} value={splynxTeam.splynxTeamId.toString()}>
+                        {splynxTeam.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Link this team to a Splynx scheduling team for calendar integration and task routing.
+                </p>
+                {formData.splynxTeamId && (
+                  <div className="text-xs text-green-600 flex items-center gap-1">
+                    <Link2 className="h-3 w-3" />
+                    Linked to: {splynxTeams.find(t => t.splynxTeamId === formData.splynxTeamId)?.title || `Team #${formData.splynxTeamId}`}
                   </div>
                 )}
               </div>

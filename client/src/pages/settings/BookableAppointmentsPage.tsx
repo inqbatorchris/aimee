@@ -413,6 +413,11 @@ interface SplynxAdmin {
   email: string;
 }
 
+interface SplynxTeam {
+  id: number;
+  title: string;
+}
+
 interface ExtendedBookableTaskType extends Partial<BookableTaskType> {
   defaultAssigneeTeamId?: number | null;
   defaultAssigneeUserId?: number | null;
@@ -425,9 +430,14 @@ interface AssigneeSelectorProps {
 }
 
 function AssigneeSelector({ formData, setFormData }: AssigneeSelectorProps) {
-  const { data: admins, isLoading } = useQuery<SplynxAdmin[]>({
+  const { data: admins, isLoading: isLoadingAdmins } = useQuery<SplynxAdmin[]>({
     queryKey: ['/api/field-engineering/splynx-administrators'],
   });
+
+  const { data: teamsResponse, isLoading: isLoadingTeams } = useQuery<{ success: boolean; teams: SplynxTeam[] }>({
+    queryKey: ['/api/calendar/splynx/teams'],
+  });
+  const teams = teamsResponse?.teams || [];
 
   return (
     <div className="border-t pt-4">
@@ -437,13 +447,36 @@ function AssigneeSelector({ formData, setFormData }: AssigneeSelectorProps) {
       </p>
       <div className="space-y-4">
         <div>
+          <Label htmlFor="defaultAssigneeTeamId">Default Team</Label>
+          <Select
+            value={formData.defaultAssigneeTeamId?.toString() || 'none'}
+            onValueChange={(val) => setFormData({ ...formData, defaultAssigneeTeamId: val === 'none' ? null : parseInt(val) })}
+          >
+            <SelectTrigger data-testid="select-default-team">
+              <SelectValue placeholder={isLoadingTeams ? 'Loading...' : 'Select team (optional)'} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="none">No default team</SelectItem>
+              {teams.map((team) => (
+                <SelectItem key={team.id} value={team.id.toString()}>
+                  {team.title}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <p className="text-xs text-muted-foreground mt-1">
+            Splynx team that will be assigned to tasks created from this booking type.
+          </p>
+        </div>
+
+        <div>
           <Label htmlFor="defaultAssigneeUserId">Default Assignee</Label>
           <Select
             value={formData.defaultAssigneeUserId?.toString() || 'none'}
             onValueChange={(val) => setFormData({ ...formData, defaultAssigneeUserId: val === 'none' ? null : parseInt(val) })}
           >
             <SelectTrigger data-testid="select-default-assignee">
-              <SelectValue placeholder={isLoading ? 'Loading...' : 'Select team member (optional)'} />
+              <SelectValue placeholder={isLoadingAdmins ? 'Loading...' : 'Select team member (optional)'} />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="none">No default assignee</SelectItem>
@@ -466,7 +499,7 @@ function AssigneeSelector({ formData, setFormData }: AssigneeSelectorProps) {
             onValueChange={(val) => setFormData({ ...formData, fallbackAssigneeUserId: val === 'none' ? null : parseInt(val) })}
           >
             <SelectTrigger data-testid="select-fallback-assignee">
-              <SelectValue placeholder={isLoading ? 'Loading...' : 'Select fallback team member'} />
+              <SelectValue placeholder={isLoadingAdmins ? 'Loading...' : 'Select fallback team member'} />
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="none">No fallback assignee</SelectItem>
@@ -513,6 +546,7 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
     displayOrder: 1,
     splynxProjectId: 1,
     splynxWorkflowStatusId: 1,
+    defaultAssigneeTeamId: null,
     defaultAssigneeUserId: null,
     fallbackAssigneeUserId: null,
   });
@@ -521,6 +555,7 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
     if (type) {
       setFormData({
         ...type,
+        defaultAssigneeTeamId: (type as any).defaultAssigneeTeamId ?? null,
         defaultAssigneeUserId: (type as any).defaultAssigneeUserId ?? null,
         fallbackAssigneeUserId: (type as any).fallbackAssigneeUserId ?? null,
       });
@@ -542,6 +577,7 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
         displayOrder: 1,
         splynxProjectId: 1,
         splynxWorkflowStatusId: 1,
+        defaultAssigneeTeamId: null,
         defaultAssigneeUserId: null,
         fallbackAssigneeUserId: null,
       });

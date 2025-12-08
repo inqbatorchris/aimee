@@ -539,6 +539,9 @@ router.post('/public/bookings/:token/confirm', async (req, res) => {
     }
     
     // Create Splynx task FIRST (if this fails, token remains usable for retry)
+    // Get assignee and team configuration from the task type
+    const defaultAssigneeUserId = (validation.booking!.taskType as any).defaultAssigneeUserId;
+    const defaultAssigneeTeamId = (validation.booking!.taskType as any).defaultAssigneeTeamId;
     
     const splynxTask = await splynxService.createSplynxTask({
       taskName: `${validation.booking!.taskType.name} - ${validation.booking!.booking.customerName}`,
@@ -551,7 +554,9 @@ router.post('/public/bookings/:token/confirm', async (req, res) => {
       scheduledFrom: selectedDatetime,
       duration: validation.booking!.taskType.defaultDuration || undefined,
       travelTimeTo: validation.booking!.taskType.defaultTravelTimeTo || undefined,
-      travelTimeFrom: validation.booking!.taskType.defaultTravelTimeFrom || undefined
+      travelTimeFrom: validation.booking!.taskType.defaultTravelTimeFrom || undefined,
+      assignee: defaultAssigneeUserId || undefined,
+      teamId: defaultAssigneeTeamId || undefined,
     });
     
     // ATOMIC TOKEN CONFIRMATION: Only claim token after successful Splynx task creation
@@ -875,8 +880,9 @@ router.post('/public/appointment-types/:slug/book', async (req, res) => {
       }
     }
     
-    // Get assignee configuration
+    // Get assignee and team configuration
     const defaultAssigneeUserId = (appointmentType as any).defaultAssigneeUserId;
+    const defaultAssigneeTeamId = (appointmentType as any).defaultAssigneeTeamId;
     
     // Create Splynx task
     const splynxTask = await splynxService.createSplynxTask({
@@ -892,6 +898,7 @@ router.post('/public/appointment-types/:slug/book', async (req, res) => {
       travelTimeTo: appointmentType.defaultTravelTimeTo || undefined,
       travelTimeFrom: appointmentType.defaultTravelTimeFrom || undefined,
       assignee: defaultAssigneeUserId || undefined,
+      teamId: defaultAssigneeTeamId || undefined,
     });
     
     // Create booking record

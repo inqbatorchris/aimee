@@ -899,6 +899,8 @@ export class SplynxService {
     workflowStatusId?: number;
     assignee?: number;
     assignee_id?: number;
+    teamId?: number;
+    team_id?: number;
     priority?: string;
     isScheduled?: boolean;
     duration?: string;
@@ -958,6 +960,14 @@ export class SplynxService {
         splynxPayload.address = taskData.address;
       }
       
+      // Add team ID
+      if (taskData.teamId || taskData.team_id) {
+        const teamId = parseInt(String(taskData.teamId || taskData.team_id));
+        if (!isNaN(teamId)) {
+          splynxPayload.team_id = teamId;
+        }
+      }
+
       // Add assignee (only include if user sets it in UI)
       if (taskData.assignee || taskData.assignee_id) {
         const assigneeId = parseInt(String(taskData.assignee || taskData.assignee_id));
