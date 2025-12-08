@@ -68,16 +68,54 @@ async function getSplynxServiceForOrg(organizationId: number): Promise<SplynxSer
 router.get('/calendar/splynx/teams', authenticateToken, async (req: Request, res: Response) => {
   try {
     const organizationId = (req as any).user.organizationId;
-    const splynxService = await getSplynxServiceForOrg(organizationId);
     
-    const teams = await splynxService.getSchedulingTeams();
+    // Try live Splynx API first
+    try {
+      const splynxService = await getSplynxServiceForOrg(organizationId);
+      const teams = await splynxService.getSchedulingTeams();
+      
+      console.log(`[CALENDAR] Fetched ${teams.length} teams from Splynx live API`);
+      
+      return res.json({ 
+        success: true, 
+        teams,
+        count: teams.length,
+        source: 'live'
+      });
+    } catch (liveError: any) {
+      console.log(`[CALENDAR] Live Splynx API failed, trying cached teams: ${liveError.message}`);
+    }
     
-    console.log(`[CALENDAR] Fetched ${teams.length} teams from Splynx`);
+    // Fallback to cached teams from database
+    const cachedTeams = await db
+      .select()
+      .from(splynxTeams)
+      .where(eq(splynxTeams.organizationId, organizationId));
     
+    if (cachedTeams.length > 0) {
+      console.log(`[CALENDAR] Using ${cachedTeams.length} cached teams from database`);
+      
+      return res.json({ 
+        success: true, 
+        teams: cachedTeams.map(t => ({
+          id: t.splynxTeamId,
+          title: t.title,
+          partnerId: t.partnerId,
+          memberIds: t.memberIds || [],
+          color: t.color,
+        })),
+        count: cachedTeams.length,
+        source: 'cached'
+      });
+    }
+    
+    // No teams available
+    console.log('[CALENDAR] No teams available from live API or cache');
     res.json({ 
       success: true, 
-      teams,
-      count: teams.length 
+      teams: [],
+      count: 0,
+      source: 'none'
     });
   } catch (error: any) {
     console.error('[CALENDAR] Error fetching teams:', error.message);

@@ -664,45 +664,62 @@ export class SplynxService {
     memberIds: number[];
     color?: string;
   }>> {
-    try {
-      // Try config path first (correct Splynx API v2 path)
-      const url = this.buildUrl('admin/config/scheduling/teams');
-      
-      console.log('[SPLYNX getSchedulingTeams] Fetching teams from:', url);
-      
-      const response = await axios.get(url, {
-        headers: {
-          'Authorization': this.credentials.authHeader,
-          'Content-Type': 'application/json',
-        },
-      });
+    // Try multiple possible API paths - Splynx API versions vary
+    const possiblePaths = [
+      'admin/scheduling/teams',
+      'admin/config/scheduling/teams', 
+      'config/scheduling/teams',
+      'scheduling/teams'
+    ];
+    
+    let lastError: any = null;
+    
+    for (const path of possiblePaths) {
+      try {
+        const url = this.buildUrl(path);
+        
+        console.log('[SPLYNX getSchedulingTeams] Trying:', url);
+        
+        const response = await axios.get(url, {
+          headers: {
+            'Authorization': this.credentials.authHeader,
+            'Content-Type': 'application/json',
+          },
+        });
 
-      console.log('[SPLYNX getSchedulingTeams] Response:', response.status);
-      
-      let teamsData: any[] = [];
-      
-      if (Array.isArray(response.data)) {
-        teamsData = response.data;
-      } else if (response.data?.items) {
-        teamsData = response.data.items;
-      } else if (typeof response.data === 'object' && response.data !== null) {
-        teamsData = Object.values(response.data);
+        console.log('[SPLYNX getSchedulingTeams] Response:', response.status);
+        
+        let teamsData: any[] = [];
+        
+        if (Array.isArray(response.data)) {
+          teamsData = response.data;
+        } else if (response.data?.items) {
+          teamsData = response.data.items;
+        } else if (typeof response.data === 'object' && response.data !== null) {
+          teamsData = Object.values(response.data);
+        }
+        
+        console.log(`[SPLYNX getSchedulingTeams] Found ${teamsData.length} teams at path: ${path}`);
+        
+        return teamsData.map((team: any) => ({
+          id: parseInt(team.id),
+          title: team.title || team.name || `Team ${team.id}`,
+          partnerId: team.partner_id ? parseInt(team.partner_id) : undefined,
+          memberIds: this.parseTeamMemberIds(team.admin_ids || team.members || team.member_ids || []),
+          color: team.color,
+        }));
+      } catch (error: any) {
+        console.log(`[SPLYNX getSchedulingTeams] Path ${path} failed:`, error.response?.status || error.message);
+        lastError = error;
+        // Continue to try next path
       }
-      
-      console.log(`[SPLYNX getSchedulingTeams] Found ${teamsData.length} teams`);
-      
-      return teamsData.map((team: any) => ({
-        id: parseInt(team.id),
-        title: team.title || team.name || `Team ${team.id}`,
-        partnerId: team.partner_id ? parseInt(team.partner_id) : undefined,
-        memberIds: this.parseTeamMemberIds(team.admin_ids || team.members || team.member_ids || []),
-        color: team.color,
-      }));
-    } catch (error: any) {
-      console.error('[SPLYNX getSchedulingTeams] Error:', error.message);
-      console.error('[SPLYNX getSchedulingTeams] Response:', error.response?.data);
-      throw new Error(`Failed to fetch scheduling teams from Splynx: ${error.message}`);
     }
+    
+    // All paths failed
+    console.error('[SPLYNX getSchedulingTeams] All paths failed');
+    console.error('[SPLYNX getSchedulingTeams] Last error:', lastError?.message);
+    console.error('[SPLYNX getSchedulingTeams] Response:', lastError?.response?.data);
+    throw new Error(`Failed to fetch scheduling teams from Splynx: ${lastError?.message}`);
   }
 
   /**
