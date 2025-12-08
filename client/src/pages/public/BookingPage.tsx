@@ -1,7 +1,7 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useLocation } from 'wouter';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Calendar, Clock, MapPin, AlertCircle, CheckCircle2, Loader2, User, LogIn } from 'lucide-react';
+import { Calendar, Clock, MapPin, AlertCircle, CheckCircle2, Loader2, User, LogIn, Moon, Sun } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -66,6 +66,20 @@ export default function BookingPage() {
   const [loginPassword, setLoginPassword] = useState('');
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [loggedInUser, setLoggedInUser] = useState<any>(null);
+  
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    const stored = localStorage.getItem('booking-theme');
+    return stored ? stored === 'dark' : true;
+  });
+  
+  useEffect(() => {
+    const theme = isDarkMode ? 'dark' : 'light';
+    localStorage.setItem('booking-theme', theme);
+    document.documentElement.classList.remove('light', 'dark');
+    document.documentElement.classList.add(theme);
+  }, [isDarkMode]);
+  
+  const toggleTheme = () => setIsDarkMode(prev => !prev);
   
   const { data: legacyBooking, isLoading: legacyLoading, error: legacyError } = useQuery<LegacyBookingInfo>({
     queryKey: ['/api/public/bookings', token],
@@ -173,7 +187,7 @@ export default function BookingPage() {
   
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50" data-testid="loading-booking">
+      <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900" data-testid="loading-booking">
         <div className="text-center">
           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
           <p className="text-muted-foreground">Loading booking page...</p>
@@ -186,7 +200,7 @@ export default function BookingPage() {
   
   if (error || !hasData) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4" data-testid="error-booking">
+      <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 p-4" data-testid="error-booking">
         <Card className="max-w-md w-full p-6">
           <div className="text-center">
             <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
@@ -213,7 +227,7 @@ export default function BookingPage() {
   
   if (isConfirmed && confirmationData) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 p-4" data-testid="confirmation-booking">
+      <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 p-4" data-testid="confirmation-booking">
         <Card className="max-w-md w-full p-6">
           <div className="text-center">
             {orgLogo && (
@@ -229,7 +243,7 @@ export default function BookingPage() {
               {confirmationData.confirmationMessage || `Your ${bookingName} has been scheduled.`}
             </p>
             
-            <div className="bg-gray-50 rounded-lg p-4 mb-6 text-left">
+            <div className="bg-muted/50 rounded-lg p-4 mb-6 text-left">
               <div className="flex items-start gap-3 mb-3">
                 <Calendar className="h-5 w-5 text-muted-foreground mt-0.5" />
                 <div>
@@ -283,11 +297,11 @@ export default function BookingPage() {
     : null;
   
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4" data-testid="booking-page">
+    <div className="min-h-screen bg-gray-100 dark:bg-gray-900 py-8 px-4 overflow-y-auto" data-testid="booking-page">
       <div className="max-w-3xl mx-auto">
         <Card className="p-6">
           <div className="flex items-start justify-between mb-6">
-            <div>
+            <div className="flex-1">
               {orgLogo && (
                 <img 
                   src={orgLogo} 
@@ -305,14 +319,30 @@ export default function BookingPage() {
                 <p className="text-muted-foreground">{legacyTicketInfo}</p>
               )}
             </div>
-            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-              <Clock className="h-4 w-4" />
-              {bookingDuration}
+            <div className="flex items-center gap-4">
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={toggleTheme}
+                className="h-8 w-8"
+                aria-label={`Switch to ${isDarkMode ? 'light' : 'dark'} mode`}
+                data-testid="button-toggle-theme"
+              >
+                {isDarkMode ? (
+                  <Sun className="h-4 w-4" />
+                ) : (
+                  <Moon className="h-4 w-4" />
+                )}
+              </Button>
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Clock className="h-4 w-4" />
+                {bookingDuration}
+              </div>
             </div>
           </div>
           
           {isLegacyTokenFlow && legacyBooking?.serviceAddress && (
-            <div className="flex items-start gap-3 mb-6 p-3 bg-gray-50 rounded-lg">
+            <div className="flex items-start gap-3 mb-6 p-3 bg-muted/50 rounded-lg">
               <MapPin className="h-5 w-5 text-muted-foreground mt-0.5" />
               <div>
                 <div className="font-medium">Service Address</div>
@@ -348,7 +378,7 @@ export default function BookingPage() {
           )}
           
           {showLogin && (
-            <Card className="p-4 mb-6 bg-gray-50">
+            <Card className="p-4 mb-6 bg-muted/50">
               <h3 className="font-medium mb-3">Log in to continue</h3>
               <div className="space-y-3">
                 <div>
@@ -477,7 +507,7 @@ export default function BookingPage() {
                 </AlertDescription>
               </Alert>
             ) : (
-              <div className="space-y-4 max-h-[400px] overflow-y-auto">
+              <div className="space-y-4 max-h-[250px] overflow-y-auto border rounded-lg p-3">
                 {Object.entries(slotsByDate).map(([date, slots]) => (
                   <div key={date}>
                     <div className="font-medium mb-2 text-sm text-muted-foreground">{date}</div>
