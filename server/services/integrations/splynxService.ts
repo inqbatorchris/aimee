@@ -563,17 +563,10 @@ export class SplynxService {
         params.main_attributes.status = filters.status;
       }
 
-      if (filters.dateFrom) {
-        params.main_attributes.date = ['>=', filters.dateFrom];
+      if (filters.project_id) {
+        params.main_attributes.project_id = filters.project_id;
       }
 
-      if (filters.dateTo) {
-        if (params.main_attributes.date) {
-          params.main_attributes.date = ['between', filters.dateFrom, filters.dateTo];
-        } else {
-          params.main_attributes.date = ['<=', filters.dateTo];
-        }
-      }
 
       const url = this.buildUrl('admin/scheduling/tasks');
       

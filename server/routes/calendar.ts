@@ -1284,14 +1284,22 @@ router.get('/calendar/combined', authenticateToken, async (req: Request, res: Re
       try {
         const splynxService = await getSplynxServiceForOrg(organizationId);
         const tasks = await splynxService.getSchedulingTasks({
-          dateFrom: startDate as string,
-          dateTo: endDate as string,
           assignedAdminId: effectiveSplynxAdminIds.length === 1 ? effectiveSplynxAdminIds[0] : undefined,
         });
         
-        let filteredTasks = tasks;
+        const startDateObj = new Date(startDate as string);
+        const endDateObj = new Date(endDate as string);
+        endDateObj.setHours(23, 59, 59, 999);
+        
+        let filteredTasks = tasks.filter((t: any) => {
+          const taskDate = t.scheduled_date || t.scheduled_from?.split(' ')[0];
+          if (!taskDate) return false;
+          const taskDateObj = new Date(taskDate);
+          return taskDateObj >= startDateObj && taskDateObj <= endDateObj;
+        });
+        
         if (effectiveSplynxAdminIds.length > 1) {
-          filteredTasks = tasks.filter((t: any) => 
+          filteredTasks = filteredTasks.filter((t: any) => 
             effectiveSplynxAdminIds.includes(parseInt(t.assigned_to || t.assigned_admin_id || '0'))
           );
         } else if (effectiveSplynxAdminIds.length === 0 && effectiveUserIds.length > 0) {
