@@ -750,6 +750,71 @@ export class SplynxService {
   }
 
   /**
+   * Get scheduling task statuses from Splynx
+   * Maps status IDs (like 61, 62, 63, 64) to human-readable names
+   */
+  async getSchedulingTaskStatuses(): Promise<Array<{
+    id: number;
+    title: string;
+    color?: string;
+  }>> {
+    const possiblePaths = [
+      'admin/config/scheduling-task-statuses',
+      'admin/scheduling/task-statuses',
+      'config/scheduling/task-statuses',
+      'scheduling/task-statuses'
+    ];
+    
+    let lastError: any = null;
+    
+    for (const path of possiblePaths) {
+      try {
+        const url = this.buildUrl(path);
+        console.log('[SPLYNX getSchedulingTaskStatuses] Trying:', url);
+        
+        const response = await axios.get(url, {
+          headers: {
+            'Authorization': this.credentials.authHeader,
+            'Content-Type': 'application/json',
+          },
+        });
+
+        console.log('[SPLYNX getSchedulingTaskStatuses] Response:', response.status);
+        
+        let statusesData: any[] = [];
+        
+        if (Array.isArray(response.data)) {
+          statusesData = response.data;
+        } else if (response.data?.items) {
+          statusesData = response.data.items;
+        } else if (typeof response.data === 'object' && response.data !== null) {
+          statusesData = Object.values(response.data);
+        }
+        
+        console.log(`[SPLYNX getSchedulingTaskStatuses] Found ${statusesData.length} statuses at path: ${path}`);
+        
+        return statusesData.map((status: any) => ({
+          id: parseInt(status.id),
+          title: status.title || status.name || `Status ${status.id}`,
+          color: status.color,
+        }));
+      } catch (error: any) {
+        console.log(`[SPLYNX getSchedulingTaskStatuses] Path ${path} failed:`, error.response?.status || error.message);
+        lastError = error;
+      }
+    }
+    
+    // Return fallback statuses if API fails
+    console.log('[SPLYNX getSchedulingTaskStatuses] All paths failed, using fallback statuses');
+    return [
+      { id: 61, title: 'New', color: '#3b82f6' },
+      { id: 62, title: 'In Progress', color: '#f59e0b' },
+      { id: 63, title: 'Completed', color: '#22c55e' },
+      { id: 64, title: 'Cancelled', color: '#ef4444' },
+    ];
+  }
+
+  /**
    * Get available time slots for a specific assignee
    * Queries Splynx tasks for the assignee and calculates free slots
    */

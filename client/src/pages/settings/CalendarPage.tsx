@@ -855,56 +855,85 @@ export default function CalendarPage() {
       </div>
 
       <Sheet open={!!selectedEvent} onOpenChange={(open) => !open && handleCloseEventDetail()}>
-        <SheetContent className="sm:w-[640px]">
+        <SheetContent className="sm:w-[640px] flex flex-col h-full p-0">
           {selectedEvent && (
             <>
-              <SheetHeader>
-                <SheetTitle className="flex items-center gap-2">
-                  <div className={`w-3 h-3 rounded ${eventTypeColors[selectedEvent.type].split(' ')[0]}`} />
-                  {selectedEvent.title}
-                </SheetTitle>
-                <SheetDescription>
-                  {selectedEvent.type === 'splynx_task' ? 'Splynx Task' : 
-                   selectedEvent.type === 'work_item' ? 'Work Item' :
-                   selectedEvent.type === 'holiday' ? 'Holiday' :
-                   selectedEvent.type === 'public_holiday' ? 'Public Holiday' : 'Calendar Block'}
-                </SheetDescription>
+              <SheetHeader className="px-6 pt-6 pb-4 border-b flex-shrink-0">
+                <div className="flex items-center justify-between">
+                  <SheetTitle className="flex items-center gap-2 text-base">
+                    <div className={`w-2.5 h-2.5 rounded ${eventTypeColors[selectedEvent.type].split(' ')[0]}`} />
+                    {selectedEvent.type === 'splynx_task' ? 'Splynx Task' : 
+                     selectedEvent.type === 'work_item' ? 'Work Item' :
+                     selectedEvent.type === 'holiday' ? 'Holiday' :
+                     selectedEvent.type === 'public_holiday' ? 'Public Holiday' : 'Calendar Block'}
+                  </SheetTitle>
+                  {selectedEvent.type === 'splynx_task' && (
+                    <a 
+                      href={`https://manage.country-connect.co.uk/admin/scheduling/tasks?view=details&task_id=${splynxTaskId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-blue-600 hover:underline flex items-center gap-1"
+                      data-testid="link-splynx-task-header"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      Open in Splynx
+                    </a>
+                  )}
+                </div>
+                <SheetDescription className="sr-only">Event details panel</SheetDescription>
               </SheetHeader>
               
-              <div className="mt-6 space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <div className="text-xs text-muted-foreground mb-1">Start</div>
-                    <div className="text-sm font-medium">
-                      {format(selectedEvent.start, 'PPP')}
-                      {!selectedEvent.allDay && ` at ${format(selectedEvent.start, 'p')}`}
+              <ScrollArea className="flex-1 px-6">
+                <div className="py-4 space-y-4">
+                  {/* Summary Section - Compact Grid */}
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="space-y-0.5">
+                      <div className="text-xs text-muted-foreground">Start</div>
+                      <div className="font-medium">
+                        {format(selectedEvent.start, 'MMM d, yyyy')}
+                        {!selectedEvent.allDay && <span className="text-muted-foreground"> {format(selectedEvent.start, 'h:mm a')}</span>}
+                      </div>
+                    </div>
+                    <div className="space-y-0.5">
+                      <div className="text-xs text-muted-foreground">End</div>
+                      <div className="font-medium">
+                        {format(selectedEvent.end, 'MMM d, yyyy')}
+                        {!selectedEvent.allDay && <span className="text-muted-foreground"> {format(selectedEvent.end, 'h:mm a')}</span>}
+                      </div>
                     </div>
                   </div>
-                  <div>
-                    <div className="text-xs text-muted-foreground mb-1">End</div>
-                    <div className="text-sm font-medium">
-                      {format(selectedEvent.end, 'PPP')}
-                      {!selectedEvent.allDay && ` at ${format(selectedEvent.end, 'p')}`}
+                  
+                  {/* Assignee & Status Row */}
+                  {(selectedEvent.userName || selectedEvent.status) && (
+                    <div className="flex items-center gap-4 text-sm">
+                      {selectedEvent.userName && (
+                        <div className="flex items-center gap-1.5">
+                          <User className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span>{(() => {
+                            const assigneeId = selectedEvent.metadata?.assigneeId;
+                            if (assigneeId) {
+                              const admin = filtersData?.filters?.splynxAdmins?.find((a: any) => a.splynxAdminId === assigneeId);
+                              if (admin?.name) return admin.name;
+                            }
+                            return selectedEvent.userName;
+                          })()}</span>
+                        </div>
+                      )}
+                      {selectedEvent.status && (
+                        <Badge variant="outline" className="text-xs">
+                          {(() => {
+                            const statusId = parseInt(selectedEvent.status);
+                            if (!isNaN(statusId)) {
+                              const taskStatuses = (filtersData?.filters as any)?.taskStatuses;
+                              const status = taskStatuses?.find((s: any) => s.id === statusId);
+                              return status?.title || selectedEvent.status;
+                            }
+                            return selectedEvent.status;
+                          })()}
+                        </Badge>
+                      )}
                     </div>
-                  </div>
-                </div>
-                
-                {selectedEvent.userName && (
-                  <div>
-                    <div className="text-xs text-muted-foreground mb-1">Assigned To</div>
-                    <div className="flex items-center gap-2 text-sm">
-                      <User className="h-4 w-4" />
-                      {selectedEvent.userName}
-                    </div>
-                  </div>
-                )}
-                
-                {selectedEvent.status && (
-                  <div>
-                    <div className="text-xs text-muted-foreground mb-1">Status</div>
-                    <Badge variant="outline">{selectedEvent.status}</Badge>
-                  </div>
-                )}
+                  )}
 
                 {selectedEvent.type === 'splynx_task' && (
                   <div className="space-y-4 pt-2">
@@ -1286,7 +1315,8 @@ export default function CalendarPage() {
                     )}
                   </div>
                 )}
-              </div>
+                </div>
+              </ScrollArea>
             </>
           )}
         </SheetContent>

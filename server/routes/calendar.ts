@@ -1084,6 +1084,22 @@ router.get('/calendar/filters', authenticateToken, async (req: Request, res: Res
       }
     }
     
+    // Fetch task statuses from Splynx
+    let taskStatuses: Array<{ id: number; title: string; color?: string }> = [];
+    try {
+      const splynxService = await getSplynxServiceForOrg(organizationId);
+      taskStatuses = await splynxService.getSchedulingTaskStatuses();
+      console.log(`[CALENDAR] Fetched ${taskStatuses.length} task statuses from Splynx`);
+    } catch (statusError: any) {
+      console.log(`[CALENDAR] Failed to fetch task statuses, using fallback: ${statusError.message}`);
+      taskStatuses = [
+        { id: 61, title: 'New', color: '#3b82f6' },
+        { id: 62, title: 'In Progress', color: '#f59e0b' },
+        { id: 63, title: 'Completed', color: '#22c55e' },
+        { id: 64, title: 'Cancelled', color: '#ef4444' },
+      ];
+    }
+    
     res.json({
       success: true,
       filters: {
@@ -1124,6 +1140,11 @@ router.get('/calendar/filters', authenticateToken, async (req: Request, res: Res
           isActive: a.isActive,
           source: 'splynx',
           lastSynced: a.lastFetchedAt,
+        })),
+        taskStatuses: taskStatuses.map(s => ({
+          id: s.id,
+          title: s.title,
+          color: s.color,
         })),
         teamMemberships: localTeamMemberships,
         dataSources: ['splynx_tasks', 'work_items', 'holidays', 'blocks'],
