@@ -1,4 +1,5 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import DOMPurify from 'dompurify';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -276,6 +277,7 @@ export default function CalendarPage() {
 
   const handleCloseEventDetail = () => {
     setSelectedEvent(null);
+    setSplynxTaskEdit(null);
   };
 
   const handleDayClick = (day: Date) => {
@@ -340,6 +342,13 @@ export default function CalendarPage() {
       });
     }
   };
+
+  // Auto-open in edit mode when task details load
+  useEffect(() => {
+    if (splynxTaskDetail?.task && !splynxTaskEdit) {
+      initSplynxTaskEdit();
+    }
+  }, [splynxTaskDetail]);
 
   const handleSaveSplynxTask = () => {
     if (!splynxTaskEdit) return;
@@ -1095,9 +1104,12 @@ export default function CalendarPage() {
                             {splynxTaskDetail.task.description && (
                               <div>
                                 <div className="text-xs text-muted-foreground mb-1">Description</div>
-                                <div className="text-sm whitespace-pre-wrap bg-muted/30 p-2 rounded">
-                                  {splynxTaskDetail.task.description}
-                                </div>
+                                <div 
+                                  className="text-sm prose prose-sm max-w-none bg-muted/30 p-2 rounded [&_div]:mb-1 [&_h4]:text-sm [&_h4]:font-semibold"
+                                  dangerouslySetInnerHTML={{ 
+                                    __html: DOMPurify.sanitize(splynxTaskDetail.task.description) 
+                                  }}
+                                />
                               </div>
                             )}
                             
