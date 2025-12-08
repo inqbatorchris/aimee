@@ -945,7 +945,7 @@ export default function CalendarPage() {
         </div>
 
       <div className="flex-1 overflow-hidden">
-        <div className="h-full max-w-[1600px] w-full mx-auto">
+        <div className="h-full max-w-[1600px] w-full mx-auto overflow-x-hidden">
         {isLoading ? (
           <div className="p-4 grid grid-cols-7 gap-1">
             {Array.from({ length: 35 }).map((_, i) => (
@@ -1772,9 +1772,9 @@ function WeekView({ days, events, hours, onEventClick, onSlotClick }: WeekViewPr
   };
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      <div className="flex border-b min-w-0">
-        <div className="w-16 shrink-0" />
+    <div className="h-full flex flex-col overflow-hidden w-full max-w-full">
+      <div className="flex border-b w-full">
+        <div className="w-14 shrink-0 flex-none" />
         {days.map((day, i) => (
           <div 
             key={i} 
@@ -1794,8 +1794,8 @@ function WeekView({ days, events, hours, onEventClick, onSlotClick }: WeekViewPr
         ))}
       </div>
       
-      <div className="flex border-b bg-muted/30 min-w-0">
-        <div className="w-16 shrink-0 pr-2 py-1 text-right text-[10px] text-muted-foreground">
+      <div className="flex border-b bg-muted/30 w-full">
+        <div className="w-14 shrink-0 flex-none pr-2 py-1 text-right text-[10px] text-muted-foreground">
           All day
         </div>
         {days.map((day, dayIndex) => {
@@ -1828,9 +1828,9 @@ function WeekView({ days, events, hours, onEventClick, onSlotClick }: WeekViewPr
         })}
       </div>
 
-      <ScrollArea className="flex-1 overflow-hidden">
-        <div className="flex min-w-0">
-          <div className="w-16 shrink-0">
+      <ScrollArea className="flex-1 overflow-x-hidden">
+        <div className="flex w-full">
+          <div className="w-14 shrink-0 flex-none">
             {hours.map((hour) => {
               const hourDate = new Date();
               hourDate.setHours(hour, 0, 0, 0);
