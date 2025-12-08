@@ -162,6 +162,7 @@ export default function CalendarPage() {
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [selectedUserId, setSelectedUserId] = useState<string>('all');
   const [selectedTeamId, setSelectedTeamId] = useState<string>('all');
+  const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   
   const [showBlockDialog, setShowBlockDialog] = useState(false);
@@ -442,7 +443,7 @@ export default function CalendarPage() {
   }, [splynxTaskDetail, filtersData]);
 
   const { data: calendarData, isLoading } = useQuery<CalendarCombinedResponse>({
-    queryKey: ['/api/calendar/combined', startDate, endDate, selectedUserId, selectedTeamId],
+    queryKey: ['/api/calendar/combined', startDate, endDate, selectedUserId, selectedTeamId, selectedProjectId],
     queryFn: async () => {
       const params = new URLSearchParams({
         startDate,
@@ -457,6 +458,9 @@ export default function CalendarPage() {
       }
       if (selectedTeamId !== 'all') {
         params.append('teamIds', selectedTeamId);
+      }
+      if (selectedProjectId !== 'all') {
+        params.append('projectId', selectedProjectId);
       }
       const response = await fetch(`/api/calendar/combined?${params}`, {
         headers: {
@@ -500,6 +504,19 @@ export default function CalendarPage() {
         if (hiddenEventTypes.has('work') && evt.type === 'work_item') return false;
         if (hiddenEventTypes.has('leave') && (evt.type === 'holiday' || evt.type === 'public_holiday')) return false;
         if (hiddenEventTypes.has('block') && evt.type === 'block') return false;
+        
+        // Client-side project filtering for Splynx tasks
+        if (selectedProjectId !== 'all' && evt.type === 'splynx_task') {
+          const taskProjectId = evt.metadata?.projectId;
+          if (selectedProjectId === 'none') {
+            // Show only tasks with no project
+            if (taskProjectId && taskProjectId !== 0) return false;
+          } else {
+            // Show only tasks matching the selected project
+            if (String(taskProjectId) !== selectedProjectId) return false;
+          }
+        }
+        
         return true;
       })
       .map((evt): CalendarEvent => ({
@@ -517,7 +534,7 @@ export default function CalendarPage() {
         source: evt.source,
         metadata: evt.metadata,
       }));
-  }, [calendarData, hiddenEventTypes]);
+  }, [calendarData, hiddenEventTypes, selectedProjectId]);
 
   const days = useMemo(() => {
     if (viewMode === 'month') {
@@ -719,6 +736,22 @@ export default function CalendarPage() {
                 {filteredTeamMembers.map((member) => (
                   <SelectItem key={member.id} value={String(member.id)}>
                     {member.fullName || member.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+              <SelectTrigger className="w-[120px] sm:w-[160px] h-8" data-testid="select-project-filter">
+                <FolderOpen className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
+                <SelectValue placeholder="Project..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All projects</SelectItem>
+                <SelectItem value="none">No project</SelectItem>
+                {(filtersData?.filters as any)?.splynxProjects?.map((project: any) => (
+                  <SelectItem key={project.id} value={String(project.id)}>
+                    {project.title}
                   </SelectItem>
                 ))}
               </SelectContent>
