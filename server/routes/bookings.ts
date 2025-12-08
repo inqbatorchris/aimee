@@ -440,11 +440,14 @@ router.post('/public/bookings/:token/available-slots', async (req, res) => {
     try {
       splynxService = await getSplynxServiceForOrg(validation.booking!.booking.organizationId);
     } catch (error: any) {
-      const isConfigError = error instanceof SplynxServiceError && error.errorType === 'not_configured';
+      // All SplynxServiceError types indicate configuration issues - return 503 Service Unavailable
+      const isConfigError = error instanceof SplynxServiceError;
       const statusCode = isConfigError ? 503 : 500;
-      console.error('[BOOKINGS] Splynx service error:', error.message);
+      const errorTypeLabel = isConfigError ? `Splynx ${error.errorType}` : 'Splynx service error';
+      console.error(`[BOOKINGS] ${errorTypeLabel}:`, error.message);
       return res.status(statusCode).json({ 
-        error: isConfigError ? 'Splynx integration not configured' : 'Splynx configuration error',
+        error: isConfigError ? 'Splynx service unavailable - configuration issue' : 'Unexpected server error',
+        errorType: isConfigError ? error.errorType : 'unknown',
         details: error.message 
       });
     }
@@ -499,11 +502,14 @@ router.post('/public/bookings/:token/confirm', async (req, res) => {
     try {
       splynxService = await getSplynxServiceForOrg(validation.booking!.booking.organizationId);
     } catch (error: any) {
-      const isConfigError = error instanceof SplynxServiceError && error.errorType === 'not_configured';
+      // All SplynxServiceError types indicate configuration issues - return 503 Service Unavailable
+      const isConfigError = error instanceof SplynxServiceError;
       const statusCode = isConfigError ? 503 : 500;
-      console.error('[BOOKINGS] Splynx service error during confirmation:', error.message);
+      const errorTypeLabel = isConfigError ? `Splynx ${error.errorType}` : 'Splynx service error';
+      console.error(`[BOOKINGS] ${errorTypeLabel} during confirmation:`, error.message);
       return res.status(statusCode).json({ 
-        error: isConfigError ? 'Splynx integration not configured' : 'Splynx configuration error',
+        error: isConfigError ? 'Splynx service unavailable - configuration issue' : 'Unexpected server error',
+        errorType: isConfigError ? error.errorType : 'unknown',
         details: error.message 
       });
     }
