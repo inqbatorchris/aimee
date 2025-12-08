@@ -316,92 +316,100 @@ export default function CalendarPage() {
 
   return (
     <div className="h-full flex flex-col">
-      <div className="sticky top-0 z-10 bg-background border-b px-4 py-2">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
+      <div className="sticky top-0 z-10 bg-background border-b px-2 sm:px-4 py-2 space-y-2">
+        <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button 
-                  variant="ghost" 
-                  size="icon"
-                  onClick={handleNavigatePrevious}
-                  data-testid="button-previous"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Previous</TooltipContent>
-            </Tooltip>
+            <Button 
+              variant="ghost" 
+              size="icon"
+              className="h-8 w-8"
+              onClick={handleNavigatePrevious}
+              data-testid="button-previous"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </Button>
             
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button 
-                  variant="ghost" 
-                  size="icon"
-                  onClick={handleNavigateNext}
-                  data-testid="button-next"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Next</TooltipContent>
-            </Tooltip>
+            <Button 
+              variant="ghost" 
+              size="icon"
+              className="h-8 w-8"
+              onClick={handleNavigateNext}
+              data-testid="button-next"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </Button>
             
             <Button 
               variant="outline" 
               size="sm"
               onClick={handleGoToToday}
-              className="ml-1"
+              className="h-8"
               data-testid="button-today"
             >
               Today
             </Button>
             
-            <span className="text-base font-semibold ml-3" data-testid="text-date-range">
+            <span className="text-sm sm:text-base font-semibold ml-2 truncate" data-testid="text-date-range">
               {getDateRangeLabel()}
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-              <SelectTrigger className="w-[160px] h-8" data-testid="select-user-filter">
-                <User className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
-                <SelectValue placeholder="All members" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All members</SelectItem>
-                {teamMembers?.map((member) => (
-                  <SelectItem key={member.id} value={String(member.id)}>
-                    {member.fullName || member.email}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="ghost" size="icon" className="h-8 w-8" data-testid="button-settings">
+                  <Settings className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Settings</TooltipContent>
+            </Tooltip>
+            
+            <Button size="icon" className="h-8 w-8" data-testid="button-add-event">
+              <Plus className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
 
-            <div className="flex items-center border rounded-md">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant={viewMode === 'month' ? 'secondary' : 'ghost'} 
-                    size="icon"
-                    className="h-8 w-8 rounded-none rounded-l-md"
-                    onClick={() => setViewMode('month')}
-                    data-testid="tab-month"
-                  >
-                    <LayoutGrid className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Month</TooltipContent>
-              </Tooltip>
-              
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button 
-                    variant={viewMode === 'week' ? 'secondary' : 'ghost'} 
-                    size="icon"
-                    className="h-8 w-8 rounded-none border-x"
-                    onClick={() => setViewMode('week')}
-                    data-testid="tab-week"
+        <div className="flex items-center justify-between gap-2">
+          <Select value={selectedUserId} onValueChange={setSelectedUserId}>
+            <SelectTrigger className="w-[120px] sm:w-[160px] h-8" data-testid="select-user-filter">
+              <User className="h-3.5 w-3.5 mr-1 text-muted-foreground" />
+              <SelectValue placeholder="All..." />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All members</SelectItem>
+              {teamMembers?.map((member) => (
+                <SelectItem key={member.id} value={String(member.id)}>
+                  {member.fullName || member.email}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <div className="flex items-center border rounded-md">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  variant={viewMode === 'month' ? 'secondary' : 'ghost'} 
+                  size="icon"
+                  className="h-8 w-8 rounded-none rounded-l-md"
+                  onClick={() => setViewMode('month')}
+                  data-testid="tab-month"
+                >
+                  <LayoutGrid className="h-4 w-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Month</TooltipContent>
+            </Tooltip>
+            
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button 
+                  variant={viewMode === 'week' ? 'secondary' : 'ghost'} 
+                  size="icon"
+                  className="h-8 w-8 rounded-none border-x"
+                  onClick={() => setViewMode('week')}
+                  data-testid="tab-week"
                   >
                     <CalendarDays className="h-4 w-4" />
                   </Button>
@@ -440,7 +448,7 @@ export default function CalendarPage() {
               </Tooltip>
             </div>
 
-            <div className="hidden sm:flex items-center gap-1.5 ml-2 text-xs text-muted-foreground">
+            <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
               <div className="flex items-center gap-1">
                 <div className="w-2.5 h-2.5 rounded bg-blue-500" />
                 <span>Tasks</span>
@@ -454,25 +462,8 @@ export default function CalendarPage() {
                 <span>Work</span>
               </div>
             </div>
-
-            <div className="flex items-center gap-1 ml-2">
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button variant="ghost" size="icon" className="h-8 w-8" data-testid="button-settings">
-                    <Settings className="h-4 w-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Settings</TooltipContent>
-              </Tooltip>
-              
-              <Button size="sm" className="h-8" data-testid="button-add-event">
-                <Plus className="h-4 w-4 mr-1" />
-                Add
-              </Button>
-            </div>
           </div>
         </div>
-      </div>
 
       <div className="flex-1 overflow-hidden">
         {isLoading ? (
