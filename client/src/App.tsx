@@ -135,6 +135,9 @@ const CoreDevTools = lazy(() => import("@/pages/core/DevTools"));
 // AI Assistant
 const AIAssistantSettings = lazy(() => import("@/pages/AIAssistantSettings"));
 
+// Settings Pages
+const BookableAppointmentsPage = lazy(() => import("@/pages/settings/BookableAppointmentsPage"));
+
 // Create a wrapper component to handle errors
 class AppErrorBoundary extends React.Component<
   { children: React.ReactNode },
@@ -430,7 +433,7 @@ function AppContent() {
   }
 
   // Public booking page - no authentication required
-  if (location.startsWith('/public/booking')) {
+  if (location.startsWith('/public/bookings')) {
     const BookingPage = lazy(() => import("@/pages/public/BookingPage"));
     return (
       <div className="min-h-screen">
@@ -726,6 +729,9 @@ function AppContent() {
               <Route path="/core/dev-tools" component={CoreDevTools} />
               <Route path="/core/theme-editor" component={CoreThemeEditor} />
               <Route path="/core/people" component={PeopleAndTeams} />
+              
+              {/* Settings Pages */}
+              <Route path="/settings/bookable-appointments" component={BookableAppointmentsPage} />
               
               {/* Other Routes */}
               {/* /profile redirects to /core/user-profile are handled above */}
