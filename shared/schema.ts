@@ -5748,6 +5748,11 @@ export const bookableTaskTypes = pgTable("bookable_task_types", {
   splynxWorkflowStatusId: integer("splynx_workflow_status_id").notNull(),
   splynxTaskTypeId: integer("splynx_task_type_id"),
   
+  // Assignee Configuration - Who gets assigned when a booking is made
+  defaultAssigneeTeamId: integer("default_assignee_team_id"), // Splynx team ID
+  defaultAssigneeUserId: integer("default_assignee_user_id"), // Splynx admin/user ID (overrides team if set)
+  fallbackAssigneeUserId: integer("fallback_assignee_user_id"), // Used when customer lookup fails
+  
   // Booking Configuration
   defaultDuration: varchar("default_duration", { length: 50 }).default("2h 30m"),
   defaultTravelTimeTo: integer("default_travel_time_to").default(15),
