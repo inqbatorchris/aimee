@@ -34,8 +34,11 @@ interface BookableTaskType {
   id: number;
   organizationId: number;
   name: string;
+  slug: string;
   description: string | null;
   taskCategory: string;
+  accessMode: 'open' | 'authenticated';
+  requireCustomerAccount: boolean;
   splynxProjectId: number | null;
   splynxWorkflowStatusId: number | null;
   splynxTaskTypeId: number | null;
@@ -49,9 +52,15 @@ interface BookableTaskType {
   confirmationMessage: string;
   isActive: boolean;
   displayOrder: number;
+  bookingUrl: string | null;
   createdAt: string;
   updatedAt: string;
 }
+
+const accessModeLabels: Record<string, { label: string; description: string }> = {
+  open: { label: 'Open', description: 'Anyone with the link can book' },
+  authenticated: { label: 'Login Required', description: 'Customers must log in to book' },
+};
 
 const categoryLabels: Record<string, { label: string; icon: typeof Calendar; color: string }> = {
   field_visit: { label: 'Field Visit', icon: Wrench, color: 'bg-blue-100 text-blue-800' },
@@ -151,13 +160,21 @@ export default function BookableAppointmentsPage() {
   };
 
   const copyBookingUrl = (type: BookableTaskType) => {
-    const baseUrl = window.location.origin;
-    const url = `${baseUrl}/public/bookings/[TOKEN]`;
-    navigator.clipboard.writeText(url);
-    toast({
-      title: 'URL Pattern Copied',
-      description: 'The booking URL pattern has been copied. Replace [TOKEN] with the actual token.',
-    });
+    if (type.bookingUrl) {
+      navigator.clipboard.writeText(type.bookingUrl);
+      toast({
+        title: 'Booking URL Copied',
+        description: 'The booking link has been copied to your clipboard.',
+      });
+    } else {
+      const baseUrl = window.location.origin;
+      const url = `${baseUrl}/book/${type.slug}`;
+      navigator.clipboard.writeText(url);
+      toast({
+        title: 'Booking URL Copied',
+        description: 'The booking link has been copied to your clipboard.',
+      });
+    }
   };
 
   if (isLoading) {
@@ -207,6 +224,7 @@ export default function BookableAppointmentsPage() {
                 <TableRow>
                   <TableHead>Name</TableHead>
                   <TableHead>Category</TableHead>
+                  <TableHead>Access Mode</TableHead>
                   <TableHead>Duration</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Booking URL</TableHead>
@@ -237,6 +255,11 @@ export default function BookableAppointmentsPage() {
                         </Badge>
                       </TableCell>
                       <TableCell>
+                        <Badge variant={type.accessMode === 'open' ? 'outline' : 'default'}>
+                          {accessModeLabels[type.accessMode]?.label || type.accessMode}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
                         <div className="flex items-center gap-1 text-sm">
                           <Clock className="h-4 w-4 text-muted-foreground" />
                           {type.defaultDuration}
@@ -262,8 +285,8 @@ export default function BookableAppointmentsPage() {
                       </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
-                          <code className="text-xs bg-muted px-2 py-1 rounded">
-                            /public/bookings/[token]
+                          <code className="text-xs bg-muted px-2 py-1 rounded max-w-[200px] truncate" title={`/book/${type.slug}`}>
+                            /book/{type.slug}
                           </code>
                           <Button
                             variant="ghost"
@@ -271,8 +294,19 @@ export default function BookableAppointmentsPage() {
                             className="h-8 w-8"
                             onClick={() => copyBookingUrl(type)}
                             data-testid={`button-copy-url-${type.id}`}
+                            title="Copy booking URL"
                           >
                             <Copy className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={() => window.open(`/book/${type.slug}`, '_blank')}
+                            data-testid={`button-open-url-${type.id}`}
+                            title="Open booking page"
+                          >
+                            <ExternalLink className="h-4 w-4" />
                           </Button>
                         </div>
                       </TableCell>
@@ -309,17 +343,17 @@ export default function BookableAppointmentsPage() {
 
       <Card className="mt-6">
         <CardHeader>
-          <CardTitle className="text-lg">How Booking URLs Work</CardTitle>
+          <CardTitle className="text-lg">How Booking Links Work</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4 text-sm">
           <div className="grid gap-4 md:grid-cols-3">
             <div className="border rounded-lg p-4">
               <div className="font-medium mb-2 flex items-center gap-2">
                 <span className="bg-primary text-primary-foreground w-6 h-6 rounded-full flex items-center justify-center text-xs">1</span>
-                Generate Link
+                Share the Link
               </div>
               <p className="text-muted-foreground">
-                From a support ticket's work item, click "Send Booking Link" to generate a unique, secure URL for that customer.
+                Copy the booking URL and share it anywhere - emails, SMS, support tickets, or your website. No token generation needed.
               </p>
             </div>
             <div className="border rounded-lg p-4">
@@ -328,7 +362,7 @@ export default function BookableAppointmentsPage() {
                 Customer Books
               </div>
               <p className="text-muted-foreground">
-                Customer clicks the link, sees available time slots, and confirms their preferred appointment time.
+                Customer clicks the link, fills in their details, selects an available time slot, and confirms their booking.
               </p>
             </div>
             <div className="border rounded-lg p-4">
@@ -337,9 +371,16 @@ export default function BookableAppointmentsPage() {
                 Task Created
               </div>
               <p className="text-muted-foreground">
-                A scheduled task is automatically created in Splynx with the customer details and appointment time.
+                A scheduled task is automatically created in Splynx with all customer details and the selected appointment time.
               </p>
             </div>
+          </div>
+          <div className="mt-4 p-3 bg-muted rounded-lg">
+            <p className="text-sm font-medium mb-1">Access Modes</p>
+            <ul className="text-sm text-muted-foreground space-y-1">
+              <li><strong>Open:</strong> Anyone with the link can book - great for sales inquiries or new customers</li>
+              <li><strong>Login Required:</strong> Customers must log in before booking - good for existing customer service calls</li>
+            </ul>
           </div>
         </CardContent>
       </Card>
@@ -379,6 +420,8 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
     name: '',
     description: '',
     taskCategory: 'field_visit',
+    accessMode: 'open',
+    requireCustomerAccount: false,
     defaultDuration: '2h 30m',
     defaultTravelTimeTo: 15,
     defaultTravelTimeFrom: 15,
@@ -400,6 +443,8 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
         name: '',
         description: '',
         taskCategory: 'field_visit',
+        accessMode: 'open',
+        requireCustomerAccount: false,
         defaultDuration: '2h 30m',
         defaultTravelTimeTo: 15,
         defaultTravelTimeFrom: 15,
@@ -471,6 +516,48 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
                   <SelectItem value="support_session">Support Session (Remote)</SelectItem>
                 </SelectContent>
               </Select>
+            </div>
+
+            <div className="border-t pt-4">
+              <h4 className="font-medium mb-3">Access Control</h4>
+              <div className="space-y-4">
+                <div>
+                  <Label htmlFor="accessMode">Who can book?</Label>
+                  <Select
+                    value={formData.accessMode}
+                    onValueChange={(value: 'open' | 'authenticated') => setFormData({ ...formData, accessMode: value })}
+                  >
+                    <SelectTrigger data-testid="select-access-mode">
+                      <SelectValue placeholder="Select access mode" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="open">Open - Anyone with the link can book</SelectItem>
+                      <SelectItem value="authenticated">Login Required - Customers must log in first</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {formData.accessMode === 'open' 
+                      ? 'Great for sales inquiries or new customers who don\'t have an account yet.'
+                      : 'Best for existing customers who need to schedule service calls.'}
+                  </p>
+                </div>
+                {formData.accessMode === 'authenticated' && (
+                  <div className="flex items-center gap-3">
+                    <Switch
+                      id="requireCustomerAccount"
+                      checked={formData.requireCustomerAccount}
+                      onCheckedChange={(checked) => setFormData({ ...formData, requireCustomerAccount: checked })}
+                      data-testid="switch-require-customer"
+                    />
+                    <div>
+                      <Label htmlFor="requireCustomerAccount">Require linked customer account</Label>
+                      <p className="text-xs text-muted-foreground">
+                        If enabled, only users with a linked Splynx customer ID can book.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="grid grid-cols-2 gap-4">

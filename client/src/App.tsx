@@ -433,7 +433,8 @@ function AppContent() {
   }
 
   // Public booking page - no authentication required
-  if (location.startsWith('/public/bookings')) {
+  // Supports both new slug-based URLs (/book/:slug) and legacy token URLs (/public/bookings/:token)
+  if (location.startsWith('/book/') || location.startsWith('/public/bookings')) {
     const BookingPage = lazy(() => import("@/pages/public/BookingPage"));
     return (
       <div className="min-h-screen">
@@ -445,7 +446,14 @@ function AppContent() {
             </div>
           </div>
         }>
-          <BookingPage />
+          <Switch>
+            <Route path="/book/:slug">
+              <BookingPage />
+            </Route>
+            <Route path="/public/bookings/:token">
+              <BookingPage />
+            </Route>
+          </Switch>
         </Suspense>
       </div>
     );
