@@ -339,9 +339,11 @@ export default function CalendarPage() {
       let derivedTeamId = 0;
       
       // Find which team the assignee belongs to
+      // Note: memberIds may be strings from cached JSON, so normalize to numbers
       if (assigneeId && filtersData?.filters?.splynxTeams) {
+        const normalizedAssignee = Number(assigneeId);
         for (const team of filtersData.filters.splynxTeams) {
-          if (team.memberIds && team.memberIds.includes(assigneeId)) {
+          if (team.memberIds && team.memberIds.map(Number).includes(normalizedAssignee)) {
             derivedTeamId = team.splynxTeamId;
             break;
           }
