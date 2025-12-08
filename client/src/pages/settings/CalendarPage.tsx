@@ -364,11 +364,12 @@ export default function CalendarPage() {
   };
 
   // Auto-open in edit mode when task details load
+  // Wait for both task details AND filters data (for team derivation)
   useEffect(() => {
-    if (splynxTaskDetail?.task && !splynxTaskEdit) {
+    if (splynxTaskDetail?.task && filtersData?.filters?.splynxTeams && !splynxTaskEdit) {
       initSplynxTaskEdit();
     }
-  }, [splynxTaskDetail]);
+  }, [splynxTaskDetail, filtersData]);
 
   const handleSaveSplynxTask = () => {
     if (!splynxTaskEdit) return;
