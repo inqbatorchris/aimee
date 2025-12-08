@@ -334,15 +334,28 @@ export default function CalendarPage() {
   const initSplynxTaskEdit = () => {
     if (splynxTaskDetail?.task) {
       // Note: Splynx uses 'assignee' for actual admin ID, 'assigned_to' is just a type string
-      // Splynx tasks don't have team_id directly - team is derived from assignee's team membership
+      // Splynx tasks don't have team_id directly - derive team from assignee's team membership
+      const assigneeId = splynxTaskDetail.task.assignee || 0;
+      let derivedTeamId = 0;
+      
+      // Find which team the assignee belongs to
+      if (assigneeId && filtersData?.filters?.splynxTeams) {
+        for (const team of filtersData.filters.splynxTeams) {
+          if (team.memberIds && team.memberIds.includes(assigneeId)) {
+            derivedTeamId = team.splynxTeamId;
+            break;
+          }
+        }
+      }
+      
       setSplynxTaskEdit({
         title: splynxTaskDetail.task.title || '',
         description: splynxTaskDetail.task.description || '',
         location: splynxTaskDetail.task.location || '',
         scheduled_date: splynxTaskDetail.task.scheduled_date || '',
         scheduled_time: splynxTaskDetail.task.scheduled_time || '',
-        assigned_to: splynxTaskDetail.task.assignee || 0, // Use 'assignee' field for actual admin ID
-        team_id: splynxTaskDetail.task.team_id || 0,
+        assigned_to: assigneeId,
+        team_id: derivedTeamId,
         project_id: splynxTaskDetail.task.project_id || 0,
       });
     }
@@ -1023,39 +1036,27 @@ export default function CalendarPage() {
                             </div>
                             
                             {/* Location */}
-                            <div className="relative">
-                              <MapPin className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                              <Input 
-                                value={splynxTaskEdit.location}
-                                onChange={(e) => setSplynxTaskEdit(prev => prev ? {...prev, location: e.target.value} : null)}
-                                placeholder="Location"
-                                className="pl-8"
-                                data-testid="input-task-location"
-                              />
-                            </div>
+                            <Input 
+                              value={splynxTaskEdit.location}
+                              onChange={(e) => setSplynxTaskEdit(prev => prev ? {...prev, location: e.target.value} : null)}
+                              placeholder="Location"
+                              data-testid="input-task-location"
+                            />
                             
                             {/* Date & Time - Compact 2-column */}
                             <div className="grid grid-cols-2 gap-2">
-                              <div className="relative">
-                                <CalendarIcon className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                                <Input 
-                                  type="date"
-                                  value={splynxTaskEdit.scheduled_date}
-                                  onChange={(e) => setSplynxTaskEdit(prev => prev ? {...prev, scheduled_date: e.target.value} : null)}
-                                  className="pl-8"
-                                  data-testid="input-task-date"
-                                />
-                              </div>
-                              <div className="relative">
-                                <Clock className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                                <Input 
-                                  type="time"
-                                  value={splynxTaskEdit.scheduled_time}
-                                  onChange={(e) => setSplynxTaskEdit(prev => prev ? {...prev, scheduled_time: e.target.value} : null)}
-                                  className="pl-8"
-                                  data-testid="input-task-time"
-                                />
-                              </div>
+                              <Input 
+                                type="date"
+                                value={splynxTaskEdit.scheduled_date}
+                                onChange={(e) => setSplynxTaskEdit(prev => prev ? {...prev, scheduled_date: e.target.value} : null)}
+                                data-testid="input-task-date"
+                              />
+                              <Input 
+                                type="time"
+                                value={splynxTaskEdit.scheduled_time}
+                                onChange={(e) => setSplynxTaskEdit(prev => prev ? {...prev, scheduled_time: e.target.value} : null)}
+                                data-testid="input-task-time"
+                              />
                             </div>
                             
                             {/* Team & Assignee - Compact 2-column */}
