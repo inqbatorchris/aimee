@@ -201,16 +201,16 @@ export default function BookingPage() {
   if (error || !hasData) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 p-4" data-testid="error-booking">
-        <Card className="max-w-md w-full p-6">
+        <Card className="max-w-md w-full p-6 dark:bg-gray-800 dark:border-gray-700">
           <div className="text-center">
             <AlertCircle className="h-12 w-12 text-destructive mx-auto mb-4" />
-            <h1 className="text-2xl font-bold mb-2">Booking Not Found</h1>
-            <p className="text-muted-foreground mb-4">
+            <h1 className="text-2xl font-bold mb-2 dark:text-white">Booking Not Found</h1>
+            <p className="text-muted-foreground dark:text-gray-400 mb-4">
               {isLegacyTokenFlow 
                 ? 'This booking link is invalid or has expired.'
                 : 'This booking page is not available or the link is incorrect.'}
             </p>
-            <p className="text-sm text-muted-foreground">
+            <p className="text-sm text-muted-foreground dark:text-gray-400">
               Please contact support for assistance.
             </p>
           </div>
@@ -228,7 +228,7 @@ export default function BookingPage() {
   if (isConfirmed && confirmationData) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-100 dark:bg-gray-900 p-4" data-testid="confirmation-booking">
-        <Card className="max-w-md w-full p-6">
+        <Card className="max-w-md w-full p-6 dark:bg-gray-800 dark:border-gray-700">
           <div className="text-center">
             {orgLogo && (
               <img 
@@ -237,38 +237,38 @@ export default function BookingPage() {
                 className="h-12 mx-auto mb-4"
               />
             )}
-            <CheckCircle2 className="h-16 w-16 text-green-600 mx-auto mb-4" />
-            <h1 className="text-2xl font-bold mb-2">Appointment Confirmed!</h1>
-            <p className="text-muted-foreground mb-6">
+            <CheckCircle2 className="h-16 w-16 text-green-500 mx-auto mb-4" />
+            <h1 className="text-2xl font-bold mb-2 dark:text-white">Appointment Confirmed!</h1>
+            <p className="text-muted-foreground dark:text-gray-400 mb-6">
               {confirmationData.confirmationMessage || `Your ${bookingName} has been scheduled.`}
             </p>
             
-            <div className="bg-muted/50 rounded-lg p-4 mb-6 text-left">
+            <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-4 mb-6 text-left">
               <div className="flex items-start gap-3 mb-3">
-                <Calendar className="h-5 w-5 text-muted-foreground mt-0.5" />
+                <Calendar className="h-5 w-5 text-muted-foreground dark:text-gray-400 mt-0.5" />
                 <div>
-                  <div className="font-medium">{selectedSlot?.displayDate}</div>
-                  <div className="text-sm text-muted-foreground">{selectedSlot?.displayTime}</div>
+                  <div className="font-medium dark:text-white">{selectedSlot?.displayDate}</div>
+                  <div className="text-sm text-muted-foreground dark:text-gray-400">{selectedSlot?.displayTime}</div>
                 </div>
               </div>
               
               <div className="flex items-start gap-3 mb-3">
-                <Clock className="h-5 w-5 text-muted-foreground mt-0.5" />
+                <Clock className="h-5 w-5 text-muted-foreground dark:text-gray-400 mt-0.5" />
                 <div>
-                  <div className="text-sm">Duration: {bookingDuration}</div>
+                  <div className="text-sm dark:text-gray-200">Duration: {bookingDuration}</div>
                 </div>
               </div>
               
               {displayServiceAddress && (
                 <div className="flex items-start gap-3">
-                  <MapPin className="h-5 w-5 text-muted-foreground mt-0.5" />
-                  <div className="text-sm">{displayServiceAddress}</div>
+                  <MapPin className="h-5 w-5 text-muted-foreground dark:text-gray-400 mt-0.5" />
+                  <div className="text-sm dark:text-gray-200">{displayServiceAddress}</div>
                 </div>
               )}
             </div>
             
-            <Alert>
-              <AlertDescription>
+            <Alert className="dark:bg-gray-700 dark:border-gray-600">
+              <AlertDescription className="dark:text-gray-200">
                 {isLegacyTokenFlow 
                   ? 'A confirmation email has been sent to your registered email address.'
                   : `Reference: #${confirmationData.bookingId}. You'll receive a confirmation email shortly.`}
@@ -296,10 +296,14 @@ export default function BookingPage() {
     ? `Ticket #${legacyBooking.ticketNumber} - ${legacyBooking.ticketSubject}`
     : null;
   
+  const inputClasses = "dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder-gray-400";
+  const labelClasses = "dark:text-gray-200";
+  const buttonOutlineClasses = "dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:hover:bg-gray-600";
+  
   return (
     <div className="min-h-screen bg-gray-100 dark:bg-gray-900 py-8 px-4 overflow-y-auto" data-testid="booking-page">
       <div className="max-w-3xl mx-auto">
-        <Card className="p-6">
+        <Card className="p-6 dark:bg-gray-800 dark:border-gray-700">
           <div className="flex items-start justify-between mb-6">
             <div className="flex-1">
               {orgLogo && (
@@ -309,14 +313,14 @@ export default function BookingPage() {
                   className="h-10 mb-3"
                 />
               )}
-              <h1 className="text-2xl font-bold mb-1" data-testid="text-booking-title">
+              <h1 className="text-2xl font-bold mb-1 dark:text-white" data-testid="text-booking-title">
                 {isLegacyTokenFlow ? `Schedule ${bookingName}` : `Book: ${bookingName}`}
               </h1>
               {bookingDescription && (
-                <p className="text-muted-foreground">{bookingDescription}</p>
+                <p className="text-muted-foreground dark:text-gray-400">{bookingDescription}</p>
               )}
               {legacyTicketInfo && (
-                <p className="text-muted-foreground">{legacyTicketInfo}</p>
+                <p className="text-muted-foreground dark:text-gray-400">{legacyTicketInfo}</p>
               )}
             </div>
             <div className="flex items-center gap-4">
@@ -324,7 +328,7 @@ export default function BookingPage() {
                 variant="ghost"
                 size="icon"
                 onClick={toggleTheme}
-                className="h-8 w-8"
+                className="h-8 w-8 dark:text-gray-300 dark:hover:bg-gray-700"
                 aria-label={`Switch to ${isDarkMode ? 'light' : 'dark'} mode`}
                 data-testid="button-toggle-theme"
               >
@@ -334,7 +338,7 @@ export default function BookingPage() {
                   <Moon className="h-4 w-4" />
                 )}
               </Button>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground dark:text-gray-400">
                 <Clock className="h-4 w-4" />
                 {bookingDuration}
               </div>
@@ -342,18 +346,18 @@ export default function BookingPage() {
           </div>
           
           {isLegacyTokenFlow && legacyBooking?.serviceAddress && (
-            <div className="flex items-start gap-3 mb-6 p-3 bg-muted/50 rounded-lg">
-              <MapPin className="h-5 w-5 text-muted-foreground mt-0.5" />
+            <div className="flex items-start gap-3 mb-6 p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
+              <MapPin className="h-5 w-5 text-muted-foreground dark:text-gray-400 mt-0.5" />
               <div>
-                <div className="font-medium">Service Address</div>
-                <div className="text-sm text-muted-foreground">{legacyBooking.serviceAddress}</div>
+                <div className="font-medium dark:text-white">Service Address</div>
+                <div className="text-sm text-muted-foreground dark:text-gray-400">{legacyBooking.serviceAddress}</div>
               </div>
             </div>
           )}
           
           {isLegacyTokenFlow && (
             <div className="mb-6">
-              <Label htmlFor="contact-number">Contact Number (Optional)</Label>
+              <Label htmlFor="contact-number" className={labelClasses}>Contact Number (Optional)</Label>
               <Input
                 id="contact-number"
                 type="tel"
@@ -361,6 +365,7 @@ export default function BookingPage() {
                 value={customerPhone}
                 onChange={(e) => setCustomerPhone(e.target.value)}
                 data-testid="input-contact-number"
+                className={inputClasses}
               />
             </div>
           )}
@@ -378,11 +383,11 @@ export default function BookingPage() {
           )}
           
           {showLogin && (
-            <Card className="p-4 mb-6 bg-muted/50">
-              <h3 className="font-medium mb-3">Log in to continue</h3>
+            <Card className="p-4 mb-6 bg-gray-100 dark:bg-gray-700 dark:border-gray-600">
+              <h3 className="font-medium mb-3 dark:text-white">Log in to continue</h3>
               <div className="space-y-3">
                 <div>
-                  <Label htmlFor="login-email">Email</Label>
+                  <Label htmlFor="login-email" className={labelClasses}>Email</Label>
                   <Input
                     id="login-email"
                     type="email"
@@ -390,10 +395,11 @@ export default function BookingPage() {
                     onChange={(e) => setLoginEmail(e.target.value)}
                     placeholder="your@email.com"
                     data-testid="input-login-email"
+                    className={inputClasses}
                   />
                 </div>
                 <div>
-                  <Label htmlFor="login-password">Password</Label>
+                  <Label htmlFor="login-password" className={labelClasses}>Password</Label>
                   <Input
                     id="login-password"
                     type="password"
@@ -401,6 +407,7 @@ export default function BookingPage() {
                     onChange={(e) => setLoginPassword(e.target.value)}
                     placeholder="••••••••"
                     data-testid="input-login-password"
+                    className={inputClasses}
                   />
                 </div>
                 {loginMutation.error && (
@@ -436,13 +443,13 @@ export default function BookingPage() {
           
           {!isLegacyTokenFlow && (
             <>
-              <Separator className="my-6" />
+              <Separator className="my-6 dark:bg-gray-700" />
               
               <div className="mb-6">
-                <h2 className="text-lg font-medium mb-3">Your Details</h2>
+                <h2 className="text-lg font-medium mb-3 dark:text-white">Your Details</h2>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
-                    <Label htmlFor="customer-name">Full Name *</Label>
+                    <Label htmlFor="customer-name" className={labelClasses}>Full Name *</Label>
                     <Input
                       id="customer-name"
                       value={customerName}
@@ -450,10 +457,11 @@ export default function BookingPage() {
                       placeholder="John Smith"
                       required
                       data-testid="input-customer-name"
+                      className={inputClasses}
                     />
                   </div>
                   <div>
-                    <Label htmlFor="customer-email">Email *</Label>
+                    <Label htmlFor="customer-email" className={labelClasses}>Email *</Label>
                     <Input
                       id="customer-email"
                       type="email"
@@ -462,10 +470,11 @@ export default function BookingPage() {
                       placeholder="john@example.com"
                       required
                       data-testid="input-customer-email"
+                      className={inputClasses}
                     />
                   </div>
                   <div>
-                    <Label htmlFor="customer-phone">Phone Number</Label>
+                    <Label htmlFor="customer-phone" className={labelClasses}>Phone Number</Label>
                     <Input
                       id="customer-phone"
                       type="tel"
@@ -473,16 +482,18 @@ export default function BookingPage() {
                       onChange={(e) => setCustomerPhone(e.target.value)}
                       placeholder="(555) 123-4567"
                       data-testid="input-customer-phone"
+                      className={inputClasses}
                     />
                   </div>
                   <div>
-                    <Label htmlFor="service-address">Service Address</Label>
+                    <Label htmlFor="service-address" className={labelClasses}>Service Address</Label>
                     <Input
                       id="service-address"
                       value={serviceAddress}
                       onChange={(e) => setServiceAddress(e.target.value)}
                       placeholder="123 Main St, City"
                       data-testid="input-service-address"
+                      className={inputClasses}
                     />
                   </div>
                 </div>
@@ -490,33 +501,33 @@ export default function BookingPage() {
             </>
           )}
           
-          <Separator className="my-6" />
+          <Separator className="my-6 dark:bg-gray-700" />
           
           <div className="mb-6">
-            <h2 className="text-lg font-medium mb-3">Select Date & Time</h2>
+            <h2 className="text-lg font-medium mb-3 dark:text-white">Select Date & Time</h2>
             
             {slotsLoading ? (
               <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground dark:text-gray-400" />
               </div>
             ) : Object.keys(slotsByDate).length === 0 ? (
-              <Alert>
+              <Alert className="dark:bg-gray-700 dark:border-gray-600">
                 <AlertCircle className="h-4 w-4" />
-                <AlertDescription>
+                <AlertDescription className="dark:text-gray-200">
                   No available slots found in the next 2 weeks. Please contact support.
                 </AlertDescription>
               </Alert>
             ) : (
-              <div className="space-y-4 max-h-[250px] overflow-y-auto border rounded-lg p-3">
+              <div className="space-y-4 max-h-[250px] overflow-y-auto border rounded-lg p-3 dark:border-gray-600 dark:bg-gray-700/30">
                 {Object.entries(slotsByDate).map(([date, slots]) => (
                   <div key={date}>
-                    <div className="font-medium mb-2 text-sm text-muted-foreground">{date}</div>
+                    <div className="font-medium mb-2 text-sm text-muted-foreground dark:text-gray-400">{date}</div>
                     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
                       {(slots as Slot[]).map((slot) => (
                         <Button
                           key={slot.datetime}
                           variant={selectedSlot?.datetime === slot.datetime ? 'default' : 'outline'}
-                          className="h-auto py-2 px-3 text-sm"
+                          className={`h-auto py-2 px-3 text-sm ${selectedSlot?.datetime !== slot.datetime ? buttonOutlineClasses : ''}`}
                           onClick={() => setSelectedSlot(slot)}
                           data-testid={`button-slot-${slot.datetime}`}
                         >
@@ -530,16 +541,17 @@ export default function BookingPage() {
             )}
           </div>
           
-          <Separator className="my-6" />
+          <Separator className="my-6 dark:bg-gray-700" />
           
           <div className="mb-6">
-            <Label htmlFor="additional-notes">Additional Notes (Optional)</Label>
+            <Label htmlFor="additional-notes" className={labelClasses}>Additional Notes (Optional)</Label>
             <Textarea
               id="additional-notes"
               placeholder="Any special instructions or requirements..."
               rows={3}
               value={additionalNotes}
               onChange={(e) => setAdditionalNotes(e.target.value)}
+              className={inputClasses}
               data-testid="textarea-notes"
             />
           </div>
@@ -567,7 +579,7 @@ export default function BookingPage() {
           </Button>
           
           {!canSubmit && (
-            <p className="text-sm text-muted-foreground text-center mt-2">
+            <p className="text-sm text-muted-foreground dark:text-gray-400 text-center mt-2">
               {isLegacyTokenFlow 
                 ? (!selectedSlot ? 'Please select a time slot' : '')
                 : (!customerName || !customerEmail 
@@ -582,7 +594,7 @@ export default function BookingPage() {
         </Card>
         
         {orgName && (
-          <p className="text-center text-sm text-muted-foreground mt-4">
+          <p className="text-center text-sm text-muted-foreground dark:text-gray-400 mt-4">
             Powered by {orgName}
           </p>
         )}
