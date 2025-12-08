@@ -71,6 +71,8 @@ import fieldsRoutes from './fields.js';
 console.log('✅ Fields routes loaded:', typeof fieldsRoutes);
 import bookingsRoutes from './bookings.js';
 console.log('✅ Bookings routes loaded:', typeof bookingsRoutes);
+import calendarRoutes from './calendar.js';
+console.log('✅ Calendar routes loaded:', typeof calendarRoutes);
 
 const router = Router();
 console.log('🔥 Express Router created');
@@ -143,6 +145,8 @@ router.use('/fields', fieldsRoutes);
 console.log('🔗 Mounting bookings routes (authenticated endpoints at /bookings, public at /public/bookings)');
 router.use('/bookings', bookingsRoutes); // Authenticated routes at /api/bookings/*
 router.use('/', bookingsRoutes); // Public routes at /api/public/bookings/* (mounted at root)
+console.log('🔗 Mounting calendar routes');
+router.use('/', calendarRoutes); // Calendar routes have full /api/calendar/* paths
 
 // Direct feature routes
 router.use('/', coreFeatureRoutes);

@@ -5912,3 +5912,282 @@ export type InsertBookingToken = z.infer<typeof insertBookingTokenSchema>;
 
 // Access mode type
 export type BookingAccessMode = 'open' | 'authenticated';
+
+// ========================================
+// CALENDAR MANAGEMENT SYSTEM
+// ========================================
+
+// Splynx Teams Cache
+export const splynxTeams = pgTable("splynx_teams", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  splynxTeamId: integer("splynx_team_id").notNull(),
+  
+  // Team details
+  title: varchar("title", { length: 256 }),
+  partnerId: integer("partner_id"),
+  color: varchar("color", { length: 20 }),
+  memberIds: integer("member_ids").array(), // Array of Splynx admin IDs
+  
+  // Cache metadata
+  lastFetchedAt: timestamp("last_fetched_at").defaultNow(),
+  
+  // Timestamps
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_splynx_teams_org").on(table.organizationId),
+  index("idx_splynx_teams_id").on(table.splynxTeamId),
+]);
+
+// Holiday request status enum
+export const holidayRequestStatusEnum = pgEnum('holiday_request_status', ['pending', 'approved', 'rejected', 'cancelled']);
+
+// Holiday/leave type enum
+export const holidayTypeEnum = pgEnum('holiday_type', ['annual', 'sick', 'unpaid', 'training', 'compassionate', 'parental', 'other']);
+
+// Calendar block type enum
+export const calendarBlockTypeEnum = pgEnum('calendar_block_type', ['meeting', 'focus', 'project', 'travel', 'break', 'other']);
+
+// User Calendar Settings - Working hours, emergency contacts, communication preferences
+export const userCalendarSettings = pgTable("user_calendar_settings", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull().unique(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  
+  // Link to Splynx
+  splynxAdminId: integer("splynx_admin_id"),
+  
+  // Working hours configuration (per day)
+  workingHours: jsonb("working_hours").$type<{
+    monday?: { start: string; end: string; breakStart?: string; breakEnd?: string; isWorking: boolean };
+    tuesday?: { start: string; end: string; breakStart?: string; breakEnd?: string; isWorking: boolean };
+    wednesday?: { start: string; end: string; breakStart?: string; breakEnd?: string; isWorking: boolean };
+    thursday?: { start: string; end: string; breakStart?: string; breakEnd?: string; isWorking: boolean };
+    friday?: { start: string; end: string; breakStart?: string; breakEnd?: string; isWorking: boolean };
+    saturday?: { start: string; end: string; breakStart?: string; breakEnd?: string; isWorking: boolean };
+    sunday?: { start: string; end: string; breakStart?: string; breakEnd?: string; isWorking: boolean };
+  }>().default({
+    monday: { start: "09:00", end: "17:00", isWorking: true },
+    tuesday: { start: "09:00", end: "17:00", isWorking: true },
+    wednesday: { start: "09:00", end: "17:00", isWorking: true },
+    thursday: { start: "09:00", end: "17:00", isWorking: true },
+    friday: { start: "09:00", end: "17:00", isWorking: true },
+    saturday: { start: "09:00", end: "17:00", isWorking: false },
+    sunday: { start: "09:00", end: "17:00", isWorking: false },
+  }),
+  timezone: varchar("timezone", { length: 50 }).default("UTC"),
+  
+  // Emergency contacts
+  emergencyContact1: jsonb("emergency_contact_1").$type<{
+    name: string;
+    relationship: string;
+    phone: string;
+    email?: string;
+  }>(),
+  emergencyContact2: jsonb("emergency_contact_2").$type<{
+    name: string;
+    relationship: string;
+    phone: string;
+    email?: string;
+  }>(),
+  medicalNotes: text("medical_notes"), // Encrypted or access-controlled
+  
+  // Communication preferences
+  preferredCommunication: varchar("preferred_communication", { length: 50 }).default("email"), // email, sms, push, slack
+  outOfHoursContact: boolean("out_of_hours_contact").default(false),
+  outOfHoursConditions: text("out_of_hours_conditions"), // When can they be contacted outside working hours
+  meetingPreference: varchar("meeting_preference", { length: 50 }).default("morning"), // morning, afternoon, flexible
+  
+  // Timestamps
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_user_calendar_settings_org").on(table.organizationId),
+  index("idx_user_calendar_settings_user").on(table.userId),
+  index("idx_user_calendar_settings_splynx").on(table.splynxAdminId),
+]);
+
+// Holiday Allowances - Annual leave allowances per user per year
+export const holidayAllowances = pgTable("holiday_allowances", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  year: integer("year").notNull(),
+  
+  // Allowances
+  annualAllowance: decimal("annual_allowance", { precision: 5, scale: 2 }).default("25").notNull(), // Total days allowed
+  carriedOver: decimal("carried_over", { precision: 5, scale: 2 }).default("0"), // Days carried from previous year
+  maxCarryover: decimal("max_carryover", { precision: 5, scale: 2 }).default("5"), // Maximum days that can be carried over
+  carryoverExpiry: date("carryover_expiry"), // When carried-over days expire
+  
+  // Tracking (calculated/cached fields)
+  usedDays: decimal("used_days", { precision: 5, scale: 2 }).default("0"),
+  pendingDays: decimal("pending_days", { precision: 5, scale: 2 }).default("0"),
+  
+  // Audit
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_holiday_allowances_org").on(table.organizationId),
+  index("idx_holiday_allowances_user_year").on(table.userId, table.year),
+]);
+
+// Holiday Requests - Time off requests
+export const holidayRequests = pgTable("holiday_requests", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  
+  // Request details
+  startDate: date("start_date").notNull(),
+  endDate: date("end_date").notNull(),
+  daysCount: decimal("days_count", { precision: 5, scale: 2 }).notNull(), // Accounts for half days
+  holidayType: holidayTypeEnum("holiday_type").default("annual").notNull(),
+  
+  // Status and approval
+  status: holidayRequestStatusEnum("status").default("pending").notNull(),
+  approverId: integer("approver_id").references(() => users.id),
+  approvedAt: timestamp("approved_at"),
+  rejectedAt: timestamp("rejected_at"),
+  rejectionReason: text("rejection_reason"),
+  
+  // Additional info
+  notes: text("notes"),
+  isHalfDayStart: boolean("is_half_day_start").default(false), // Morning off on start date
+  isHalfDayEnd: boolean("is_half_day_end").default(false), // Afternoon off on end date
+  
+  // Audit
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_holiday_requests_org").on(table.organizationId),
+  index("idx_holiday_requests_user").on(table.userId),
+  index("idx_holiday_requests_status").on(table.status),
+  index("idx_holiday_requests_dates").on(table.startDate, table.endDate),
+]);
+
+// Public Holidays - Organization-wide or location-specific public holidays
+export const publicHolidays = pgTable("public_holidays", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  
+  // Holiday details
+  name: varchar("name", { length: 256 }).notNull(),
+  date: date("date").notNull(),
+  isRecurring: boolean("is_recurring").default(true), // Repeats every year
+  
+  // Location scope (null = applies to entire organization)
+  locationId: integer("location_id"),
+  country: varchar("country", { length: 2 }), // ISO country code
+  region: varchar("region", { length: 100 }), // State/province
+  
+  // Audit
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_public_holidays_org").on(table.organizationId),
+  index("idx_public_holidays_date").on(table.date),
+]);
+
+// Calendar Blocks - Manual time blocks (meetings, focus time, etc.)
+export const calendarBlocks = pgTable("calendar_blocks", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id).notNull(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  
+  // Block details
+  title: varchar("title", { length: 256 }).notNull(),
+  description: text("description"),
+  blockType: calendarBlockTypeEnum("block_type").default("other").notNull(),
+  
+  // Timing
+  startDatetime: timestamp("start_datetime").notNull(),
+  endDatetime: timestamp("end_datetime").notNull(),
+  isAllDay: boolean("is_all_day").default(false),
+  
+  // Recurrence (optional)
+  isRecurring: boolean("is_recurring").default(false),
+  recurrenceRule: varchar("recurrence_rule", { length: 256 }), // RRULE format (RFC 5545)
+  recurrenceEndDate: date("recurrence_end_date"),
+  
+  // Visibility
+  isPrivate: boolean("is_private").default(false), // Hide details from others
+  blocksAvailability: boolean("blocks_availability").default(true), // Affects booking availability
+  
+  // Color for UI
+  color: varchar("color", { length: 20 }),
+  
+  // Audit
+  createdBy: integer("created_by").references(() => users.id),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_calendar_blocks_org").on(table.organizationId),
+  index("idx_calendar_blocks_user").on(table.userId),
+  index("idx_calendar_blocks_datetime").on(table.startDatetime, table.endDatetime),
+]);
+
+// Calendar management insert schemas
+export const insertSplynxTeamSchema = createInsertSchema(splynxTeams).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  lastFetchedAt: true,
+});
+
+export const insertUserCalendarSettingsSchema = createInsertSchema(userCalendarSettings).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertHolidayAllowanceSchema = createInsertSchema(holidayAllowances).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertHolidayRequestSchema = createInsertSchema(holidayRequests).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  approvedAt: true,
+  rejectedAt: true,
+});
+
+export const insertPublicHolidaySchema = createInsertSchema(publicHolidays).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertCalendarBlockSchema = createInsertSchema(calendarBlocks).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+// Calendar management types
+export type SplynxTeam = typeof splynxTeams.$inferSelect;
+export type InsertSplynxTeam = z.infer<typeof insertSplynxTeamSchema>;
+
+export type UserCalendarSettings = typeof userCalendarSettings.$inferSelect;
+export type InsertUserCalendarSettings = z.infer<typeof insertUserCalendarSettingsSchema>;
+
+export type HolidayAllowance = typeof holidayAllowances.$inferSelect;
+export type InsertHolidayAllowance = z.infer<typeof insertHolidayAllowanceSchema>;
+
+export type HolidayRequest = typeof holidayRequests.$inferSelect;
+export type InsertHolidayRequest = z.infer<typeof insertHolidayRequestSchema>;
+
+export type PublicHoliday = typeof publicHolidays.$inferSelect;
+export type InsertPublicHoliday = z.infer<typeof insertPublicHolidaySchema>;
+
+export type CalendarBlock = typeof calendarBlocks.$inferSelect;
+export type InsertCalendarBlock = z.infer<typeof insertCalendarBlockSchema>;
+
+// Holiday type helpers
+export type HolidayType = 'annual' | 'sick' | 'unpaid' | 'training' | 'compassionate' | 'parental' | 'other';
+export type HolidayRequestStatus = 'pending' | 'approved' | 'rejected' | 'cancelled';
+export type CalendarBlockType = 'meeting' | 'focus' | 'project' | 'travel' | 'break' | 'other';

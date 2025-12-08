@@ -660,6 +660,192 @@ export class SplynxService {
     }
   }
 
+  /**
+   * Get scheduling teams from Splynx
+   * Returns teams with their member admin IDs
+   */
+  async getSchedulingTeams(): Promise<Array<{
+    id: number;
+    title: string;
+    partnerId?: number;
+    memberIds: number[];
+    color?: string;
+  }>> {
+    try {
+      const url = this.buildUrl('admin/scheduling/teams');
+      
+      console.log('[SPLYNX getSchedulingTeams] Fetching teams from:', url);
+      
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('[SPLYNX getSchedulingTeams] Response:', response.status);
+      
+      let teamsData: any[] = [];
+      
+      if (Array.isArray(response.data)) {
+        teamsData = response.data;
+      } else if (response.data?.items) {
+        teamsData = response.data.items;
+      } else if (typeof response.data === 'object' && response.data !== null) {
+        teamsData = Object.values(response.data);
+      }
+      
+      console.log(`[SPLYNX getSchedulingTeams] Found ${teamsData.length} teams`);
+      
+      return teamsData.map((team: any) => ({
+        id: parseInt(team.id),
+        title: team.title || team.name || `Team ${team.id}`,
+        partnerId: team.partner_id ? parseInt(team.partner_id) : undefined,
+        memberIds: this.parseTeamMemberIds(team.admin_ids || team.members || team.member_ids || []),
+        color: team.color,
+      }));
+    } catch (error: any) {
+      console.error('[SPLYNX getSchedulingTeams] Error:', error.message);
+      console.error('[SPLYNX getSchedulingTeams] Response:', error.response?.data);
+      throw new Error(`Failed to fetch scheduling teams from Splynx: ${error.message}`);
+    }
+  }
+
+  /**
+   * Parse team member IDs from various Splynx response formats
+   */
+  private parseTeamMemberIds(memberData: any): number[] {
+    if (Array.isArray(memberData)) {
+      return memberData.map((id: any) => parseInt(id)).filter((id: number) => !isNaN(id));
+    }
+    if (typeof memberData === 'string') {
+      return memberData.split(',').map((id: string) => parseInt(id.trim())).filter((id: number) => !isNaN(id));
+    }
+    if (typeof memberData === 'object' && memberData !== null) {
+      return Object.values(memberData).map((id: any) => parseInt(id)).filter((id: number) => !isNaN(id));
+    }
+    return [];
+  }
+
+  /**
+   * Get available time slots for a specific assignee
+   * Queries Splynx tasks for the assignee and calculates free slots
+   */
+  async getAvailableSlotsByAssignee(params: {
+    assigneeId: number;
+    projectId?: number;
+    startDate: string;
+    endDate: string;
+    duration: string;
+    travelTime?: number;
+    workingHours?: { start: number; end: number };
+  }): Promise<any[]> {
+    try {
+      console.log(`[SPLYNX getAvailableSlotsByAssignee] Fetching slots for assignee ${params.assigneeId}`);
+      
+      // Query existing tasks for this specific assignee
+      const existingTasks = await this.getSchedulingTasks({
+        assignedAdminId: params.assigneeId,
+        dateFrom: params.startDate,
+        dateTo: params.endDate,
+      });
+
+      console.log(`[SPLYNX getAvailableSlotsByAssignee] Found ${existingTasks.length} tasks for assignee ${params.assigneeId}`);
+      
+      // Generate available slots avoiding existing tasks
+      const slots = this.calculateAvailableSlots(
+        params.startDate,
+        params.endDate,
+        existingTasks,
+        params.duration,
+        params.travelTime || 0,
+        params.workingHours
+      );
+      
+      console.log(`[SPLYNX getAvailableSlotsByAssignee] Generated ${slots.length} available slots`);
+      
+      return slots;
+    } catch (error: any) {
+      console.error(`[SPLYNX getAvailableSlotsByAssignee] Error:`, error.message);
+      throw new Error(`Failed to fetch available slots by assignee: ${error.message}`);
+    }
+  }
+
+  /**
+   * Get team availability - check which team members have free slots
+   * Returns slots where at least one team member is available
+   */
+  async getTeamAvailability(params: {
+    teamId: number;
+    projectId?: number;
+    startDate: string;
+    endDate: string;
+    duration: string;
+    travelTime?: number;
+    workingHours?: { start: number; end: number };
+  }): Promise<{ slots: any[]; memberAvailability: Record<number, any[]> }> {
+    try {
+      console.log(`[SPLYNX getTeamAvailability] Fetching availability for team ${params.teamId}`);
+      
+      // Get team members
+      const teams = await this.getSchedulingTeams();
+      const team = teams.find(t => t.id === params.teamId);
+      
+      if (!team) {
+        throw new Error(`Team ${params.teamId} not found`);
+      }
+      
+      console.log(`[SPLYNX getTeamAvailability] Team ${team.title} has ${team.memberIds.length} members`);
+      
+      // Get availability for each team member
+      const memberAvailability: Record<number, any[]> = {};
+      
+      for (const memberId of team.memberIds) {
+        const slots = await this.getAvailableSlotsByAssignee({
+          assigneeId: memberId,
+          projectId: params.projectId,
+          startDate: params.startDate,
+          endDate: params.endDate,
+          duration: params.duration,
+          travelTime: params.travelTime,
+          workingHours: params.workingHours,
+        });
+        memberAvailability[memberId] = slots;
+      }
+      
+      // Merge slots - a slot is available if ANY team member is free
+      const allSlotTimes = new Set<string>();
+      Object.values(memberAvailability).forEach(slots => {
+        slots.forEach(slot => allSlotTimes.add(slot.datetime));
+      });
+      
+      const mergedSlots = Array.from(allSlotTimes)
+        .sort()
+        .map(datetime => {
+          // Find which members are available at this time
+          const availableMembers = Object.entries(memberAvailability)
+            .filter(([_, slots]) => slots.some(s => s.datetime === datetime))
+            .map(([memberId]) => parseInt(memberId));
+          
+          const firstSlot = Object.values(memberAvailability)
+            .flat()
+            .find(s => s.datetime === datetime);
+          
+          return {
+            ...firstSlot,
+            availableMembers,
+          };
+        });
+      
+      console.log(`[SPLYNX getTeamAvailability] Generated ${mergedSlots.length} merged slots`);
+      
+      return { slots: mergedSlots, memberAvailability };
+    } catch (error: any) {
+      console.error(`[SPLYNX getTeamAvailability] Error:`, error.message);
+      throw new Error(`Failed to fetch team availability: ${error.message}`);
+    }
+  }
+
   async getWorkflowStatuses(workflowId: number): Promise<Array<{ id: number; name: string; color?: string }>> {
     try {
       const url = this.buildUrl(`admin/scheduling/workflows/${workflowId}/statuses`);
@@ -1908,15 +2094,16 @@ export class SplynxService {
     endDate: string,
     existingTasks: any[],
     duration: string,
-    travelTime: number
+    travelTime: number,
+    workingHours?: { start: number; end: number }
   ): any[] {
     const slots: any[] = [];
     const durationMinutes = this.parseDuration(duration);
     const totalMinutes = durationMinutes + (travelTime * 2);
     
-    // Business hours: 9 AM - 5 PM
-    const workStart = 9;
-    const workEnd = 17;
+    // Business hours: configurable or default 9 AM - 5 PM
+    const workStart = workingHours?.start ?? 9;
+    const workEnd = workingHours?.end ?? 17;
     
     let currentDate = new Date(startDate);
     const endDateTime = new Date(endDate);
