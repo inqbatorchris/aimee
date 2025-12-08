@@ -317,7 +317,7 @@ export default function CalendarPage() {
     mutationFn: async (updates: Record<string, any>) => {
       return apiRequest(`/api/calendar/splynx/tasks/${splynxTaskId}`, {
         method: 'PUT',
-        body: JSON.stringify(updates),
+        body: updates,
       });
     },
     onSuccess: () => {
@@ -342,9 +342,14 @@ export default function CalendarPage() {
       // Note: memberIds may be strings from cached JSON, so normalize to numbers
       if (assigneeId && filtersData?.filters?.splynxTeams) {
         const normalizedAssignee = Number(assigneeId);
+        console.log('[DEBUG] Looking for team with assignee:', normalizedAssignee);
+        console.log('[DEBUG] Teams available:', filtersData.filters.splynxTeams.map((t: any) => ({ id: t.splynxTeamId, name: t.name, memberIds: t.memberIds })));
         for (const team of filtersData.filters.splynxTeams) {
-          if (team.memberIds && team.memberIds.map(Number).includes(normalizedAssignee)) {
+          const normalizedMemberIds = team.memberIds ? team.memberIds.map(Number) : [];
+          console.log('[DEBUG] Team', team.name, 'memberIds:', normalizedMemberIds, 'includes', normalizedAssignee, '?', normalizedMemberIds.includes(normalizedAssignee));
+          if (normalizedMemberIds.includes(normalizedAssignee)) {
             derivedTeamId = team.splynxTeamId;
+            console.log('[DEBUG] Found team:', team.name, 'with splynxTeamId:', derivedTeamId);
             break;
           }
         }
