@@ -1427,25 +1427,26 @@ router.get('/calendar/combined', authenticateToken, async (req: Request, res: Re
       try {
         const splynxService = await getSplynxServiceForOrg(organizationId);
         
-        // Splynx API doesn't support team_id filter, so we filter client-side
+        // Pass date filters to Splynx API using BETWEEN operator
         const tasks = await splynxService.getSchedulingTasks({
           assignedAdminId: effectiveSplynxAdminIds.length === 1 ? effectiveSplynxAdminIds[0] : undefined,
+          startDate: `${startDate} 00:00:00`,
+          endDate: `${endDate} 23:59:59`,
         });
         
         const startDateObj = new Date(startDate as string);
         const endDateObj = new Date(endDate as string);
         endDateObj.setHours(23, 59, 59, 999);
         
-        console.log(`[CALENDAR] Filtering ${tasks.length} Splynx tasks for date range: ${startDate} to ${endDate}, linkedSplynxTeamIds: ${linkedSplynxTeamIds.join(',') || 'none'}`);
+        console.log(`[CALENDAR] Fetched ${tasks.length} Splynx tasks for date range: ${startDate} to ${endDate}`);
         
+        // Client-side date filtering (redundant but safe since API already filters by date)
         let filteredTasks = tasks.filter((t: any) => {
-          const taskDate = t.scheduled_date || t.scheduled_from?.split(' ')[0];
+          const taskDate = t.scheduled_date || t.scheduled_from?.split(' ')[0] || t.datetime_from?.split(' ')[0];
           if (!taskDate) return false;
           const taskDateObj = new Date(taskDate);
           return taskDateObj >= startDateObj && taskDateObj <= endDateObj;
         });
-        
-        console.log(`[CALENDAR] After date filtering: ${filteredTasks.length} tasks`);
         
         // Filter by Splynx team - handle both team and individual assignments
         // When assigned_to='assigned_to_team', assignee is the team ID

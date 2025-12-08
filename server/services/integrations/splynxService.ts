@@ -571,6 +571,12 @@ export class SplynxService {
         params.main_attributes.project_id = filters.project_id;
       }
 
+      // Date filtering using BETWEEN operator
+      // Format: main_attributes[scheduled_from][0]=BETWEEN, [1]=start_date, [2]=end_date
+      if (filters.startDate && filters.endDate) {
+        params.main_attributes['scheduled_from'] = ['BETWEEN', filters.startDate, filters.endDate];
+      }
+
 
       const url = this.buildUrl('admin/scheduling/tasks');
       
