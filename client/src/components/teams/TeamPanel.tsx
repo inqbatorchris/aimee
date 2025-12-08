@@ -156,13 +156,21 @@ export function TeamPanel({ team, open, onClose, onManageMembers, isAdmin }: Tea
     enabled: open && currentUser?.role === 'super_admin',
   });
   
-  // Fetch Splynx teams for team mapping (live from Splynx API)
-  const { data: splynxTeamsResponse, isLoading: isLoadingSplynxTeams } = useQuery<{ success: boolean; teams: Array<{ id: number; title: string }> }>({
-    queryKey: ['/api/calendar/splynx/teams'],
+  // Fetch Splynx teams from calendar filters (cached from Splynx sync)
+  const { data: filtersResponse, isLoading: isLoadingSplynxTeams } = useQuery<{ 
+    filters: { 
+      splynxTeams: Array<{ id: number; splynxTeamId: number; name: string }> 
+    } 
+  }>({
+    queryKey: ['/api/calendar/filters'],
     enabled: open,
   });
   
-  const splynxTeams = splynxTeamsResponse?.teams || [];
+  // Map cached splynx teams to expected format (use splynxTeamId as the value to store)
+  const splynxTeams = (filtersResponse?.filters?.splynxTeams || []).map(t => ({
+    id: t.splynxTeamId,
+    title: t.name,
+  }));
   
   useEffect(() => {
     if (team) {
@@ -427,35 +435,58 @@ export function TeamPanel({ team, open, onClose, onManageMembers, isAdmin }: Tea
                 <Link2 className="h-4 w-4" />
                 Splynx Team Mapping
               </Label>
-              <Select
-                value={formData.splynxTeamId?.toString() || "none"}
-                onValueChange={(value) => setFormData({ ...formData, splynxTeamId: value === "none" ? null : parseInt(value) })}
-                disabled={!isAdmin || isLoadingSplynxTeams}
-              >
-                <SelectTrigger data-testid="select-splynx-team">
-                  <SelectValue placeholder={isLoadingSplynxTeams ? "Loading teams..." : "Link to Splynx team..."} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No Splynx team linked</SelectItem>
-                  {splynxTeams.map((splynxTeam) => (
-                    <SelectItem key={splynxTeam.id} value={splynxTeam.id.toString()}>
-                      {splynxTeam.title}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              {splynxTeams.length > 0 ? (
+                <Select
+                  value={formData.splynxTeamId?.toString() || "none"}
+                  onValueChange={(value) => setFormData({ ...formData, splynxTeamId: value === "none" ? null : parseInt(value) })}
+                  disabled={!isAdmin || isLoadingSplynxTeams}
+                >
+                  <SelectTrigger data-testid="select-splynx-team">
+                    <SelectValue placeholder={isLoadingSplynxTeams ? "Loading teams..." : "Link to Splynx team..."} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No Splynx team linked</SelectItem>
+                    {splynxTeams.map((splynxTeam) => (
+                      <SelectItem key={splynxTeam.id} value={splynxTeam.id.toString()}>
+                        {splynxTeam.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="flex gap-2 items-center">
+                  <Input
+                    type="number"
+                    placeholder="Enter Splynx team ID"
+                    value={formData.splynxTeamId?.toString() || ""}
+                    onChange={(e) => setFormData({ 
+                      ...formData, 
+                      splynxTeamId: e.target.value ? parseInt(e.target.value) : null 
+                    })}
+                    disabled={!isAdmin}
+                    className="w-40"
+                    data-testid="input-splynx-team-id"
+                  />
+                  {formData.splynxTeamId && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setFormData({ ...formData, splynxTeamId: null })}
+                      disabled={!isAdmin}
+                    >
+                      Clear
+                    </Button>
+                  )}
+                </div>
+              )}
               <p className="text-xs text-muted-foreground">
                 Link this team to a Splynx scheduling team for calendar integration and task routing.
+                {splynxTeams.length === 0 && " Enter the team ID from your Splynx scheduling settings."}
               </p>
-              {splynxTeams.length === 0 && !isLoadingSplynxTeams && (
-                <p className="text-xs text-amber-600">
-                  No Splynx teams found. Make sure your Splynx integration is configured.
-                </p>
-              )}
               {formData.splynxTeamId && (
                 <div className="text-xs text-green-600 flex items-center gap-1">
                   <Link2 className="h-3 w-3" />
-                  Linked to: {splynxTeams.find(t => t.id === formData.splynxTeamId)?.title || `Team #${formData.splynxTeamId}`}
+                  Linked to: {splynxTeams.find(t => t.id === formData.splynxTeamId)?.title || `Splynx Team #${formData.splynxTeamId}`}
                 </div>
               )}
             </div>
