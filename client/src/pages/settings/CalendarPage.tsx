@@ -325,6 +325,23 @@ export default function CalendarPage() {
     setViewMode('day');
   };
 
+  const handleSlotClick = (day: Date, hour: number, event: React.MouseEvent) => {
+    event.stopPropagation();
+    // Set the time for the block form based on the clicked slot
+    const startTime = `${hour.toString().padStart(2, '0')}:00`;
+    const endHour = Math.min(hour + 1, 21);
+    const endTime = `${endHour.toString().padStart(2, '0')}:00`;
+    
+    setBlockForm(prev => ({
+      ...prev,
+      startDatetime: `${format(day, 'yyyy-MM-dd')}T${startTime}`,
+      endDatetime: `${format(day, 'yyyy-MM-dd')}T${endTime}`,
+    }));
+    
+    setCreateMenuDay(day);
+    setCreateMenuPosition({ x: event.clientX, y: event.clientY });
+  };
+
   const handleNavigateToEvent = (event: CalendarEvent) => {
     if (event.type === 'work_item' && event.metadata?.workItemId) {
       navigate(`/strategy/work-items?id=${event.metadata.workItemId}`);
@@ -948,6 +965,7 @@ export default function CalendarPage() {
             events={events}
             hours={workingHours}
             onEventClick={handleEventClick}
+            onSlotClick={handleSlotClick}
           />
         ) : viewMode === 'roadmap' ? (
           <RoadmapView
@@ -960,6 +978,7 @@ export default function CalendarPage() {
             day={currentDate} 
             events={getEventsForDay(currentDate)}
             hours={workingHours}
+            onSlotClick={handleSlotClick}
             onEventClick={handleEventClick}
           />
         )}
@@ -1724,9 +1743,10 @@ interface WeekViewProps {
   events: CalendarEvent[];
   hours: number[];
   onEventClick?: (event: CalendarEvent) => void;
+  onSlotClick?: (day: Date, hour: number, event: React.MouseEvent) => void;
 }
 
-function WeekView({ days, events, hours, onEventClick }: WeekViewProps) {
+function WeekView({ days, events, hours, onEventClick, onSlotClick }: WeekViewProps) {
   const getEventsForDay = (day: Date) => {
     return events.filter((event) => {
       const eventStart = startOfDay(new Date(event.start));
@@ -1828,14 +1848,16 @@ function WeekView({ days, events, hours, onEventClick }: WeekViewProps) {
                   <div 
                     key={hour} 
                     className={`
-                      h-12 border-b relative
+                      h-12 border-b relative cursor-pointer hover:bg-muted/30 transition-colors
                       ${isToday(day) ? 'bg-primary/5' : ''}
                     `}
+                    onClick={(e) => onSlotClick?.(day, hour, e)}
+                    data-testid={`slot-${format(day, 'yyyy-MM-dd')}-${hour}`}
                   >
                     {hourEvents.map((event) => (
                       <div
                         key={event.id}
-                        onClick={() => onEventClick?.(event)}
+                        onClick={(e) => { e.stopPropagation(); onEventClick?.(event); }}
                         className={`
                           absolute left-0.5 right-0.5 top-0.5 text-[10px] p-1 rounded truncate z-10 cursor-pointer hover:opacity-80
                           ${eventTypeColors[event.type]}
@@ -1862,9 +1884,10 @@ interface DayViewProps {
   events: CalendarEvent[];
   hours: number[];
   onEventClick?: (event: CalendarEvent) => void;
+  onSlotClick?: (day: Date, hour: number, event: React.MouseEvent) => void;
 }
 
-function DayView({ day, events, hours, onEventClick }: DayViewProps) {
+function DayView({ day, events, hours, onEventClick, onSlotClick }: DayViewProps) {
   const allDayEvents = events.filter(e => e.allDay || e.type === 'work_item' || e.type === 'holiday' || e.type === 'public_holiday');
   const timedEvents = events.filter(e => !e.allDay && e.type !== 'work_item' && e.type !== 'holiday' && e.type !== 'public_holiday');
 
@@ -1923,11 +1946,15 @@ function DayView({ day, events, hours, onEventClick }: DayViewProps) {
                 <div className="w-20 shrink-0 pr-3 py-2 text-right text-sm text-muted-foreground">
                   {format(hourDate, 'h:mm a')}
                 </div>
-                <div className="flex-1 py-1 px-2 hover:bg-muted/20 transition-colors">
+                <div 
+                  className="flex-1 py-1 px-2 hover:bg-muted/20 transition-colors cursor-pointer"
+                  onClick={(e) => onSlotClick?.(day, hour, e)}
+                  data-testid={`day-slot-${hour}`}
+                >
                   {hourEvents.map((event) => (
                     <div
                       key={event.id}
-                      onClick={() => onEventClick?.(event)}
+                      onClick={(e) => { e.stopPropagation(); onEventClick?.(event); }}
                       className={`
                         p-2 rounded mb-1 flex items-start gap-3 cursor-pointer hover:opacity-80
                         ${eventTypeBgColors[event.type]}
