@@ -179,7 +179,13 @@ export default function CalendarPage() {
   // Load persisted settings on mount
   const savedSettings = useMemo(() => loadCalendarSettings(), []);
   
-  const [currentDate, setCurrentDate] = useState(new Date());
+  const [currentDate, setCurrentDate] = useState(() => {
+    if (savedSettings?.currentDate) {
+      const saved = new Date(savedSettings.currentDate);
+      return isNaN(saved.getTime()) ? new Date() : saved;
+    }
+    return new Date();
+  });
   const [viewMode, setViewMode] = useState<ViewMode>(() => savedSettings?.viewMode || 'month');
   const [selectedUserId, setSelectedUserId] = useState<string>(() => savedSettings?.selectedUserId || 'all');
   const [selectedTeamId, setSelectedTeamId] = useState<string>(() => savedSettings?.selectedTeamId || 'all');
@@ -220,9 +226,10 @@ export default function CalendarPage() {
       selectedProjectId,
       hiddenEventTypes: Array.from(hiddenEventTypes),
       showWeekends,
+      currentDate: currentDate.toISOString(),
     };
     localStorage.setItem('calendarSettings', JSON.stringify(settings));
-  }, [viewMode, selectedUserId, selectedTeamId, selectedProjectId, hiddenEventTypes, showWeekends]);
+  }, [viewMode, selectedUserId, selectedTeamId, selectedProjectId, hiddenEventTypes, showWeekends, currentDate]);
   
   const toggleEventTypeVisibility = (type: string) => {
     setHiddenEventTypes(prev => {
