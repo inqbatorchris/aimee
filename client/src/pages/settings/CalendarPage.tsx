@@ -172,8 +172,10 @@ export default function CalendarPage() {
   
   const [showBlockDialog, setShowBlockDialog] = useState(false);
   const [showHolidayDialog, setShowHolidayDialog] = useState(false);
+  const [showApproverSettingsDialog, setShowApproverSettingsDialog] = useState(false);
   const [createMenuDay, setCreateMenuDay] = useState<Date | null>(null);
   const [createMenuPosition, setCreateMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const [approverSettings, setApproverSettings] = useState<{ type: 'user' | 'team' | null; id: number | null }>({ type: null, id: null });
   
   const [hiddenEventTypes, setHiddenEventTypes] = useState<Set<string>>(new Set());
   const [showWeekends, setShowWeekends] = useState(true);
@@ -288,6 +290,33 @@ export default function CalendarPage() {
     },
     onError: (error: any) => {
       toast({ title: 'Failed to submit request', description: error.message, variant: 'destructive' });
+    },
+  });
+
+  const { data: holidayApproverData } = useQuery<{ success: boolean; holidayApprover: { type: 'user' | 'team' | null; id: number | null } }>({
+    queryKey: ['/api/calendar/settings/holiday-approver'],
+  });
+
+  useEffect(() => {
+    if (holidayApproverData?.holidayApprover) {
+      setApproverSettings(holidayApproverData.holidayApprover);
+    }
+  }, [holidayApproverData]);
+
+  const saveApproverSettingsMutation = useMutation({
+    mutationFn: async (settings: { type: 'user' | 'team' | null; id: number | null }) => {
+      return apiRequest('/api/calendar/settings/holiday-approver', {
+        method: 'POST',
+        body: settings,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: 'Holiday approver settings saved' });
+      setShowApproverSettingsDialog(false);
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar/settings/holiday-approver'] });
+    },
+    onError: (error: any) => {
+      toast({ title: 'Failed to save settings', description: error.message, variant: 'destructive' });
     },
   });
 
@@ -759,6 +788,13 @@ export default function CalendarPage() {
                 >
                   <CalendarPlus className="h-4 w-4 mr-2" />
                   Manage Appointments
+                </DropdownMenuItem>
+                <DropdownMenuItem 
+                  onClick={() => setShowApproverSettingsDialog(true)}
+                  data-testid="menu-holiday-settings"
+                >
+                  <Settings className="h-4 w-4 mr-2" />
+                  Holiday Approver Settings
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -1400,38 +1436,105 @@ export default function CalendarPage() {
                 )}
 
                 {selectedEvent.type === 'holiday' && (
-                  <div className="space-y-3 pt-2">
-                    {selectedEvent.metadata?.holidayType && (
+                  <div className="space-y-4 pt-2">
+                    <div className="flex items-center justify-between text-sm pb-2 border-b">
+                      <div className="flex items-center gap-2">
+                        <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                        <span>{selectedEvent.start} to {selectedEvent.end}</span>
+                      </div>
+                      <Badge 
+                        variant="outline" 
+                        className={
+                          selectedEvent.status === 'approved' 
+                            ? 'bg-green-100 text-green-800 border-green-300' 
+                            : selectedEvent.status === 'rejected'
+                            ? 'bg-red-100 text-red-800 border-red-300'
+                            : 'bg-yellow-100 text-yellow-800 border-yellow-300'
+                        }
+                      >
+                        {selectedEvent.status === 'approved' ? 'Approved' : 
+                         selectedEvent.status === 'rejected' ? 'Rejected' : 'Pending Approval'}
+                      </Badge>
+                    </div>
+                    
+                    {selectedEvent.userName && (
                       <div>
-                        <div className="text-xs text-muted-foreground mb-1">Leave Type</div>
-                        <div className="text-sm capitalize">{selectedEvent.metadata.holidayType}</div>
+                        <div className="text-xs text-muted-foreground mb-1">Requested By</div>
+                        <div className="text-sm font-medium">{selectedEvent.userName}</div>
                       </div>
                     )}
-                    {selectedEvent.metadata?.daysCount && (
-                      <div>
-                        <div className="text-xs text-muted-foreground mb-1">Days Requested</div>
-                        <div className="text-sm">{selectedEvent.metadata.daysCount} day(s)</div>
+                    
+                    <div className="grid grid-cols-2 gap-4">
+                      {selectedEvent.metadata?.holidayType && (
+                        <div>
+                          <div className="text-xs text-muted-foreground mb-1">Leave Type</div>
+                          <div className="text-sm capitalize">{selectedEvent.metadata.holidayType}</div>
+                        </div>
+                      )}
+                      {selectedEvent.metadata?.daysCount && (
+                        <div>
+                          <div className="text-xs text-muted-foreground mb-1">Days Requested</div>
+                          <div className="text-sm">{selectedEvent.metadata.daysCount} day(s)</div>
+                        </div>
+                      )}
+                    </div>
+                    
+                    {(selectedEvent.metadata?.isHalfDayStart || selectedEvent.metadata?.isHalfDayEnd) && (
+                      <div className="flex gap-2">
+                        {selectedEvent.metadata?.isHalfDayStart && (
+                          <Badge variant="outline" className="text-xs">Half day (start)</Badge>
+                        )}
+                        {selectedEvent.metadata?.isHalfDayEnd && (
+                          <Badge variant="outline" className="text-xs">Half day (end)</Badge>
+                        )}
                       </div>
                     )}
+                    
+                    {selectedEvent.metadata?.notes && (
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-1">Notes</div>
+                        <div className="text-sm">{selectedEvent.metadata.notes}</div>
+                      </div>
+                    )}
+                    
                     <div className="text-xs text-muted-foreground pt-2">
                       <Badge variant="secondary" className="bg-green-100 text-green-800">
                         <Umbrella className="h-3 w-3 mr-1" />
                         Holiday Request
                       </Badge>
                     </div>
-                    <div className="pt-4">
+                    
+                    <div className="pt-4 flex gap-2">
+                      {selectedEvent.metadata?.workItemId && (
+                        <Button 
+                          onClick={() => handleNavigateToEvent(selectedEvent)}
+                          className="flex-1"
+                          data-testid={`button-open-holiday-work-item-${selectedEvent.metadata.workItemId}`}
+                        >
+                          <ExternalLink className="h-4 w-4 mr-2" />
+                          Open Request
+                        </Button>
+                      )}
                       <Button
                         variant="destructive"
-                        className="w-full"
+                        className={selectedEvent.metadata?.workItemId ? '' : 'w-full'}
                         onClick={async () => {
                           if (!confirm('Are you sure you want to delete this holiday request?')) return;
                           try {
-                            const holidayId = selectedEvent.id.replace('holiday-', '');
-                            const response = await fetch(`/api/calendar/holidays/requests/${holidayId}`, {
-                              method: 'DELETE',
-                              headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
-                            });
-                            if (!response.ok) throw new Error('Failed to delete holiday request');
+                            if (selectedEvent.metadata?.workItemId) {
+                              const response = await fetch(`/api/work-items/${selectedEvent.metadata.workItemId}`, {
+                                method: 'DELETE',
+                                headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+                              });
+                              if (!response.ok) throw new Error('Failed to delete holiday request');
+                            } else {
+                              const holidayId = selectedEvent.id.replace('holiday-', '');
+                              const response = await fetch(`/api/calendar/holidays/requests/${holidayId}`, {
+                                method: 'DELETE',
+                                headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+                              });
+                              if (!response.ok) throw new Error('Failed to delete holiday request');
+                            }
                             queryClient.invalidateQueries({ queryKey: ['/api/calendar/combined'] });
                             handleCloseEventDetail();
                             toast({ title: 'Holiday request deleted' });
@@ -1442,7 +1545,7 @@ export default function CalendarPage() {
                         data-testid="button-delete-holiday"
                       >
                         <Trash2 className="h-4 w-4 mr-2" />
-                        Delete Holiday Request
+                        Delete
                       </Button>
                     </div>
                   </div>
@@ -1950,6 +2053,99 @@ export default function CalendarPage() {
               data-testid="button-submit-holiday"
             >
               {createHolidayMutation.isPending ? 'Submitting...' : 'Submit Request'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showApproverSettingsDialog} onOpenChange={setShowApproverSettingsDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Holiday Approver Settings</DialogTitle>
+            <DialogDescription>
+              Configure the default approver for holiday requests. New requests will be automatically assigned to this person or team.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label>Assign To</Label>
+              <Select 
+                value={approverSettings.type || 'none'} 
+                onValueChange={(v) => setApproverSettings(s => ({ 
+                  ...s, 
+                  type: v === 'none' ? null : v as 'user' | 'team',
+                  id: v === 'none' ? null : s.id 
+                }))}
+              >
+                <SelectTrigger data-testid="select-approver-type">
+                  <SelectValue placeholder="Select assignment type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No default approver</SelectItem>
+                  <SelectItem value="user">Specific User</SelectItem>
+                  <SelectItem value="team">Team</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {approverSettings.type === 'user' && (
+              <div className="space-y-2">
+                <Label>Select User</Label>
+                <Select 
+                  value={approverSettings.id?.toString() || ''} 
+                  onValueChange={(v) => setApproverSettings(s => ({ ...s, id: parseInt(v) }))}
+                >
+                  <SelectTrigger data-testid="select-approver-user">
+                    <SelectValue placeholder="Select a user" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {filtersData?.filters?.localUsers?.map((user: any) => (
+                      <SelectItem key={user.id} value={user.id.toString()}>
+                        {user.name || user.email}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  All new holiday requests will be assigned to this user for approval.
+                </p>
+              </div>
+            )}
+
+            {approverSettings.type === 'team' && (
+              <div className="space-y-2">
+                <Label>Select Team</Label>
+                <Select 
+                  value={approverSettings.id?.toString() || ''} 
+                  onValueChange={(v) => setApproverSettings(s => ({ ...s, id: parseInt(v) }))}
+                >
+                  <SelectTrigger data-testid="select-approver-team">
+                    <SelectValue placeholder="Select a team" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {teams.map((team: any) => (
+                      <SelectItem key={team.id} value={team.id.toString()}>
+                        {team.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  All new holiday requests will be assigned to this team for approval.
+                </p>
+              </div>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowApproverSettingsDialog(false)} data-testid="button-cancel-approver">
+              Cancel
+            </Button>
+            <Button 
+              onClick={() => saveApproverSettingsMutation.mutate(approverSettings)}
+              disabled={saveApproverSettingsMutation.isPending}
+              data-testid="button-save-approver"
+            >
+              {saveApproverSettingsMutation.isPending ? 'Saving...' : 'Save Settings'}
             </Button>
           </DialogFooter>
         </DialogContent>

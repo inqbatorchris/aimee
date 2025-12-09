@@ -503,6 +503,63 @@ router.post('/calendar/settings', authenticateToken, async (req: Request, res: R
 });
 
 // ========================================
+// HOLIDAY APPROVAL SETTINGS (ORG LEVEL)
+// ========================================
+
+router.get('/calendar/settings/holiday-approver', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const organizationId = (req as any).user.organizationId;
+    
+    const [org] = await db
+      .select({ settings: organizations.settings })
+      .from(organizations)
+      .where(eq(organizations.id, organizationId))
+      .limit(1);
+    
+    const settings = (org?.settings as any) || {};
+    const holidayApprover = settings.holidayApprover || { type: null, id: null };
+    
+    res.json({ success: true, holidayApprover });
+  } catch (error: any) {
+    console.error('[CALENDAR] Error fetching holiday approver settings:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/calendar/settings/holiday-approver', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const organizationId = (req as any).user.organizationId;
+    const { type, id } = req.body;
+    
+    if (type && !['user', 'team'].includes(type)) {
+      return res.status(400).json({ success: false, error: 'Invalid type. Must be "user" or "team"' });
+    }
+    
+    const [org] = await db
+      .select({ settings: organizations.settings })
+      .from(organizations)
+      .where(eq(organizations.id, organizationId))
+      .limit(1);
+    
+    const existingSettings = (org?.settings as any) || {};
+    const updatedSettings = {
+      ...existingSettings,
+      holidayApprover: { type, id: id ? parseInt(id) : null }
+    };
+    
+    await db
+      .update(organizations)
+      .set({ settings: updatedSettings, updatedAt: new Date() })
+      .where(eq(organizations.id, organizationId));
+    
+    res.json({ success: true, message: 'Holiday approver settings saved' });
+  } catch (error: any) {
+    console.error('[CALENDAR] Error saving holiday approver settings:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// ========================================
 // HOLIDAY ALLOWANCES
 // ========================================
 
@@ -642,6 +699,15 @@ router.post('/calendar/holidays/requests', authenticateToken, async (req: Reques
     
     await getOrCreateHolidayWorkflowTemplate(organizationId);
     
+    const [org] = await db
+      .select({ settings: organizations.settings })
+      .from(organizations)
+      .where(eq(organizations.id, organizationId))
+      .limit(1);
+    
+    const orgSettings = (org?.settings as any) || {};
+    const holidayApprover = orgSettings.holidayApprover || { type: null, id: null };
+    
     const holidayTypeMap: Record<string, string> = {
       annual: 'Annual Leave',
       sick: 'Sick Leave',
@@ -656,7 +722,7 @@ router.post('/calendar/holidays/requests', authenticateToken, async (req: Reques
     const title = `${holidayTypeName} - ${userFullName} (${startDate} to ${endDate})`;
     const description = notes || `Holiday request for ${daysCount} day(s)`;
     
-    const [workItem] = await db.insert(workItems).values({
+    const workItemData: any = {
       organizationId,
       title,
       description,
@@ -676,7 +742,15 @@ router.post('/calendar/holidays/requests', authenticateToken, async (req: Reques
         requesterId: userId,
         requesterName: userFullName,
       }
-    }).returning();
+    };
+    
+    if (holidayApprover.type === 'user' && holidayApprover.id) {
+      workItemData.assignedTo = holidayApprover.id;
+    } else if (holidayApprover.type === 'team' && holidayApprover.id) {
+      workItemData.teamId = holidayApprover.id;
+    }
+    
+    const [workItem] = await db.insert(workItems).values(workItemData).returning();
     
     const year = new Date(startDate).getFullYear();
     
