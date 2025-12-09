@@ -741,7 +741,7 @@ function AppContent() {
               
               {/* Settings Pages */}
               <Route path="/settings/bookable-appointments" component={BookableAppointmentsPage} />
-              <Route path="/settings/calendar" component={CalendarPage} />
+              <Route path="/calendar" component={CalendarPage} />
               
               {/* Other Routes */}
               {/* /profile redirects to /core/user-profile are handled above */}

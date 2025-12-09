@@ -40,8 +40,11 @@ import {
   Users,
   Paperclip,
   Link2,
-  FolderOpen
+  FolderOpen,
+  X,
+  Trash2
 } from 'lucide-react';
+import { queryClient } from '@/lib/queryClient';
 import { useLocation } from 'wouter';
 import { 
   startOfMonth, 
@@ -721,15 +724,6 @@ export default function CalendarPage() {
           </div>
 
           <div className="flex items-center gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" className="h-8 w-8" data-testid="button-settings">
-                  <Settings className="h-4 w-4" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Settings</TooltipContent>
-            </Tooltip>
-            
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button size="icon" className="h-8 w-8" data-testid="button-add-event">
@@ -1494,6 +1488,137 @@ export default function CalendarPage() {
                         </Button>
                       </div>
                     )}
+                  </div>
+                )}
+
+                {selectedEvent.type === 'booking' && (
+                  <div className="space-y-4 pt-2">
+                    <div className="flex items-center justify-between text-sm pb-2 border-b">
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1.5">
+                          <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                          <span>{format(selectedEvent.start, 'MMM d, yyyy')}</span>
+                        </div>
+                        {!selectedEvent.allDay && (
+                          <div className="flex items-center gap-1.5 text-muted-foreground">
+                            <Clock className="h-3.5 w-3.5" />
+                            <span>{format(selectedEvent.start, 'h:mm a')} - {format(selectedEvent.end, 'h:mm a')}</span>
+                          </div>
+                        )}
+                      </div>
+                      <Badge variant="outline" className="capitalize">{selectedEvent.status || 'confirmed'}</Badge>
+                    </div>
+                    
+                    <div className="p-3 bg-muted/30 rounded-lg space-y-2">
+                      <div className="flex items-center gap-2 text-sm font-medium">
+                        <User className="h-4 w-4" />
+                        Customer
+                      </div>
+                      <div className="text-sm font-semibold">{selectedEvent.metadata?.customerName}</div>
+                      {selectedEvent.metadata?.customerEmail && (
+                        <div className="text-xs text-muted-foreground">{selectedEvent.metadata.customerEmail}</div>
+                      )}
+                      {selectedEvent.metadata?.customerPhone && (
+                        <div className="text-xs text-muted-foreground">{selectedEvent.metadata.customerPhone}</div>
+                      )}
+                      {selectedEvent.metadata?.serviceAddress && (
+                        <div className="text-xs text-muted-foreground flex items-center gap-1">
+                          <MapPin className="h-3 w-3" />
+                          {selectedEvent.metadata.serviceAddress}
+                        </div>
+                      )}
+                    </div>
+                    
+                    {selectedEvent.metadata?.taskTypeName && (
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-1">Appointment Type</div>
+                        <Badge variant="outline">{selectedEvent.metadata.taskTypeName}</Badge>
+                      </div>
+                    )}
+                    
+                    {selectedEvent.metadata?.additionalNotes && (
+                      <div>
+                        <div className="text-xs text-muted-foreground mb-1">Notes</div>
+                        <div className="text-sm">{selectedEvent.metadata.additionalNotes}</div>
+                      </div>
+                    )}
+                    
+                    <div className="text-xs text-muted-foreground pt-2">
+                      <Badge variant="secondary" className="bg-cyan-100 text-cyan-800">
+                        <CalendarIcon className="h-3 w-3 mr-1" />
+                        Customer Booking
+                      </Badge>
+                    </div>
+                    
+                    {selectedEvent.metadata?.splynxTaskId && (
+                      <a 
+                        href={`https://manage.country-connect.co.uk/admin/scheduling/tasks?view=details&task_id=${selectedEvent.metadata.splynxTaskId}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-600 hover:underline flex items-center gap-1 pt-2"
+                        data-testid="link-booking-splynx-task"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        View Splynx Task
+                      </a>
+                    )}
+                    
+                    <div className="pt-4 flex gap-2">
+                      <Button
+                        variant="destructive"
+                        className="flex-1"
+                        onClick={async () => {
+                          if (!confirm('Are you sure you want to cancel this booking?')) return;
+                          try {
+                            const bookingId = selectedEvent.id.replace('booking-', '');
+                            const response = await fetch(`/api/bookings/all-bookings/${bookingId}`, {
+                              method: 'PATCH',
+                              headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+                              },
+                              body: JSON.stringify({ status: 'cancelled' })
+                            });
+                            if (!response.ok) throw new Error('Failed to cancel booking');
+                            queryClient.invalidateQueries({ queryKey: ['/api/calendar/combined'] });
+                            handleCloseEventDetail();
+                            toast({ title: 'Booking cancelled successfully' });
+                          } catch (err: any) {
+                            toast({ title: 'Error', description: err.message, variant: 'destructive' });
+                          }
+                        }}
+                        data-testid="button-cancel-booking"
+                      >
+                        <X className="h-4 w-4 mr-2" />
+                        Cancel Booking
+                      </Button>
+                      <Button
+                        variant="outline"
+                        className="flex-1"
+                        onClick={async () => {
+                          if (!confirm('Are you sure you want to permanently delete this booking?')) return;
+                          try {
+                            const bookingId = selectedEvent.id.replace('booking-', '');
+                            const response = await fetch(`/api/bookings/all-bookings/${bookingId}`, {
+                              method: 'DELETE',
+                              headers: {
+                                'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+                              }
+                            });
+                            if (!response.ok) throw new Error('Failed to delete booking');
+                            queryClient.invalidateQueries({ queryKey: ['/api/calendar/combined'] });
+                            handleCloseEventDetail();
+                            toast({ title: 'Booking deleted successfully' });
+                          } catch (err: any) {
+                            toast({ title: 'Error', description: err.message, variant: 'destructive' });
+                          }
+                        }}
+                        data-testid="button-delete-booking"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete
+                      </Button>
+                    </div>
                   </div>
                 )}
                 </div>

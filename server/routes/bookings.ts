@@ -1206,6 +1206,135 @@ router.get('/all-bookings', authenticateToken, async (req, res) => {
   }
 });
 
+/**
+ * Cancel/Update a booking
+ */
+router.patch('/all-bookings/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const organizationId = (req.user as any)?.organizationId;
+    const userId = (req.user as any)?.id;
+    const { status, additionalNotes } = req.body;
+    
+    if (!organizationId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    // Get existing booking to verify ownership
+    const [existingBooking] = await db
+      .select()
+      .from(bookings)
+      .where(and(
+        eq(bookings.id, parseInt(id)),
+        eq(bookings.organizationId, organizationId)
+      ))
+      .limit(1);
+    
+    if (!existingBooking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+    
+    // Build update object
+    const updateData: any = {
+      updatedAt: new Date()
+    };
+    
+    if (status) {
+      updateData.status = status;
+      if (status === 'cancelled') {
+        updateData.cancelledAt = new Date();
+      }
+    }
+    
+    if (additionalNotes !== undefined) {
+      updateData.additionalNotes = additionalNotes;
+    }
+    
+    const [updated] = await db
+      .update(bookings)
+      .set(updateData)
+      .where(eq(bookings.id, parseInt(id)))
+      .returning();
+    
+    // Log activity
+    await db.insert(activityLogs).values({
+      organizationId,
+      userId,
+      actionType: status === 'cancelled' ? 'deletion' : 'update',
+      entityType: 'booking',
+      entityId: updated.id,
+      description: status === 'cancelled' 
+        ? `Cancelled booking for ${existingBooking.customerName}` 
+        : `Updated booking for ${existingBooking.customerName}`,
+      metadata: { 
+        previousStatus: existingBooking.status, 
+        newStatus: status,
+        customerName: existingBooking.customerName,
+        customerEmail: existingBooking.customerEmail
+      }
+    });
+    
+    res.json({ success: true, booking: updated });
+  } catch (error: any) {
+    console.error('Error updating booking:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * Delete a booking permanently
+ */
+router.delete('/all-bookings/:id', authenticateToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const organizationId = (req.user as any)?.organizationId;
+    const userId = (req.user as any)?.id;
+    
+    if (!organizationId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    
+    // Get existing booking for logging
+    const [existingBooking] = await db
+      .select()
+      .from(bookings)
+      .where(and(
+        eq(bookings.id, parseInt(id)),
+        eq(bookings.organizationId, organizationId)
+      ))
+      .limit(1);
+    
+    if (!existingBooking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+    
+    const [deleted] = await db
+      .delete(bookings)
+      .where(eq(bookings.id, parseInt(id)))
+      .returning();
+    
+    // Log activity
+    await db.insert(activityLogs).values({
+      organizationId,
+      userId,
+      actionType: 'deletion',
+      entityType: 'booking',
+      entityId: deleted.id,
+      description: `Deleted booking for ${existingBooking.customerName}`,
+      metadata: { 
+        customerName: existingBooking.customerName,
+        customerEmail: existingBooking.customerEmail,
+        selectedDatetime: existingBooking.selectedDatetime
+      }
+    });
+    
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Error deleting booking:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 router.delete('/bookable-task-types/:id', authenticateToken, async (req, res) => {
   try {
     const { id } = req.params;
