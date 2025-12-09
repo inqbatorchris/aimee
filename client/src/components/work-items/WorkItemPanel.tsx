@@ -466,8 +466,10 @@ export default function WorkItemPanel({
   
   // Automatically switch to workflow tab when opening a work item with a template
   // Only run this on initial open, not on data refreshes
+  // Skip if initialTab was explicitly set (e.g., from URL navigation)
   useEffect(() => {
     if (!isOpen) return; // Don't run when closing
+    if (initialTab) return; // Don't override explicit tab from URL
     
     if (mode === 'create') {
       setActiveTab('details');
@@ -481,7 +483,7 @@ export default function WorkItemPanel({
         setActiveTab('details');
       }
     }
-  }, [isOpen, mode, workItemId]); // Remove initialWorkItem and fetchedWorkItem from deps
+  }, [isOpen, mode, workItemId, initialTab]); // Remove initialWorkItem and fetchedWorkItem from deps
   
   // Clear targetMeetingId when team changes if the meeting doesn't belong to the new team
   useEffect(() => {
