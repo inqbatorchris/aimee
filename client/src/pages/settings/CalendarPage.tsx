@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import DOMPurify from 'dompurify';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
@@ -211,6 +211,7 @@ export default function CalendarPage() {
   const [draggedEvent, setDraggedEvent] = useState<CalendarEvent | null>(null);
   const [resizingEvent, setResizingEvent] = useState<CalendarEvent | null>(null);
   const [resizeEdge, setResizeEdge] = useState<'start' | 'end' | null>(null);
+  const resizeHoverHourRef = useRef<{ date: Date; hour: number } | null>(null);
   
   const [hiddenEventTypes, setHiddenEventTypes] = useState<Set<string>>(() => {
     const saved = savedSettings?.hiddenEventTypes;
@@ -611,15 +612,55 @@ export default function CalendarPage() {
     if (!resizableTypes.includes(event.type)) return;
     setResizingEvent(event);
     setResizeEdge(edge);
+    resizeHoverHourRef.current = null; // Reset hover tracking
   };
 
   const handleResizeEnd = () => {
+    // Use tracked hover position if available
+    if (resizingEvent && resizeEdge && resizeHoverHourRef.current) {
+      const { date, hour } = resizeHoverHourRef.current;
+      const newTime = new Date(date.getTime());
+      newTime.setHours(hour, 0, 0, 0);
+      
+      console.log('[RESIZE END] Using tracked hover hour:', hour);
+      
+      if (resizeEdge === 'start') {
+        resizeEventMutation.mutate({ event: resizingEvent, newStart: newTime });
+      } else {
+        resizeEventMutation.mutate({ event: resizingEvent, newEnd: newTime });
+      }
+    }
+    
+    resizeHoverHourRef.current = null;
     setResizingEvent(null);
     setResizeEdge(null);
   };
 
+  // Track which hour slot the mouse is over during resize
+  const handleResizeHover = (date: Date, hour: number) => {
+    if (resizingEvent && resizeEdge) {
+      resizeHoverHourRef.current = { date, hour };
+    }
+  };
+
   const handleResizeDrop = (newTime: Date) => {
     if (!resizingEvent || !resizeEdge) return;
+    
+    // Prefer tracked hover position
+    if (resizeHoverHourRef.current) {
+      const { date, hour } = resizeHoverHourRef.current;
+      const trackedTime = new Date(date.getTime());
+      trackedTime.setHours(hour, 0, 0, 0);
+      console.log('[RESIZE DROP] Using tracked hover hour:', hour, 'instead of:', newTime.getHours());
+      
+      if (resizeEdge === 'start') {
+        resizeEventMutation.mutate({ event: resizingEvent, newStart: trackedTime });
+      } else {
+        resizeEventMutation.mutate({ event: resizingEvent, newEnd: trackedTime });
+      }
+      resizeHoverHourRef.current = null;
+      return;
+    }
     
     if (resizeEdge === 'start') {
       resizeEventMutation.mutate({ event: resizingEvent, newStart: newTime });
@@ -630,6 +671,22 @@ export default function CalendarPage() {
 
   const handleResizeDropWithHour = (newDate: Date, hour: number) => {
     if (!resizingEvent || !resizeEdge) return;
+    
+    // Prefer tracked hover position (more accurate than DOM drop event)
+    if (resizeHoverHourRef.current) {
+      const { date, hour: trackedHour } = resizeHoverHourRef.current;
+      const trackedTime = new Date(date.getTime());
+      trackedTime.setHours(trackedHour, 0, 0, 0);
+      console.log('[RESIZE DROP] Using tracked hover hour:', trackedHour, 'instead of drop hour:', hour);
+      
+      if (resizeEdge === 'start') {
+        resizeEventMutation.mutate({ event: resizingEvent, newStart: trackedTime });
+      } else {
+        resizeEventMutation.mutate({ event: resizingEvent, newEnd: trackedTime });
+      }
+      resizeHoverHourRef.current = null;
+      return;
+    }
     
     const newTime = new Date(newDate.getTime());
     newTime.setHours(hour, 0, 0, 0);
@@ -1308,6 +1365,7 @@ export default function CalendarPage() {
             onResizeStart={handleResizeStart}
             onResizeEnd={handleResizeEnd}
             onResizeDrop={handleResizeDropWithHour}
+            onResizeHover={handleResizeHover}
             resizingEvent={resizingEvent}
             resizeEdge={resizeEdge}
           />
@@ -1331,6 +1389,7 @@ export default function CalendarPage() {
             onResizeStart={handleResizeStart}
             onResizeEnd={handleResizeEnd}
             onResizeDrop={handleResizeDropWithHour}
+            onResizeHover={handleResizeHover}
             resizingEvent={resizingEvent}
             resizeEdge={resizeEdge}
           />
@@ -2655,11 +2714,12 @@ interface WeekViewProps {
   onResizeStart?: (event: CalendarEvent, edge: 'start' | 'end') => void;
   onResizeEnd?: () => void;
   onResizeDrop?: (newDate: Date, hour: number) => void;
+  onResizeHover?: (date: Date, hour: number) => void;
   resizingEvent?: CalendarEvent | null;
   resizeEdge?: 'start' | 'end' | null;
 }
 
-function WeekView({ days, events, hours, onEventClick, onSlotClick, onDragStart, onDragEnd, onEventDrop, draggedEvent, onResizeStart, onResizeEnd, onResizeDrop, resizingEvent, resizeEdge }: WeekViewProps) {
+function WeekView({ days, events, hours, onEventClick, onSlotClick, onDragStart, onDragEnd, onEventDrop, draggedEvent, onResizeStart, onResizeEnd, onResizeDrop, onResizeHover, resizingEvent, resizeEdge }: WeekViewProps) {
   const draggableTypes = ['splynx_task', 'block', 'booking', 'work_item'];
   const resizableTypes = ['splynx_task', 'block', 'booking'];
   const getEventsForDay = (day: Date) => {
@@ -2772,6 +2832,10 @@ function WeekView({ days, events, hours, onEventClick, onSlotClick, onDragStart,
                     onDragOver={(e) => {
                       e.preventDefault();
                       e.currentTarget.classList.add('bg-primary/10');
+                      // Track hover position during resize for accurate drop detection
+                      if (resizingEvent) {
+                        onResizeHover?.(day, hour);
+                      }
                     }}
                     onDragLeave={(e) => {
                       e.currentTarget.classList.remove('bg-primary/10');
@@ -2892,11 +2956,12 @@ interface DayViewProps {
   onResizeStart?: (event: CalendarEvent, edge: 'start' | 'end') => void;
   onResizeEnd?: () => void;
   onResizeDrop?: (newDate: Date, hour: number) => void;
+  onResizeHover?: (date: Date, hour: number) => void;
   resizingEvent?: CalendarEvent | null;
   resizeEdge?: 'start' | 'end' | null;
 }
 
-function DayView({ day, events, hours, onEventClick, onSlotClick, onDragStart, onDragEnd, onEventDrop, draggedEvent, onResizeStart, onResizeEnd, onResizeDrop, resizingEvent, resizeEdge }: DayViewProps) {
+function DayView({ day, events, hours, onEventClick, onSlotClick, onDragStart, onDragEnd, onEventDrop, draggedEvent, onResizeStart, onResizeEnd, onResizeDrop, onResizeHover, resizingEvent, resizeEdge }: DayViewProps) {
   const draggableTypes = ['splynx_task', 'block', 'booking', 'work_item'];
   const resizableTypes = ['splynx_task', 'block', 'booking'];
   const allDayEvents = events.filter(e => e.allDay || e.type === 'work_item' || e.type === 'holiday' || e.type === 'public_holiday');
@@ -2964,6 +3029,10 @@ function DayView({ day, events, hours, onEventClick, onSlotClick, onDragStart, o
                   onDragOver={(e) => {
                     e.preventDefault();
                     e.currentTarget.classList.add('bg-primary/10');
+                    // Track hover position during resize for accurate drop detection
+                    if (resizingEvent) {
+                      onResizeHover?.(day, hour);
+                    }
                   }}
                   onDragLeave={(e) => {
                     e.currentTarget.classList.remove('bg-primary/10');
