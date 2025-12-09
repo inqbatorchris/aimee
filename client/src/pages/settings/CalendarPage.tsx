@@ -8,7 +8,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from '@/components/ui/sheet';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -32,7 +32,6 @@ import {
   Clock,
   Umbrella,
   ExternalLink,
-  CalendarPlus,
   Save,
   Loader2,
   MapPin,
@@ -67,7 +66,6 @@ import {
   differenceInDays,
   parseISO
 } from 'date-fns';
-import BookableAppointmentsPage from './BookableAppointmentsPage';
 
 interface CalendarEvent {
   id: string;
@@ -173,11 +171,8 @@ export default function CalendarPage() {
   
   const [showBlockDialog, setShowBlockDialog] = useState(false);
   const [showHolidayDialog, setShowHolidayDialog] = useState(false);
-  const [showApproverSettingsDialog, setShowApproverSettingsDialog] = useState(false);
-  const [showAppointmentsDialog, setShowAppointmentsDialog] = useState(false);
   const [createMenuDay, setCreateMenuDay] = useState<Date | null>(null);
   const [createMenuPosition, setCreateMenuPosition] = useState<{ x: number; y: number } | null>(null);
-  const [approverSettings, setApproverSettings] = useState<{ type: 'user' | 'team' | null; id: number | null }>({ type: null, id: null });
   
   const [hiddenEventTypes, setHiddenEventTypes] = useState<Set<string>>(new Set());
   const [showWeekends, setShowWeekends] = useState(true);
@@ -292,33 +287,6 @@ export default function CalendarPage() {
     },
     onError: (error: any) => {
       toast({ title: 'Failed to submit request', description: error.message, variant: 'destructive' });
-    },
-  });
-
-  const { data: holidayApproverData } = useQuery<{ success: boolean; holidayApprover: { type: 'user' | 'team' | null; id: number | null } }>({
-    queryKey: ['/api/calendar/settings/holiday-approver'],
-  });
-
-  useEffect(() => {
-    if (holidayApproverData?.holidayApprover) {
-      setApproverSettings(holidayApproverData.holidayApprover);
-    }
-  }, [holidayApproverData]);
-
-  const saveApproverSettingsMutation = useMutation({
-    mutationFn: async (settings: { type: 'user' | 'team' | null; id: number | null }) => {
-      return apiRequest('/api/calendar/settings/holiday-approver', {
-        method: 'POST',
-        body: settings,
-      });
-    },
-    onSuccess: () => {
-      toast({ title: 'Holiday approver settings saved' });
-      setShowApproverSettingsDialog(false);
-      queryClient.invalidateQueries({ queryKey: ['/api/calendar/settings/holiday-approver'] });
-    },
-    onError: (error: any) => {
-      toast({ title: 'Failed to save settings', description: error.message, variant: 'destructive' });
     },
   });
 
@@ -791,22 +759,7 @@ export default function CalendarPage() {
                   <Umbrella className="h-4 w-4 mr-2" />
                   Holiday Request
                 </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem 
-                  onClick={() => setShowAppointmentsDialog(true)}
-                  data-testid="menu-splynx-booking"
-                >
-                  <CalendarPlus className="h-4 w-4 mr-2" />
-                  Manage Appointments
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => setShowApproverSettingsDialog(true)}
-                  data-testid="menu-holiday-settings"
-                >
-                  <Settings className="h-4 w-4 mr-2" />
-                  Holiday Approver Settings
-                </DropdownMenuItem>
-              </DropdownMenuContent>
+                              </DropdownMenuContent>
             </DropdownMenu>
           </div>
         </div>
@@ -2056,110 +2009,6 @@ export default function CalendarPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={showApproverSettingsDialog} onOpenChange={setShowApproverSettingsDialog}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Holiday Approver Settings</DialogTitle>
-            <DialogDescription>
-              Configure the default approver for holiday requests. New requests will be automatically assigned to this person or team.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label>Assign To</Label>
-              <Select 
-                value={approverSettings.type || 'none'} 
-                onValueChange={(v) => setApproverSettings(s => ({ 
-                  ...s, 
-                  type: v === 'none' ? null : v as 'user' | 'team',
-                  id: v === 'none' ? null : s.id 
-                }))}
-              >
-                <SelectTrigger data-testid="select-approver-type">
-                  <SelectValue placeholder="Select assignment type" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No default approver</SelectItem>
-                  <SelectItem value="user">Specific User</SelectItem>
-                  <SelectItem value="team">Team</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {approverSettings.type === 'user' && (
-              <div className="space-y-2">
-                <Label>Select User</Label>
-                <Select 
-                  value={approverSettings.id?.toString() || ''} 
-                  onValueChange={(v) => setApproverSettings(s => ({ ...s, id: parseInt(v) }))}
-                >
-                  <SelectTrigger data-testid="select-approver-user">
-                    <SelectValue placeholder="Select a user" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {filtersData?.filters?.localUsers?.map((user: any) => (
-                      <SelectItem key={user.id} value={user.id.toString()}>
-                        {user.name || user.email}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  All new holiday requests will be assigned to this user for approval.
-                </p>
-              </div>
-            )}
-
-            {approverSettings.type === 'team' && (
-              <div className="space-y-2">
-                <Label>Select Team</Label>
-                <Select 
-                  value={approverSettings.id?.toString() || ''} 
-                  onValueChange={(v) => setApproverSettings(s => ({ ...s, id: parseInt(v) }))}
-                >
-                  <SelectTrigger data-testid="select-approver-team">
-                    <SelectValue placeholder="Select a team" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {teams.map((team: any) => (
-                      <SelectItem key={team.id} value={team.id.toString()}>
-                        {team.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <p className="text-xs text-muted-foreground">
-                  All new holiday requests will be assigned to this team for approval.
-                </p>
-              </div>
-            )}
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowApproverSettingsDialog(false)} data-testid="button-cancel-approver">
-              Cancel
-            </Button>
-            <Button 
-              onClick={() => saveApproverSettingsMutation.mutate(approverSettings)}
-              disabled={saveApproverSettingsMutation.isPending}
-              data-testid="button-save-approver"
-            >
-              {saveApproverSettingsMutation.isPending ? 'Saving...' : 'Save Settings'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={showAppointmentsDialog} onOpenChange={setShowAppointmentsDialog}>
-        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Manage Appointments</DialogTitle>
-            <DialogDescription>
-              Configure appointment types that customers can book through secure links.
-            </DialogDescription>
-          </DialogHeader>
-          <BookableAppointmentsPage />
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

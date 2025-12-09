@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import { 
@@ -13,9 +14,11 @@ import {
   Umbrella, 
   Save,
   Loader2,
-  ArrowLeft
+  ArrowLeft,
+  CalendarPlus
 } from 'lucide-react';
 import { useLocation } from 'wouter';
+import BookableAppointmentsPage from './BookableAppointmentsPage';
 
 interface TeamMember {
   id: number;
@@ -80,7 +83,7 @@ export default function CalendarSettingsPage() {
   });
 
   return (
-    <div className="container mx-auto p-4 sm:p-6 max-w-4xl space-y-6">
+    <div className="container mx-auto p-4 sm:p-6 max-w-6xl space-y-6">
       <div className="flex items-center gap-4 mb-6">
         <Button 
           variant="ghost" 
@@ -95,10 +98,23 @@ export default function CalendarSettingsPage() {
             <Settings className="h-6 w-6" />
             Calendar Settings
           </h1>
-          <p className="text-muted-foreground">Configure calendar behavior and holiday approvals</p>
+          <p className="text-muted-foreground">Configure calendar behavior, holiday approvals, and bookable appointments</p>
         </div>
       </div>
 
+      <Tabs defaultValue="holidays" className="w-full">
+        <TabsList className="mb-4">
+          <TabsTrigger value="holidays" className="flex items-center gap-2" data-testid="tab-holidays">
+            <Umbrella className="h-4 w-4" />
+            Holiday Settings
+          </TabsTrigger>
+          <TabsTrigger value="appointments" className="flex items-center gap-2" data-testid="tab-appointments">
+            <CalendarPlus className="h-4 w-4" />
+            Appointments
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="holidays">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
@@ -211,6 +227,12 @@ export default function CalendarSettingsPage() {
           )}
         </CardContent>
       </Card>
+        </TabsContent>
+
+        <TabsContent value="appointments">
+          <BookableAppointmentsPage />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }
