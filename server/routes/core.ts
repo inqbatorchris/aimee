@@ -356,6 +356,18 @@ router.patch('/users/:id/organization', authenticateToken, async (req: any, res:
   }
 });
 
+// GET /api/core/users/:id/teams - Get user's team memberships
+router.get('/users/:id/teams', authenticateToken, async (req: any, res: Response) => {
+  try {
+    const userId = parseInt(req.params.id);
+    const teams = await storage.getUserTeams(userId);
+    res.json(teams);
+  } catch (error) {
+    console.error('Error fetching user teams:', error);
+    res.status(500).json({ error: 'Failed to fetch user teams' });
+  }
+});
+
 // DELETE /api/core/users/:id - Delete user (admin only)
 router.delete('/users/:id', authenticateToken, async (req: any, res: Response) => {
   try {
@@ -604,7 +616,8 @@ router.patch('/teams/:id', authenticateToken, async (req: any, res: Response) =>
       periodRuleType: z.enum(['nth_weekday']).optional(),
       periodNth: z.enum(['1', '2', '3', '4', 'last']).optional(),
       periodWeekday: z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']).optional(),
-      defaultMeetingLengthMinutes: z.enum(['15', '30', '45', '60']).optional()
+      defaultMeetingLengthMinutes: z.enum(['15', '30', '45', '60']).optional(),
+      splynxTeamId: z.number().nullable().optional()
     }).parse(req.body);
 
     console.log('📝 Update data after Zod parsing:', updateData);

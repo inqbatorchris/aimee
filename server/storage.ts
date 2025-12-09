@@ -1909,6 +1909,7 @@ export class CleanDatabaseStorage implements ICleanStorage {
       periodNth: teams.periodNth,
       periodWeekday: teams.periodWeekday,
       defaultMeetingLengthMinutes: teams.defaultMeetingLengthMinutes,
+      splynxTeamId: teams.splynxTeamId,
       createdAt: teams.createdAt,
       updatedAt: teams.updatedAt
     })
@@ -1944,6 +1945,7 @@ export class CleanDatabaseStorage implements ICleanStorage {
       periodNth: teams.periodNth,
       periodWeekday: teams.periodWeekday,
       defaultMeetingLengthMinutes: teams.defaultMeetingLengthMinutes,
+      splynxTeamId: teams.splynxTeamId,
       createdAt: teams.createdAt,
       updatedAt: teams.updatedAt
     })

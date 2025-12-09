@@ -80,30 +80,42 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
     enabled: open && isAdmin,
   });
 
-  // Fetch user's team memberships
-  const { data: memberships = [], refetch: refetchMemberships } = useQuery({
+  // Fetch user's team memberships using dedicated endpoint
+  const { data: memberships = [], refetch: refetchMemberships } = useQuery<{
+    id: number;
+    name: string;
+    cadence: string;
+    role: string;
+    createdAt: string;
+  }[]>({
     queryKey: ['/api/core/users', user.id, 'teams'],
+    enabled: open,
+  });
+
+  // Fetch user's holiday requests
+  type HolidayRequest = {
+    request: {
+      id: number;
+      startDate: string;
+      endDate: string;
+      daysCount: number;
+      status: 'pending' | 'approved' | 'rejected';
+      notes: string | null;
+      createdAt: string;
+    };
+    user: { id: number; fullName: string };
+  };
+  
+  const { data: holidayRequestsResponse } = useQuery({
+    queryKey: ['/api/calendar/holidays/requests', { userId: user.id }],
     queryFn: async () => {
-      // Get teams and their members to build membership info
-      const teamsResponse = await apiRequest(`/api/core/teams?orgId=${user.organizationId}`);
-      const teams: any[] = Array.isArray(teamsResponse) ? teamsResponse : [];
-      const userMemberships = [];
-      for (const team of teams) {
-        const membersResponse = await apiRequest(`/api/core/teams/${team.id}/members`);
-        const members: any[] = Array.isArray(membersResponse) ? membersResponse : [];
-        const membership = members.find((m: any) => m.userId === user.id);
-        if (membership) {
-          userMemberships.push({
-            teamId: team.id,
-            teamName: team.name,
-            role: membership.role
-          });
-        }
-      }
-      return userMemberships;
+      const response = await apiRequest(`/api/calendar/holidays/requests?userId=${user.id}`);
+      return response as unknown as { success: boolean; requests: HolidayRequest[]; count: number };
     },
     enabled: open,
   });
+  
+  const holidayRequestsData: HolidayRequest[] = holidayRequestsResponse?.requests || [];
   
   // Update user profile (name, email, userType)
   const updateProfileMutation = useMutation({
@@ -321,7 +333,7 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
   };
   
   const availableTeams = (Array.isArray(allTeams) ? allTeams : []).filter((team: any) => 
-    !memberships.some((m: any) => m.teamId === team.id)
+    !memberships.some((m) => m.id === team.id)
   );
   
   return (
@@ -712,15 +724,15 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
               {memberships.length === 0 ? (
                 <div className="text-sm text-muted-foreground">No team memberships</div>
               ) : (
-                memberships.map((membership: any) => (
-                  <div key={membership.teamId} className="flex flex-col sm:flex-row sm:items-center justify-between border rounded-lg p-3 space-y-2 sm:space-y-0">
+                memberships.map((membership) => (
+                  <div key={membership.id} className="flex flex-col sm:flex-row sm:items-center justify-between border rounded-lg p-3 space-y-2 sm:space-y-0">
                     <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                      <Badge variant="secondary" className="w-fit">{membership.teamName}</Badge>
+                      <Badge variant="secondary" className="w-fit">{membership.name}</Badge>
                       {isAdmin ? (
                         <Select
                           value={membership.role}
                           onValueChange={(value) => updateMembershipMutation.mutate({
-                            teamId: membership.teamId,
+                            teamId: membership.id,
                             role: value,
                           })}
                           disabled={updateMembershipMutation.isPending}
@@ -745,7 +757,7 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
                         size="icon"
                         variant="ghost"
                         className="h-9 w-9 sm:h-7 sm:w-7 self-end sm:self-center"
-                        onClick={() => removeMembershipMutation.mutate(membership.teamId)}
+                        onClick={() => removeMembershipMutation.mutate(membership.id)}
                         disabled={removeMembershipMutation.isPending}
                       >
                         <X className="h-4 w-4" />
@@ -900,6 +912,56 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
               )}
             </div>
           )}
+
+          {/* Holiday Leave Section (visible to all) */}
+          <div className="space-y-3 sm:space-y-4">
+            <h3 className="text-base sm:text-lg font-semibold flex items-center gap-2">
+              <Umbrella className="h-4 w-4" />
+              Holiday Leave ({new Date().getFullYear()})
+            </h3>
+            
+            {holidayRequestsData.length === 0 ? (
+              <div className="text-sm text-muted-foreground">No holiday requests found</div>
+            ) : (
+              <div className="space-y-2">
+                {holidayRequestsData.slice(0, 5).map((item) => (
+                  <div 
+                    key={item.request.id} 
+                    className="flex flex-col sm:flex-row sm:items-center justify-between border rounded-lg p-3 space-y-2 sm:space-y-0"
+                    data-testid={`holiday-request-${item.request.id}`}
+                  >
+                    <div className="flex flex-col gap-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium">
+                          {new Date(item.request.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
+                          {item.request.startDate !== item.request.endDate && (
+                            <> - {new Date(item.request.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</>
+                          )}
+                        </span>
+                        <Badge variant="outline" className="text-xs">
+                          {item.request.daysCount} {item.request.daysCount === 1 ? 'day' : 'days'}
+                        </Badge>
+                      </div>
+                      {item.request.notes && (
+                        <span className="text-xs text-muted-foreground">{item.request.notes}</span>
+                      )}
+                    </div>
+                    <Badge 
+                      variant={item.request.status === 'approved' ? 'default' : item.request.status === 'rejected' ? 'destructive' : 'secondary'}
+                      className={item.request.status === 'approved' ? 'bg-green-600' : ''}
+                    >
+                      {item.request.status.charAt(0).toUpperCase() + item.request.status.slice(1)}
+                    </Badge>
+                  </div>
+                ))}
+                {holidayRequestsData.length > 5 && (
+                  <div className="text-sm text-muted-foreground text-center py-2">
+                    + {holidayRequestsData.length - 5} more requests
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </SheetContent>
     </Sheet>

@@ -656,8 +656,8 @@ router.post('/calendar/holidays/allowance', authenticateToken, async (req: Reque
 router.get('/calendar/holidays/requests', authenticateToken, async (req: Request, res: Response) => {
   try {
     const organizationId = (req as any).user.organizationId;
-    const userId = (req as any).user.id;
-    const { status, startDate, endDate, myRequests } = req.query;
+    const currentUserId = (req as any).user.id;
+    const { status, startDate, endDate, myRequests, userId: queryUserId } = req.query;
     
     let query = db
       .select({
@@ -674,7 +674,15 @@ router.get('/calendar/holidays/requests', authenticateToken, async (req: Request
       .$dynamic();
     
     if (myRequests === 'true') {
-      query = query.where(eq(holidayRequests.userId, userId));
+      query = query.where(eq(holidayRequests.userId, currentUserId));
+    }
+    
+    // Filter by specific userId (for viewing another user's requests)
+    if (queryUserId) {
+      const parsedUserId = parseInt(queryUserId as string);
+      if (!isNaN(parsedUserId)) {
+        query = query.where(eq(holidayRequests.userId, parsedUserId));
+      }
     }
     
     if (status) {
