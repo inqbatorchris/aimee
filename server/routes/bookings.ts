@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db';
-import { eq, and, gte, sql } from 'drizzle-orm';
-import { bookableTaskTypes, bookingTokens, bookings, workItems, organizations, activityLogs, integrations, users } from '@shared/schema';
+import { eq, and, gte, lte, sql, or, inArray } from 'drizzle-orm';
+import { bookableTaskTypes, bookingTokens, bookings, workItems, organizations, activityLogs, integrations, users, calendarBlocks, splynxTeams } from '@shared/schema';
 import { SplynxService } from '../services/integrations/splynxService';
 import { authenticateToken } from '../auth';
 import crypto from 'crypto';
@@ -141,6 +141,132 @@ function generateSlug(name: string): string {
   // Add short random suffix for uniqueness
   const suffix = crypto.randomBytes(3).toString('hex');
   return `${baseSlug}-${suffix}`;
+}
+
+/**
+ * Fetch local busy intervals for availability calculation
+ * This includes:
+ * 1. Calendar blocks (individual and team-level)
+ * 2. Holiday requests (approved work items with type 'holiday_request')
+ * 
+ * Returns a map of splynxAdminId -> busy intervals
+ */
+async function getLocalBusyIntervals(params: {
+  organizationId: number;
+  splynxAdminIds: number[];
+  startDate: string;
+  endDate: string;
+  teamId?: number;
+}): Promise<Record<number, Array<{ start: Date; end: Date }>>> {
+  const busyIntervalsMap: Record<number, Array<{ start: Date; end: Date }>> = {};
+  
+  // Initialize empty arrays for each admin
+  for (const adminId of params.splynxAdminIds) {
+    busyIntervalsMap[adminId] = [];
+  }
+  
+  try {
+    // Get user IDs that have these splynxAdminIds
+    const usersWithSplynx = await db
+      .select({
+        id: users.id,
+        splynxAdminId: users.splynxAdminId,
+      })
+      .from(users)
+      .where(and(
+        eq(users.organizationId, params.organizationId),
+        inArray(users.splynxAdminId, params.splynxAdminIds)
+      ));
+    
+    const userIdToSplynxAdminId = new Map<number, number>();
+    const userIds: number[] = [];
+    for (const user of usersWithSplynx) {
+      if (user.splynxAdminId) {
+        userIdToSplynxAdminId.set(user.id, user.splynxAdminId);
+        userIds.push(user.id);
+      }
+    }
+    
+    if (userIds.length === 0) {
+      console.log(`[BOOKINGS getLocalBusyIntervals] No users found with splynxAdminIds: ${params.splynxAdminIds.join(',')}`);
+      return busyIntervalsMap;
+    }
+    
+    // Fetch calendar blocks for these users within the date range
+    // Only blocks that affect availability (blocksAvailability = true)
+    const startDateTime = new Date(`${params.startDate}T00:00:00`);
+    const endDateTime = new Date(`${params.endDate}T23:59:59`);
+    
+    const blocks = await db
+      .select()
+      .from(calendarBlocks)
+      .where(and(
+        eq(calendarBlocks.organizationId, params.organizationId),
+        inArray(calendarBlocks.userId, userIds),
+        eq(calendarBlocks.blocksAvailability, true),
+        lte(calendarBlocks.startDatetime, endDateTime),
+        gte(calendarBlocks.endDatetime, startDateTime)
+      ));
+    
+    console.log(`[BOOKINGS getLocalBusyIntervals] Found ${blocks.length} calendar blocks for ${userIds.length} users`);
+    
+    // Add blocks to the appropriate admin's busy intervals
+    for (const block of blocks) {
+      const splynxAdminId = userIdToSplynxAdminId.get(block.userId);
+      if (splynxAdminId && busyIntervalsMap[splynxAdminId]) {
+        busyIntervalsMap[splynxAdminId].push({
+          start: new Date(block.startDatetime),
+          end: new Date(block.endDatetime),
+        });
+      }
+    }
+    
+    // Fetch holiday requests (work items with workItemType = 'holiday_request' and status = 'Completed' for approved)
+    // Work items use ownerId or assignedTo for the user association
+    // IMPORTANT: Only fetch holidays within the date range to avoid blocking all future slots
+    const holidayWorkItems = await db
+      .select()
+      .from(workItems)
+      .where(and(
+        eq(workItems.organizationId, params.organizationId),
+        eq(workItems.workItemType, 'holiday_request'),
+        eq(workItems.status, 'Completed'), // Approved holidays
+        gte(workItems.dueDate, params.startDate), // Only holidays on or after start date
+        lte(workItems.dueDate, params.endDate) // Only holidays on or before end date
+      ));
+    
+    console.log(`[BOOKINGS getLocalBusyIntervals] Found ${holidayWorkItems.length} approved holiday requests in date range ${params.startDate} to ${params.endDate}`);
+    
+    // Add holiday requests as busy intervals (all-day blocks)
+    for (const holiday of holidayWorkItems) {
+      // Use ownerId as the user who requested the holiday
+      const holidayUserId = holiday.ownerId;
+      if (!holidayUserId) continue;
+      
+      const splynxAdminId = userIdToSplynxAdminId.get(holidayUserId);
+      if (splynxAdminId && busyIntervalsMap[splynxAdminId]) {
+        // Holiday requests typically have a dueDate for single day or a range
+        // For simplicity, we'll use dueDate as the holiday date
+        if (holiday.dueDate) {
+          // Create new date objects to avoid mutation issues
+          const holidayStart = new Date(holiday.dueDate);
+          holidayStart.setHours(0, 0, 0, 0);
+          const holidayEnd = new Date(holiday.dueDate);
+          holidayEnd.setHours(23, 59, 59, 999);
+          
+          busyIntervalsMap[splynxAdminId].push({
+            start: holidayStart,
+            end: holidayEnd,
+          });
+        }
+      }
+    }
+    
+    return busyIntervalsMap;
+  } catch (error: any) {
+    console.error('[BOOKINGS getLocalBusyIntervals] Error:', error.message);
+    return busyIntervalsMap;
+  }
 }
 
 /**
@@ -716,6 +842,11 @@ router.get('/public/appointment-types/:slug', async (req, res) => {
 
 /**
  * PUBLIC ENDPOINT: Get available slots for a slug-based appointment
+ * 
+ * Availability is calculated by checking:
+ * 1. Splynx tasks (direct assignments, team assignments, and "anyone" assignments)
+ * 2. Local calendar blocks (team-level and individual)
+ * 3. Approved holiday requests
  */
 router.post('/public/appointment-types/:slug/available-slots', async (req, res) => {
   try {
@@ -752,32 +883,88 @@ router.post('/public/appointment-types/:slug/available-slots', async (req, res) 
     
     // Get team configuration
     const defaultAssigneeTeamId = appointmentType.defaultAssigneeTeamId;
+    const defaultAssigneeUserId = appointmentType.defaultAssigneeUserId;
+    
+    // Calculate date range
+    const rangeStartDate = startDate || new Date().toISOString().split('T')[0];
+    const rangeEndDate = endDate || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     
     let slots: any[];
     
-    // Use team availability when a team is configured (same method as calendar)
+    // Use team availability when a team is configured
     if (defaultAssigneeTeamId) {
       console.log(`[BOOKINGS] Using team availability for team ${defaultAssigneeTeamId}`);
+      
+      // Get team members from Splynx to fetch their local busy intervals
+      const teams = await splynxService.getSchedulingTeams();
+      const team = teams.find(t => t.id === defaultAssigneeTeamId);
+      const teamMemberIds = team?.memberIds || [];
+      
+      console.log(`[BOOKINGS] Team ${defaultAssigneeTeamId} has members: ${teamMemberIds.join(',')}`);
+      
+      // Fetch local busy intervals (calendar blocks + holidays) for team members
+      let localBusyIntervalsMap: Record<number, Array<{ start: Date; end: Date }>> = {};
+      if (teamMemberIds.length > 0) {
+        localBusyIntervalsMap = await getLocalBusyIntervals({
+          organizationId: appointmentType.organizationId,
+          splynxAdminIds: teamMemberIds,
+          startDate: rangeStartDate,
+          endDate: rangeEndDate,
+          teamId: defaultAssigneeTeamId,
+        });
+      }
+      
       const teamAvailability = await splynxService.getTeamAvailability({
         teamId: defaultAssigneeTeamId,
         projectId: appointmentType.splynxProjectId,
-        startDate: startDate || new Date().toISOString().split('T')[0],
-        endDate: endDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        duration: appointmentType.defaultDuration || '2h 30m',
-        travelTime: appointmentType.defaultTravelTimeTo || 0
+        startDate: rangeStartDate,
+        endDate: rangeEndDate,
+        duration: appointmentType.defaultDuration || '30m',
+        travelTime: appointmentType.defaultTravelTimeTo || 0,
+        localBusyIntervalsMap: localBusyIntervalsMap, // Pass local blocks
       });
       slots = teamAvailability.slots;
+    } else if (defaultAssigneeUserId) {
+      // Use specific assignee availability
+      console.log(`[BOOKINGS] Using assignee availability for user ${defaultAssigneeUserId}`);
+      
+      // Fetch local busy intervals for this specific assignee
+      const localBusyIntervalsMap = await getLocalBusyIntervals({
+        organizationId: appointmentType.organizationId,
+        splynxAdminIds: [defaultAssigneeUserId],
+        startDate: rangeStartDate,
+        endDate: rangeEndDate,
+      });
+      
+      // Get all teams this admin belongs to for proper task filtering
+      const teams = await splynxService.getSchedulingTeams();
+      const memberTeamIds = teams
+        .filter(t => t.memberIds.includes(defaultAssigneeUserId))
+        .map(t => t.id);
+      
+      slots = await splynxService.getAvailableSlotsByAssignee({
+        assigneeId: defaultAssigneeUserId,
+        projectId: appointmentType.splynxProjectId,
+        startDate: rangeStartDate,
+        endDate: rangeEndDate,
+        duration: appointmentType.defaultDuration || '30m',
+        travelTime: appointmentType.defaultTravelTimeTo || 0,
+        memberTeamIds: memberTeamIds,
+        localBusyIntervals: localBusyIntervalsMap[defaultAssigneeUserId] || [],
+      });
     } else {
-      // Fallback to project-level availability
+      // Fallback to project-level availability (no local block checking)
+      console.log(`[BOOKINGS] Using project-level availability (no team/assignee configured)`);
       slots = await splynxService.getAvailableSlots({
         projectId: appointmentType.splynxProjectId,
-        startDate: startDate || new Date().toISOString().split('T')[0],
-        endDate: endDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        duration: appointmentType.defaultDuration || '2h 30m',
+        startDate: rangeStartDate,
+        endDate: rangeEndDate,
+        duration: appointmentType.defaultDuration || '30m',
         travelTime: appointmentType.defaultTravelTimeTo || 0
       });
     }
     
+    console.log(`[BOOKINGS] Returning ${slots.length} available slots for ${slug}`);
     res.json({ slots });
   } catch (error: any) {
     console.error('Error fetching available slots:', error);

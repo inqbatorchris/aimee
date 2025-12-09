@@ -885,6 +885,11 @@ export class SplynxService {
    * Get available time slots for a specific assignee
    * Queries Splynx tasks for the date range and filters by assignee in code
    * (Splynx API doesn't support filtering by assignee directly)
+   * 
+   * Key filtering logic:
+   * - Tasks assigned directly to the admin (assigned_to_administrator + assignee = adminId)
+   * - Tasks assigned to any team the admin is a member of (assigned_to_team + team includes admin)
+   * - Tasks assigned to "anyone" (assigned_to_anyone) - blocks all calendars
    */
   async getAvailableSlotsByAssignee(params: {
     assigneeId: number;
@@ -895,6 +900,8 @@ export class SplynxService {
     travelTime?: number;
     workingHours?: { start: number; end: number };
     allTasks?: any[]; // Optional pre-fetched tasks to avoid redundant API calls
+    memberTeamIds?: number[]; // Team IDs this admin belongs to (for team-assigned task filtering)
+    localBusyIntervals?: Array<{ start: Date; end: Date }>; // Local blocks (calendar_blocks, holidays)
   }): Promise<any[]> {
     try {
       console.log(`[SPLYNX getAvailableSlotsByAssignee] Fetching slots for assignee ${params.assigneeId}`);
@@ -910,31 +917,50 @@ export class SplynxService {
         console.log(`[SPLYNX getAvailableSlotsByAssignee] Fetched ${allTasks.length} total tasks for date range`);
       }
       
-      // Filter tasks assigned to this specific assignee
-      // Splynx uses 'assignee' field with 'assigned_to' indicating the type
+      // Get team memberships for this admin if not provided
+      const memberTeamIds = params.memberTeamIds || [];
+      
+      // Filter tasks that affect this assignee's calendar
+      // This includes: direct assignments, team assignments, and "anyone" assignments
       const assigneeTasks = allTasks.filter((task: any) => {
         // Task is assigned to this admin directly
         if (task.assigned_to === 'assigned_to_administrator' && 
             parseInt(task.assignee) === params.assigneeId) {
           return true;
         }
-        // Also include tasks assigned to "anyone" as they block the calendar
+        
+        // Task is assigned to a team this admin belongs to
+        if (task.assigned_to === 'assigned_to_team' && memberTeamIds.length > 0) {
+          const taskTeamId = parseInt(task.assignee);
+          if (memberTeamIds.includes(taskTeamId)) {
+            return true;
+          }
+        }
+        
+        // Tasks assigned to "anyone" block all calendars
         if (task.assigned_to === 'assigned_to_anyone') {
           return true;
         }
+        
         return false;
       });
 
-      console.log(`[SPLYNX getAvailableSlotsByAssignee] Found ${assigneeTasks.length} tasks for assignee ${params.assigneeId}`);
+      console.log(`[SPLYNX getAvailableSlotsByAssignee] Found ${assigneeTasks.length} Splynx tasks for assignee ${params.assigneeId} (teams: ${memberTeamIds.join(',') || 'none'})`);
       
-      // Generate available slots avoiding existing tasks
+      // Log local busy intervals if present
+      if (params.localBusyIntervals && params.localBusyIntervals.length > 0) {
+        console.log(`[SPLYNX getAvailableSlotsByAssignee] Also checking ${params.localBusyIntervals.length} local busy intervals`);
+      }
+      
+      // Generate available slots avoiding existing tasks AND local busy intervals
       const slots = this.calculateAvailableSlots(
         params.startDate,
         params.endDate,
         assigneeTasks,
         params.duration,
         params.travelTime || 0,
-        params.workingHours
+        params.workingHours,
+        params.localBusyIntervals // Pass local calendar blocks, holidays to slot calculation
       );
       
       console.log(`[SPLYNX getAvailableSlotsByAssignee] Generated ${slots.length} available slots`);
@@ -949,6 +975,10 @@ export class SplynxService {
   /**
    * Get team availability - check which team members have free slots
    * Returns slots where at least one team member is available
+   * 
+   * Enhanced to properly filter team-assigned tasks:
+   * - Each member's availability considers tasks assigned to their teams
+   * - Builds a map of which teams each member belongs to
    */
   async getTeamAvailability(params: {
     teamId: number;
@@ -958,11 +988,12 @@ export class SplynxService {
     duration: string;
     travelTime?: number;
     workingHours?: { start: number; end: number };
+    localBusyIntervalsMap?: Record<number, Array<{ start: Date; end: Date }>>; // Per-member local blocks
   }): Promise<{ slots: any[]; memberAvailability: Record<number, any[]> }> {
     try {
       console.log(`[SPLYNX getTeamAvailability] Fetching availability for team ${params.teamId}`);
       
-      // Get team members
+      // Get ALL teams to build member-to-teams mapping
       const teams = await this.getSchedulingTeams();
       const team = teams.find(t => t.id === params.teamId);
       
@@ -972,6 +1003,16 @@ export class SplynxService {
       
       console.log(`[SPLYNX getTeamAvailability] Team ${team.title} has ${team.memberIds.length} members`);
       
+      // Build a map of which teams each member belongs to
+      // This is critical for filtering team-assigned tasks correctly
+      const memberTeamsMap: Record<number, number[]> = {};
+      for (const memberId of team.memberIds) {
+        memberTeamsMap[memberId] = teams
+          .filter(t => t.memberIds.includes(memberId))
+          .map(t => t.id);
+      }
+      console.log(`[SPLYNX getTeamAvailability] Built member-to-teams mapping for ${Object.keys(memberTeamsMap).length} members`);
+      
       // Pre-fetch all tasks for the date range once (more efficient than per-member queries)
       // Splynx API doesn't support filtering by assignee, so we fetch all and filter in code
       const allTasks = await this.getSchedulingTasks({
@@ -980,10 +1021,13 @@ export class SplynxService {
       });
       console.log(`[SPLYNX getTeamAvailability] Fetched ${allTasks.length} total tasks for date range`);
       
-      // Get availability for each team member, passing pre-fetched tasks
+      // Get availability for each team member, passing pre-fetched tasks AND their team memberships
       const memberAvailability: Record<number, any[]> = {};
       
       for (const memberId of team.memberIds) {
+        const memberTeamIds = memberTeamsMap[memberId] || [];
+        const localBusyIntervals = params.localBusyIntervalsMap?.[memberId] || [];
+        
         const slots = await this.getAvailableSlotsByAssignee({
           assigneeId: memberId,
           projectId: params.projectId,
@@ -993,6 +1037,8 @@ export class SplynxService {
           travelTime: params.travelTime,
           workingHours: params.workingHours,
           allTasks: allTasks, // Pass pre-fetched tasks to avoid redundant API calls
+          memberTeamIds: memberTeamIds, // Pass team memberships for proper filtering
+          localBusyIntervals: localBusyIntervals, // Pass local blocks (calendar_blocks, holidays)
         });
         memberAvailability[memberId] = slots;
       }
@@ -2502,7 +2548,8 @@ export class SplynxService {
     existingTasks: any[],
     duration: string,
     travelTime: number,
-    workingHours?: { start: number; end: number }
+    workingHours?: { start: number; end: number },
+    localBusyIntervals?: Array<{ start: Date; end: Date }> // Local calendar blocks, holidays, etc.
   ): any[] {
     const slots: any[] = [];
     const durationMinutes = this.parseDuration(duration);
@@ -2528,14 +2575,19 @@ export class SplynxService {
             
             // Check if slot fits within work hours
             if (slotEnd.getHours() < workEnd || (slotEnd.getHours() === workEnd && slotEnd.getMinutes() === 0)) {
-              // Check for conflicts with existing tasks
-              const hasConflict = existingTasks.some(task => {
+              // Check for conflicts with existing Splynx tasks
+              const hasSplynxConflict = existingTasks.some(task => {
                 const taskStart = new Date(task.scheduled_from || task.date_from);
                 const taskEnd = new Date(task.scheduled_to || task.date_to || taskStart.getTime() + 60 * 60000);
                 return slotStart < taskEnd && slotEnd > taskStart;
               });
               
-              if (!hasConflict && slotStart > new Date()) {
+              // Check for conflicts with local busy intervals (calendar blocks, holidays)
+              const hasLocalConflict = localBusyIntervals?.some(interval => {
+                return slotStart < interval.end && slotEnd > interval.start;
+              }) ?? false;
+              
+              if (!hasSplynxConflict && !hasLocalConflict && slotStart > new Date()) {
                 slots.push({
                   datetime: slotStart.toISOString(),
                   displayTime: slotStart.toLocaleTimeString('en-US', { 
