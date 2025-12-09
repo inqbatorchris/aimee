@@ -1054,9 +1054,9 @@ export default function CalendarPage() {
                      selectedEvent.type === 'holiday' ? 'Holiday' :
                      selectedEvent.type === 'public_holiday' ? 'Public Holiday' : 'Calendar Block'}
                   </SheetTitle>
-                  {selectedEvent.type === 'splynx_task' && (
+                  {selectedEvent.type === 'splynx_task' && (splynxTaskDetail?.task?.id || splynxTaskId) && (
                     <a 
-                      href={`https://manage.country-connect.co.uk/admin/scheduling/tasks?view=details&task_id=${splynxTaskId}`}
+                      href={`https://manage.country-connect.co.uk/admin/scheduling/tasks?view=details&task_id=${splynxTaskDetail?.task?.id || splynxTaskId}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-xs text-blue-600 hover:underline flex items-center gap-1"
