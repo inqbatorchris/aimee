@@ -90,30 +90,30 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
     enabled: open,
   });
 
-  // Fetch user's holiday requests
-  type HolidayRequest = {
-    request: {
-      id: number;
+  // Fetch user's holiday requests (stored as work items with workItemType='holiday_request')
+  type HolidayWorkItem = {
+    id: number;
+    title: string;
+    status: string;
+    workflowMetadata: {
       startDate: string;
       endDate: string;
       daysCount: number;
-      status: 'pending' | 'approved' | 'rejected';
-      notes: string | null;
-      createdAt: string;
-    };
-    user: { id: number; fullName: string };
+      holidayType: string;
+      requesterId: number;
+      requesterName: string;
+    } | null;
+    createdAt: string;
   };
   
-  const { data: holidayRequestsResponse } = useQuery({
-    queryKey: ['/api/calendar/holidays/requests', { userId: user.id }],
+  const { data: holidayWorkItems = [] } = useQuery({
+    queryKey: ['/api/work-items', { ownerId: user.id, workItemType: 'holiday_request' }],
     queryFn: async () => {
-      const response = await apiRequest(`/api/calendar/holidays/requests?userId=${user.id}`);
-      return response as unknown as { success: boolean; requests: HolidayRequest[]; count: number };
+      const response = await apiRequest(`/api/work-items?ownerId=${user.id}&workItemType=holiday_request`);
+      return (response as unknown as { items: HolidayWorkItem[] })?.items || response as unknown as HolidayWorkItem[];
     },
     enabled: open,
   });
-  
-  const holidayRequestsData: HolidayRequest[] = holidayRequestsResponse?.requests || [];
   
   // Update user profile (name, email, userType)
   const updateProfileMutation = useMutation({
@@ -918,43 +918,52 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
               Holiday Leave ({new Date().getFullYear()})
             </h3>
             
-            {holidayRequestsData.length === 0 ? (
+            {holidayWorkItems.length === 0 ? (
               <div className="text-sm text-muted-foreground">No holiday requests found</div>
             ) : (
               <div className="space-y-2">
-                {holidayRequestsData.slice(0, 5).map((item) => (
-                  <div 
-                    key={item.request.id} 
-                    className="flex flex-col sm:flex-row sm:items-center justify-between border rounded-lg p-3 space-y-2 sm:space-y-0"
-                    data-testid={`holiday-request-${item.request.id}`}
-                  >
-                    <div className="flex flex-col gap-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-sm font-medium">
-                          {new Date(item.request.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}
-                          {item.request.startDate !== item.request.endDate && (
-                            <> - {new Date(item.request.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</>
-                          )}
-                        </span>
-                        <Badge variant="outline" className="text-xs">
-                          {item.request.daysCount} {item.request.daysCount === 1 ? 'day' : 'days'}
-                        </Badge>
-                      </div>
-                      {item.request.notes && (
-                        <span className="text-xs text-muted-foreground">{item.request.notes}</span>
-                      )}
-                    </div>
-                    <Badge 
-                      variant={item.request.status === 'approved' ? 'default' : item.request.status === 'rejected' ? 'destructive' : 'secondary'}
-                      className={item.request.status === 'approved' ? 'bg-green-600' : ''}
+                {holidayWorkItems.slice(0, 5).map((item) => {
+                  const metadata = item.workflowMetadata;
+                  const statusMap: Record<string, string> = {
+                    'Ready': 'pending',
+                    'In Progress': 'pending', 
+                    'Completed': 'approved',
+                    'Archived': 'rejected'
+                  };
+                  const displayStatus = statusMap[item.status] || 'pending';
+                  
+                  return (
+                    <div 
+                      key={item.id} 
+                      className="flex flex-col sm:flex-row sm:items-center justify-between border rounded-lg p-3 space-y-2 sm:space-y-0"
+                      data-testid={`holiday-request-${item.id}`}
                     >
-                      {item.request.status.charAt(0).toUpperCase() + item.request.status.slice(1)}
-                    </Badge>
-                  </div>
-                ))}
-                {holidayRequestsData.length > 5 && (
+                      <div className="flex flex-col gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm font-medium">
+                            {metadata?.startDate ? new Date(metadata.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : 'N/A'}
+                            {metadata?.startDate !== metadata?.endDate && metadata?.endDate && (
+                              <> - {new Date(metadata.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</>
+                            )}
+                          </span>
+                          <Badge variant="outline" className="text-xs">
+                            {metadata?.daysCount || 0} {(metadata?.daysCount || 0) === 1 ? 'day' : 'days'}
+                          </Badge>
+                        </div>
+                        <span className="text-xs text-muted-foreground capitalize">{metadata?.holidayType || 'Annual'} Leave</span>
+                      </div>
+                      <Badge 
+                        variant={displayStatus === 'approved' ? 'default' : displayStatus === 'rejected' ? 'destructive' : 'secondary'}
+                        className={displayStatus === 'approved' ? 'bg-green-600' : ''}
+                      >
+                        {displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)}
+                      </Badge>
+                    </div>
+                  );
+                })}
+                {holidayWorkItems.length > 5 && (
                   <div className="text-sm text-muted-foreground text-center py-2">
-                    + {holidayRequestsData.length - 5} more requests
+                    + {holidayWorkItems.length - 5} more requests
                   </div>
                 )}
               </div>
