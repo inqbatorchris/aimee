@@ -1876,14 +1876,14 @@ export default function CalendarPage() {
                   <div className="space-y-2">
                     <Label htmlFor="block-team" className="text-sm">Assign to Team (optional)</Label>
                     <Select 
-                      value={blockForm.splynxTeamId?.toString() || ''} 
-                      onValueChange={(v) => setBlockForm(f => ({ ...f, splynxTeamId: v ? parseInt(v) : null }))}
+                      value={blockForm.splynxTeamId?.toString() || 'none'} 
+                      onValueChange={(v) => setBlockForm(f => ({ ...f, splynxTeamId: v === 'none' ? null : parseInt(v) }))}
                     >
                       <SelectTrigger data-testid="select-splynx-team">
                         <SelectValue placeholder="No team assignment" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="">No team assignment</SelectItem>
+                        <SelectItem value="none">No team assignment</SelectItem>
                         {filtersData?.filters?.splynxTeams?.map((team: any) => (
                           <SelectItem key={team.splynxTeamId} value={team.splynxTeamId.toString()}>
                             {team.name}
