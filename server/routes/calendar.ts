@@ -21,6 +21,7 @@ import {
 import { SplynxService } from '../services/integrations/splynxService';
 import { authenticateToken } from '../auth';
 import crypto from 'crypto';
+import { getOrCreateHolidayWorkflowTemplate, HOLIDAY_WORKFLOW_ID } from '../scripts/init-holiday-workflow';
 
 const router = Router();
 
@@ -636,34 +637,81 @@ router.post('/calendar/holidays/requests', authenticateToken, async (req: Reques
   try {
     const userId = (req as any).user.id;
     const organizationId = (req as any).user.organizationId;
+    const userFullName = (req as any).user.fullName || (req as any).user.email;
     const { startDate, endDate, daysCount, holidayType, notes, isHalfDayStart, isHalfDayEnd } = req.body;
     
-    const [newRequest] = await db.insert(holidayRequests).values({
-      userId,
+    await getOrCreateHolidayWorkflowTemplate(organizationId);
+    
+    const holidayTypeMap: Record<string, string> = {
+      annual: 'Annual Leave',
+      sick: 'Sick Leave',
+      personal: 'Personal Leave',
+      unpaid: 'Unpaid Leave',
+      bereavement: 'Bereavement Leave',
+      parental: 'Parental Leave',
+      other: 'Other Leave'
+    };
+    const holidayTypeName = holidayTypeMap[holidayType as string] || 'Annual Leave';
+    
+    const title = `${holidayTypeName} - ${userFullName} (${startDate} to ${endDate})`;
+    const description = notes || `Holiday request for ${daysCount} day(s)`;
+    
+    const [workItem] = await db.insert(workItems).values({
       organizationId,
-      startDate,
-      endDate,
-      daysCount: daysCount.toString(),
-      holidayType: holidayType || 'annual',
-      notes,
-      isHalfDayStart: isHalfDayStart || false,
-      isHalfDayEnd: isHalfDayEnd || false,
-      status: 'pending',
+      title,
+      description,
+      status: 'Ready',
+      dueDate: startDate,
+      ownerId: userId,
+      createdBy: userId,
+      workItemType: 'holiday_request',
+      workflowTemplateId: HOLIDAY_WORKFLOW_ID,
+      workflowMetadata: {
+        holidayType: holidayType || 'annual',
+        startDate,
+        endDate,
+        daysCount: parseFloat(daysCount),
+        isHalfDayStart: isHalfDayStart || false,
+        isHalfDayEnd: isHalfDayEnd || false,
+        requesterId: userId,
+        requesterName: userFullName,
+      }
     }).returning();
     
     const year = new Date(startDate).getFullYear();
-    await db
-      .update(holidayAllowances)
-      .set({
-        pendingDays: sql`pending_days + ${daysCount}`,
-        updatedAt: new Date(),
-      })
+    
+    const [existingAllowance] = await db
+      .select()
+      .from(holidayAllowances)
       .where(and(
         eq(holidayAllowances.userId, userId),
         eq(holidayAllowances.year, year)
-      ));
+      ))
+      .limit(1);
     
-    res.json({ success: true, request: newRequest });
+    if (existingAllowance) {
+      await db
+        .update(holidayAllowances)
+        .set({
+          pendingDays: sql`pending_days + ${daysCount}`,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(holidayAllowances.userId, userId),
+          eq(holidayAllowances.year, year)
+        ));
+    } else {
+      await db.insert(holidayAllowances).values({
+        userId,
+        organizationId,
+        year,
+        annualAllowance: '25',
+        usedDays: '0',
+        pendingDays: daysCount.toString(),
+      });
+    }
+    
+    res.json({ success: true, workItem, request: workItem });
   } catch (error: any) {
     console.error('[CALENDAR] Error creating holiday request:', error.message);
     res.status(500).json({ success: false, error: error.message });
@@ -1556,7 +1604,55 @@ router.get('/calendar/combined', authenticateToken, async (req: Request, res: Re
             metadata: { holidayType: r.holidayType, daysCount: r.daysCount, notes: r.notes },
           });
         }
-        metadata.counts.holidays = requests.length;
+        
+        const holidayWorkItemsQuery = db
+          .select()
+          .from(workItems)
+          .where(and(
+            eq(workItems.organizationId, organizationId),
+            eq(workItems.workItemType, 'holiday_request'),
+            inArray(workItems.status, ['Ready', 'In Progress', 'Completed', 'Planning'])
+          ))
+          .$dynamic();
+        
+        const holidayWorkItems = await holidayWorkItemsQuery;
+        for (const wi of holidayWorkItems) {
+          const meta = wi.workflowMetadata as any;
+          if (!meta?.startDate || !meta?.endDate) continue;
+          
+          const holidayStart = meta.startDate;
+          const holidayEnd = meta.endDate;
+          if (holidayEnd < (startDate as string) || holidayStart > (endDate as string)) continue;
+          
+          if (effectiveUserIds.length > 0 && !effectiveUserIds.includes(wi.ownerId || 0)) continue;
+          
+          const isApproved = wi.status === 'Completed';
+          const isPending = wi.status === 'Ready' || wi.status === 'In Progress';
+          
+          events.push({
+            id: `holiday-wi-${wi.id}`,
+            title: wi.title,
+            start: holidayStart,
+            end: holidayEnd,
+            allDay: true,
+            type: 'holiday',
+            color: isApproved ? '#22C55E' : '#FCD34D',
+            userId: wi.ownerId || undefined,
+            userName: wi.ownerId ? (usersMap[wi.ownerId]?.fullName || usersMap[wi.ownerId]?.email) : undefined,
+            status: isPending ? 'pending' : 'approved',
+            source: 'work_item',
+            metadata: { 
+              workItemId: wi.id,
+              holidayType: meta.holidayType, 
+              daysCount: meta.daysCount, 
+              notes: wi.description,
+              isHalfDayStart: meta.isHalfDayStart,
+              isHalfDayEnd: meta.isHalfDayEnd,
+            },
+          });
+        }
+        
+        metadata.counts.holidays = requests.length + holidayWorkItems.length;
         
         const publicHols = await db
           .select()
@@ -1607,6 +1703,9 @@ router.get('/calendar/combined', authenticateToken, async (req: Request, res: Re
         
         const workItemsData = await wiQuery;
         for (const wi of workItemsData) {
+          if (wi.workItemType === 'holiday_request') {
+            continue;
+          }
           events.push({
             id: `work-item-${wi.id}`,
             title: wi.title,
@@ -1628,7 +1727,7 @@ router.get('/calendar/combined', authenticateToken, async (req: Request, res: Re
             },
           });
         }
-        metadata.counts.workItems = workItemsData.length;
+        metadata.counts.workItems = workItemsData.filter(wi => wi.workItemType !== 'holiday_request').length;
       } catch (e: any) {
         errors.push(`Work Items: ${e.message}`);
       }

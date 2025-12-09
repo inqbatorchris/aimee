@@ -9,7 +9,7 @@ import {
 } from '@shared/schema';
 import { eq, and, or, gte, lte, inArray, isNotNull, isNull, sql } from 'drizzle-orm';
 import { db } from '../db';
-import { workItems, checkInCycles, checkInMeetings, users, keyResultTasks, teams, keyResults, objectives, knowledgeDocumentAttachments, knowledgeDocuments, workItemWorkflowExecutions, workItemWorkflowExecutionSteps, workItemSources, addresses, activityLogs, bookingTokens } from '@shared/schema';
+import { workItems, checkInCycles, checkInMeetings, users, keyResultTasks, teams, keyResults, objectives, knowledgeDocumentAttachments, knowledgeDocuments, workItemWorkflowExecutions, workItemWorkflowExecutionSteps, workItemSources, addresses, activityLogs, bookingTokens, holidayAllowances } from '@shared/schema';
 
 const router = Router();
 
@@ -822,6 +822,98 @@ router.patch('/:id', authenticateToken, async (req: Request, res: Response) => {
       if (data.status === 'Completed' && existing.status !== 'Completed' && existing.keyResultTaskId) {
         const { workItemGenerator } = await import('../services/workItemGenerator.js');
         await workItemGenerator.handleWorkItemCompletion(workItemId, userId);
+      }
+      
+      // Handle holiday request work items - update allowances on approval/rejection
+      if (existing.workItemType === 'holiday_request') {
+        const holidayMeta = existing.workflowMetadata as any;
+        if (holidayMeta?.daysCount && holidayMeta?.requesterId && holidayMeta?.startDate) {
+          const year = new Date(holidayMeta.startDate).getFullYear();
+          const daysCount = parseFloat(holidayMeta.daysCount);
+          const requesterId = holidayMeta.requesterId;
+          
+          const isPendingStatus = (status: string) => ['Ready', 'In Progress', 'Planning', 'Stuck'].includes(status);
+          const wasApproved = existing.status === 'Completed';
+          const wasRejected = existing.status === 'Archived';
+          const wasPending = isPendingStatus(existing.status);
+          
+          // If status changed to Completed (approved) from a pending state
+          if (data.status === 'Completed' && wasPending) {
+            await db
+              .update(holidayAllowances)
+              .set({
+                pendingDays: sql`GREATEST(0, pending_days - ${daysCount})`,
+                usedDays: sql`used_days + ${daysCount}`,
+                updatedAt: new Date(),
+              })
+              .where(and(
+                eq(holidayAllowances.userId, requesterId),
+                eq(holidayAllowances.year, year)
+              ));
+            console.log(`[Holiday] Approved holiday request: ${daysCount} days moved from pending to used for user ${requesterId}`);
+          }
+          
+          // If status changed to Archived (rejected/cancelled) from a pending state
+          if (data.status === 'Archived' && wasPending) {
+            await db
+              .update(holidayAllowances)
+              .set({
+                pendingDays: sql`GREATEST(0, pending_days - ${daysCount})`,
+                updatedAt: new Date(),
+              })
+              .where(and(
+                eq(holidayAllowances.userId, requesterId),
+                eq(holidayAllowances.year, year)
+              ));
+            console.log(`[Holiday] Rejected/cancelled holiday request: ${daysCount} days removed from pending for user ${requesterId}`);
+          }
+          
+          // If rolling back from Completed to a pending state - reverse the approval
+          if (isPendingStatus(data.status) && wasApproved) {
+            await db
+              .update(holidayAllowances)
+              .set({
+                pendingDays: sql`pending_days + ${daysCount}`,
+                usedDays: sql`GREATEST(0, used_days - ${daysCount})`,
+                updatedAt: new Date(),
+              })
+              .where(and(
+                eq(holidayAllowances.userId, requesterId),
+                eq(holidayAllowances.year, year)
+              ));
+            console.log(`[Holiday] Rolled back approved holiday: ${daysCount} days moved from used back to pending for user ${requesterId}`);
+          }
+          
+          // If rolling back from Archived to a pending state - restore pending days
+          if (isPendingStatus(data.status) && wasRejected) {
+            await db
+              .update(holidayAllowances)
+              .set({
+                pendingDays: sql`pending_days + ${daysCount}`,
+                updatedAt: new Date(),
+              })
+              .where(and(
+                eq(holidayAllowances.userId, requesterId),
+                eq(holidayAllowances.year, year)
+              ));
+            console.log(`[Holiday] Restored rejected holiday to pending: ${daysCount} days added back to pending for user ${requesterId}`);
+          }
+          
+          // If changing from Completed to Archived (revoking approved leave)
+          if (data.status === 'Archived' && wasApproved) {
+            await db
+              .update(holidayAllowances)
+              .set({
+                usedDays: sql`GREATEST(0, used_days - ${daysCount})`,
+                updatedAt: new Date(),
+              })
+              .where(and(
+                eq(holidayAllowances.userId, requesterId),
+                eq(holidayAllowances.year, year)
+              ));
+            console.log(`[Holiday] Revoked approved holiday: ${daysCount} days removed from used for user ${requesterId}`);
+          }
+        }
       }
       
       // Auto-sync task status from work item status (one-off tasks only)
