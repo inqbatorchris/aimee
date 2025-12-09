@@ -3,6 +3,7 @@ import { workflowTemplates } from '@shared/schema';
 import { eq, and } from 'drizzle-orm';
 
 const HOLIDAY_WORKFLOW_ID = 'holiday-approval-workflow';
+const WORKFLOW_VERSION = 2;
 
 export async function initHolidayWorkflowTemplate(organizationId: number) {
   console.log(`[HOLIDAY-WORKFLOW] Initializing holiday approval workflow for org ${organizationId}`);
@@ -17,25 +18,70 @@ export async function initHolidayWorkflowTemplate(organizationId: number) {
     .limit(1);
   
   if (existing.length > 0) {
-    console.log('[HOLIDAY-WORKFLOW] Template already exists, skipping creation');
-    return existing[0];
+    if ((existing[0].version || 1) >= WORKFLOW_VERSION) {
+      console.log('[HOLIDAY-WORKFLOW] Template already exists with current version, skipping');
+      return existing[0];
+    }
+    console.log('[HOLIDAY-WORKFLOW] Upgrading workflow template to version', WORKFLOW_VERSION);
+    await db.delete(workflowTemplates).where(and(
+      eq(workflowTemplates.id, HOLIDAY_WORKFLOW_ID),
+      eq(workflowTemplates.organizationId, organizationId)
+    ));
   }
   
   const holidayTemplate = {
     id: HOLIDAY_WORKFLOW_ID,
     organizationId,
     name: 'Holiday Approval Workflow',
-    description: 'Workflow for approving or rejecting employee holiday requests',
+    description: 'Workflow for reviewing and approving employee holiday/leave requests',
     category: 'hr',
     applicableTypes: ['holiday_request'],
     steps: [
       {
-        id: 'review-request',
-        title: 'Review Holiday Request',
-        description: 'Review the holiday request details and approve or reject',
-        type: 'approval' as const,
+        id: 'verify-details',
+        title: 'Verify Request Details',
+        description: 'Confirm the holiday request information is correct',
+        type: 'checklist' as const,
         required: true,
         order: 1,
+        checklistItems: [
+          { id: 'dates-correct', name: 'Dates and duration are correct', checked: false },
+          { id: 'leave-type-appropriate', name: 'Leave type is appropriate for the request', checked: false },
+          { id: 'sufficient-notice', name: 'Sufficient notice period has been given', checked: false },
+        ]
+      },
+      {
+        id: 'check-coverage',
+        title: 'Assess Team Coverage',
+        description: 'Evaluate team availability and project impact during the requested period',
+        type: 'checklist' as const,
+        required: true,
+        order: 2,
+        checklistItems: [
+          { id: 'no-conflicts', name: 'No critical project deadlines during this period', checked: false },
+          { id: 'team-coverage', name: 'Adequate team coverage will be available', checked: false },
+          { id: 'handover-arranged', name: 'Work handover can be arranged if needed', checked: false },
+        ]
+      },
+      {
+        id: 'review-allowance',
+        title: 'Check Leave Allowance',
+        description: 'Verify the employee has sufficient leave balance',
+        type: 'checklist' as const,
+        required: true,
+        order: 3,
+        checklistItems: [
+          { id: 'has-balance', name: 'Employee has sufficient leave balance for this request', checked: false },
+          { id: 'policy-compliant', name: 'Request complies with company leave policy', checked: false },
+        ]
+      },
+      {
+        id: 'approval-decision',
+        title: 'Make Decision',
+        description: 'Approve or reject the holiday request with optional notes',
+        type: 'approval' as const,
+        required: true,
+        order: 4,
         config: {
           approvalOptions: ['approve', 'reject'],
           requireComment: false,
@@ -43,7 +89,7 @@ export async function initHolidayWorkflowTemplate(organizationId: number) {
         }
       }
     ],
-    version: 1,
+    version: WORKFLOW_VERSION,
     isActive: true,
     isSystemTemplate: true,
     estimatedMinutes: 5,
@@ -53,8 +99,8 @@ export async function initHolidayWorkflowTemplate(organizationId: number) {
         integrationName: 'internal',
         action: 'holiday-approval-complete',
         fieldMappings: [
-          { sourceStepId: 'review-request', sourceField: 'decision', targetField: 'approvalStatus' },
-          { sourceStepId: 'review-request', sourceField: 'comment', targetField: 'approvalComment' }
+          { sourceStepId: 'approval-decision', sourceField: 'decision', targetField: 'approvalStatus' },
+          { sourceStepId: 'approval-decision', sourceField: 'comment', targetField: 'approvalComment' }
         ]
       }
     ]
@@ -79,7 +125,7 @@ export async function getOrCreateHolidayWorkflowTemplate(organizationId: number)
     ))
     .limit(1);
   
-  if (existing.length > 0) {
+  if (existing.length > 0 && (existing[0].version || 1) >= WORKFLOW_VERSION) {
     return existing[0];
   }
   
