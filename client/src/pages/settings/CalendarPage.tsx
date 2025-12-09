@@ -270,6 +270,7 @@ export default function CalendarPage() {
     location: string;
     scheduled_date: string;
     scheduled_time: string;
+    scheduled_end_time: string;
     assigned_to: number;
     team_id: number;
     project_id: number;
@@ -547,16 +548,10 @@ export default function CalendarPage() {
       if (eventType === 'splynx_task') {
         const taskId = event.id.replace('splynx-task-', '');
         
-        // Splynx stores duration in hours/minutes fields, not end timestamp
-        const durationMs = finalEnd.getTime() - finalStart.getTime();
-        const totalMinutes = Math.round(durationMs / 60000);
-        const durationHours = Math.floor(totalMinutes / 60);
-        const durationMinutes = totalMinutes % 60;
-        
-        const body: Record<string, string | number> = {
+        // Splynx uses scheduled_from and scheduled_to for task timing
+        const body: Record<string, string> = {
           scheduled_from: format(finalStart, 'yyyy-MM-dd HH:mm:ss'),
-          scheduled_duration_hours: durationHours,
-          scheduled_duration_minutes: durationMinutes,
+          scheduled_to: format(finalEnd, 'yyyy-MM-dd HH:mm:ss'),
         };
         
         console.log('[CALENDAR RESIZE] Updating Splynx task:', { taskId, ...body });
@@ -701,10 +696,22 @@ export default function CalendarPage() {
       // Parse scheduled_from datetime (format: "2025-12-09 13:00:00")
       let scheduledDate = '';
       let scheduledTime = '';
+      let scheduledEndTime = '';
       if (task.scheduled_from) {
         const parts = task.scheduled_from.split(' ');
         if (parts[0]) scheduledDate = parts[0]; // yyyy-mm-dd
         if (parts[1]) scheduledTime = parts[1].substring(0, 5); // hh:mm
+      }
+      // Parse scheduled_to for end time, or calculate from duration
+      if (task.scheduled_to) {
+        const parts = task.scheduled_to.split(' ');
+        if (parts[1]) scheduledEndTime = parts[1].substring(0, 5); // hh:mm
+      } else if (task.scheduled_from && (task.scheduled_duration_hours || task.scheduled_duration_minutes)) {
+        // Calculate end time from start + duration
+        const startDate = new Date(task.scheduled_from.replace(' ', 'T'));
+        const durationMs = ((parseInt(task.scheduled_duration_hours) || 0) * 60 + (parseInt(task.scheduled_duration_minutes) || 0)) * 60000;
+        const endDate = new Date(startDate.getTime() + durationMs);
+        scheduledEndTime = format(endDate, 'HH:mm');
       }
       
       setSplynxTaskEdit({
@@ -713,6 +720,7 @@ export default function CalendarPage() {
         location: task.address || '',
         scheduled_date: scheduledDate,
         scheduled_time: scheduledTime,
+        scheduled_end_time: scheduledEndTime,
         assigned_to: derivedAdminId,
         team_id: derivedTeamId,
         project_id: task.project_id || 0,
@@ -730,6 +738,11 @@ export default function CalendarPage() {
     if (splynxTaskEdit.scheduled_date) {
       const time = splynxTaskEdit.scheduled_time || '00:00';
       payload.scheduled_from = `${splynxTaskEdit.scheduled_date} ${time}:00`;
+      
+      // Also set scheduled_to if end time is provided
+      if (splynxTaskEdit.scheduled_end_time) {
+        payload.scheduled_to = `${splynxTaskEdit.scheduled_date} ${splynxTaskEdit.scheduled_end_time}:00`;
+      }
     }
     
     // Handle assignment - Splynx requires 'assigned_to' type, 'assignee' value, AND 'team_id' for team assignments
@@ -1491,8 +1504,8 @@ export default function CalendarPage() {
                               data-testid="input-task-location"
                             />
                             
-                            {/* Date & Time - Compact 2-column */}
-                            <div className="grid grid-cols-2 gap-2">
+                            {/* Date & Time - 3-column layout with end time */}
+                            <div className="grid grid-cols-3 gap-2">
                               <Input 
                                 type="date"
                                 value={splynxTaskEdit.scheduled_date}
@@ -1504,6 +1517,14 @@ export default function CalendarPage() {
                                 value={splynxTaskEdit.scheduled_time}
                                 onChange={(e) => setSplynxTaskEdit(prev => prev ? {...prev, scheduled_time: e.target.value} : null)}
                                 data-testid="input-task-time"
+                                title="Start time"
+                              />
+                              <Input 
+                                type="time"
+                                value={splynxTaskEdit.scheduled_end_time}
+                                onChange={(e) => setSplynxTaskEdit(prev => prev ? {...prev, scheduled_end_time: e.target.value} : null)}
+                                data-testid="input-task-end-time"
+                                title="End time"
                               />
                             </div>
                             
