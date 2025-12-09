@@ -173,6 +173,15 @@ export default function CalendarPage() {
   const [showHolidayDialog, setShowHolidayDialog] = useState(false);
   const [createMenuDay, setCreateMenuDay] = useState<Date | null>(null);
   const [createMenuPosition, setCreateMenuPosition] = useState<{ x: number; y: number } | null>(null);
+  const [isEditingBlock, setIsEditingBlock] = useState(false);
+  const [blockEditForm, setBlockEditForm] = useState<{
+    id: string;
+    title: string;
+    description: string;
+    blockType: 'meeting' | 'focus' | 'project' | 'travel' | 'break' | 'other';
+    startDatetime: string;
+    endDatetime: string;
+  } | null>(null);
   
   const [hiddenEventTypes, setHiddenEventTypes] = useState<Set<string>>(new Set());
   const [showWeekends, setShowWeekends] = useState(true);
@@ -256,6 +265,24 @@ export default function CalendarPage() {
     },
   });
 
+  const updateBlockMutation = useMutation({
+    mutationFn: async (data: { id: string; updates: { title?: string; description?: string; blockType?: string; startDatetime?: string; endDatetime?: string } }) => {
+      return apiRequest(`/api/calendar/blocks/${data.id}`, {
+        method: 'PATCH',
+        body: data.updates,
+      });
+    },
+    onSuccess: () => {
+      toast({ title: 'Calendar block updated successfully' });
+      setIsEditingBlock(false);
+      setBlockEditForm(null);
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar/combined'] });
+    },
+    onError: (error: any) => {
+      toast({ title: 'Failed to update block', description: error.message, variant: 'destructive' });
+    },
+  });
+
   const createHolidayMutation = useMutation({
     mutationFn: async (data: typeof holidayForm) => {
       const start = new Date(data.startDate);
@@ -297,6 +324,8 @@ export default function CalendarPage() {
   const handleCloseEventDetail = () => {
     setSelectedEvent(null);
     setSplynxTaskEdit(null);
+    setIsEditingBlock(false);
+    setBlockEditForm(null);
   };
 
   const handleDayClick = (day: Date, event?: React.MouseEvent) => {
@@ -1513,51 +1542,177 @@ export default function CalendarPage() {
                 )}
 
                 {selectedEvent.type === 'block' && (
-                  <div className="space-y-3 pt-2">
-                    {selectedEvent.metadata?.blockType && (
-                      <div>
-                        <div className="text-xs text-muted-foreground mb-1">Block Type</div>
-                        <div className="text-sm capitalize">{selectedEvent.metadata.blockType}</div>
-                      </div>
+                  <div className="space-y-4 pt-2">
+                    {isEditingBlock && blockEditForm ? (
+                      <>
+                        <div>
+                          <Label htmlFor="edit-block-title">Title</Label>
+                          <Input
+                            id="edit-block-title"
+                            value={blockEditForm.title}
+                            onChange={(e) => setBlockEditForm({ ...blockEditForm, title: e.target.value })}
+                            placeholder="Block title"
+                            data-testid="input-edit-block-title"
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="edit-block-type">Block Type</Label>
+                          <Select 
+                            value={blockEditForm.blockType} 
+                            onValueChange={(v) => setBlockEditForm({ ...blockEditForm, blockType: v as any })}
+                          >
+                            <SelectTrigger data-testid="select-edit-block-type">
+                              <SelectValue placeholder="Select type" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="meeting">Meeting</SelectItem>
+                              <SelectItem value="focus">Focus Time</SelectItem>
+                              <SelectItem value="project">Project Work</SelectItem>
+                              <SelectItem value="travel">Travel</SelectItem>
+                              <SelectItem value="break">Break</SelectItem>
+                              <SelectItem value="other">Other</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div>
+                          <Label htmlFor="edit-block-description">Description</Label>
+                          <Textarea
+                            id="edit-block-description"
+                            value={blockEditForm.description}
+                            onChange={(e) => setBlockEditForm({ ...blockEditForm, description: e.target.value })}
+                            placeholder="Optional description"
+                            rows={2}
+                            data-testid="input-edit-block-description"
+                          />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div>
+                            <Label htmlFor="edit-block-start">Start</Label>
+                            <Input
+                              id="edit-block-start"
+                              type="datetime-local"
+                              value={blockEditForm.startDatetime}
+                              onChange={(e) => setBlockEditForm({ ...blockEditForm, startDatetime: e.target.value })}
+                              data-testid="input-edit-block-start"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="edit-block-end">End</Label>
+                            <Input
+                              id="edit-block-end"
+                              type="datetime-local"
+                              value={blockEditForm.endDatetime}
+                              onChange={(e) => setBlockEditForm({ ...blockEditForm, endDatetime: e.target.value })}
+                              data-testid="input-edit-block-end"
+                            />
+                          </div>
+                        </div>
+                        <div className="flex gap-2 pt-2">
+                          <Button
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => {
+                              setIsEditingBlock(false);
+                              setBlockEditForm(null);
+                            }}
+                            data-testid="button-cancel-edit-block"
+                          >
+                            Cancel
+                          </Button>
+                          <Button
+                            className="flex-1"
+                            disabled={updateBlockMutation.isPending}
+                            onClick={() => {
+                              if (!blockEditForm) return;
+                              updateBlockMutation.mutate({
+                                id: blockEditForm.id,
+                                updates: {
+                                  title: blockEditForm.title,
+                                  description: blockEditForm.description,
+                                  blockType: blockEditForm.blockType,
+                                  startDatetime: blockEditForm.startDatetime,
+                                  endDatetime: blockEditForm.endDatetime,
+                                },
+                              });
+                            }}
+                            data-testid="button-save-block"
+                          >
+                            {updateBlockMutation.isPending ? (
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                            ) : (
+                              <Save className="h-4 w-4 mr-2" />
+                            )}
+                            Save
+                          </Button>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {selectedEvent.metadata?.blockType && (
+                          <div>
+                            <div className="text-xs text-muted-foreground mb-1">Block Type</div>
+                            <div className="text-sm capitalize">{selectedEvent.metadata.blockType}</div>
+                          </div>
+                        )}
+                        {selectedEvent.metadata?.description && (
+                          <div>
+                            <div className="text-xs text-muted-foreground mb-1">Description</div>
+                            <div className="text-sm">{selectedEvent.metadata.description}</div>
+                          </div>
+                        )}
+                        <div className="text-xs text-muted-foreground pt-2">
+                          <Badge variant="secondary" className="bg-orange-100 text-orange-800">
+                            <Clock className="h-3 w-3 mr-1" />
+                            Calendar Block
+                          </Badge>
+                        </div>
+                        <div className="pt-4 flex gap-2">
+                          <Button
+                            variant="outline"
+                            className="flex-1"
+                            onClick={() => {
+                              const blockId = selectedEvent.id.replace('block-', '');
+                              setBlockEditForm({
+                                id: blockId,
+                                title: selectedEvent.title || '',
+                                description: selectedEvent.metadata?.description || '',
+                                blockType: (selectedEvent.metadata?.blockType as any) || 'other',
+                                startDatetime: format(selectedEvent.start, "yyyy-MM-dd'T'HH:mm"),
+                                endDatetime: format(selectedEvent.end, "yyyy-MM-dd'T'HH:mm"),
+                              });
+                              setIsEditingBlock(true);
+                            }}
+                            data-testid="button-edit-block"
+                          >
+                            Edit
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            className="flex-1"
+                            onClick={async () => {
+                              if (!confirm('Are you sure you want to delete this calendar block?')) return;
+                              try {
+                                const blockId = selectedEvent.id.replace('block-', '');
+                                const response = await fetch(`/api/calendar/blocks/${blockId}`, {
+                                  method: 'DELETE',
+                                  headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+                                });
+                                if (!response.ok) throw new Error('Failed to delete calendar block');
+                                queryClient.invalidateQueries({ queryKey: ['/api/calendar/combined'] });
+                                handleCloseEventDetail();
+                                toast({ title: 'Calendar block deleted' });
+                              } catch (err: any) {
+                                toast({ title: 'Error', description: err.message, variant: 'destructive' });
+                              }
+                            }}
+                            data-testid="button-delete-block"
+                          >
+                            <Trash2 className="h-4 w-4 mr-2" />
+                            Delete
+                          </Button>
+                        </div>
+                      </>
                     )}
-                    {selectedEvent.metadata?.description && (
-                      <div>
-                        <div className="text-xs text-muted-foreground mb-1">Description</div>
-                        <div className="text-sm">{selectedEvent.metadata.description}</div>
-                      </div>
-                    )}
-                    <div className="text-xs text-muted-foreground pt-2">
-                      <Badge variant="secondary" className="bg-orange-100 text-orange-800">
-                        <Clock className="h-3 w-3 mr-1" />
-                        Calendar Block
-                      </Badge>
-                    </div>
-                    <div className="pt-4">
-                      <Button
-                        variant="destructive"
-                        className="w-full"
-                        onClick={async () => {
-                          if (!confirm('Are you sure you want to delete this calendar block?')) return;
-                          try {
-                            const blockId = selectedEvent.id.replace('block-', '');
-                            const response = await fetch(`/api/calendar/blocks/${blockId}`, {
-                              method: 'DELETE',
-                              headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
-                            });
-                            if (!response.ok) throw new Error('Failed to delete calendar block');
-                            queryClient.invalidateQueries({ queryKey: ['/api/calendar/combined'] });
-                            handleCloseEventDetail();
-                            toast({ title: 'Calendar block deleted' });
-                          } catch (err: any) {
-                            toast({ title: 'Error', description: err.message, variant: 'destructive' });
-                          }
-                        }}
-                        data-testid="button-delete-block"
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete Block
-                      </Button>
-                    </div>
                   </div>
                 )}
 
