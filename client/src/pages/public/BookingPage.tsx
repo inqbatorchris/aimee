@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useLocation } from 'wouter';
 import { useQuery, useMutation } from '@tanstack/react-query';
-import { Calendar, Clock, MapPin, AlertCircle, CheckCircle2, Loader2, User, LogIn, Moon, Sun } from 'lucide-react';
+import { Calendar, Clock, MapPin, AlertCircle, CheckCircle2, Loader2, User, LogIn, Moon, Sun, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
@@ -296,14 +296,14 @@ export default function BookingPage() {
     ? `Ticket #${legacyBooking.ticketNumber} - ${legacyBooking.ticketSubject}`
     : null;
   
-  const inputClasses = "dark:bg-gray-800 dark:border-gray-600 dark:text-white dark:placeholder-gray-400";
-  const labelClasses = "dark:text-gray-200";
-  const buttonOutlineClasses = "dark:bg-gray-700 dark:border-gray-600 dark:text-white dark:hover:bg-gray-600";
+  const inputClasses = "bg-white dark:bg-gray-800 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white placeholder-gray-400 dark:placeholder-gray-400";
+  const labelClasses = "text-gray-700 dark:text-gray-200";
+  const buttonOutlineClasses = "bg-white dark:bg-gray-700 border-gray-300 dark:border-gray-600 text-gray-900 dark:text-white hover:bg-gray-100 dark:hover:bg-gray-600";
   
   return (
     <div className="h-screen bg-gray-100 dark:bg-gray-900 overflow-y-auto" data-testid="booking-page">
       <div className="max-w-3xl mx-auto py-8 px-4 pb-16">
-        <Card className="p-6 dark:bg-gray-800 dark:border-gray-700">
+        <Card className="p-6 bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700">
           <div className="flex items-start justify-between mb-6">
             <div className="flex-1">
               {orgLogo && (
@@ -313,14 +313,14 @@ export default function BookingPage() {
                   className="h-10 mb-3"
                 />
               )}
-              <h1 className="text-2xl font-bold mb-1 dark:text-white" data-testid="text-booking-title">
+              <h1 className="text-2xl font-bold mb-1 text-gray-900 dark:text-white" data-testid="text-booking-title">
                 {isLegacyTokenFlow ? `Schedule ${bookingName}` : `Book: ${bookingName}`}
               </h1>
               {bookingDescription && (
-                <p className="text-muted-foreground dark:text-gray-400">{bookingDescription}</p>
+                <p className="text-gray-600 dark:text-gray-400">{bookingDescription}</p>
               )}
               {legacyTicketInfo && (
-                <p className="text-muted-foreground dark:text-gray-400">{legacyTicketInfo}</p>
+                <p className="text-gray-600 dark:text-gray-400">{legacyTicketInfo}</p>
               )}
             </div>
             <div className="flex items-center gap-4">
@@ -328,7 +328,7 @@ export default function BookingPage() {
                 variant="ghost"
                 size="icon"
                 onClick={toggleTheme}
-                className="h-8 w-8 dark:text-gray-300 dark:hover:bg-gray-700"
+                className="h-8 w-8 text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
                 aria-label={`Switch to ${isDarkMode ? 'light' : 'dark'} mode`}
                 data-testid="button-toggle-theme"
               >
@@ -338,7 +338,7 @@ export default function BookingPage() {
                   <Moon className="h-4 w-4" />
                 )}
               </Button>
-              <div className="flex items-center gap-2 text-sm text-muted-foreground dark:text-gray-400">
+              <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                 <Clock className="h-4 w-4" />
                 {bookingDuration}
               </div>
@@ -443,10 +443,10 @@ export default function BookingPage() {
           
           {!isLegacyTokenFlow && (
             <>
-              <Separator className="my-6 dark:bg-gray-700" />
+              <Separator className="my-6 bg-gray-200 dark:bg-gray-700" />
               
               <div className="mb-6">
-                <h2 className="text-lg font-medium mb-3 dark:text-white">Your Details</h2>
+                <h2 className="text-lg font-medium mb-3 text-gray-900 dark:text-white">Your Details</h2>
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
                     <Label htmlFor="customer-name" className={labelClasses}>Full Name *</Label>
@@ -501,27 +501,27 @@ export default function BookingPage() {
             </>
           )}
           
-          <Separator className="my-6 dark:bg-gray-700" />
+          <Separator className="my-6 bg-gray-200 dark:bg-gray-700" />
           
           <div className="mb-6">
-            <h2 className="text-lg font-medium mb-3 dark:text-white">Select Date & Time</h2>
+            <h2 className="text-lg font-medium mb-3 text-gray-900 dark:text-white">Select Date & Time</h2>
             
             {slotsLoading ? (
               <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-6 w-6 animate-spin text-muted-foreground dark:text-gray-400" />
+                <Loader2 className="h-6 w-6 animate-spin text-gray-500 dark:text-gray-400" />
               </div>
             ) : Object.keys(slotsByDate).length === 0 ? (
-              <Alert className="dark:bg-gray-700 dark:border-gray-600">
+              <Alert className="bg-gray-50 dark:bg-gray-700 border-gray-200 dark:border-gray-600">
                 <AlertCircle className="h-4 w-4" />
-                <AlertDescription className="dark:text-gray-200">
+                <AlertDescription className="text-gray-700 dark:text-gray-200">
                   No available slots found in the next 2 weeks. Please contact support.
                 </AlertDescription>
               </Alert>
             ) : (
-              <div className="space-y-4 max-h-[250px] overflow-y-auto border rounded-lg p-3 dark:border-gray-600 dark:bg-gray-700/30">
+              <div className="space-y-4 max-h-[250px] overflow-y-auto border rounded-lg p-3 border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-700/30">
                 {Object.entries(slotsByDate).map(([date, slots]) => (
                   <div key={date}>
-                    <div className="font-medium mb-2 text-sm text-muted-foreground dark:text-gray-400">{date}</div>
+                    <div className="font-medium mb-2 text-sm text-gray-600 dark:text-gray-400">{date}</div>
                     <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-2">
                       {(slots as Slot[]).map((slot) => (
                         <Button
@@ -541,7 +541,7 @@ export default function BookingPage() {
             )}
           </div>
           
-          <Separator className="my-6 dark:bg-gray-700" />
+          <Separator className="my-6 bg-gray-200 dark:bg-gray-700" />
           
           <div className="mb-6">
             <Label htmlFor="additional-notes" className={labelClasses}>Additional Notes (Optional)</Label>
@@ -579,7 +579,7 @@ export default function BookingPage() {
           </Button>
           
           {!canSubmit && (
-            <p className="text-sm text-muted-foreground dark:text-gray-400 text-center mt-2">
+            <p className="text-sm text-gray-500 dark:text-gray-400 text-center mt-2">
               {isLegacyTokenFlow 
                 ? (!selectedSlot ? 'Please select a time slot' : '')
                 : (!customerName || !customerEmail 
@@ -591,10 +591,26 @@ export default function BookingPage() {
                         : '')}
             </p>
           )}
+          
+          <div className="mt-6 pt-4 border-t border-gray-200 dark:border-gray-700 text-center">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => {
+                localStorage.removeItem('authToken');
+                window.location.href = '/';
+              }}
+              className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+              data-testid="button-back-to-app"
+            >
+              <ArrowLeft className="h-4 w-4 mr-2" />
+              Back to Application
+            </Button>
+          </div>
         </Card>
         
         {orgName && (
-          <p className="text-center text-sm text-muted-foreground dark:text-gray-400 mt-4">
+          <p className="text-center text-sm text-gray-500 dark:text-gray-400 mt-4">
             Powered by {orgName}
           </p>
         )}
