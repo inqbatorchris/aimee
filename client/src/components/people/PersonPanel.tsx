@@ -86,8 +86,12 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
   const { data: membershipsData, refetch: refetchMemberships } = useQuery({
     queryKey: ['/api/core/users', user.id, 'teams'],
     queryFn: async () => {
-      const response = await apiRequest(`/api/core/users/${user.id}/teams`);
-      return response as unknown as TeamMembership[];
+      const response = await fetch(`/api/core/users/${user.id}/teams`, {
+        credentials: 'include',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (!response.ok) throw new Error('Failed to fetch teams');
+      return response.json() as Promise<TeamMembership[]>;
     },
     enabled: open,
   });
@@ -113,8 +117,12 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
   const { data: holidayWorkItemsData } = useQuery({
     queryKey: ['/api/work-items', { ownerId: user.id, workItemType: 'holiday_request' }],
     queryFn: async () => {
-      const response = await apiRequest(`/api/work-items?ownerId=${user.id}&workItemType=holiday_request`);
-      const data = response as unknown as { items?: HolidayWorkItem[] } | HolidayWorkItem[];
+      const response = await fetch(`/api/work-items?ownerId=${user.id}&workItemType=holiday_request`, {
+        credentials: 'include',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+      });
+      if (!response.ok) throw new Error('Failed to fetch holiday requests');
+      const data = await response.json();
       if (Array.isArray(data)) return data;
       return data?.items || [];
     },
