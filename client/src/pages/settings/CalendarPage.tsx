@@ -546,9 +546,20 @@ export default function CalendarPage() {
       
       if (eventType === 'splynx_task') {
         const taskId = event.id.replace('splynx-task-', '');
-        const body: Record<string, string> = {};
-        if (newStart) body.scheduled_from = format(finalStart, 'yyyy-MM-dd HH:mm:ss');
-        if (newEnd) body.scheduled_to = format(finalEnd, 'yyyy-MM-dd HH:mm:ss');
+        
+        // Splynx stores duration in hours/minutes fields, not end timestamp
+        const durationMs = finalEnd.getTime() - finalStart.getTime();
+        const totalMinutes = Math.round(durationMs / 60000);
+        const durationHours = Math.floor(totalMinutes / 60);
+        const durationMinutes = totalMinutes % 60;
+        
+        const body: Record<string, string | number> = {
+          scheduled_from: format(finalStart, 'yyyy-MM-dd HH:mm:ss'),
+          scheduled_duration_hours: durationHours,
+          scheduled_duration_minutes: durationMinutes,
+        };
+        
+        console.log('[CALENDAR RESIZE] Updating Splynx task:', { taskId, ...body });
         
         return apiRequest(`/api/calendar/splynx/tasks/${taskId}`, {
           method: 'PUT',
