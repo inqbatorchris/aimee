@@ -6121,6 +6121,13 @@ export const calendarBlocks = pgTable("calendar_blocks", {
   // Color for UI
   color: varchar("color", { length: 20 }),
   
+  // Splynx sync - when synced, block is created as a Splynx scheduling task
+  splynxTaskId: integer("splynx_task_id"), // Splynx task ID if synced
+  splynxProjectId: integer("splynx_project_id"), // Splynx project for the task
+  splynxTeamId: integer("splynx_team_id"), // Splynx team assignment
+  splynxAssigneeId: integer("splynx_assignee_id"), // Splynx admin assignee
+  syncToSplynx: boolean("sync_to_splynx").default(false), // Whether to sync to Splynx
+  
   // Audit
   createdBy: integer("created_by").references(() => users.id),
   createdAt: timestamp("created_at").defaultNow(),
@@ -6129,6 +6136,7 @@ export const calendarBlocks = pgTable("calendar_blocks", {
   index("idx_calendar_blocks_org").on(table.organizationId),
   index("idx_calendar_blocks_user").on(table.userId),
   index("idx_calendar_blocks_datetime").on(table.startDatetime, table.endDatetime),
+  index("idx_calendar_blocks_splynx").on(table.splynxTaskId),
 ]);
 
 // Calendar management insert schemas
