@@ -1889,6 +1889,7 @@ export class SplynxService {
     scheduled_time?: string;
     scheduled_from?: string;
     scheduled_to?: string;
+    formatted_duration?: string;
     scheduled_duration_hours?: number;
     scheduled_duration_minutes?: number;
     related_customer_id?: number;
@@ -1930,6 +1931,15 @@ export class SplynxService {
       });
       
       console.log(`[SPLYNX getSchedulingTask] Response status:`, response.status);
+      // Log scheduling-related fields for debugging
+      const data = response.data;
+      console.log(`[SPLYNX getSchedulingTask] Task ${taskId} scheduling fields:`, {
+        scheduled_from: data.scheduled_from,
+        scheduled_to: data.scheduled_to,
+        scheduled_duration_hours: data.scheduled_duration_hours,
+        scheduled_duration_minutes: data.scheduled_duration_minutes,
+        formatted_duration: data.formatted_duration,
+      });
       return response.data;
     } catch (error: any) {
       console.error(`[SPLYNX getSchedulingTask] Error:`, error.message);

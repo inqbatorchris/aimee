@@ -548,10 +548,18 @@ export default function CalendarPage() {
       if (eventType === 'splynx_task') {
         const taskId = event.id.replace('splynx-task-', '');
         
-        // Splynx uses scheduled_from and scheduled_to for task timing
+        // Splynx uses formatted_duration ("Xh Ym" format), NOT scheduled_to
+        const durationMs = finalEnd.getTime() - finalStart.getTime();
+        const totalMinutes = Math.round(durationMs / 60000);
+        const durationHours = Math.floor(totalMinutes / 60);
+        const durationMins = totalMinutes % 60;
+        const formattedDuration = durationMins > 0 
+          ? `${durationHours}h ${durationMins}m`
+          : `${durationHours}h`;
+        
         const body: Record<string, string> = {
           scheduled_from: format(finalStart, 'yyyy-MM-dd HH:mm:ss'),
-          scheduled_to: format(finalEnd, 'yyyy-MM-dd HH:mm:ss'),
+          formatted_duration: formattedDuration,
         };
         
         console.log('[CALENDAR RESIZE] Updating Splynx task:', { taskId, ...body });
@@ -702,16 +710,19 @@ export default function CalendarPage() {
         if (parts[0]) scheduledDate = parts[0]; // yyyy-mm-dd
         if (parts[1]) scheduledTime = parts[1].substring(0, 5); // hh:mm
       }
-      // Parse scheduled_to for end time, or calculate from duration
-      if (task.scheduled_to) {
-        const parts = task.scheduled_to.split(' ');
-        if (parts[1]) scheduledEndTime = parts[1].substring(0, 5); // hh:mm
-      } else if (task.scheduled_from && (task.scheduled_duration_hours || task.scheduled_duration_minutes)) {
-        // Calculate end time from start + duration
+      // Calculate end time from formatted_duration ("Xh Ym" format like "8h 30m")
+      // Splynx uses formatted_duration, NOT scheduled_to
+      if (task.scheduled_from && task.formatted_duration) {
         const startDate = new Date(task.scheduled_from.replace(' ', 'T'));
-        const durationMs = ((parseInt(task.scheduled_duration_hours) || 0) * 60 + (parseInt(task.scheduled_duration_minutes) || 0)) * 60000;
-        const endDate = new Date(startDate.getTime() + durationMs);
-        scheduledEndTime = format(endDate, 'HH:mm');
+        // Parse formatted_duration like "8h 30m" or "2h"
+        const durationMatch = task.formatted_duration.match(/(\d+)h(?:\s*(\d+)m)?/);
+        if (durationMatch) {
+          const hours = parseInt(durationMatch[1]) || 0;
+          const mins = parseInt(durationMatch[2]) || 0;
+          const durationMs = (hours * 60 + mins) * 60000;
+          const endDate = new Date(startDate.getTime() + durationMs);
+          scheduledEndTime = format(endDate, 'HH:mm');
+        }
       }
       
       setSplynxTaskEdit({
@@ -736,12 +747,24 @@ export default function CalendarPage() {
     if (splynxTaskEdit.location) payload.address = splynxTaskEdit.location; // Splynx uses 'address' field
     // Combine date and time into scheduled_from format
     if (splynxTaskEdit.scheduled_date) {
-      const time = splynxTaskEdit.scheduled_time || '00:00';
-      payload.scheduled_from = `${splynxTaskEdit.scheduled_date} ${time}:00`;
+      const startTime = splynxTaskEdit.scheduled_time || '00:00';
+      payload.scheduled_from = `${splynxTaskEdit.scheduled_date} ${startTime}:00`;
       
-      // Also set scheduled_to if end time is provided
-      if (splynxTaskEdit.scheduled_end_time) {
-        payload.scheduled_to = `${splynxTaskEdit.scheduled_date} ${splynxTaskEdit.scheduled_end_time}:00`;
+      // Splynx uses formatted_duration ("Xh Ym" format), NOT scheduled_to
+      if (splynxTaskEdit.scheduled_end_time && splynxTaskEdit.scheduled_time) {
+        const [startHour, startMin] = splynxTaskEdit.scheduled_time.split(':').map(Number);
+        const [endHour, endMin] = splynxTaskEdit.scheduled_end_time.split(':').map(Number);
+        const startTotalMins = startHour * 60 + startMin;
+        const endTotalMins = endHour * 60 + endMin;
+        const durationMins = endTotalMins - startTotalMins;
+        
+        if (durationMins > 0) {
+          const durationHours = Math.floor(durationMins / 60);
+          const remainingMins = durationMins % 60;
+          payload.formatted_duration = remainingMins > 0 
+            ? `${durationHours}h ${remainingMins}m`
+            : `${durationHours}h`;
+        }
       }
     }
     
