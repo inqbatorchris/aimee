@@ -1882,6 +1882,14 @@ export class SplynxService {
       console.log('[SPLYNX createSchedulingTaskForBlock] Creating block task at:', url);
       console.log('[SPLYNX createSchedulingTaskForBlock] Input data:', JSON.stringify(data, null, 2));
       
+      // Calculate formatted duration (HH:MM format) from start and end times
+      const startTime = new Date(data.scheduledFrom.replace(' ', 'T'));
+      const endTime = new Date(data.scheduledTo.replace(' ', 'T'));
+      const durationMinutes = Math.max(1, Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60)));
+      const durationHours = Math.floor(durationMinutes / 60);
+      const durationMins = durationMinutes % 60;
+      const formattedDuration = `${String(durationHours).padStart(2, '0')}:${String(durationMins).padStart(2, '0')}`;
+      
       // Build the Splynx payload
       const splynxPayload: any = {
         title: data.title,
@@ -1892,16 +1900,13 @@ export class SplynxService {
         is_scheduled: "1",
         scheduled_from: data.scheduledFrom,
         scheduled_to: data.scheduledTo,
+        formatted_duration: formattedDuration,
+        workflow_status_id: 1, // Default to "Open" status
       };
       
       // Add description
       if (data.description) {
         splynxPayload.description = data.description;
-      }
-      
-      // Add duration if provided
-      if (data.duration) {
-        splynxPayload.scheduled_duration_minutes = data.duration;
       }
       
       // Add assignment - Splynx requires assigned_to enum and uses specific field names
