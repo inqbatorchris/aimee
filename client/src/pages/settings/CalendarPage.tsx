@@ -668,7 +668,7 @@ export default function CalendarPage() {
       toast({ title: 'Task updated and synced to Splynx' });
       queryClient.invalidateQueries({ queryKey: ['/api/calendar/combined'] });
       queryClient.invalidateQueries({ queryKey: ['/api/calendar/splynx/tasks', splynxTaskId] });
-      setSelectedEvent(null);
+      setSplynxTaskEdit(null);
     },
     onError: (error: any) => {
       toast({ title: 'Failed to update task', description: error.message, variant: 'destructive' });
@@ -1416,12 +1416,29 @@ export default function CalendarPage() {
                       <div className="flex items-center gap-3">
                         <div className="flex items-center gap-1.5">
                           <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                          <span>{format(selectedEvent.start, 'MMM d, yyyy')}</span>
+                          <span>{splynxTaskDetail?.task?.scheduled_from 
+                            ? format(new Date(splynxTaskDetail.task.scheduled_from.replace(' ', 'T')), 'MMM d, yyyy')
+                            : format(selectedEvent.start, 'MMM d, yyyy')}</span>
                         </div>
                         {!selectedEvent.allDay && (
                           <div className="flex items-center gap-1.5 text-muted-foreground">
                             <Clock className="h-3.5 w-3.5" />
-                            <span>{format(selectedEvent.start, 'h:mm a')} - {format(selectedEvent.end, 'h:mm a')}</span>
+                            <span>
+                              {(() => {
+                                const task = splynxTaskDetail?.task;
+                                if (task?.scheduled_from && task?.formatted_duration) {
+                                  const startDate = new Date(task.scheduled_from.replace(' ', 'T'));
+                                  const durationMatch = task.formatted_duration.match(/(\d+)h(?:\s*(\d+)m)?/);
+                                  if (durationMatch) {
+                                    const hours = parseInt(durationMatch[1]) || 0;
+                                    const mins = parseInt(durationMatch[2]) || 0;
+                                    const endDate = new Date(startDate.getTime() + (hours * 60 + mins) * 60000);
+                                    return `${format(startDate, 'h:mm a')} - ${format(endDate, 'h:mm a')}`;
+                                  }
+                                }
+                                return `${format(selectedEvent.start, 'h:mm a')} - ${format(selectedEvent.end, 'h:mm a')}`;
+                              })()}
+                            </span>
                           </div>
                         )}
                       </div>
