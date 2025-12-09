@@ -1946,9 +1946,13 @@ router.get('/calendar/combined', authenticateToken, async (req: Request, res: Re
             if (durationMatch) {
               duration = (parseInt(durationMatch[1]) || 0) * 60 + (parseInt(durationMatch[2]) || 0);
             }
+            console.log(`[CALENDAR] Task ${t.id} formatted_duration: "${t.formatted_duration}" -> ${duration} mins`);
           } else if (t.scheduled_duration_hours || t.duration_hours) {
             duration = parseInt(t.scheduled_duration_hours || t.duration_hours || '1') * 60 + 
                       parseInt(t.scheduled_duration_minutes || t.duration_minutes || '0');
+            console.log(`[CALENDAR] Task ${t.id} using duration fields: ${duration} mins`);
+          } else {
+            console.log(`[CALENDAR] Task ${t.id} no duration found, using default 60 mins`);
           }
           const taskEnd = taskStart ? new Date(new Date(taskStart).getTime() + duration * 60000).toISOString() : '';
           

@@ -2758,15 +2758,33 @@ function WeekView({ days, events, hours, onEventClick, onSlotClick, onDragStart,
                       const isDraggable = draggableTypes.includes(event.type);
                       const isResizable = resizableTypes.includes(event.type);
                       const isBeingResized = resizingEvent?.id === event.id;
+                      
+                      // Calculate event height based on duration
+                      const eventStart = new Date(event.start);
+                      const eventEnd = new Date(event.end);
+                      const durationMs = eventEnd.getTime() - eventStart.getTime();
+                      const durationHours = durationMs / (1000 * 60 * 60);
+                      // Each hour slot is h-12 (48px), calculate height in pixels
+                      // Minimum height of 1 hour slot (48px), subtract 4px for padding
+                      const heightPx = Math.max(44, Math.round(durationHours * 48) - 4);
+                      
+                      // Calculate top offset based on minutes past the hour
+                      const minutesPastHour = eventStart.getMinutes();
+                      const topOffsetPx = Math.round((minutesPastHour / 60) * 48);
+                      
                       return (
                         <div
                           key={event.id}
                           className={`
-                            absolute left-0.5 right-0.5 top-0.5 text-[10px] rounded truncate z-10
+                            absolute left-0.5 right-0.5 text-[10px] rounded z-10 overflow-hidden
                             ${eventTypeColors[event.type]}
                             ${draggedEvent?.id === event.id ? 'opacity-50' : ''}
                             ${isBeingResized ? 'ring-2 ring-primary' : ''}
                           `}
+                          style={{
+                            top: `${topOffsetPx + 2}px`,
+                            height: `${heightPx}px`,
+                          }}
                           data-testid={`event-week-timed-${event.id}`}
                         >
                           {isResizable && (
