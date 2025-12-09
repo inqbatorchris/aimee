@@ -408,14 +408,21 @@ export default function BookableAppointmentsPage() {
 
 interface SplynxAdmin {
   id: number;
-  name: string;
-  login: string;
-  email: string;
+  splynxAdminId?: number;
+  fullName?: string;
+  name?: string;
+  login?: string;
+  email?: string | null;
 }
 
 interface SplynxTeam {
   id: number;
   title: string;
+}
+
+interface CalendarFiltersResponse {
+  splynxTeams: SplynxTeam[];
+  splynxAdmins: SplynxAdmin[];
 }
 
 interface ExtendedBookableTaskType extends Partial<BookableTaskType> {
@@ -430,14 +437,14 @@ interface AssigneeSelectorProps {
 }
 
 function AssigneeSelector({ formData, setFormData }: AssigneeSelectorProps) {
-  const { data: admins, isLoading: isLoadingAdmins } = useQuery<SplynxAdmin[]>({
-    queryKey: ['/api/field-engineering/splynx-administrators'],
+  const { data: filtersData, isLoading: isLoadingFilters } = useQuery<CalendarFiltersResponse>({
+    queryKey: ['/api/calendar/filters'],
   });
 
-  const { data: teamsResponse, isLoading: isLoadingTeams } = useQuery<{ success: boolean; teams: SplynxTeam[] }>({
-    queryKey: ['/api/calendar/splynx/teams'],
-  });
-  const teams = teamsResponse?.teams || [];
+  const admins = filtersData?.splynxAdmins || [];
+  const teams = filtersData?.splynxTeams || [];
+  const isLoadingAdmins = isLoadingFilters;
+  const isLoadingTeams = isLoadingFilters;
 
   return (
     <div className="border-t pt-4">
@@ -480,9 +487,9 @@ function AssigneeSelector({ formData, setFormData }: AssigneeSelectorProps) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="none">No default assignee</SelectItem>
-              {(admins || []).map((admin) => (
+              {admins.map((admin) => (
                 <SelectItem key={admin.id} value={admin.id.toString()}>
-                  {admin.name || admin.login}
+                  {admin.fullName || admin.name || `Admin ${admin.id}`}
                 </SelectItem>
               ))}
             </SelectContent>
@@ -503,9 +510,9 @@ function AssigneeSelector({ formData, setFormData }: AssigneeSelectorProps) {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="none">No fallback assignee</SelectItem>
-              {(admins || []).map((admin) => (
+              {admins.map((admin) => (
                 <SelectItem key={admin.id} value={admin.id.toString()}>
-                  {admin.name || admin.login}
+                  {admin.fullName || admin.name || `Admin ${admin.id}`}
                 </SelectItem>
               ))}
             </SelectContent>
