@@ -1939,8 +1939,17 @@ router.get('/calendar/combined', authenticateToken, async (req: Request, res: Re
             taskStart = t.datetime_from.includes('T') ? t.datetime_from : t.datetime_from.replace(' ', 'T');
           }
           
-          const duration = parseInt(t.scheduled_duration_hours || t.duration_hours || '1') * 60 + 
-                          parseInt(t.scheduled_duration_minutes || t.duration_minutes || '0');
+          // Parse duration from formatted_duration ("Xh Ym" format) or fall back to duration fields
+          let duration = 60; // default 1 hour
+          if (t.formatted_duration) {
+            const durationMatch = t.formatted_duration.match(/(\d+)h(?:\s*(\d+)m)?/);
+            if (durationMatch) {
+              duration = (parseInt(durationMatch[1]) || 0) * 60 + (parseInt(durationMatch[2]) || 0);
+            }
+          } else if (t.scheduled_duration_hours || t.duration_hours) {
+            duration = parseInt(t.scheduled_duration_hours || t.duration_hours || '1') * 60 + 
+                      parseInt(t.scheduled_duration_minutes || t.duration_minutes || '0');
+          }
           const taskEnd = taskStart ? new Date(new Date(taskStart).getTime() + duration * 60000).toISOString() : '';
           
           events.push({
