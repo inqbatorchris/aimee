@@ -14,7 +14,9 @@ import {
   workItems,
   organizations,
   teamMembers,
-  teams
+  teams,
+  bookings,
+  bookableTaskTypes
 } from '@shared/schema';
 import { SplynxService } from '../services/integrations/splynxService';
 import { authenticateToken } from '../auth';
@@ -1295,7 +1297,7 @@ interface NormalizedCalendarEvent {
   start: string;
   end: string;
   allDay: boolean;
-  type: 'splynx_task' | 'work_item' | 'holiday' | 'public_holiday' | 'block';
+  type: 'splynx_task' | 'work_item' | 'holiday' | 'public_holiday' | 'block' | 'booking';
   color: string;
   userId?: number;
   userName?: string;
@@ -1335,7 +1337,7 @@ router.get('/calendar/combined', authenticateToken, async (req: Request, res: Re
     const metadata: any = {
       range: { startDate, endDate },
       lastSync: new Date().toISOString(),
-      counts: { splynxTasks: 0, workItems: 0, holidays: 0, publicHolidays: 0, blocks: 0 },
+      counts: { splynxTasks: 0, workItems: 0, holidays: 0, publicHolidays: 0, blocks: 0, bookings: 0 },
       filtersApplied: { userIds, teamIds, splynxTeamIds, splynxAdminIds, sources },
     };
     
@@ -1574,6 +1576,61 @@ router.get('/calendar/combined', authenticateToken, async (req: Request, res: Re
       } catch (e: any) {
         errors.push(`Work Items: ${e.message}`);
       }
+    }
+    
+    // Fetch confirmed bookings from the bookings table
+    try {
+      const bookingsQuery = db
+        .select({
+          booking: bookings,
+          taskType: bookableTaskTypes,
+        })
+        .from(bookings)
+        .leftJoin(bookableTaskTypes, eq(bookings.bookableTaskTypeId, bookableTaskTypes.id))
+        .where(and(
+          eq(bookings.organizationId, organizationId),
+          eq(bookings.status, 'confirmed'),
+          gte(bookings.selectedDatetime, new Date(startDate as string)),
+          lte(bookings.selectedDatetime, new Date(endDate as string))
+        ));
+      
+      const bookingsData = await bookingsQuery;
+      for (const { booking, taskType } of bookingsData) {
+        // Calculate end time based on task type duration or default to 1 hour
+        const durationStr = taskType?.defaultDuration || '1h';
+        const durationMatch = durationStr.match(/(\d+)h\s*(\d+)?m?/);
+        const durationMinutes = durationMatch 
+          ? (parseInt(durationMatch[1]) || 0) * 60 + (parseInt(durationMatch[2]) || 0)
+          : 60;
+        
+        const startTime = new Date(booking.selectedDatetime);
+        const endTime = new Date(startTime.getTime() + durationMinutes * 60000);
+        
+        events.push({
+          id: `booking-${booking.id}`,
+          title: `${taskType?.name || 'Booking'} - ${booking.customerName}`,
+          start: startTime.toISOString(),
+          end: endTime.toISOString(),
+          allDay: false,
+          type: 'booking',
+          color: '#06B6D4', // Cyan color for bookings
+          status: booking.status,
+          source: 'booking',
+          metadata: {
+            bookingId: booking.id,
+            customerName: booking.customerName,
+            customerEmail: booking.customerEmail,
+            customerPhone: booking.customerPhone,
+            serviceAddress: booking.serviceAddress,
+            taskTypeName: taskType?.name,
+            splynxTaskId: booking.splynxTaskId,
+            additionalNotes: booking.additionalNotes,
+          },
+        });
+      }
+      metadata.counts.bookings = bookingsData.length;
+    } catch (e: any) {
+      errors.push(`Bookings: ${e.message}`);
     }
     
     if (includeSplynxTasks === 'true') {
