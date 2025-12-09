@@ -1440,7 +1440,7 @@ export default function CalendarPage() {
                     <div className="flex items-center justify-between text-sm pb-2 border-b">
                       <div className="flex items-center gap-2">
                         <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                        <span>{selectedEvent.start} to {selectedEvent.end}</span>
+                        <span>{format(new Date(selectedEvent.start), 'MMM d, yyyy')} to {format(new Date(selectedEvent.end), 'MMM d, yyyy')}</span>
                       </div>
                       <Badge 
                         variant="outline" 
