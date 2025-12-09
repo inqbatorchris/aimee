@@ -2613,15 +2613,16 @@ function MonthView({ days, currentDate, getEventsForDay, onEventClick, onDayClic
                         onEventClick?.(event);
                       }}
                       className={`
-                        text-[10px] leading-tight px-1 py-0.5 rounded truncate hover:opacity-80
+                        text-[10px] leading-tight px-1 py-0.5 rounded truncate hover:opacity-80 flex items-center gap-0.5
                         ${eventTypeColors[event.type]}
                         ${isDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
                         ${draggedEvent?.id === event.id ? 'opacity-50' : ''}
                       `}
-                      title={isDraggable ? `${event.title} (drag to move)` : event.title}
+                      title={isDraggable ? `${event.title}${event.status ? ` (${event.status})` : ''} (drag to move)` : `${event.title}${event.status ? ` (${event.status})` : ''}`}
                       data-testid={`event-${event.id}`}
                     >
-                      {event.title}
+                      {event.status === 'Done' && <CheckCircle2 className="h-2.5 w-2.5 shrink-0" />}
+                      <span className="truncate">{event.title}</span>
                     </div>
                   );
                 })}
