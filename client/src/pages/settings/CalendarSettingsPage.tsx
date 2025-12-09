@@ -36,10 +36,10 @@ export default function CalendarSettingsPage() {
   const [approverType, setApproverType] = useState<'user' | 'team' | 'none'>('none');
   const [approverId, setApproverId] = useState<number | null>(null);
 
-  const { data: usersData } = useQuery<{ users: TeamMember[] }>({
+  const { data: usersResponse } = useQuery<TeamMember[] | { users: TeamMember[] }>({
     queryKey: ['/api/core/users'],
   });
-  const teamMembers = usersData?.users || [];
+  const teamMembers = Array.isArray(usersResponse) ? usersResponse : (usersResponse?.users || []);
 
   const { data: teamsData } = useQuery<Team[]>({
     queryKey: ['/api/core/teams'],
