@@ -601,11 +601,10 @@ export default function CalendarPage() {
     
     return calendarData.events
       .filter((evt) => {
-        if (hiddenEventTypes.has('splynx') && evt.type === 'splynx_task') return false;
+        if (hiddenEventTypes.has('splynx') && (evt.type === 'splynx_task' || evt.type === 'booking')) return false;
         if (hiddenEventTypes.has('work') && evt.type === 'work_item') return false;
         if (hiddenEventTypes.has('leave') && (evt.type === 'holiday' || evt.type === 'public_holiday')) return false;
         if (hiddenEventTypes.has('block') && evt.type === 'block') return false;
-        if (hiddenEventTypes.has('booking') && evt.type === 'booking') return false;
         
         // Client-side project filtering for Splynx tasks
         if (selectedProjectId !== 'all' && evt.type === 'splynx_task') {
@@ -994,18 +993,6 @@ export default function CalendarPage() {
               >
                 <div className={`w-2.5 h-2.5 rounded-full ${hiddenEventTypes.has('block') ? 'bg-gray-400' : 'bg-orange-500'}`} />
                 <span>Block</span>
-              </button>
-              <button
-                onClick={() => toggleEventTypeVisibility('booking')}
-                className={`flex items-center gap-1.5 px-2 py-1 rounded-full transition-all cursor-pointer hover:bg-muted ${
-                  hiddenEventTypes.has('booking') 
-                    ? 'opacity-40 line-through text-muted-foreground' 
-                    : 'text-foreground'
-                }`}
-                data-testid="filter-toggle-booking"
-              >
-                <div className={`w-2.5 h-2.5 rounded-full ${hiddenEventTypes.has('booking') ? 'bg-gray-400' : 'bg-cyan-500'}`} />
-                <span>Bookings</span>
               </button>
             </div>
           </div>
