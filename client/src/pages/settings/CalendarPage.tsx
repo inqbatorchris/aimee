@@ -158,15 +158,32 @@ const statusColors: Record<string, string> = {
   Blocked: 'bg-red-100 text-red-800',
 };
 
+// Helper to load calendar settings from localStorage
+const loadCalendarSettings = () => {
+  try {
+    const saved = localStorage.getItem('calendarSettings');
+    if (saved) {
+      return JSON.parse(saved);
+    }
+  } catch (e) {
+    console.error('Failed to load calendar settings:', e);
+  }
+  return null;
+};
+
 export default function CalendarPage() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  
+  // Load persisted settings on mount
+  const savedSettings = useMemo(() => loadCalendarSettings(), []);
+  
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [viewMode, setViewMode] = useState<ViewMode>('month');
-  const [selectedUserId, setSelectedUserId] = useState<string>('all');
-  const [selectedTeamId, setSelectedTeamId] = useState<string>('all');
-  const [selectedProjectId, setSelectedProjectId] = useState<string>('all');
+  const [viewMode, setViewMode] = useState<ViewMode>(() => savedSettings?.viewMode || 'month');
+  const [selectedUserId, setSelectedUserId] = useState<string>(() => savedSettings?.selectedUserId || 'all');
+  const [selectedTeamId, setSelectedTeamId] = useState<string>(() => savedSettings?.selectedTeamId || 'all');
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(() => savedSettings?.selectedProjectId || 'all');
   const [selectedEvent, setSelectedEvent] = useState<CalendarEvent | null>(null);
   
   const [showBlockDialog, setShowBlockDialog] = useState(false);
@@ -188,8 +205,24 @@ export default function CalendarPage() {
   const [resizingEvent, setResizingEvent] = useState<CalendarEvent | null>(null);
   const [resizeEdge, setResizeEdge] = useState<'start' | 'end' | null>(null);
   
-  const [hiddenEventTypes, setHiddenEventTypes] = useState<Set<string>>(new Set());
-  const [showWeekends, setShowWeekends] = useState(true);
+  const [hiddenEventTypes, setHiddenEventTypes] = useState<Set<string>>(() => {
+    const saved = savedSettings?.hiddenEventTypes;
+    return saved ? new Set(saved) : new Set();
+  });
+  const [showWeekends, setShowWeekends] = useState(() => savedSettings?.showWeekends !== false);
+  
+  // Persist calendar settings to localStorage
+  useEffect(() => {
+    const settings = {
+      viewMode,
+      selectedUserId,
+      selectedTeamId,
+      selectedProjectId,
+      hiddenEventTypes: Array.from(hiddenEventTypes),
+      showWeekends,
+    };
+    localStorage.setItem('calendarSettings', JSON.stringify(settings));
+  }, [viewMode, selectedUserId, selectedTeamId, selectedProjectId, hiddenEventTypes, showWeekends]);
   
   const toggleEventTypeVisibility = (type: string) => {
     setHiddenEventTypes(prev => {
