@@ -81,14 +81,18 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
   });
 
   // Fetch user's team memberships using dedicated endpoint
-  const { data: memberships = [], refetch: refetchMemberships } = useQuery({
+  type TeamMembership = { id: number; name: string; cadence: string; role: string; createdAt: string };
+  
+  const { data: membershipsData, refetch: refetchMemberships } = useQuery({
     queryKey: ['/api/core/users', user.id, 'teams'],
     queryFn: async () => {
       const response = await apiRequest(`/api/core/users/${user.id}/teams`);
-      return response as unknown as { id: number; name: string; cadence: string; role: string; createdAt: string }[];
+      return response as unknown as TeamMembership[];
     },
     enabled: open,
   });
+  
+  const memberships: TeamMembership[] = Array.isArray(membershipsData) ? membershipsData : [];
 
   // Fetch user's holiday requests (stored as work items with workItemType='holiday_request')
   type HolidayWorkItem = {
@@ -106,14 +110,18 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
     createdAt: string;
   };
   
-  const { data: holidayWorkItems = [] } = useQuery({
+  const { data: holidayWorkItemsData } = useQuery({
     queryKey: ['/api/work-items', { ownerId: user.id, workItemType: 'holiday_request' }],
     queryFn: async () => {
       const response = await apiRequest(`/api/work-items?ownerId=${user.id}&workItemType=holiday_request`);
-      return (response as unknown as { items: HolidayWorkItem[] })?.items || response as unknown as HolidayWorkItem[];
+      const data = response as unknown as { items?: HolidayWorkItem[] } | HolidayWorkItem[];
+      if (Array.isArray(data)) return data;
+      return data?.items || [];
     },
     enabled: open,
   });
+  
+  const holidayWorkItems: HolidayWorkItem[] = Array.isArray(holidayWorkItemsData) ? holidayWorkItemsData : [];
   
   // Update user profile (name, email, userType)
   const updateProfileMutation = useMutation({
