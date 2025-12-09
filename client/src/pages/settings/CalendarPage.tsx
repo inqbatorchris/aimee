@@ -192,6 +192,9 @@ export default function CalendarPage() {
     startDatetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
     endDatetime: format(addDays(new Date(), 0), "yyyy-MM-dd'T'17:00"),
     isAllDay: false,
+    syncToSplynx: false,
+    splynxProjectId: null as number | null,
+    splynxTeamId: null as number | null,
   });
   
   const [holidayForm, setHolidayForm] = useState({
@@ -224,8 +227,12 @@ export default function CalendarPage() {
         },
       });
     },
-    onSuccess: () => {
-      toast({ title: 'Calendar block created successfully' });
+    onSuccess: (response: any) => {
+      toast({ 
+        title: response.splynxSynced 
+          ? 'Calendar block created and synced to Splynx' 
+          : 'Calendar block created successfully' 
+      });
       setShowBlockDialog(false);
       setBlockForm({
         title: '',
@@ -234,6 +241,9 @@ export default function CalendarPage() {
         startDatetime: format(new Date(), "yyyy-MM-dd'T'HH:mm"),
         endDatetime: format(new Date(), "yyyy-MM-dd'T'17:00"),
         isAllDay: false,
+        syncToSplynx: false,
+        splynxProjectId: null,
+        splynxTeamId: null,
       });
       queryClient.invalidateQueries({ queryKey: ['/api/calendar/combined'] });
     },
@@ -1552,6 +1562,71 @@ export default function CalendarPage() {
                 data-testid="input-block-description"
               />
             </div>
+            
+            {/* Splynx Sync Section */}
+            <div className="border-t pt-4 space-y-3">
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="block-sync-splynx"
+                  checked={blockForm.syncToSplynx}
+                  onCheckedChange={(checked) => setBlockForm(f => ({ 
+                    ...f, 
+                    syncToSplynx: !!checked,
+                    splynxProjectId: checked ? f.splynxProjectId : null,
+                    splynxTeamId: checked ? f.splynxTeamId : null,
+                  }))}
+                  data-testid="checkbox-sync-splynx"
+                />
+                <Label htmlFor="block-sync-splynx" className="text-sm font-medium">
+                  Sync to Splynx
+                </Label>
+              </div>
+              
+              {blockForm.syncToSplynx && (
+                <div className="space-y-3 pl-6 border-l-2 border-blue-200">
+                  <div className="space-y-2">
+                    <Label htmlFor="block-project" className="text-sm">Project Type (required)</Label>
+                    <Select 
+                      value={blockForm.splynxProjectId?.toString() || ''} 
+                      onValueChange={(v) => setBlockForm(f => ({ ...f, splynxProjectId: parseInt(v) }))}
+                    >
+                      <SelectTrigger data-testid="select-splynx-project">
+                        <SelectValue placeholder="Select project..." />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(filtersData?.filters as any)?.splynxProjects?.map((project: any) => (
+                          <SelectItem key={project.id} value={project.id.toString()}>
+                            {project.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="block-team" className="text-sm">Assign to Team (optional)</Label>
+                    <Select 
+                      value={blockForm.splynxTeamId?.toString() || ''} 
+                      onValueChange={(v) => setBlockForm(f => ({ ...f, splynxTeamId: v ? parseInt(v) : null }))}
+                    >
+                      <SelectTrigger data-testid="select-splynx-team">
+                        <SelectValue placeholder="No team assignment" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="">No team assignment</SelectItem>
+                        {filtersData?.filters?.splynxTeams?.map((team: any) => (
+                          <SelectItem key={team.splynxTeamId} value={team.splynxTeamId.toString()}>
+                            {team.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    This block will be created as a task in Splynx and appear in the scheduling calendar.
+                  </p>
+                </div>
+              )}
+            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowBlockDialog(false)} data-testid="button-cancel-block">
@@ -1559,10 +1634,10 @@ export default function CalendarPage() {
             </Button>
             <Button 
               onClick={() => createBlockMutation.mutate(blockForm)}
-              disabled={!blockForm.title || createBlockMutation.isPending}
+              disabled={!blockForm.title || (blockForm.syncToSplynx && !blockForm.splynxProjectId) || createBlockMutation.isPending}
               data-testid="button-create-block"
             >
-              {createBlockMutation.isPending ? 'Creating...' : 'Create Block'}
+              {createBlockMutation.isPending ? 'Creating...' : blockForm.syncToSplynx ? 'Create & Sync' : 'Create Block'}
             </Button>
           </DialogFooter>
         </DialogContent>

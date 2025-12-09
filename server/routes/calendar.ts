@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { db } from '../db';
-import { eq, and, gte, lte, desc, sql, between, inArray } from 'drizzle-orm';
+import { eq, and, gte, lte, desc, sql, between, inArray, isNull } from 'drizzle-orm';
 import { 
   splynxTeams, 
   splynxAdministrators,
@@ -886,8 +886,70 @@ router.post('/calendar/blocks', authenticateToken, async (req: Request, res: Res
       recurrenceEndDate,
       isPrivate,
       blocksAvailability,
-      color
+      color,
+      syncToSplynx,
+      splynxProjectId,
+      splynxTeamId,
+      splynxAssigneeId
     } = req.body;
+    
+    let splynxTaskId: number | null = null;
+    
+    // If syncing to Splynx, create the task there first
+    if (syncToSplynx && splynxProjectId) {
+      try {
+        const splynxService = await getSplynxServiceForOrg(organizationId);
+        
+        // Get the user's Splynx admin ID for assignment
+        const [currentUser] = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+        const assigneeId = splynxAssigneeId || currentUser?.splynxAdminId;
+        
+        // Format datetime for Splynx (YYYY-MM-DD HH:MM:SS)
+        const startDate = new Date(startDatetime);
+        const endDate = new Date(endDatetime);
+        const scheduledFrom = startDate.toISOString().replace('T', ' ').slice(0, 19);
+        const scheduledTo = endDate.toISOString().replace('T', ' ').slice(0, 19);
+        
+        // Calculate duration in minutes
+        const durationMs = endDate.getTime() - startDate.getTime();
+        const durationMinutes = Math.round(durationMs / 60000);
+        
+        console.log('[CALENDAR BLOCK] Creating Splynx task:', {
+          title,
+          projectId: splynxProjectId,
+          teamId: splynxTeamId,
+          assigneeId,
+          scheduledFrom,
+          scheduledTo,
+          duration: durationMinutes
+        });
+        
+        // Create task in Splynx using direct API call
+        const splynxResult = await splynxService.createSchedulingTaskForBlock({
+          title,
+          description: description || `Calendar block: ${blockType || 'other'}`,
+          projectId: splynxProjectId,
+          teamId: splynxTeamId,
+          assigneeId,
+          scheduledFrom,
+          scheduledTo,
+          duration: durationMinutes,
+        });
+        
+        if (splynxResult?.id) {
+          splynxTaskId = parseInt(splynxResult.id);
+          console.log('[CALENDAR BLOCK] Splynx task created:', splynxTaskId);
+        }
+      } catch (splynxError: any) {
+        console.error('[CALENDAR BLOCK] Splynx sync failed:', splynxError.message);
+        // Return error to client if Splynx sync was requested but failed
+        return res.status(400).json({ 
+          success: false, 
+          error: `Failed to sync to Splynx: ${splynxError.message}`,
+          splynxError: true
+        });
+      }
+    }
     
     const [block] = await db.insert(calendarBlocks).values({
       userId,
@@ -905,9 +967,14 @@ router.post('/calendar/blocks', authenticateToken, async (req: Request, res: Res
       blocksAvailability: blocksAvailability ?? true,
       color,
       createdBy: userId,
+      syncToSplynx: syncToSplynx || false,
+      splynxTaskId,
+      splynxProjectId: splynxProjectId || null,
+      splynxTeamId: splynxTeamId || null,
+      splynxAssigneeId: splynxAssigneeId || null,
     }).returning();
     
-    res.json({ success: true, block });
+    res.json({ success: true, block, splynxSynced: !!splynxTaskId });
   } catch (error: any) {
     console.error('[CALENDAR] Error creating block:', error.message);
     res.status(500).json({ success: false, error: error.message });
@@ -1358,13 +1425,16 @@ router.get('/calendar/combined', authenticateToken, async (req: Request, res: Re
     
     if (includeBlocks === 'true') {
       try {
+        // Only fetch blocks that are NOT synced to Splynx (to avoid duplicates)
+        // Synced blocks appear as Splynx tasks and will be fetched from there
         let blocksQuery = db
           .select()
           .from(calendarBlocks)
           .where(and(
             eq(calendarBlocks.organizationId, organizationId),
             gte(calendarBlocks.startDatetime, new Date(startDate as string)),
-            lte(calendarBlocks.endDatetime, new Date(endDate as string))
+            lte(calendarBlocks.endDatetime, new Date(endDate as string)),
+            isNull(calendarBlocks.splynxTaskId) // Filter out synced blocks
           ))
           .$dynamic();
         

@@ -1863,6 +1863,86 @@ export class SplynxService {
   }
 
   /**
+   * Create a scheduling task for calendar blocks
+   * Simplified method for syncing calendar blocks to Splynx
+   */
+  async createSchedulingTaskForBlock(data: {
+    title: string;
+    description?: string;
+    projectId: number;
+    teamId?: number;
+    assigneeId?: number;
+    scheduledFrom: string;
+    scheduledTo: string;
+    duration?: number;
+  }): Promise<{ id: string } | null> {
+    try {
+      const url = this.buildUrl('admin/scheduling/tasks');
+      
+      console.log('[SPLYNX createSchedulingTaskForBlock] Creating block task at:', url);
+      console.log('[SPLYNX createSchedulingTaskForBlock] Input data:', JSON.stringify(data, null, 2));
+      
+      // Build the Splynx payload
+      const splynxPayload: any = {
+        title: data.title,
+        project_id: data.projectId,
+        partner_id: 1,
+        is_archived: "0",
+        closed: "0",
+        is_scheduled: "1",
+        scheduled_from: data.scheduledFrom,
+        scheduled_to: data.scheduledTo,
+      };
+      
+      // Add description
+      if (data.description) {
+        splynxPayload.description = data.description;
+      }
+      
+      // Add duration if provided
+      if (data.duration) {
+        splynxPayload.scheduled_duration_minutes = data.duration;
+      }
+      
+      // Add assignment - Splynx requires assigned_to enum and uses specific field names
+      if (data.teamId) {
+        splynxPayload.assigned_to = 'assigned_to_team';
+        splynxPayload.assignee = data.teamId; // Splynx uses 'assignee' field for team ID when assigned_to_team
+      } else if (data.assigneeId) {
+        splynxPayload.assigned_to = 'assigned_to_administrator';
+        splynxPayload.assignee = data.assigneeId; // Splynx uses 'assignee' field for admin ID when assigned_to_administrator
+      } else {
+        // Default to anyone if no specific assignment
+        splynxPayload.assigned_to = 'assigned_to_anyone';
+      }
+      
+      console.log('[SPLYNX createSchedulingTaskForBlock] Payload:', JSON.stringify(splynxPayload, null, 2));
+      
+      const response = await axios.post(url, splynxPayload, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      console.log('[SPLYNX createSchedulingTaskForBlock] Response status:', response.status);
+      console.log('[SPLYNX createSchedulingTaskForBlock] Response data:', JSON.stringify(response.data, null, 2));
+      
+      if (response.data?.id) {
+        return { id: String(response.data.id) };
+      }
+      
+      return null;
+    } catch (error: any) {
+      console.error('[SPLYNX createSchedulingTaskForBlock] Error:', error.message);
+      if (error.response?.data) {
+        console.error('[SPLYNX createSchedulingTaskForBlock] Response:', JSON.stringify(error.response.data, null, 2));
+      }
+      throw new Error(`Failed to create scheduling task: ${error.message}`);
+    }
+  }
+
+  /**
    * Get detailed customer information by ID
    * Used for AI context enrichment
    */
