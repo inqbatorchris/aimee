@@ -185,6 +185,8 @@ export default function CalendarPage() {
   
   // Drag-and-drop state
   const [draggedEvent, setDraggedEvent] = useState<CalendarEvent | null>(null);
+  const [resizingEvent, setResizingEvent] = useState<CalendarEvent | null>(null);
+  const [resizeEdge, setResizeEdge] = useState<'start' | 'end' | null>(null);
   
   const [hiddenEventTypes, setHiddenEventTypes] = useState<Set<string>>(new Set());
   const [showWeekends, setShowWeekends] = useState(true);
@@ -487,6 +489,98 @@ export default function CalendarPage() {
   const handleEventDropWithHour = (newDate: Date, hour: number) => {
     if (!draggedEvent) return;
     moveEventMutation.mutate({ event: draggedEvent, newDate, newHour: hour });
+  };
+
+  // Resize event mutation
+  const resizeEventMutation = useMutation({
+    mutationFn: async ({ event, newStart, newEnd }: { event: CalendarEvent; newStart?: Date; newEnd?: Date }) => {
+      const eventType = event.type;
+      const finalStart = newStart || event.start;
+      const finalEnd = newEnd || event.end;
+      
+      // Validate minimum duration (15 minutes)
+      const minDuration = 15 * 60 * 1000;
+      if (finalEnd.getTime() - finalStart.getTime() < minDuration) {
+        throw new Error('Event must be at least 15 minutes long');
+      }
+      
+      if (eventType === 'splynx_task') {
+        const taskId = event.id.replace('splynx-task-', '');
+        const body: Record<string, string> = {};
+        if (newStart) body.scheduled_from = format(finalStart, 'yyyy-MM-dd HH:mm:ss');
+        if (newEnd) body.scheduled_to = format(finalEnd, 'yyyy-MM-dd HH:mm:ss');
+        
+        return apiRequest(`/api/calendar/splynx/tasks/${taskId}`, {
+          method: 'PUT',
+          body,
+        });
+      } else if (eventType === 'block') {
+        const blockId = event.id.replace('block-', '');
+        return apiRequest(`/api/calendar/blocks/${blockId}`, {
+          method: 'PATCH',
+          body: {
+            startDatetime: format(finalStart, "yyyy-MM-dd'T'HH:mm"),
+            endDatetime: format(finalEnd, "yyyy-MM-dd'T'HH:mm"),
+          },
+        });
+      } else if (eventType === 'booking' && event.metadata?.bookingId) {
+        return apiRequest(`/api/bookings/appointments/${event.metadata.bookingId}`, {
+          method: 'PATCH',
+          body: {
+            scheduledStart: format(finalStart, "yyyy-MM-dd'T'HH:mm:ss"),
+            scheduledEnd: format(finalEnd, "yyyy-MM-dd'T'HH:mm:ss"),
+          },
+        });
+      }
+      
+      throw new Error('Cannot resize this event type');
+    },
+    onSuccess: (_, { event }) => {
+      toast({ title: `${event.title} duration updated` });
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar/combined'] });
+      setResizingEvent(null);
+      setResizeEdge(null);
+    },
+    onError: (error: any) => {
+      toast({ title: 'Failed to resize event', description: error.message, variant: 'destructive' });
+      setResizingEvent(null);
+      setResizeEdge(null);
+    },
+  });
+
+  const handleResizeStart = (event: CalendarEvent, edge: 'start' | 'end') => {
+    const resizableTypes = ['splynx_task', 'block', 'booking'];
+    if (!resizableTypes.includes(event.type)) return;
+    setResizingEvent(event);
+    setResizeEdge(edge);
+  };
+
+  const handleResizeEnd = () => {
+    setResizingEvent(null);
+    setResizeEdge(null);
+  };
+
+  const handleResizeDrop = (newTime: Date) => {
+    if (!resizingEvent || !resizeEdge) return;
+    
+    if (resizeEdge === 'start') {
+      resizeEventMutation.mutate({ event: resizingEvent, newStart: newTime });
+    } else {
+      resizeEventMutation.mutate({ event: resizingEvent, newEnd: newTime });
+    }
+  };
+
+  const handleResizeDropWithHour = (newDate: Date, hour: number) => {
+    if (!resizingEvent || !resizeEdge) return;
+    
+    const newTime = new Date(newDate.getTime());
+    newTime.setHours(hour, 0, 0, 0);
+    
+    if (resizeEdge === 'start') {
+      resizeEventMutation.mutate({ event: resizingEvent, newStart: newTime });
+    } else {
+      resizeEventMutation.mutate({ event: resizingEvent, newEnd: newTime });
+    }
   };
 
   const splynxTaskId = selectedEvent?.type === 'splynx_task' 
@@ -1132,6 +1226,11 @@ export default function CalendarPage() {
             onDragEnd={handleDragEnd}
             onEventDrop={handleEventDropWithHour}
             draggedEvent={draggedEvent}
+            onResizeStart={handleResizeStart}
+            onResizeEnd={handleResizeEnd}
+            onResizeDrop={handleResizeDropWithHour}
+            resizingEvent={resizingEvent}
+            resizeEdge={resizeEdge}
           />
         )}
         </div>
@@ -2541,10 +2640,16 @@ interface DayViewProps {
   onDragEnd?: () => void;
   onEventDrop?: (newDate: Date, hour: number) => void;
   draggedEvent?: CalendarEvent | null;
+  onResizeStart?: (event: CalendarEvent, edge: 'start' | 'end') => void;
+  onResizeEnd?: () => void;
+  onResizeDrop?: (newDate: Date, hour: number) => void;
+  resizingEvent?: CalendarEvent | null;
+  resizeEdge?: 'start' | 'end' | null;
 }
 
-function DayView({ day, events, hours, onEventClick, onSlotClick, onDragStart, onDragEnd, onEventDrop, draggedEvent }: DayViewProps) {
+function DayView({ day, events, hours, onEventClick, onSlotClick, onDragStart, onDragEnd, onEventDrop, draggedEvent, onResizeStart, onResizeEnd, onResizeDrop, resizingEvent, resizeEdge }: DayViewProps) {
   const draggableTypes = ['splynx_task', 'block', 'booking', 'work_item'];
+  const resizableTypes = ['splynx_task', 'block', 'booking'];
   const allDayEvents = events.filter(e => e.allDay || e.type === 'work_item' || e.type === 'holiday' || e.type === 'public_holiday');
   const timedEvents = events.filter(e => !e.allDay && e.type !== 'work_item' && e.type !== 'holiday' && e.type !== 'public_holiday');
 
@@ -2604,7 +2709,7 @@ function DayView({ day, events, hours, onEventClick, onSlotClick, onDragStart, o
                   {format(hourDate, 'h:mm a')}
                 </div>
                 <div 
-                  className={`flex-1 py-1 px-2 hover:bg-muted/20 transition-colors cursor-pointer ${draggedEvent ? 'ring-1 ring-primary/20 ring-inset' : ''}`}
+                  className={`flex-1 py-1 px-2 hover:bg-muted/20 transition-colors cursor-pointer ${draggedEvent || resizingEvent ? 'ring-1 ring-primary/20 ring-inset' : ''}`}
                   onClick={(e) => onSlotClick?.(day, hour, e)}
                   data-testid={`day-slot-${hour}`}
                   onDragOver={(e) => {
@@ -2617,47 +2722,86 @@ function DayView({ day, events, hours, onEventClick, onSlotClick, onDragStart, o
                   onDrop={(e) => {
                     e.preventDefault();
                     e.currentTarget.classList.remove('bg-primary/10');
-                    onEventDrop?.(new Date(day.getTime()), hour);
+                    if (resizingEvent) {
+                      onResizeDrop?.(new Date(day.getTime()), hour);
+                    } else {
+                      onEventDrop?.(new Date(day.getTime()), hour);
+                    }
                   }}
                 >
                   {hourEvents.map((event) => {
                     const isDraggable = draggableTypes.includes(event.type);
+                    const isResizable = resizableTypes.includes(event.type);
+                    const isBeingResized = resizingEvent?.id === event.id;
                     return (
                       <div
                         key={event.id}
-                        draggable={isDraggable}
-                        onDragStart={(e) => {
-                          if (!isDraggable) {
-                            e.preventDefault();
-                            return;
-                          }
-                          e.dataTransfer.effectAllowed = 'move';
-                          onDragStart?.(event);
-                        }}
-                        onDragEnd={() => onDragEnd?.()}
-                        onClick={(e) => { e.stopPropagation(); onEventClick?.(event); }}
                         className={`
-                          p-2 rounded mb-1 flex items-start gap-3 hover:opacity-80
+                          relative rounded mb-1 hover:opacity-90
                           ${eventTypeBgColors[event.type]}
-                          ${isDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
                           ${draggedEvent?.id === event.id ? 'opacity-50' : ''}
+                          ${isBeingResized ? 'ring-2 ring-primary' : ''}
                         `}
-                        title={isDraggable ? `${event.title} (drag to move)` : event.title}
                         data-testid={`event-day-timed-${event.id}`}
                       >
-                        <div className="flex-1">
-                          <div className="font-medium text-sm">{event.title}</div>
-                          {event.userName && (
-                            <div className="text-xs opacity-75 flex items-center gap-1 mt-0.5">
-                              <User className="h-3 w-3" />
-                              {event.userName}
-                            </div>
+                        {isResizable && (
+                          <div
+                            draggable
+                            onDragStart={(e) => {
+                              e.stopPropagation();
+                              e.dataTransfer.effectAllowed = 'move';
+                              onResizeStart?.(event, 'start');
+                            }}
+                            onDragEnd={() => onResizeEnd?.()}
+                            className="absolute top-0 left-0 right-0 h-2 cursor-n-resize hover:bg-white/30 rounded-t z-20"
+                            title="Drag to change start time"
+                          />
+                        )}
+                        <div
+                          draggable={isDraggable}
+                          onDragStart={(e) => {
+                            if (!isDraggable) {
+                              e.preventDefault();
+                              return;
+                            }
+                            e.dataTransfer.effectAllowed = 'move';
+                            onDragStart?.(event);
+                          }}
+                          onDragEnd={() => onDragEnd?.()}
+                          onClick={(e) => { e.stopPropagation(); onEventClick?.(event); }}
+                          className={`
+                            p-2 flex items-start gap-3
+                            ${isDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
+                          `}
+                          title={isDraggable ? `${event.title} (drag to move)` : event.title}
+                        >
+                          <div className="flex-1">
+                            <div className="font-medium text-sm">{event.title}</div>
+                            {event.userName && (
+                              <div className="text-xs opacity-75 flex items-center gap-1 mt-0.5">
+                                <User className="h-3 w-3" />
+                                {event.userName}
+                              </div>
+                            )}
+                          </div>
+                          {event.status && (
+                            <Badge variant="outline" className="text-xs shrink-0">
+                              {event.status}
+                            </Badge>
                           )}
                         </div>
-                        {event.status && (
-                          <Badge variant="outline" className="text-xs shrink-0">
-                            {event.status}
-                          </Badge>
+                        {isResizable && (
+                          <div
+                            draggable
+                            onDragStart={(e) => {
+                              e.stopPropagation();
+                              e.dataTransfer.effectAllowed = 'move';
+                              onResizeStart?.(event, 'end');
+                            }}
+                            onDragEnd={() => onResizeEnd?.()}
+                            className="absolute bottom-0 left-0 right-0 h-2 cursor-s-resize hover:bg-white/30 rounded-b z-20"
+                            title="Drag to change end time"
+                          />
                         )}
                       </div>
                     );
