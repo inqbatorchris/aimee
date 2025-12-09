@@ -63,7 +63,7 @@ export default function CalendarSettingsPage() {
   const saveApproverMutation = useMutation({
     mutationFn: async () => {
       return apiRequest('/api/calendar/settings/holiday-approver', {
-        method: 'PUT',
+        method: 'POST',
         body: { 
           type: approverType === 'none' ? null : approverType, 
           id: approverType === 'none' ? null : approverId 
