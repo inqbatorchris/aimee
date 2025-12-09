@@ -69,9 +69,10 @@ export default function DocumentEditor() {
   });
 
   // Fetch teams for team selector
-  const { data: teams = [] } = useQuery<Team[]>({
-    queryKey: ['/api/teams'],
+  const { data: teamsData } = useQuery<Team[] | { teams: Team[] }>({
+    queryKey: ['/api/core/teams'],
   });
+  const teams = Array.isArray(teamsData) ? teamsData : (teamsData?.teams || []);
 
   // Fetch existing document if editing
   const { data: document, isLoading, error } = useQuery({
