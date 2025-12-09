@@ -387,9 +387,9 @@ export default function CalendarPage() {
   };
 
   const handleNavigateToEvent = (event: CalendarEvent) => {
-    if (event.type === 'work_item' && event.metadata?.workItemId) {
+    if (event.metadata?.workItemId) {
       // Navigate to work item detail view with workflow tab if there's a workflow template
-      const hasWorkflow = event.metadata?.workflowTemplateId;
+      const hasWorkflow = event.metadata?.workflowTemplateId || event.type === 'holiday';
       const tab = hasWorkflow ? 'workflow' : 'details';
       navigate(`/strategy/work-items?panel=workItem&mode=view&id=${event.metadata.workItemId}&tab=${tab}`);
     }
