@@ -1874,6 +1874,14 @@ router.get('/calendar/combined', authenticateToken, async (req: Request, res: Re
       try {
         const splynxService = await getSplynxServiceForOrg(organizationId);
         
+        // Fetch task statuses for mapping workflow_status_id to names
+        const taskStatuses = await splynxService.getSchedulingTaskStatuses();
+        const statusMap = new Map(taskStatuses.map(s => [s.id, { title: s.title, color: s.color }]));
+        console.log(`[CALENDAR] Fetched ${taskStatuses.length} task statuses from Splynx`);
+        
+        // Include statuses in metadata for UI dropdown
+        metadata.taskStatuses = taskStatuses;
+        
         // Pass date filters to Splynx API using BETWEEN operator
         const tasks = await splynxService.getSchedulingTasks({
           assignedAdminId: effectiveSplynxAdminIds.length === 1 ? effectiveSplynxAdminIds[0] : undefined,
@@ -1956,6 +1964,11 @@ router.get('/calendar/combined', authenticateToken, async (req: Request, res: Re
           }
           const taskEnd = taskStart ? new Date(new Date(taskStart).getTime() + duration * 60000).toISOString() : '';
           
+          // Map workflow_status_id to human-readable status name
+          const workflowStatusId = parseInt(t.workflow_status_id);
+          const statusInfo = statusMap.get(workflowStatusId);
+          const statusName = statusInfo?.title || t.status || `Status ${workflowStatusId || 'Unknown'}`;
+          
           events.push({
             id: `splynx-task-${t.id}`,
             title: t.title || t.description || 'Splynx Task',
@@ -1967,13 +1980,14 @@ router.get('/calendar/combined', authenticateToken, async (req: Request, res: Re
             splynxAdminId: adminId,
             userName: adminsMap[adminId]?.fullName || `Admin ${adminId}`,
             userId: splynxToUserMap[adminId],
-            status: t.status || t.workflow_status_id?.toString(),
+            status: statusName,
             source: 'splynx',
             metadata: {
               projectId: t.project_id,
               customerId: t.customer_id,
               location: t.location,
               workflowStatusId: t.workflow_status_id,
+              statusColor: statusInfo?.color,
             },
           });
         }

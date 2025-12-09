@@ -29,6 +29,7 @@ import {
   CalendarDays,
   Layers,
   CheckSquare,
+  CheckCircle2,
   Clock,
   Umbrella,
   ExternalLink,
@@ -274,6 +275,7 @@ export default function CalendarPage() {
     assigned_to: number;
     team_id: number;
     project_id: number;
+    workflow_status_id: number;
   } | null>(null);
 
   const createBlockMutation = useMutation({
@@ -735,6 +737,7 @@ export default function CalendarPage() {
         assigned_to: derivedAdminId,
         team_id: derivedTeamId,
         project_id: task.project_id || 0,
+        workflow_status_id: task.workflow_status_id || 0,
       });
     }
   };
@@ -780,6 +783,7 @@ export default function CalendarPage() {
     }
     
     if (splynxTaskEdit.project_id && splynxTaskEdit.project_id > 0) payload.project_id = splynxTaskEdit.project_id;
+    if (splynxTaskEdit.workflow_status_id && splynxTaskEdit.workflow_status_id > 0) payload.workflow_status_id = splynxTaskEdit.workflow_status_id;
     updateSplynxTaskMutation.mutate(payload);
   };
 
@@ -1606,24 +1610,49 @@ export default function CalendarPage() {
                               </Select>
                             </div>
                             
-                            {/* Project */}
-                            <Select 
-                              value={splynxTaskEdit.project_id ? splynxTaskEdit.project_id.toString() : 'none'} 
-                              onValueChange={(value) => setSplynxTaskEdit(prev => prev ? {...prev, project_id: value === 'none' ? 0 : parseInt(value)} : null)}
-                            >
-                              <SelectTrigger data-testid="select-task-project" className="h-9">
-                                <FolderOpen className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
-                                <SelectValue placeholder="Project" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="none">No project</SelectItem>
-                                {(filtersData?.filters as any)?.splynxProjects?.map((project: any) => (
-                                  <SelectItem key={project.id} value={project.id.toString()}>
-                                    {project.title}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            {/* Project & Status - Compact 2-column */}
+                            <div className="grid grid-cols-2 gap-2">
+                              <Select 
+                                value={splynxTaskEdit.project_id ? splynxTaskEdit.project_id.toString() : 'none'} 
+                                onValueChange={(value) => setSplynxTaskEdit(prev => prev ? {...prev, project_id: value === 'none' ? 0 : parseInt(value)} : null)}
+                              >
+                                <SelectTrigger data-testid="select-task-project" className="h-9">
+                                  <FolderOpen className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+                                  <SelectValue placeholder="Project" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">No project</SelectItem>
+                                  {(filtersData?.filters as any)?.splynxProjects?.map((project: any) => (
+                                    <SelectItem key={project.id} value={project.id.toString()}>
+                                      {project.title}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <Select 
+                                value={splynxTaskEdit.workflow_status_id ? splynxTaskEdit.workflow_status_id.toString() : 'none'} 
+                                onValueChange={(value) => setSplynxTaskEdit(prev => prev ? {...prev, workflow_status_id: value === 'none' ? 0 : parseInt(value)} : null)}
+                              >
+                                <SelectTrigger data-testid="select-task-status" className="h-9">
+                                  <CheckCircle2 className="h-3.5 w-3.5 mr-1.5 text-muted-foreground" />
+                                  <SelectValue placeholder="Status" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="none">No status</SelectItem>
+                                  {(calendarData?.metadata as any)?.taskStatuses?.map((status: any) => (
+                                    <SelectItem key={status.id} value={status.id.toString()}>
+                                      <span className="flex items-center gap-2">
+                                        <span 
+                                          className="w-2 h-2 rounded-full" 
+                                          style={{ backgroundColor: status.color || '#6b7280' }}
+                                        />
+                                        {status.title}
+                                      </span>
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
                             
                             {/* Attachments - Compact */}
                             {splynxTaskDetail?.task?.attachments && splynxTaskDetail.task.attachments.length > 0 && (
@@ -2812,10 +2841,13 @@ function WeekView({ days, events, hours, onEventClick, onSlotClick, onDragStart,
                             }}
                             onDragEnd={() => onDragEnd?.()}
                             onClick={(e) => { e.stopPropagation(); onEventClick?.(event); }}
-                            className={`p-1 ${isDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} hover:opacity-80`}
+                            className={`p-1 ${isDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} hover:opacity-80 h-full flex flex-col justify-between`}
                             title={isDraggable ? `${event.title} (drag to move)` : event.title}
                           >
-                            {event.title}
+                            <span className="truncate">{event.title}</span>
+                            {event.status && heightPx > 60 && (
+                              <span className="text-[8px] opacity-75 truncate mt-0.5">{event.status}</span>
+                            )}
                           </div>
                           {isResizable && (
                             <div
@@ -2918,12 +2950,12 @@ function DayView({ day, events, hours, onEventClick, onSlotClick, onDragStart, o
             hourDate.setHours(hour, 0, 0, 0);
             
             return (
-              <div key={hour} className="flex border-b min-h-[56px]">
+              <div key={hour} className="flex border-b min-h-[56px] relative">
                 <div className="w-20 shrink-0 pr-3 py-2 text-right text-sm text-muted-foreground">
                   {format(hourDate, 'h:mm a')}
                 </div>
                 <div 
-                  className={`flex-1 py-1 px-2 hover:bg-muted/20 transition-colors cursor-pointer ${draggedEvent || resizingEvent ? 'ring-1 ring-primary/20 ring-inset' : ''}`}
+                  className={`flex-1 py-1 px-2 hover:bg-muted/20 transition-colors cursor-pointer relative ${draggedEvent || resizingEvent ? 'ring-1 ring-primary/20 ring-inset' : ''}`}
                   onClick={(e) => onSlotClick?.(day, hour, e)}
                   data-testid={`day-slot-${hour}`}
                   onDragOver={(e) => {
@@ -2947,6 +2979,15 @@ function DayView({ day, events, hours, onEventClick, onSlotClick, onDragStart, o
                     const isDraggable = draggableTypes.includes(event.type);
                     const isResizable = resizableTypes.includes(event.type);
                     const isBeingResized = resizingEvent?.id === event.id;
+                    
+                    // Calculate event height based on duration (56px per hour for day view)
+                    const eventStart = new Date(event.start);
+                    const eventEnd = new Date(event.end);
+                    const durationMs = eventEnd.getTime() - eventStart.getTime();
+                    const durationHours = durationMs / (1000 * 60 * 60);
+                    // Day view uses 56px min-height per hour slot
+                    const heightPx = Math.max(48, Math.round(durationHours * 56) - 8);
+                    
                     return (
                       <div
                         key={event.id}
@@ -2956,6 +2997,7 @@ function DayView({ day, events, hours, onEventClick, onSlotClick, onDragStart, o
                           ${draggedEvent?.id === event.id ? 'opacity-50' : ''}
                           ${isBeingResized ? 'ring-2 ring-primary' : ''}
                         `}
+                        style={{ minHeight: `${heightPx}px` }}
                         data-testid={`event-day-timed-${event.id}`}
                       >
                         {isResizable && (
