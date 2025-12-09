@@ -476,14 +476,34 @@ router.post('/public/bookings/:token/available-slots', async (req, res) => {
       });
     }
     
-    // Fetch available slots
-    const slots = await splynxService.getAvailableSlots({
-      projectId: validation.booking!.taskType.splynxProjectId,
-      startDate: startDate || new Date().toISOString().split('T')[0],
-      endDate: endDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      duration: validation.booking!.taskType.defaultDuration || '2h 30m',
-      travelTime: validation.booking!.taskType.defaultTravelTimeTo || 0
-    });
+    // Get team configuration from task type
+    const defaultAssigneeTeamId = (validation.booking!.taskType as any).defaultAssigneeTeamId;
+    const taskType = validation.booking!.taskType;
+    
+    let slots: any[];
+    
+    // Use team availability when a team is configured (same method as calendar)
+    if (defaultAssigneeTeamId) {
+      console.log(`[BOOKINGS] Using team availability for team ${defaultAssigneeTeamId}`);
+      const teamAvailability = await splynxService.getTeamAvailability({
+        teamId: defaultAssigneeTeamId,
+        projectId: taskType.splynxProjectId,
+        startDate: startDate || new Date().toISOString().split('T')[0],
+        endDate: endDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        duration: taskType.defaultDuration || '2h 30m',
+        travelTime: taskType.defaultTravelTimeTo || 0
+      });
+      slots = teamAvailability.slots;
+    } else {
+      // Fallback to project-level availability
+      slots = await splynxService.getAvailableSlots({
+        projectId: taskType.splynxProjectId,
+        startDate: startDate || new Date().toISOString().split('T')[0],
+        endDate: endDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        duration: taskType.defaultDuration || '2h 30m',
+        travelTime: taskType.defaultTravelTimeTo || 0
+      });
+    }
     
     res.json({ slots });
   } catch (error: any) {
@@ -730,14 +750,33 @@ router.post('/public/appointment-types/:slug/available-slots', async (req, res) 
       });
     }
     
-    // Fetch available slots
-    const slots = await splynxService.getAvailableSlots({
-      projectId: appointmentType.splynxProjectId,
-      startDate: startDate || new Date().toISOString().split('T')[0],
-      endDate: endDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-      duration: appointmentType.defaultDuration || '2h 30m',
-      travelTime: appointmentType.defaultTravelTimeTo || 0
-    });
+    // Get team configuration
+    const defaultAssigneeTeamId = appointmentType.defaultAssigneeTeamId;
+    
+    let slots: any[];
+    
+    // Use team availability when a team is configured (same method as calendar)
+    if (defaultAssigneeTeamId) {
+      console.log(`[BOOKINGS] Using team availability for team ${defaultAssigneeTeamId}`);
+      const teamAvailability = await splynxService.getTeamAvailability({
+        teamId: defaultAssigneeTeamId,
+        projectId: appointmentType.splynxProjectId,
+        startDate: startDate || new Date().toISOString().split('T')[0],
+        endDate: endDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        duration: appointmentType.defaultDuration || '2h 30m',
+        travelTime: appointmentType.defaultTravelTimeTo || 0
+      });
+      slots = teamAvailability.slots;
+    } else {
+      // Fallback to project-level availability
+      slots = await splynxService.getAvailableSlots({
+        projectId: appointmentType.splynxProjectId,
+        startDate: startDate || new Date().toISOString().split('T')[0],
+        endDate: endDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+        duration: appointmentType.defaultDuration || '2h 30m',
+        travelTime: appointmentType.defaultTravelTimeTo || 0
+      });
+    }
     
     res.json({ slots });
   } catch (error: any) {
