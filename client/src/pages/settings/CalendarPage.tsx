@@ -267,10 +267,10 @@ export default function CalendarPage() {
       
       return apiRequest('/api/calendar/holidays/requests', {
         method: 'POST',
-        body: JSON.stringify({
+        body: {
           ...data,
           daysCount,
-        }),
+        },
       });
     },
     onSuccess: () => {
