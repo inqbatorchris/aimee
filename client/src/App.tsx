@@ -136,7 +136,6 @@ const CoreDevTools = lazy(() => import("@/pages/core/DevTools"));
 const AIAssistantSettings = lazy(() => import("@/pages/AIAssistantSettings"));
 
 // Settings Pages
-const BookableAppointmentsPage = lazy(() => import("@/pages/settings/BookableAppointmentsPage"));
 const CalendarPage = lazy(() => import("@/pages/settings/CalendarPage"));
 const CalendarSettingsPage = lazy(() => import("@/pages/settings/CalendarSettingsPage"));
 
@@ -741,7 +740,11 @@ function AppContent() {
               <Route path="/core/people" component={PeopleAndTeams} />
               
               {/* Settings Pages */}
-              <Route path="/settings/bookable-appointments" component={BookableAppointmentsPage} />
+              <Route path="/settings/bookable-appointments" component={() => {
+                const [, setLocation] = useLocation();
+                useEffect(() => setLocation('/calendar'), []);
+                return null;
+              }} />
               <Route path="/settings/calendar" component={CalendarSettingsPage} />
               <Route path="/calendar" component={CalendarPage} />
               

@@ -67,6 +67,7 @@ import {
   differenceInDays,
   parseISO
 } from 'date-fns';
+import BookableAppointmentsPage from './BookableAppointmentsPage';
 
 interface CalendarEvent {
   id: string;
@@ -173,6 +174,7 @@ export default function CalendarPage() {
   const [showBlockDialog, setShowBlockDialog] = useState(false);
   const [showHolidayDialog, setShowHolidayDialog] = useState(false);
   const [showApproverSettingsDialog, setShowApproverSettingsDialog] = useState(false);
+  const [showAppointmentsDialog, setShowAppointmentsDialog] = useState(false);
   const [createMenuDay, setCreateMenuDay] = useState<Date | null>(null);
   const [createMenuPosition, setCreateMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const [approverSettings, setApproverSettings] = useState<{ type: 'user' | 'team' | null; id: number | null }>({ type: null, id: null });
@@ -791,7 +793,7 @@ export default function CalendarPage() {
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem 
-                  onClick={() => navigate('/settings/bookable-appointments')}
+                  onClick={() => setShowAppointmentsDialog(true)}
                   data-testid="menu-splynx-booking"
                 >
                   <CalendarPlus className="h-4 w-4 mr-2" />
@@ -2144,6 +2146,18 @@ export default function CalendarPage() {
               {saveApproverSettingsMutation.isPending ? 'Saving...' : 'Save Settings'}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showAppointmentsDialog} onOpenChange={setShowAppointmentsDialog}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Manage Appointments</DialogTitle>
+            <DialogDescription>
+              Configure appointment types that customers can book through secure links.
+            </DialogDescription>
+          </DialogHeader>
+          <BookableAppointmentsPage />
         </DialogContent>
       </Dialog>
     </div>
