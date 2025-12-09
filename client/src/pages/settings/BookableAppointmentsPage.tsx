@@ -421,8 +421,11 @@ interface SplynxTeam {
 }
 
 interface CalendarFiltersResponse {
-  splynxTeams: SplynxTeam[];
-  splynxAdmins: SplynxAdmin[];
+  success: boolean;
+  filters: {
+    splynxTeams: Array<{ id: number; splynxTeamId: number; name: string; title?: string }>;
+    splynxAdmins: SplynxAdmin[];
+  };
 }
 
 interface ExtendedBookableTaskType extends Partial<BookableTaskType> {
@@ -441,8 +444,8 @@ function AssigneeSelector({ formData, setFormData }: AssigneeSelectorProps) {
     queryKey: ['/api/calendar/filters'],
   });
 
-  const admins = filtersData?.splynxAdmins || [];
-  const teams = filtersData?.splynxTeams || [];
+  const admins = filtersData?.filters?.splynxAdmins || [];
+  const teams = filtersData?.filters?.splynxTeams || [];
   const isLoadingAdmins = isLoadingFilters;
   const isLoadingTeams = isLoadingFilters;
 
@@ -466,7 +469,7 @@ function AssigneeSelector({ formData, setFormData }: AssigneeSelectorProps) {
               <SelectItem value="none">No default team</SelectItem>
               {teams.map((team) => (
                 <SelectItem key={team.id} value={team.id.toString()}>
-                  {team.title}
+                  {team.name || team.title}
                 </SelectItem>
               ))}
             </SelectContent>
