@@ -117,11 +117,12 @@ export default function WorkItems(props: WorkItemsProps = {}) {
   
   // Parse URL query parameters - use window.location as wouter doesn't include query params
   // We'll handle synchronization issues through proper state management
-  const [panelState, setPanelState] = useState<{ mode: 'create' | 'view' | 'edit' | null; id?: number }>(() => {
+  const [panelState, setPanelState] = useState<{ mode: 'create' | 'view' | 'edit' | null; id?: number; tab?: string }>(() => {
     const params = new URLSearchParams(window.location.search);
     const mode = params.get('panel') === 'workItem' ? params.get('mode') as 'create' | 'view' | 'edit' : null;
     const id = params.get('id') ? parseInt(params.get('id')!) : undefined;
-    return { mode, id };
+    const tab = params.get('tab') || undefined;
+    return { mode, id, tab };
   });
   
   // Offline work items state
@@ -141,7 +142,8 @@ export default function WorkItems(props: WorkItemsProps = {}) {
       const params = new URLSearchParams(window.location.search);
       const mode = params.get('panel') === 'workItem' ? params.get('mode') as 'create' | 'view' | 'edit' : null;
       const id = params.get('id') ? parseInt(params.get('id')!) : undefined;
-      setPanelState({ mode, id });
+      const tab = params.get('tab') || undefined;
+      setPanelState({ mode, id, tab });
     };
     
     window.addEventListener('popstate', handlePopState);
@@ -1800,6 +1802,7 @@ export default function WorkItems(props: WorkItemsProps = {}) {
             workItemId={selectedId}
             workItem={selectedWorkItem}
             onOpenKeyResult={(keyResultId) => openKeyResultPanel(keyResultId, 'details')}
+            initialTab={panelState.tab}
           />
         </div>
       )}

@@ -89,6 +89,7 @@ interface WorkItemPanelProps {
   workItemId?: number;
   workItem?: WorkItem;
   onOpenKeyResult?: (keyResultId: number) => void;
+  initialTab?: string;
   initialData?: {
     workflowTemplateId?: string;
     workItemType?: string;
@@ -113,6 +114,7 @@ export default function WorkItemPanel({
   workItemId,
   workItem: initialWorkItem,
   onOpenKeyResult,
+  initialTab,
   initialData,
 }: WorkItemPanelProps) {
   const isMobile = useIsMobile();
@@ -121,7 +123,7 @@ export default function WorkItemPanel({
   const [mode, setMode] = useState(
     initialMode === 'create' ? 'create' : (workItemId || initialWorkItem) ? 'edit' : initialMode
   );
-  const [activeTab, setActiveTab] = useState('details');
+  const [activeTab, setActiveTab] = useState(initialTab || 'details');
   
   // Sync mode with initialMode prop when it changes
   useEffect(() => {
@@ -133,6 +135,13 @@ export default function WorkItemPanel({
       setMode(initialMode);
     }
   }, [initialMode, workItemId, initialWorkItem]);
+  
+  // Sync activeTab when initialTab changes (e.g., from URL navigation)
+  useEffect(() => {
+    if (initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [initialTab]);
   const [formData, setFormData] = useState({
     title: '',
     description: '',
