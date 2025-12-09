@@ -555,17 +555,10 @@ export class SplynxService {
         limit: filters.limit || 1000
       };
 
-      // Splynx uses 'assignee' field (not 'assigned_id') for filtering by assignee
-      // When filtering by admin, we also need to specify assigned_to type
-      if (filters.assignedAdminId) {
-        params.main_attributes.assignee = filters.assignedAdminId;
-        params.main_attributes.assigned_to = 'assigned_to_administrator';
-      }
-
-      if (filters.teamId) {
-        params.main_attributes.assignee = filters.teamId;
-        params.main_attributes.assigned_to = 'assigned_to_team';
-      }
+      // Note: Splynx API doesn't support filtering by assignee/assigned_id in task queries
+      // Filtering by assignee must be done in application code after fetching tasks
+      // The assignedAdminId and teamId filters are kept for backwards compatibility
+      // but won't be sent to Splynx API - instead use getAvailableSlotsByAssignee which filters in code
 
       if (filters.status) {
         params.main_attributes.status = filters.status;
@@ -890,7 +883,8 @@ export class SplynxService {
 
   /**
    * Get available time slots for a specific assignee
-   * Queries Splynx tasks for the assignee and calculates free slots
+   * Queries Splynx tasks for the date range and filters by assignee in code
+   * (Splynx API doesn't support filtering by assignee directly)
    */
   async getAvailableSlotsByAssignee(params: {
     assigneeId: number;
@@ -900,24 +894,44 @@ export class SplynxService {
     duration: string;
     travelTime?: number;
     workingHours?: { start: number; end: number };
+    allTasks?: any[]; // Optional pre-fetched tasks to avoid redundant API calls
   }): Promise<any[]> {
     try {
       console.log(`[SPLYNX getAvailableSlotsByAssignee] Fetching slots for assignee ${params.assigneeId}`);
       
-      // Query existing tasks for this specific assignee
-      const existingTasks = await this.getSchedulingTasks({
-        assignedAdminId: params.assigneeId,
-        dateFrom: params.startDate,
-        dateTo: params.endDate,
+      // Use pre-fetched tasks if provided, otherwise fetch all tasks for date range
+      // Splynx API doesn't support filtering by assignee, so we filter in code
+      let allTasks = params.allTasks;
+      if (!allTasks) {
+        allTasks = await this.getSchedulingTasks({
+          startDate: `${params.startDate} 00:00:00`,
+          endDate: `${params.endDate} 23:59:59`,
+        });
+        console.log(`[SPLYNX getAvailableSlotsByAssignee] Fetched ${allTasks.length} total tasks for date range`);
+      }
+      
+      // Filter tasks assigned to this specific assignee
+      // Splynx uses 'assignee' field with 'assigned_to' indicating the type
+      const assigneeTasks = allTasks.filter((task: any) => {
+        // Task is assigned to this admin directly
+        if (task.assigned_to === 'assigned_to_administrator' && 
+            parseInt(task.assignee) === params.assigneeId) {
+          return true;
+        }
+        // Also include tasks assigned to "anyone" as they block the calendar
+        if (task.assigned_to === 'assigned_to_anyone') {
+          return true;
+        }
+        return false;
       });
 
-      console.log(`[SPLYNX getAvailableSlotsByAssignee] Found ${existingTasks.length} tasks for assignee ${params.assigneeId}`);
+      console.log(`[SPLYNX getAvailableSlotsByAssignee] Found ${assigneeTasks.length} tasks for assignee ${params.assigneeId}`);
       
       // Generate available slots avoiding existing tasks
       const slots = this.calculateAvailableSlots(
         params.startDate,
         params.endDate,
-        existingTasks,
+        assigneeTasks,
         params.duration,
         params.travelTime || 0,
         params.workingHours
@@ -958,7 +972,15 @@ export class SplynxService {
       
       console.log(`[SPLYNX getTeamAvailability] Team ${team.title} has ${team.memberIds.length} members`);
       
-      // Get availability for each team member
+      // Pre-fetch all tasks for the date range once (more efficient than per-member queries)
+      // Splynx API doesn't support filtering by assignee, so we fetch all and filter in code
+      const allTasks = await this.getSchedulingTasks({
+        startDate: `${params.startDate} 00:00:00`,
+        endDate: `${params.endDate} 23:59:59`,
+      });
+      console.log(`[SPLYNX getTeamAvailability] Fetched ${allTasks.length} total tasks for date range`);
+      
+      // Get availability for each team member, passing pre-fetched tasks
       const memberAvailability: Record<number, any[]> = {};
       
       for (const memberId of team.memberIds) {
@@ -970,6 +992,7 @@ export class SplynxService {
           duration: params.duration,
           travelTime: params.travelTime,
           workingHours: params.workingHours,
+          allTasks: allTasks, // Pass pre-fetched tasks to avoid redundant API calls
         });
         memberAvailability[memberId] = slots;
       }
