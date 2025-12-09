@@ -555,12 +555,16 @@ export class SplynxService {
         limit: filters.limit || 1000
       };
 
+      // Splynx uses 'assignee' field (not 'assigned_id') for filtering by assignee
+      // When filtering by admin, we also need to specify assigned_to type
       if (filters.assignedAdminId) {
-        params.main_attributes.assigned_id = filters.assignedAdminId;
+        params.main_attributes.assignee = filters.assignedAdminId;
+        params.main_attributes.assigned_to = 'assigned_to_administrator';
       }
 
       if (filters.teamId) {
-        params.main_attributes.team_id = filters.teamId;
+        params.main_attributes.assignee = filters.teamId;
+        params.main_attributes.assigned_to = 'assigned_to_team';
       }
 
       if (filters.status) {
