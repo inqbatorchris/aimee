@@ -1291,9 +1291,12 @@ router.patch('/bookable-task-types/:id', authenticateToken, async (req, res) => 
       return res.status(401).json({ error: 'Unauthorized' });
     }
     
+    // Sanitize updates: remove fields that shouldn't be updated or are timestamps sent as strings
+    const { createdAt, updatedAt, id: _id, organizationId: _orgId, ...safeUpdates } = updates;
+    
     const [updated] = await db
       .update(bookableTaskTypes)
-      .set({ ...updates, updatedAt: new Date() })
+      .set({ ...safeUpdates, updatedAt: new Date() })
       .where(and(
         eq(bookableTaskTypes.id, parseInt(id)),
         eq(bookableTaskTypes.organizationId, organizationId)
