@@ -8,6 +8,7 @@ import { Switch } from "@/components/ui/switch";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { 
   User, 
   Mail, 
@@ -27,9 +28,12 @@ import {
   CheckCircle,
   XCircle,
   AlertTriangle,
-  Umbrella
+  Umbrella,
+  ExternalLink,
+  Calendar
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
+import { useLocation } from "wouter";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -66,6 +70,7 @@ interface OrganizationData {
 
 export default function UserProfile() {
   const { currentUser, logout, updateProfile } = useAuth();
+  const [, setLocation] = useLocation();
   const [activeTab, setActiveTab] = useState("profile");
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [avatarKey, setAvatarKey] = useState(0); // Force re-render of avatar
@@ -129,6 +134,37 @@ export default function UserProfile() {
     queryKey: ['/api/calendar/holidays/allowance'],
     enabled: !!currentUser
   });
+  
+  // Fetch user's holiday requests (stored as work items with workItemType='holiday_request')
+  type HolidayWorkItem = {
+    id: number;
+    title: string;
+    status: string;
+    workflowMetadata: {
+      startDate: string;
+      endDate: string;
+      daysCount: number;
+      holidayType: string;
+    } | null;
+    createdAt: string;
+  };
+  
+  const { data: holidayWorkItemsData } = useQuery({
+    queryKey: ['/api/work-items', { ownerId: currentUser?.id, workItemType: 'holiday_request' }],
+    queryFn: async () => {
+      const response = await fetch(`/api/work-items?ownerId=${currentUser?.id}&workItemType=holiday_request`, {
+        credentials: 'include',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+      });
+      if (!response.ok) throw new Error('Failed to fetch holiday requests');
+      const data = await response.json();
+      if (Array.isArray(data)) return data;
+      return data?.items || [];
+    },
+    enabled: !!currentUser,
+  });
+  
+  const holidayWorkItems: HolidayWorkItem[] = Array.isArray(holidayWorkItemsData) ? holidayWorkItemsData : [];
 
   // Single profile update mutation (handles both form data and file upload)
   const updateProfileMutation = useMutation({
@@ -557,6 +593,83 @@ export default function UserProfile() {
                   <Umbrella className="h-8 w-8 mx-auto mb-2 opacity-50" />
                   <p>No leave allowance configured for this year.</p>
                   <p className="text-xs mt-1">Contact your administrator to set up your annual leave entitlement.</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+          
+          {/* Holiday Requests Table */}
+          <Card data-testid="card-holiday-requests">
+            <CardHeader>
+              <CardTitle className="font-semibold tracking-tight flex items-center gap-2 text-[18px] mt-[0px] mb-[0px]">
+                <Calendar className="h-5 w-5" />
+                My Holiday Requests
+              </CardTitle>
+              <CardDescription>
+                View and track your holiday requests for {new Date().getFullYear()}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              {holidayWorkItems.length === 0 ? (
+                <div className="text-center py-6 text-muted-foreground">
+                  <Calendar className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>No holiday requests found.</p>
+                  <p className="text-xs mt-1">Submit a holiday request from the Calendar page.</p>
+                </div>
+              ) : (
+                <div className="border rounded-lg overflow-hidden">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Dates</TableHead>
+                        <TableHead>Days</TableHead>
+                        <TableHead>Type</TableHead>
+                        <TableHead>Status</TableHead>
+                        <TableHead className="w-[40px]"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {holidayWorkItems.map((item) => {
+                        const metadata = item.workflowMetadata;
+                        const statusMap: Record<string, string> = {
+                          'Ready': 'pending',
+                          'In Progress': 'pending', 
+                          'Completed': 'approved',
+                          'Archived': 'rejected'
+                        };
+                        const displayStatus = statusMap[item.status] || 'pending';
+                        
+                        return (
+                          <TableRow 
+                            key={item.id} 
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() => setLocation(`/strategy/work-items?panel=workItem&mode=view&id=${item.id}&tab=workflow`)}
+                            data-testid={`holiday-request-row-${item.id}`}
+                          >
+                            <TableCell className="font-medium">
+                              {metadata?.startDate ? new Date(metadata.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : 'N/A'}
+                              {metadata?.startDate !== metadata?.endDate && metadata?.endDate && (
+                                <> - {new Date(metadata.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</>
+                              )}
+                            </TableCell>
+                            <TableCell>{metadata?.daysCount || 0}</TableCell>
+                            <TableCell className="capitalize">{metadata?.holidayType || 'Annual'}</TableCell>
+                            <TableCell>
+                              <Badge 
+                                variant={displayStatus === 'approved' ? 'default' : displayStatus === 'rejected' ? 'destructive' : 'secondary'}
+                                className={displayStatus === 'approved' ? 'bg-green-600' : ''}
+                              >
+                                {displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
                 </div>
               )}
             </CardContent>

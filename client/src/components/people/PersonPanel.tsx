@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
@@ -7,7 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
-import { X, Plus, User, Mail, Shield, Key, Eye, EyeOff, Bot, Save, Umbrella, Loader2 } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { X, Plus, User, Mail, Shield, Key, Eye, EyeOff, Bot, Save, Umbrella, Loader2, ExternalLink } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -32,6 +34,7 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
   const queryClient = useQueryClient();
   const { toast } = useToast();
   const { currentUser } = useAuth();
+  const [, setLocation] = useLocation();
   const [addingTeam, setAddingTeam] = useState(false);
   const [selectedTeamId, setSelectedTeamId] = useState<string>("");
   const [selectedTeamRole, setSelectedTeamRole] = useState<string>("Member");
@@ -63,7 +66,7 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
   });
   
   // Fetch user's holiday allowance (admin only)
-  const { data: allowanceData, isLoading: isLoadingAllowance, refetch: refetchAllowance } = useQuery<{
+  type AllowanceResponse = {
     success: boolean;
     allowance: {
       id: number;
@@ -75,8 +78,18 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
       remaining: number;
       percentUsed: number;
     } | null;
-  }>({
+  };
+  
+  const { data: allowanceData, isLoading: isLoadingAllowance, refetch: refetchAllowance } = useQuery<AllowanceResponse>({
     queryKey: ['/api/calendar/admin/allowances', user.id],
+    queryFn: async () => {
+      const response = await fetch(`/api/calendar/admin/allowances/${user.id}`, {
+        credentials: 'include',
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+      });
+      if (!response.ok) throw new Error('Failed to fetch allowance');
+      return response.json();
+    },
     enabled: open && isAdmin,
   });
 
@@ -88,7 +101,7 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
     queryFn: async () => {
       const response = await fetch(`/api/core/users/${user.id}/teams`, {
         credentials: 'include',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
       });
       if (!response.ok) throw new Error('Failed to fetch teams');
       return response.json() as Promise<TeamMembership[]>;
@@ -119,7 +132,7 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
     queryFn: async () => {
       const response = await fetch(`/api/work-items?ownerId=${user.id}&workItemType=holiday_request`, {
         credentials: 'include',
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
       });
       if (!response.ok) throw new Error('Failed to fetch holiday requests');
       const data = await response.json();
@@ -937,51 +950,62 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
             {holidayWorkItems.length === 0 ? (
               <div className="text-sm text-muted-foreground">No holiday requests found</div>
             ) : (
-              <div className="space-y-2">
-                {holidayWorkItems.slice(0, 5).map((item) => {
-                  const metadata = item.workflowMetadata;
-                  const statusMap: Record<string, string> = {
-                    'Ready': 'pending',
-                    'In Progress': 'pending', 
-                    'Completed': 'approved',
-                    'Archived': 'rejected'
-                  };
-                  const displayStatus = statusMap[item.status] || 'pending';
-                  
-                  return (
-                    <div 
-                      key={item.id} 
-                      className="flex flex-col sm:flex-row sm:items-center justify-between border rounded-lg p-3 space-y-2 sm:space-y-0"
-                      data-testid={`holiday-request-${item.id}`}
-                    >
-                      <div className="flex flex-col gap-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">
+              <div className="border rounded-lg overflow-hidden">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Dates</TableHead>
+                      <TableHead>Days</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="w-[40px]"></TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {holidayWorkItems.map((item) => {
+                      const metadata = item.workflowMetadata;
+                      const statusMap: Record<string, string> = {
+                        'Ready': 'pending',
+                        'In Progress': 'pending', 
+                        'Completed': 'approved',
+                        'Archived': 'rejected'
+                      };
+                      const displayStatus = statusMap[item.status] || 'pending';
+                      
+                      return (
+                        <TableRow 
+                          key={item.id} 
+                          className="cursor-pointer hover:bg-muted/50"
+                          onClick={() => {
+                            onClose();
+                            setLocation(`/strategy/work-items?panel=workItem&mode=view&id=${item.id}&tab=workflow`);
+                          }}
+                          data-testid={`holiday-request-row-${item.id}`}
+                        >
+                          <TableCell className="font-medium">
                             {metadata?.startDate ? new Date(metadata.startDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }) : 'N/A'}
                             {metadata?.startDate !== metadata?.endDate && metadata?.endDate && (
                               <> - {new Date(metadata.endDate).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })}</>
                             )}
-                          </span>
-                          <Badge variant="outline" className="text-xs">
-                            {metadata?.daysCount || 0} {(metadata?.daysCount || 0) === 1 ? 'day' : 'days'}
-                          </Badge>
-                        </div>
-                        <span className="text-xs text-muted-foreground capitalize">{metadata?.holidayType || 'Annual'} Leave</span>
-                      </div>
-                      <Badge 
-                        variant={displayStatus === 'approved' ? 'default' : displayStatus === 'rejected' ? 'destructive' : 'secondary'}
-                        className={displayStatus === 'approved' ? 'bg-green-600' : ''}
-                      >
-                        {displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)}
-                      </Badge>
-                    </div>
-                  );
-                })}
-                {holidayWorkItems.length > 5 && (
-                  <div className="text-sm text-muted-foreground text-center py-2">
-                    + {holidayWorkItems.length - 5} more requests
-                  </div>
-                )}
+                          </TableCell>
+                          <TableCell>{metadata?.daysCount || 0}</TableCell>
+                          <TableCell className="capitalize">{metadata?.holidayType || 'Annual'}</TableCell>
+                          <TableCell>
+                            <Badge 
+                              variant={displayStatus === 'approved' ? 'default' : displayStatus === 'rejected' ? 'destructive' : 'secondary'}
+                              className={displayStatus === 'approved' ? 'bg-green-600' : ''}
+                            >
+                              {displayStatus.charAt(0).toUpperCase() + displayStatus.slice(1)}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <ExternalLink className="h-4 w-4 text-muted-foreground" />
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
               </div>
             )}
           </div>

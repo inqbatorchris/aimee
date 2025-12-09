@@ -329,7 +329,8 @@ app.get('/api/auth/check', authenticateToken, async (req: Request, res: Response
         role: user.role,
         organizationId: user.organizationId,
         isActive: user.isActive,
-        avatarUrl: user.avatarUrl
+        avatarUrl: user.avatarUrl,
+        splynxAdminId: user.splynxAdminId
       }
     });
   } catch (error) {
