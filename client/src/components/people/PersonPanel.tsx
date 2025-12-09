@@ -81,14 +81,12 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
   });
 
   // Fetch user's team memberships using dedicated endpoint
-  const { data: memberships = [], refetch: refetchMemberships } = useQuery<{
-    id: number;
-    name: string;
-    cadence: string;
-    role: string;
-    createdAt: string;
-  }[]>({
+  const { data: memberships = [], refetch: refetchMemberships } = useQuery({
     queryKey: ['/api/core/users', user.id, 'teams'],
+    queryFn: async () => {
+      const response = await apiRequest(`/api/core/users/${user.id}/teams`);
+      return response as unknown as { id: number; name: string; cadence: string; role: string; createdAt: string }[];
+    },
     enabled: open,
   });
 
