@@ -1887,6 +1887,8 @@ export class SplynxService {
     workflow_status_id?: number;
     scheduled_date?: string;
     scheduled_time?: string;
+    scheduled_from?: string;
+    scheduled_to?: string;
     scheduled_duration_hours?: number;
     scheduled_duration_minutes?: number;
     related_customer_id?: number;
@@ -1904,7 +1906,7 @@ export class SplynxService {
         },
       });
       
-      console.log(`[SPLYNX updateSchedulingTask] Successfully updated task ${taskId}`);
+      console.log(`[SPLYNX updateSchedulingTask] Successfully updated task ${taskId}, response:`, JSON.stringify(response.data, null, 2));
       return response.data;
     } catch (error: any) {
       console.error(`[SPLYNX updateSchedulingTask] Failed to update task ${taskId}:`, error.message);
