@@ -1882,13 +1882,56 @@ export class SplynxService {
       console.log('[SPLYNX createSchedulingTaskForBlock] Creating block task at:', url);
       console.log('[SPLYNX createSchedulingTaskForBlock] Input data:', JSON.stringify(data, null, 2));
       
-      // Calculate formatted duration (HH:MM format) from start and end times
+      // Calculate formatted duration in "Xh Ym" format (e.g., "2h 30m") as required by Splynx
       const startTime = new Date(data.scheduledFrom.replace(' ', 'T'));
       const endTime = new Date(data.scheduledTo.replace(' ', 'T'));
       const durationMinutes = Math.max(1, Math.round((endTime.getTime() - startTime.getTime()) / (1000 * 60)));
       const durationHours = Math.floor(durationMinutes / 60);
       const durationMins = durationMinutes % 60;
-      const formattedDuration = `${String(durationHours).padStart(2, '0')}:${String(durationMins).padStart(2, '0')}`;
+      // Format as "Xh Ym" - Splynx expects this format, not HH:MM
+      const formattedDuration = durationMins > 0 
+        ? `${durationHours}h ${durationMins}m`
+        : `${durationHours}h`;
+      
+      // Fetch valid workflow statuses to get a valid status ID
+      let workflowStatusId: number | null = null;
+      try {
+        const statusesUrl = this.buildUrl('admin/scheduling/workflows');
+        const statusesResponse = await axios.get(statusesUrl, {
+          headers: {
+            'Authorization': this.credentials.authHeader,
+            'Content-Type': 'application/json',
+          },
+        });
+        console.log('[SPLYNX createSchedulingTaskForBlock] Workflows response:', JSON.stringify(statusesResponse.data, null, 2));
+        // Find the first workflow and get its first status
+        if (Array.isArray(statusesResponse.data) && statusesResponse.data.length > 0) {
+          const workflow = statusesResponse.data[0];
+          if (workflow.statuses && Array.isArray(workflow.statuses) && workflow.statuses.length > 0) {
+            workflowStatusId = workflow.statuses[0].id;
+          } else if (workflow.id) {
+            // Try to get workflow statuses separately
+            try {
+              const workflowStatusesUrl = this.buildUrl(`admin/scheduling/workflows/${workflow.id}/statuses`);
+              const wfStatusesResp = await axios.get(workflowStatusesUrl, {
+                headers: {
+                  'Authorization': this.credentials.authHeader,
+                  'Content-Type': 'application/json',
+                },
+              });
+              if (Array.isArray(wfStatusesResp.data) && wfStatusesResp.data.length > 0) {
+                workflowStatusId = wfStatusesResp.data[0].id;
+              }
+            } catch (e) {
+              console.log('[SPLYNX] Could not fetch workflow statuses separately');
+            }
+          }
+        }
+      } catch (e: any) {
+        console.log('[SPLYNX createSchedulingTaskForBlock] Could not fetch workflows:', e.message);
+      }
+      
+      console.log('[SPLYNX createSchedulingTaskForBlock] Using workflow_status_id:', workflowStatusId);
       
       // Build the Splynx payload
       const splynxPayload: any = {
@@ -1901,8 +1944,12 @@ export class SplynxService {
         scheduled_from: data.scheduledFrom,
         scheduled_to: data.scheduledTo,
         formatted_duration: formattedDuration,
-        workflow_status_id: 1, // Default to "Open" status
       };
+      
+      // Only add workflow_status_id if we found a valid one
+      if (workflowStatusId) {
+        splynxPayload.workflow_status_id = workflowStatusId;
+      }
       
       // Add description
       if (data.description) {
