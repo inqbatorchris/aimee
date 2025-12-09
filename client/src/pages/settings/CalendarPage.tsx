@@ -410,13 +410,17 @@ export default function CalendarPage() {
   };
 
   const moveEventMutation = useMutation({
-    mutationFn: async ({ event, newDate }: { event: CalendarEvent; newDate: Date }) => {
+    mutationFn: async ({ event, newDate, newHour }: { event: CalendarEvent; newDate: Date; newHour?: number }) => {
       const eventType = event.type;
       
-      // Create new start by copying original date's time to a cloned new date (preserves timezone, avoids mutation)
+      // Create new start - if newHour provided, use it; otherwise preserve original time
       const createNewStart = () => {
         const newStart = new Date(newDate.getTime()); // Clone to avoid mutating original
-        newStart.setHours(event.start.getHours(), event.start.getMinutes(), event.start.getSeconds(), 0);
+        if (newHour !== undefined) {
+          newStart.setHours(newHour, 0, 0, 0);
+        } else {
+          newStart.setHours(event.start.getHours(), event.start.getMinutes(), event.start.getSeconds(), 0);
+        }
         return newStart;
       };
       
@@ -478,6 +482,11 @@ export default function CalendarPage() {
   const handleEventDrop = (newDate: Date) => {
     if (!draggedEvent) return;
     moveEventMutation.mutate({ event: draggedEvent, newDate });
+  };
+
+  const handleEventDropWithHour = (newDate: Date, hour: number) => {
+    if (!draggedEvent) return;
+    moveEventMutation.mutate({ event: draggedEvent, newDate, newHour: hour });
   };
 
   const splynxTaskId = selectedEvent?.type === 'splynx_task' 
@@ -1119,6 +1128,10 @@ export default function CalendarPage() {
             hours={workingHours}
             onSlotClick={handleSlotClick}
             onEventClick={handleEventClick}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onEventDrop={handleEventDropWithHour}
+            draggedEvent={draggedEvent}
           />
         )}
         </div>
@@ -2524,9 +2537,14 @@ interface DayViewProps {
   hours: number[];
   onEventClick?: (event: CalendarEvent) => void;
   onSlotClick?: (day: Date, hour: number, event: React.MouseEvent) => void;
+  onDragStart?: (event: CalendarEvent) => void;
+  onDragEnd?: () => void;
+  onEventDrop?: (newDate: Date, hour: number) => void;
+  draggedEvent?: CalendarEvent | null;
 }
 
-function DayView({ day, events, hours, onEventClick, onSlotClick }: DayViewProps) {
+function DayView({ day, events, hours, onEventClick, onSlotClick, onDragStart, onDragEnd, onEventDrop, draggedEvent }: DayViewProps) {
+  const draggableTypes = ['splynx_task', 'block', 'booking', 'work_item'];
   const allDayEvents = events.filter(e => e.allDay || e.type === 'work_item' || e.type === 'holiday' || e.type === 'public_holiday');
   const timedEvents = events.filter(e => !e.allDay && e.type !== 'work_item' && e.type !== 'holiday' && e.type !== 'public_holiday');
 
@@ -2586,36 +2604,64 @@ function DayView({ day, events, hours, onEventClick, onSlotClick }: DayViewProps
                   {format(hourDate, 'h:mm a')}
                 </div>
                 <div 
-                  className="flex-1 py-1 px-2 hover:bg-muted/20 transition-colors cursor-pointer"
+                  className={`flex-1 py-1 px-2 hover:bg-muted/20 transition-colors cursor-pointer ${draggedEvent ? 'ring-1 ring-primary/20 ring-inset' : ''}`}
                   onClick={(e) => onSlotClick?.(day, hour, e)}
                   data-testid={`day-slot-${hour}`}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.add('bg-primary/10');
+                  }}
+                  onDragLeave={(e) => {
+                    e.currentTarget.classList.remove('bg-primary/10');
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.remove('bg-primary/10');
+                    onEventDrop?.(new Date(day.getTime()), hour);
+                  }}
                 >
-                  {hourEvents.map((event) => (
-                    <div
-                      key={event.id}
-                      onClick={(e) => { e.stopPropagation(); onEventClick?.(event); }}
-                      className={`
-                        p-2 rounded mb-1 flex items-start gap-3 cursor-pointer hover:opacity-80
-                        ${eventTypeBgColors[event.type]}
-                      `}
-                      data-testid={`event-day-timed-${event.id}`}
-                    >
-                      <div className="flex-1">
-                        <div className="font-medium text-sm">{event.title}</div>
-                        {event.userName && (
-                          <div className="text-xs opacity-75 flex items-center gap-1 mt-0.5">
-                            <User className="h-3 w-3" />
-                            {event.userName}
-                          </div>
+                  {hourEvents.map((event) => {
+                    const isDraggable = draggableTypes.includes(event.type);
+                    return (
+                      <div
+                        key={event.id}
+                        draggable={isDraggable}
+                        onDragStart={(e) => {
+                          if (!isDraggable) {
+                            e.preventDefault();
+                            return;
+                          }
+                          e.dataTransfer.effectAllowed = 'move';
+                          onDragStart?.(event);
+                        }}
+                        onDragEnd={() => onDragEnd?.()}
+                        onClick={(e) => { e.stopPropagation(); onEventClick?.(event); }}
+                        className={`
+                          p-2 rounded mb-1 flex items-start gap-3 hover:opacity-80
+                          ${eventTypeBgColors[event.type]}
+                          ${isDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
+                          ${draggedEvent?.id === event.id ? 'opacity-50' : ''}
+                        `}
+                        title={isDraggable ? `${event.title} (drag to move)` : event.title}
+                        data-testid={`event-day-timed-${event.id}`}
+                      >
+                        <div className="flex-1">
+                          <div className="font-medium text-sm">{event.title}</div>
+                          {event.userName && (
+                            <div className="text-xs opacity-75 flex items-center gap-1 mt-0.5">
+                              <User className="h-3 w-3" />
+                              {event.userName}
+                            </div>
+                          )}
+                        </div>
+                        {event.status && (
+                          <Badge variant="outline" className="text-xs shrink-0">
+                            {event.status}
+                          </Badge>
                         )}
                       </div>
-                      {event.status && (
-                        <Badge variant="outline" className="text-xs shrink-0">
-                          {event.status}
-                        </Badge>
-                      )}
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             );
