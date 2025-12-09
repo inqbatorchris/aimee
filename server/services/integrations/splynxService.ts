@@ -1893,45 +1893,70 @@ export class SplynxService {
         ? `${durationHours}h ${durationMins}m`
         : `${durationHours}h`;
       
-      // Fetch valid workflow statuses to get a valid status ID
+      // Get a valid workflow_status_id by fetching an existing task from the same project
       let workflowStatusId: number | null = null;
       try {
-        const statusesUrl = this.buildUrl('admin/scheduling/workflows');
-        const statusesResponse = await axios.get(statusesUrl, {
+        // Fetch an existing task from this project to get a valid workflow_status_id
+        const tasksUrl = this.buildUrl('admin/scheduling/tasks');
+        const tasksResponse = await axios.get(tasksUrl, {
+          params: {
+            main_attributes: {
+              project_id: data.projectId
+            },
+            limit: 1
+          },
           headers: {
             'Authorization': this.credentials.authHeader,
             'Content-Type': 'application/json',
           },
         });
-        console.log('[SPLYNX createSchedulingTaskForBlock] Workflows response:', JSON.stringify(statusesResponse.data, null, 2));
-        // Find the first workflow and get its first status
-        if (Array.isArray(statusesResponse.data) && statusesResponse.data.length > 0) {
-          const workflow = statusesResponse.data[0];
-          if (workflow.statuses && Array.isArray(workflow.statuses) && workflow.statuses.length > 0) {
-            workflowStatusId = workflow.statuses[0].id;
-          } else if (workflow.id) {
-            // Try to get workflow statuses separately
-            try {
-              const workflowStatusesUrl = this.buildUrl(`admin/scheduling/workflows/${workflow.id}/statuses`);
-              const wfStatusesResp = await axios.get(workflowStatusesUrl, {
-                headers: {
-                  'Authorization': this.credentials.authHeader,
-                  'Content-Type': 'application/json',
-                },
-              });
-              if (Array.isArray(wfStatusesResp.data) && wfStatusesResp.data.length > 0) {
-                workflowStatusId = wfStatusesResp.data[0].id;
+        console.log('[SPLYNX createSchedulingTaskForBlock] Fetched existing tasks:', tasksResponse.data?.length || 0);
+        if (Array.isArray(tasksResponse.data) && tasksResponse.data.length > 0) {
+          const existingTask = tasksResponse.data[0];
+          if (existingTask.workflow_status_id) {
+            workflowStatusId = existingTask.workflow_status_id;
+            console.log('[SPLYNX createSchedulingTaskForBlock] Using workflow_status_id from existing task:', workflowStatusId);
+          }
+        }
+        
+        // If we still don't have a status, try to get the project details
+        if (!workflowStatusId) {
+          try {
+            const projectUrl = this.buildUrl(`admin/scheduling/projects/${data.projectId}`);
+            const projectResponse = await axios.get(projectUrl, {
+              headers: {
+                'Authorization': this.credentials.authHeader,
+                'Content-Type': 'application/json',
+              },
+            });
+            console.log('[SPLYNX createSchedulingTaskForBlock] Project details:', JSON.stringify(projectResponse.data, null, 2));
+            // Check if project has a default workflow status
+            if (projectResponse.data?.workflow_id) {
+              // Try to get workflow statuses
+              try {
+                const workflowUrl = this.buildUrl(`admin/scheduling/workflows/${projectResponse.data.workflow_id}/statuses`);
+                const workflowResponse = await axios.get(workflowUrl, {
+                  headers: {
+                    'Authorization': this.credentials.authHeader,
+                    'Content-Type': 'application/json',
+                  },
+                });
+                if (Array.isArray(workflowResponse.data) && workflowResponse.data.length > 0) {
+                  workflowStatusId = workflowResponse.data[0].id;
+                }
+              } catch (e) {
+                console.log('[SPLYNX] Could not fetch workflow statuses from project workflow');
               }
-            } catch (e) {
-              console.log('[SPLYNX] Could not fetch workflow statuses separately');
             }
+          } catch (e) {
+            console.log('[SPLYNX] Could not fetch project details');
           }
         }
       } catch (e: any) {
-        console.log('[SPLYNX createSchedulingTaskForBlock] Could not fetch workflows:', e.message);
+        console.log('[SPLYNX createSchedulingTaskForBlock] Could not fetch existing tasks:', e.message);
       }
       
-      console.log('[SPLYNX createSchedulingTaskForBlock] Using workflow_status_id:', workflowStatusId);
+      console.log('[SPLYNX createSchedulingTaskForBlock] Final workflow_status_id:', workflowStatusId);
       
       // Build the Splynx payload
       const splynxPayload: any = {
