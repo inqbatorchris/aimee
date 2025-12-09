@@ -26,8 +26,10 @@ import {
   ChevronRight,
   CheckCircle,
   XCircle,
-  AlertTriangle
+  AlertTriangle,
+  Umbrella
 } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { useQuery, useMutation } from "@tanstack/react-query";
@@ -109,6 +111,23 @@ export default function UserProfile() {
   const { data: organizationData } = useQuery<OrganizationData>({
     queryKey: [`/api/core/organizations/${currentUser?.organizationId}`],
     enabled: !!currentUser?.organizationId
+  });
+
+  // Fetch holiday allowance data
+  const { data: allowanceData } = useQuery<{
+    success: boolean;
+    allowance: {
+      annualAllowance: string;
+      carriedOver: string;
+      usedDays: string;
+      pendingDays: string;
+      totalAvailable: number;
+      remaining: number;
+      percentUsed: number;
+    } | null;
+  }>({
+    queryKey: ['/api/calendar/holidays/allowance'],
+    enabled: !!currentUser
   });
 
   // Single profile update mutation (handles both form data and file upload)
@@ -478,6 +497,68 @@ export default function UserProfile() {
                   </p>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+          
+          <Card data-testid="card-leave-balance">
+            <CardHeader>
+              <CardTitle className="font-semibold tracking-tight flex items-center gap-2 text-[18px] mt-[0px] mb-[0px]">
+                <Umbrella className="h-5 w-5" />
+                Leave Balance
+              </CardTitle>
+              <CardDescription>
+                Your annual leave allowance and usage for {new Date().getFullYear()}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {allowanceData?.allowance ? (
+                <>
+                  <div className="grid gap-4 md:grid-cols-4">
+                    <div className="text-center p-4 rounded-lg bg-muted/50">
+                      <div className="text-2xl font-bold text-primary" data-testid="text-total-allowance">
+                        {allowanceData.allowance.totalAvailable}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Total Available</div>
+                    </div>
+                    <div className="text-center p-4 rounded-lg bg-green-100 dark:bg-green-900/30">
+                      <div className="text-2xl font-bold text-green-600 dark:text-green-400" data-testid="text-used-days">
+                        {parseFloat(allowanceData.allowance.usedDays || '0')}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Used</div>
+                    </div>
+                    <div className="text-center p-4 rounded-lg bg-yellow-100 dark:bg-yellow-900/30">
+                      <div className="text-2xl font-bold text-yellow-600 dark:text-yellow-400" data-testid="text-pending-days">
+                        {parseFloat(allowanceData.allowance.pendingDays || '0')}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Pending</div>
+                    </div>
+                    <div className="text-center p-4 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                      <div className="text-2xl font-bold text-blue-600 dark:text-blue-400" data-testid="text-remaining-days">
+                        {allowanceData.allowance.remaining}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Remaining</div>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Usage</span>
+                      <span className="font-medium">{allowanceData.allowance.percentUsed}%</span>
+                    </div>
+                    <Progress value={allowanceData.allowance.percentUsed} className="h-2" />
+                  </div>
+                  {parseFloat(allowanceData.allowance.carriedOver || '0') > 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      Includes {parseFloat(allowanceData.allowance.carriedOver)} days carried over from last year
+                    </p>
+                  )}
+                </>
+              ) : (
+                <div className="text-center py-6 text-muted-foreground">
+                  <Umbrella className="h-8 w-8 mx-auto mb-2 opacity-50" />
+                  <p>No leave allowance configured for this year.</p>
+                  <p className="text-xs mt-1">Contact your administrator to set up your annual leave entitlement.</p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>

@@ -2107,4 +2107,153 @@ router.get('/calendar/test', authenticateToken, async (req: Request, res: Respon
   }
 });
 
+// ========================================
+// ADMIN HOLIDAY ALLOWANCE MANAGEMENT
+// ========================================
+
+router.get('/calendar/admin/allowances', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const organizationId = (req as any).user.organizationId;
+    const userRole = (req as any).user.role;
+    
+    if (!['admin', 'super_admin'].includes(userRole)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    
+    const year = parseInt(req.query.year as string) || new Date().getFullYear();
+    
+    const allowances = await db
+      .select({
+        allowance: holidayAllowances,
+        user: {
+          id: users.id,
+          fullName: users.fullName,
+          email: users.email,
+        }
+      })
+      .from(holidayAllowances)
+      .innerJoin(users, eq(holidayAllowances.userId, users.id))
+      .where(and(
+        eq(holidayAllowances.organizationId, organizationId),
+        eq(holidayAllowances.year, year)
+      ));
+    
+    const formattedAllowances = allowances.map(row => ({
+      ...row.allowance,
+      userName: row.user.fullName || row.user.email,
+      userEmail: row.user.email,
+      totalAvailable: parseFloat(row.allowance.annualAllowance as any) + parseFloat(row.allowance.carriedOver as any || '0'),
+      remaining: parseFloat(row.allowance.annualAllowance as any) + parseFloat(row.allowance.carriedOver as any || '0') 
+        - parseFloat(row.allowance.usedDays as any || '0') 
+        - parseFloat(row.allowance.pendingDays as any || '0'),
+    }));
+    
+    res.json({ success: true, allowances: formattedAllowances, year });
+  } catch (error: any) {
+    console.error('[CALENDAR] Error fetching admin allowances:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.get('/calendar/admin/allowances/:userId', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const organizationId = (req as any).user.organizationId;
+    const userRole = (req as any).user.role;
+    
+    if (!['admin', 'super_admin'].includes(userRole)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    
+    const targetUserId = parseInt(req.params.userId);
+    const year = parseInt(req.query.year as string) || new Date().getFullYear();
+    
+    const [allowance] = await db
+      .select()
+      .from(holidayAllowances)
+      .where(and(
+        eq(holidayAllowances.userId, targetUserId),
+        eq(holidayAllowances.year, year),
+        eq(holidayAllowances.organizationId, organizationId)
+      ))
+      .limit(1);
+    
+    if (!allowance) {
+      return res.json({ 
+        success: true, 
+        allowance: null,
+        message: 'No allowance configured for this user and year'
+      });
+    }
+    
+    const totalAvailable = parseFloat(allowance.annualAllowance as any) + parseFloat(allowance.carriedOver as any || '0');
+    const remaining = totalAvailable - parseFloat(allowance.usedDays as any || '0') - parseFloat(allowance.pendingDays as any || '0');
+    
+    res.json({ 
+      success: true, 
+      allowance: {
+        ...allowance,
+        totalAvailable,
+        remaining,
+        percentUsed: Math.round((parseFloat(allowance.usedDays as any || '0') / totalAvailable) * 100)
+      }
+    });
+  } catch (error: any) {
+    console.error('[CALENDAR] Error fetching user allowance:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.put('/calendar/admin/allowances/:userId', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const organizationId = (req as any).user.organizationId;
+    const userRole = (req as any).user.role;
+    
+    if (!['admin', 'super_admin'].includes(userRole)) {
+      return res.status(403).json({ success: false, error: 'Admin access required' });
+    }
+    
+    const targetUserId = parseInt(req.params.userId);
+    const { year, annualAllowance, carriedOver, maxCarryover } = req.body;
+    const targetYear = year || new Date().getFullYear();
+    
+    const [existing] = await db
+      .select()
+      .from(holidayAllowances)
+      .where(and(
+        eq(holidayAllowances.userId, targetUserId),
+        eq(holidayAllowances.year, targetYear),
+        eq(holidayAllowances.organizationId, organizationId)
+      ))
+      .limit(1);
+    
+    if (existing) {
+      await db
+        .update(holidayAllowances)
+        .set({
+          annualAllowance: annualAllowance?.toString() || existing.annualAllowance,
+          carriedOver: carriedOver?.toString() || existing.carriedOver,
+          maxCarryover: maxCarryover?.toString() || existing.maxCarryover,
+          updatedAt: new Date(),
+        })
+        .where(eq(holidayAllowances.id, existing.id));
+      
+      res.json({ success: true, message: 'Allowance updated' });
+    } else {
+      await db.insert(holidayAllowances).values({
+        userId: targetUserId,
+        organizationId,
+        year: targetYear,
+        annualAllowance: annualAllowance?.toString() || '25',
+        carriedOver: carriedOver?.toString() || '0',
+        maxCarryover: maxCarryover?.toString() || '5',
+      });
+      
+      res.json({ success: true, message: 'Allowance created' });
+    }
+  } catch (error: any) {
+    console.error('[CALENDAR] Error updating user allowance:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 export default router;

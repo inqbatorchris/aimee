@@ -6,7 +6,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { X, Plus, User, Mail, Shield, Key, Eye, EyeOff, Bot, Save } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import { X, Plus, User, Mail, Shield, Key, Eye, EyeOff, Bot, Save, Umbrella, Loader2 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/contexts/AuthContext";
@@ -45,6 +46,9 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
   const [editedName, setEditedName] = useState(user.fullName);
   const [editedEmail, setEditedEmail] = useState(user.email);
   const [editedUserType, setEditedUserType] = useState<'human' | 'agent'>(user.userType || 'human');
+  const [editingAllowance, setEditingAllowance] = useState(false);
+  const [editedAnnualAllowance, setEditedAnnualAllowance] = useState<string>('25');
+  const [editedCarriedOver, setEditedCarriedOver] = useState<string>('0');
   
   // Fetch available teams
   const { data: allTeams = [] } = useQuery({
@@ -58,6 +62,24 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
     enabled: open && currentUser?.role === 'super_admin',
   });
   
+  // Fetch user's holiday allowance (admin only)
+  const { data: allowanceData, isLoading: isLoadingAllowance, refetch: refetchAllowance } = useQuery<{
+    success: boolean;
+    allowance: {
+      id: number;
+      annualAllowance: string;
+      carriedOver: string;
+      usedDays: string;
+      pendingDays: string;
+      totalAvailable: number;
+      remaining: number;
+      percentUsed: number;
+    } | null;
+  }>({
+    queryKey: ['/api/calendar/admin/allowances', user.id],
+    enabled: open && isAdmin,
+  });
+
   // Fetch user's team memberships
   const { data: memberships = [], refetch: refetchMemberships } = useQuery({
     queryKey: ['/api/core/users', user.id, 'teams'],
@@ -204,6 +226,39 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
     },
   });
   
+  // Update holiday allowance mutation
+  const updateAllowanceMutation = useMutation({
+    mutationFn: async (data: { annualAllowance: string; carriedOver: string }) => {
+      const annualValue = parseFloat(data.annualAllowance);
+      const carriedValue = parseFloat(data.carriedOver);
+      
+      if (isNaN(annualValue) || annualValue < 0) {
+        throw new Error('Invalid annual allowance value');
+      }
+      if (isNaN(carriedValue) || carriedValue < 0) {
+        throw new Error('Invalid carried over value');
+      }
+      
+      return apiRequest(`/api/calendar/admin/allowances/${user.id}`, {
+        method: 'PUT',
+        body: { 
+          year: new Date().getFullYear(),
+          annualAllowance: annualValue,
+          carriedOver: carriedValue,
+        },
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar/admin/allowances', user.id] });
+      refetchAllowance();
+      toast({ title: "Leave allowance updated" });
+      setEditingAllowance(false);
+    },
+    onError: (error: any) => {
+      toast({ title: "Failed to update allowance", description: error.message, variant: "destructive" });
+    },
+  });
+
   // Reset password mutation
   const resetPasswordMutation = useMutation({
     mutationFn: async (password: string) => {
@@ -701,6 +756,150 @@ export function PersonPanel({ user, open, onClose, isAdmin }: PersonPanelProps) 
               )}
             </div>
           </div>
+          
+          {/* Leave Allowance Section (Admin only) */}
+          {isAdmin && (
+            <div className="space-y-3 sm:space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0">
+                <h3 className="text-base sm:text-lg font-semibold flex items-center gap-2">
+                  <Umbrella className="h-4 w-4" />
+                  Leave Allowance ({new Date().getFullYear()})
+                </h3>
+                {!editingAllowance && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      if (allowanceData?.allowance) {
+                        setEditedAnnualAllowance(allowanceData.allowance.annualAllowance || '25');
+                        setEditedCarriedOver(allowanceData.allowance.carriedOver || '0');
+                      } else {
+                        setEditedAnnualAllowance('25');
+                        setEditedCarriedOver('0');
+                      }
+                      setEditingAllowance(true);
+                    }}
+                    className="h-9 px-4 text-sm w-full sm:w-auto"
+                    data-testid={`button-edit-allowance-${user.id}`}
+                  >
+                    Edit Allowance
+                  </Button>
+                )}
+              </div>
+              
+              {isLoadingAllowance ? (
+                <div className="flex items-center gap-2 text-muted-foreground text-sm">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Loading...
+                </div>
+              ) : editingAllowance ? (
+                <div className="border rounded-lg p-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label>Annual Allowance (days)</Label>
+                      <Input
+                        type="number"
+                        value={editedAnnualAllowance}
+                        onChange={(e) => setEditedAnnualAllowance(e.target.value)}
+                        min="0"
+                        step="0.5"
+                        className="h-10 sm:h-9"
+                        data-testid="input-annual-allowance"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Carried Over (days)</Label>
+                      <Input
+                        type="number"
+                        value={editedCarriedOver}
+                        onChange={(e) => setEditedCarriedOver(e.target.value)}
+                        min="0"
+                        step="0.5"
+                        className="h-10 sm:h-9"
+                        data-testid="input-carried-over"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Button
+                      size="sm"
+                      onClick={() => updateAllowanceMutation.mutate({
+                        annualAllowance: editedAnnualAllowance,
+                        carriedOver: editedCarriedOver,
+                      })}
+                      disabled={updateAllowanceMutation.isPending}
+                      className="h-9 px-4 text-sm"
+                      data-testid="button-save-allowance"
+                    >
+                      {updateAllowanceMutation.isPending ? "Saving..." : "Save"}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setEditingAllowance(false)}
+                      className="h-9 px-4 text-sm"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : allowanceData?.allowance ? (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="text-center p-3 rounded-lg bg-muted/50">
+                      <div className="text-lg font-bold text-primary">
+                        {allowanceData.allowance.totalAvailable}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Total</div>
+                    </div>
+                    <div className="text-center p-3 rounded-lg bg-green-100 dark:bg-green-900/30">
+                      <div className="text-lg font-bold text-green-600 dark:text-green-400">
+                        {parseFloat(allowanceData.allowance.usedDays || '0')}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Used</div>
+                    </div>
+                    <div className="text-center p-3 rounded-lg bg-yellow-100 dark:bg-yellow-900/30">
+                      <div className="text-lg font-bold text-yellow-600 dark:text-yellow-400">
+                        {parseFloat(allowanceData.allowance.pendingDays || '0')}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Pending</div>
+                    </div>
+                    <div className="text-center p-3 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                      <div className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                        {allowanceData.allowance.remaining}
+                      </div>
+                      <div className="text-xs text-muted-foreground">Remaining</div>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="flex justify-between text-xs text-muted-foreground">
+                      <span>Usage</span>
+                      <span>{allowanceData.allowance.percentUsed}%</span>
+                    </div>
+                    <Progress value={allowanceData.allowance.percentUsed} className="h-1.5" />
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-4 text-muted-foreground text-sm border rounded-lg">
+                  <Umbrella className="h-6 w-6 mx-auto mb-2 opacity-50" />
+                  <p>No leave allowance configured</p>
+                  <Button
+                    size="sm"
+                    variant="link"
+                    onClick={() => {
+                      setEditedAnnualAllowance('25');
+                      setEditedCarriedOver('0');
+                      setEditingAllowance(true);
+                    }}
+                    className="mt-1"
+                    data-testid={`button-setup-allowance-${user.id}`}
+                  >
+                    Set up allowance
+                  </Button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </SheetContent>
     </Sheet>
