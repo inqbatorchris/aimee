@@ -1858,16 +1858,17 @@ export default function CalendarPage() {
                   <div className="space-y-2">
                     <Label htmlFor="block-project" className="text-sm">Project Type (required)</Label>
                     <Select 
-                      value={blockForm.splynxProjectId?.toString() || ''} 
-                      onValueChange={(v) => setBlockForm(f => ({ ...f, splynxProjectId: parseInt(v) }))}
+                      value={blockForm.splynxProjectId?.toString() || 'none'} 
+                      onValueChange={(v) => setBlockForm(f => ({ ...f, splynxProjectId: v === 'none' ? null : parseInt(v) }))}
                     >
                       <SelectTrigger data-testid="select-splynx-project">
                         <SelectValue placeholder="Select project..." />
                       </SelectTrigger>
                       <SelectContent>
+                        <SelectItem value="none">Select project...</SelectItem>
                         {(filtersData?.filters as any)?.splynxProjects?.map((project: any) => (
                           <SelectItem key={project.id} value={project.id.toString()}>
-                            {project.name}
+                            {project.title || project.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
