@@ -462,8 +462,18 @@ export default function CalendarPage() {
       const time = splynxTaskEdit.scheduled_time || '00:00';
       payload.scheduled_from = `${splynxTaskEdit.scheduled_date} ${time}:00`;
     }
-    if (splynxTaskEdit.assigned_to && splynxTaskEdit.assigned_to > 0) payload.assignee = splynxTaskEdit.assigned_to;
-    if (splynxTaskEdit.team_id && splynxTaskEdit.team_id > 0) payload.team_id = splynxTaskEdit.team_id;
+    
+    // Handle assignment - Splynx requires 'assigned_to' type, 'assignee' value, AND 'team_id' for team assignments
+    // Priority: If team is set, assign to team. Otherwise assign to individual admin.
+    if (splynxTaskEdit.team_id && splynxTaskEdit.team_id > 0) {
+      payload.assigned_to = 'assigned_to_team';
+      payload.assignee = splynxTaskEdit.team_id;
+      payload.team_id = splynxTaskEdit.team_id; // Splynx also requires team_id field
+    } else if (splynxTaskEdit.assigned_to && splynxTaskEdit.assigned_to > 0) {
+      payload.assigned_to = 'assigned_to_administrator';
+      payload.assignee = splynxTaskEdit.assigned_to;
+    }
+    
     if (splynxTaskEdit.project_id && splynxTaskEdit.project_id > 0) payload.project_id = splynxTaskEdit.project_id;
     updateSplynxTaskMutation.mutate(payload);
   };

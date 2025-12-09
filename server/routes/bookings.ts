@@ -891,8 +891,38 @@ router.post('/public/appointment-types/:slug/available-slots', async (req, res) 
     
     let slots: any[];
     
-    // Use team availability when a team is configured
-    if (defaultAssigneeTeamId) {
+    // PRIORITY: Use specific user availability when a user is configured
+    // User takes priority over team to ensure the intended person's schedule is checked
+    if (defaultAssigneeUserId) {
+      // Use specific assignee availability
+      console.log(`[BOOKINGS] Using assignee availability for user ${defaultAssigneeUserId}`);
+      
+      // Fetch local busy intervals for this specific assignee
+      const localBusyIntervalsMap = await getLocalBusyIntervals({
+        organizationId: appointmentType.organizationId,
+        splynxAdminIds: [defaultAssigneeUserId],
+        startDate: rangeStartDate,
+        endDate: rangeEndDate,
+      });
+      
+      // Get all teams this admin belongs to for proper task filtering
+      const teams = await splynxService.getSchedulingTeams();
+      const memberTeamIds = teams
+        .filter(t => t.memberIds.includes(defaultAssigneeUserId))
+        .map(t => t.id);
+      
+      slots = await splynxService.getAvailableSlotsByAssignee({
+        assigneeId: defaultAssigneeUserId,
+        projectId: appointmentType.splynxProjectId,
+        startDate: rangeStartDate,
+        endDate: rangeEndDate,
+        duration: appointmentType.defaultDuration || '30m',
+        travelTime: appointmentType.defaultTravelTimeTo || 0,
+        memberTeamIds: memberTeamIds,
+        localBusyIntervals: localBusyIntervalsMap[defaultAssigneeUserId] || [],
+      });
+    } else if (defaultAssigneeTeamId) {
+      // Use team availability when only a team is configured (no specific user)
       console.log(`[BOOKINGS] Using team availability for team ${defaultAssigneeTeamId}`);
       
       // Get team members from Splynx to fetch their local busy intervals
@@ -924,34 +954,6 @@ router.post('/public/appointment-types/:slug/available-slots', async (req, res) 
         localBusyIntervalsMap: localBusyIntervalsMap, // Pass local blocks
       });
       slots = teamAvailability.slots;
-    } else if (defaultAssigneeUserId) {
-      // Use specific assignee availability
-      console.log(`[BOOKINGS] Using assignee availability for user ${defaultAssigneeUserId}`);
-      
-      // Fetch local busy intervals for this specific assignee
-      const localBusyIntervalsMap = await getLocalBusyIntervals({
-        organizationId: appointmentType.organizationId,
-        splynxAdminIds: [defaultAssigneeUserId],
-        startDate: rangeStartDate,
-        endDate: rangeEndDate,
-      });
-      
-      // Get all teams this admin belongs to for proper task filtering
-      const teams = await splynxService.getSchedulingTeams();
-      const memberTeamIds = teams
-        .filter(t => t.memberIds.includes(defaultAssigneeUserId))
-        .map(t => t.id);
-      
-      slots = await splynxService.getAvailableSlotsByAssignee({
-        assigneeId: defaultAssigneeUserId,
-        projectId: appointmentType.splynxProjectId,
-        startDate: rangeStartDate,
-        endDate: rangeEndDate,
-        duration: appointmentType.defaultDuration || '30m',
-        travelTime: appointmentType.defaultTravelTimeTo || 0,
-        memberTeamIds: memberTeamIds,
-        localBusyIntervals: localBusyIntervalsMap[defaultAssigneeUserId] || [],
-      });
     } else {
       // Fallback to project-level availability (no local block checking)
       console.log(`[BOOKINGS] Using project-level availability (no team/assignee configured)`);
