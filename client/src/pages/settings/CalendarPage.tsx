@@ -1208,6 +1208,15 @@ export default function CalendarPage() {
             hours={workingHours}
             onEventClick={handleEventClick}
             onSlotClick={handleSlotClick}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onEventDrop={handleEventDropWithHour}
+            draggedEvent={draggedEvent}
+            onResizeStart={handleResizeStart}
+            onResizeEnd={handleResizeEnd}
+            onResizeDrop={handleResizeDropWithHour}
+            resizingEvent={resizingEvent}
+            resizeEdge={resizeEdge}
           />
         ) : viewMode === 'roadmap' ? (
           <RoadmapView
@@ -2495,9 +2504,20 @@ interface WeekViewProps {
   hours: number[];
   onEventClick?: (event: CalendarEvent) => void;
   onSlotClick?: (day: Date, hour: number, event: React.MouseEvent) => void;
+  onDragStart?: (event: CalendarEvent) => void;
+  onDragEnd?: () => void;
+  onEventDrop?: (newDate: Date, hour: number) => void;
+  draggedEvent?: CalendarEvent | null;
+  onResizeStart?: (event: CalendarEvent, edge: 'start' | 'end') => void;
+  onResizeEnd?: () => void;
+  onResizeDrop?: (newDate: Date, hour: number) => void;
+  resizingEvent?: CalendarEvent | null;
+  resizeEdge?: 'start' | 'end' | null;
 }
 
-function WeekView({ days, events, hours, onEventClick, onSlotClick }: WeekViewProps) {
+function WeekView({ days, events, hours, onEventClick, onSlotClick, onDragStart, onDragEnd, onEventDrop, draggedEvent, onResizeStart, onResizeEnd, onResizeDrop, resizingEvent, resizeEdge }: WeekViewProps) {
+  const draggableTypes = ['splynx_task', 'block', 'booking', 'work_item'];
+  const resizableTypes = ['splynx_task', 'block', 'booking'];
   const getEventsForDay = (day: Date) => {
     return events.filter((event) => {
       const eventStart = startOfDay(new Date(event.start));
@@ -2601,24 +2621,88 @@ function WeekView({ days, events, hours, onEventClick, onSlotClick }: WeekViewPr
                     className={`
                       h-12 border-b relative cursor-pointer hover:bg-muted/30 transition-colors
                       ${isToday(day) ? 'bg-primary/5' : ''}
+                      ${draggedEvent || resizingEvent ? 'ring-1 ring-primary/10 ring-inset' : ''}
                     `}
                     onClick={(e) => onSlotClick?.(day, hour, e)}
                     data-testid={`slot-${format(day, 'yyyy-MM-dd')}-${hour}`}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.add('bg-primary/10');
+                    }}
+                    onDragLeave={(e) => {
+                      e.currentTarget.classList.remove('bg-primary/10');
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.remove('bg-primary/10');
+                      if (resizingEvent) {
+                        onResizeDrop?.(new Date(day.getTime()), hour);
+                      } else {
+                        onEventDrop?.(new Date(day.getTime()), hour);
+                      }
+                    }}
                   >
-                    {hourEvents.map((event) => (
-                      <div
-                        key={event.id}
-                        onClick={(e) => { e.stopPropagation(); onEventClick?.(event); }}
-                        className={`
-                          absolute left-0.5 right-0.5 top-0.5 text-[10px] p-1 rounded truncate z-10 cursor-pointer hover:opacity-80
-                          ${eventTypeColors[event.type]}
-                        `}
-                        title={event.title}
-                        data-testid={`event-week-timed-${event.id}`}
-                      >
-                        {event.title}
-                      </div>
-                    ))}
+                    {hourEvents.map((event) => {
+                      const isDraggable = draggableTypes.includes(event.type);
+                      const isResizable = resizableTypes.includes(event.type);
+                      const isBeingResized = resizingEvent?.id === event.id;
+                      return (
+                        <div
+                          key={event.id}
+                          className={`
+                            absolute left-0.5 right-0.5 top-0.5 text-[10px] rounded truncate z-10
+                            ${eventTypeColors[event.type]}
+                            ${draggedEvent?.id === event.id ? 'opacity-50' : ''}
+                            ${isBeingResized ? 'ring-2 ring-primary' : ''}
+                          `}
+                          data-testid={`event-week-timed-${event.id}`}
+                        >
+                          {isResizable && (
+                            <div
+                              draggable
+                              onDragStart={(e) => {
+                                e.stopPropagation();
+                                e.dataTransfer.effectAllowed = 'move';
+                                onResizeStart?.(event, 'start');
+                              }}
+                              onDragEnd={() => onResizeEnd?.()}
+                              className="absolute top-0 left-0 right-0 h-1 cursor-n-resize hover:bg-white/40 z-20"
+                              title="Drag to change start time"
+                            />
+                          )}
+                          <div
+                            draggable={isDraggable}
+                            onDragStart={(e) => {
+                              if (!isDraggable) {
+                                e.preventDefault();
+                                return;
+                              }
+                              e.dataTransfer.effectAllowed = 'move';
+                              onDragStart?.(event);
+                            }}
+                            onDragEnd={() => onDragEnd?.()}
+                            onClick={(e) => { e.stopPropagation(); onEventClick?.(event); }}
+                            className={`p-1 ${isDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'} hover:opacity-80`}
+                            title={isDraggable ? `${event.title} (drag to move)` : event.title}
+                          >
+                            {event.title}
+                          </div>
+                          {isResizable && (
+                            <div
+                              draggable
+                              onDragStart={(e) => {
+                                e.stopPropagation();
+                                e.dataTransfer.effectAllowed = 'move';
+                                onResizeStart?.(event, 'end');
+                              }}
+                              onDragEnd={() => onResizeEnd?.()}
+                              className="absolute bottom-0 left-0 right-0 h-1 cursor-s-resize hover:bg-white/40 z-20"
+                              title="Drag to change end time"
+                            />
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 );
               })}
