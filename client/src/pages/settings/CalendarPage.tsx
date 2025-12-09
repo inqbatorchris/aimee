@@ -218,10 +218,10 @@ export default function CalendarPage() {
     mutationFn: async (data: typeof blockForm) => {
       return apiRequest('/api/calendar/blocks', {
         method: 'POST',
-        body: JSON.stringify({
+        body: {
           ...data,
           blocksAvailability: true,
-        }),
+        },
       });
     },
     onSuccess: () => {
