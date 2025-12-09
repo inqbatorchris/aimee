@@ -620,9 +620,17 @@ export default function CalendarPage() {
     if (resizingEvent && resizeEdge && resizeHoverHourRef.current) {
       const { date, hour } = resizeHoverHourRef.current;
       const newTime = new Date(date.getTime());
-      newTime.setHours(hour, 0, 0, 0);
       
-      console.log('[RESIZE END] Using tracked hover hour:', hour);
+      // When extending END: slot hour represents start of that slot, 
+      // so end time should be hour+1 (end of slot)
+      // When changing START: slot hour is the new start time directly
+      if (resizeEdge === 'end') {
+        newTime.setHours(hour + 1, 0, 0, 0);
+        console.log('[RESIZE END] Extending end to hour:', hour + 1, '(dropped on slot', hour, ')');
+      } else {
+        newTime.setHours(hour, 0, 0, 0);
+        console.log('[RESIZE END] Moving start to hour:', hour);
+      }
       
       if (resizeEdge === 'start') {
         resizeEventMutation.mutate({ event: resizingEvent, newStart: newTime });
@@ -650,8 +658,16 @@ export default function CalendarPage() {
     if (resizeHoverHourRef.current) {
       const { date, hour } = resizeHoverHourRef.current;
       const trackedTime = new Date(date.getTime());
-      trackedTime.setHours(hour, 0, 0, 0);
-      console.log('[RESIZE DROP] Using tracked hover hour:', hour, 'instead of:', newTime.getHours());
+      
+      // When extending END: slot hour represents start of that slot, 
+      // so end time should be hour+1 (end of slot)
+      if (resizeEdge === 'end') {
+        trackedTime.setHours(hour + 1, 0, 0, 0);
+        console.log('[RESIZE DROP] Extending end to hour:', hour + 1, '(dropped on slot', hour, ')');
+      } else {
+        trackedTime.setHours(hour, 0, 0, 0);
+        console.log('[RESIZE DROP] Moving start to hour:', hour);
+      }
       
       if (resizeEdge === 'start') {
         resizeEventMutation.mutate({ event: resizingEvent, newStart: trackedTime });
@@ -676,8 +692,16 @@ export default function CalendarPage() {
     if (resizeHoverHourRef.current) {
       const { date, hour: trackedHour } = resizeHoverHourRef.current;
       const trackedTime = new Date(date.getTime());
-      trackedTime.setHours(trackedHour, 0, 0, 0);
-      console.log('[RESIZE DROP] Using tracked hover hour:', trackedHour, 'instead of drop hour:', hour);
+      
+      // When extending END: slot hour represents start of that slot, 
+      // so end time should be hour+1 (end of slot)
+      if (resizeEdge === 'end') {
+        trackedTime.setHours(trackedHour + 1, 0, 0, 0);
+        console.log('[RESIZE DROP] Extending end to hour:', trackedHour + 1, '(dropped on slot', trackedHour, ')');
+      } else {
+        trackedTime.setHours(trackedHour, 0, 0, 0);
+        console.log('[RESIZE DROP] Moving start to hour:', trackedHour);
+      }
       
       if (resizeEdge === 'start') {
         resizeEventMutation.mutate({ event: resizingEvent, newStart: trackedTime });
@@ -689,7 +713,12 @@ export default function CalendarPage() {
     }
     
     const newTime = new Date(newDate.getTime());
-    newTime.setHours(hour, 0, 0, 0);
+    // When extending END: use hour+1 (end of slot), for START: use hour directly
+    if (resizeEdge === 'end') {
+      newTime.setHours(hour + 1, 0, 0, 0);
+    } else {
+      newTime.setHours(hour, 0, 0, 0);
+    }
     
     if (resizeEdge === 'start') {
       resizeEventMutation.mutate({ event: resizingEvent, newStart: newTime });
