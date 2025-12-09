@@ -1419,6 +1419,32 @@ export default function CalendarPage() {
                         Holiday Request
                       </Badge>
                     </div>
+                    <div className="pt-4">
+                      <Button
+                        variant="destructive"
+                        className="w-full"
+                        onClick={async () => {
+                          if (!confirm('Are you sure you want to delete this holiday request?')) return;
+                          try {
+                            const holidayId = selectedEvent.id.replace('holiday-', '');
+                            const response = await fetch(`/api/calendar/holidays/requests/${holidayId}`, {
+                              method: 'DELETE',
+                              headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+                            });
+                            if (!response.ok) throw new Error('Failed to delete holiday request');
+                            queryClient.invalidateQueries({ queryKey: ['/api/calendar/combined'] });
+                            handleCloseEventDetail();
+                            toast({ title: 'Holiday request deleted' });
+                          } catch (err: any) {
+                            toast({ title: 'Error', description: err.message, variant: 'destructive' });
+                          }
+                        }}
+                        data-testid="button-delete-holiday"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete Holiday Request
+                      </Button>
+                    </div>
                   </div>
                 )}
 
@@ -1441,6 +1467,32 @@ export default function CalendarPage() {
                         <Clock className="h-3 w-3 mr-1" />
                         Calendar Block
                       </Badge>
+                    </div>
+                    <div className="pt-4">
+                      <Button
+                        variant="destructive"
+                        className="w-full"
+                        onClick={async () => {
+                          if (!confirm('Are you sure you want to delete this calendar block?')) return;
+                          try {
+                            const blockId = selectedEvent.id.replace('block-', '');
+                            const response = await fetch(`/api/calendar/blocks/${blockId}`, {
+                              method: 'DELETE',
+                              headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+                            });
+                            if (!response.ok) throw new Error('Failed to delete calendar block');
+                            queryClient.invalidateQueries({ queryKey: ['/api/calendar/combined'] });
+                            handleCloseEventDetail();
+                            toast({ title: 'Calendar block deleted' });
+                          } catch (err: any) {
+                            toast({ title: 'Error', description: err.message, variant: 'destructive' });
+                          }
+                        }}
+                        data-testid="button-delete-block"
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete Block
+                      </Button>
                     </div>
                   </div>
                 )}
@@ -1477,14 +1529,36 @@ export default function CalendarPage() {
                       </Badge>
                     </div>
                     {selectedEvent.metadata?.workItemId && (
-                      <div className="pt-2">
+                      <div className="pt-4 flex gap-2">
                         <Button 
                           onClick={() => handleNavigateToEvent(selectedEvent)}
-                          className="w-full"
+                          className="flex-1"
                           data-testid="button-open-work-item"
                         >
                           <ExternalLink className="h-4 w-4 mr-2" />
                           Open Work Item
+                        </Button>
+                        <Button
+                          variant="destructive"
+                          onClick={async () => {
+                            if (!confirm('Are you sure you want to delete this work item?')) return;
+                            try {
+                              const workItemId = selectedEvent.metadata?.workItemId;
+                              const response = await fetch(`/api/work-items/${workItemId}`, {
+                                method: 'DELETE',
+                                headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+                              });
+                              if (!response.ok) throw new Error('Failed to delete work item');
+                              queryClient.invalidateQueries({ queryKey: ['/api/calendar/combined'] });
+                              handleCloseEventDetail();
+                              toast({ title: 'Work item deleted' });
+                            } catch (err: any) {
+                              toast({ title: 'Error', description: err.message, variant: 'destructive' });
+                            }
+                          }}
+                          data-testid="button-delete-work-item"
+                        >
+                          <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>
                     )}

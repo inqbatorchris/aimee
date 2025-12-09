@@ -761,6 +761,62 @@ router.patch('/calendar/holidays/requests/:id/reject', authenticateToken, async 
   }
 });
 
+router.delete('/calendar/holidays/requests/:id', authenticateToken, async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const organizationId = (req as any).user.organizationId;
+    
+    // Get the request to check ownership and restore days if needed
+    const [request] = await db
+      .select()
+      .from(holidayRequests)
+      .where(and(
+        eq(holidayRequests.id, parseInt(id)),
+        eq(holidayRequests.organizationId, organizationId)
+      ))
+      .limit(1);
+    
+    if (!request) {
+      return res.status(404).json({ success: false, error: 'Request not found' });
+    }
+    
+    // If the request was approved, restore the days
+    if (request.status === 'approved') {
+      const year = new Date(request.startDate).getFullYear();
+      await db
+        .update(holidayAllowances)
+        .set({
+          usedDays: sql`used_days - ${request.daysCount}`,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(holidayAllowances.userId, request.userId),
+          eq(holidayAllowances.year, year)
+        ));
+    } else if (request.status === 'pending') {
+      // If pending, reduce pending days
+      const year = new Date(request.startDate).getFullYear();
+      await db
+        .update(holidayAllowances)
+        .set({
+          pendingDays: sql`pending_days - ${request.daysCount}`,
+          updatedAt: new Date(),
+        })
+        .where(and(
+          eq(holidayAllowances.userId, request.userId),
+          eq(holidayAllowances.year, year)
+        ));
+    }
+    
+    await db.delete(holidayRequests).where(eq(holidayRequests.id, parseInt(id)));
+    
+    res.json({ success: true, message: 'Holiday request deleted' });
+  } catch (error: any) {
+    console.error('[CALENDAR] Error deleting holiday request:', error.message);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // ========================================
 // PUBLIC HOLIDAYS
 // ========================================
