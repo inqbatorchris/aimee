@@ -183,6 +183,9 @@ export default function CalendarPage() {
     endDatetime: string;
   } | null>(null);
   
+  // Drag-and-drop state
+  const [draggedEvent, setDraggedEvent] = useState<CalendarEvent | null>(null);
+  
   const [hiddenEventTypes, setHiddenEventTypes] = useState<Set<string>>(new Set());
   const [showWeekends, setShowWeekends] = useState(true);
   
@@ -392,6 +395,89 @@ export default function CalendarPage() {
       const tab = hasWorkflow ? 'workflow' : 'details';
       navigate(`/strategy/work-items?panel=workItem&mode=view&id=${event.metadata.workItemId}&tab=${tab}`);
     }
+  };
+
+  // Drag-and-drop handlers
+  const handleDragStart = (event: CalendarEvent) => {
+    // Only allow dragging for editable event types
+    const draggableTypes = ['splynx_task', 'block', 'booking', 'work_item'];
+    if (!draggableTypes.includes(event.type)) return;
+    setDraggedEvent(event);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedEvent(null);
+  };
+
+  const moveEventMutation = useMutation({
+    mutationFn: async ({ event, newDate }: { event: CalendarEvent; newDate: Date }) => {
+      const eventType = event.type;
+      
+      // Create new start by copying original date's time to a cloned new date (preserves timezone, avoids mutation)
+      const createNewStart = () => {
+        const newStart = new Date(newDate.getTime()); // Clone to avoid mutating original
+        newStart.setHours(event.start.getHours(), event.start.getMinutes(), event.start.getSeconds(), 0);
+        return newStart;
+      };
+      
+      if (eventType === 'splynx_task') {
+        const taskId = event.id.replace('splynx-task-', '');
+        const newStart = createNewStart();
+        const newScheduledFrom = format(newStart, 'yyyy-MM-dd HH:mm:ss');
+        
+        return apiRequest(`/api/calendar/splynx/tasks/${taskId}`, {
+          method: 'PUT',
+          body: { scheduled_from: newScheduledFrom },
+        });
+      } else if (eventType === 'block') {
+        const blockId = event.id.replace('block-', '');
+        const duration = event.end.getTime() - event.start.getTime();
+        const newStart = createNewStart();
+        const newEnd = new Date(newStart.getTime() + duration);
+        
+        return apiRequest(`/api/calendar/blocks/${blockId}`, {
+          method: 'PATCH',
+          body: {
+            startDatetime: format(newStart, "yyyy-MM-dd'T'HH:mm"),
+            endDatetime: format(newEnd, "yyyy-MM-dd'T'HH:mm"),
+          },
+        });
+      } else if (eventType === 'work_item' && event.metadata?.workItemId) {
+        return apiRequest(`/api/work-items/${event.metadata.workItemId}`, {
+          method: 'PATCH',
+          body: { dueDate: format(newDate, 'yyyy-MM-dd') },
+        });
+      } else if (eventType === 'booking' && event.metadata?.bookingId) {
+        const duration = event.end.getTime() - event.start.getTime();
+        const newStart = createNewStart();
+        const newEnd = new Date(newStart.getTime() + duration);
+        
+        // Use local datetime format to avoid timezone conversion issues
+        return apiRequest(`/api/bookings/appointments/${event.metadata.bookingId}`, {
+          method: 'PATCH',
+          body: {
+            scheduledStart: format(newStart, "yyyy-MM-dd'T'HH:mm:ss"),
+            scheduledEnd: format(newEnd, "yyyy-MM-dd'T'HH:mm:ss"),
+          },
+        });
+      }
+      
+      throw new Error('Cannot move this event type');
+    },
+    onSuccess: (_, { event }) => {
+      toast({ title: `${event.title} moved successfully` });
+      queryClient.invalidateQueries({ queryKey: ['/api/calendar/combined'] });
+      setDraggedEvent(null);
+    },
+    onError: (error: any) => {
+      toast({ title: 'Failed to move event', description: error.message, variant: 'destructive' });
+      setDraggedEvent(null);
+    },
+  });
+
+  const handleEventDrop = (newDate: Date) => {
+    if (!draggedEvent) return;
+    moveEventMutation.mutate({ event: draggedEvent, newDate });
   };
 
   const splynxTaskId = selectedEvent?.type === 'splynx_task' 
@@ -1007,6 +1093,10 @@ export default function CalendarPage() {
             getEventsForDay={getEventsForDay}
             onEventClick={handleEventClick}
             onDayClick={handleDayClick}
+            onDragStart={handleDragStart}
+            onDragEnd={handleDragEnd}
+            onEventDrop={handleEventDrop}
+            draggedEvent={draggedEvent}
           />
         ) : viewMode === 'week' ? (
           <WeekView 
@@ -2185,10 +2275,15 @@ interface MonthViewProps {
   getEventsForDay: (day: Date) => CalendarEvent[];
   onEventClick?: (event: CalendarEvent) => void;
   onDayClick?: (day: Date, event?: React.MouseEvent) => void;
+  onDragStart?: (event: CalendarEvent) => void;
+  onDragEnd?: () => void;
+  onEventDrop?: (day: Date) => void;
+  draggedEvent?: CalendarEvent | null;
 }
 
-function MonthView({ days, currentDate, getEventsForDay, onEventClick, onDayClick }: MonthViewProps) {
+function MonthView({ days, currentDate, getEventsForDay, onEventClick, onDayClick, onDragStart, onDragEnd, onEventDrop, draggedEvent }: MonthViewProps) {
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+  const draggableTypes = ['splynx_task', 'block', 'booking', 'work_item'];
 
   return (
     <div className="h-full flex flex-col p-2">
@@ -2211,9 +2306,23 @@ function MonthView({ days, currentDate, getEventsForDay, onEventClick, onDayClic
               className={`
                 bg-background p-1 min-h-0 overflow-hidden cursor-pointer hover:bg-muted/30 transition-colors
                 ${!isCurrentMonth ? 'opacity-40 bg-muted/20' : ''}
+                ${draggedEvent ? 'ring-2 ring-primary/20 ring-inset' : ''}
               `}
               data-testid={`day-cell-${format(day, 'yyyy-MM-dd')}`}
               onClick={(e) => onDayClick?.(day, e)}
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.currentTarget.classList.add('bg-primary/10');
+              }}
+              onDragLeave={(e) => {
+                e.currentTarget.classList.remove('bg-primary/10');
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.currentTarget.classList.remove('bg-primary/10');
+                // Clone the day to avoid mutating the shared days array
+                onEventDrop?.(new Date(day.getTime()));
+              }}
             >
               <div className={`
                 text-xs font-medium mb-0.5 w-6 h-6 flex items-center justify-center rounded-full
@@ -2222,23 +2331,38 @@ function MonthView({ days, currentDate, getEventsForDay, onEventClick, onDayClic
                 {format(day, 'd')}
               </div>
               <div className="space-y-0.5 overflow-hidden">
-                {dayEvents.slice(0, 3).map((event) => (
-                  <div
-                    key={event.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onEventClick?.(event);
-                    }}
-                    className={`
-                      text-[10px] leading-tight px-1 py-0.5 rounded truncate cursor-pointer hover:opacity-80
-                      ${eventTypeColors[event.type]}
-                    `}
-                    title={event.title}
-                    data-testid={`event-${event.id}`}
-                  >
-                    {event.title}
-                  </div>
-                ))}
+                {dayEvents.slice(0, 3).map((event) => {
+                  const isDraggable = draggableTypes.includes(event.type);
+                  return (
+                    <div
+                      key={event.id}
+                      draggable={isDraggable}
+                      onDragStart={(e) => {
+                        if (!isDraggable) {
+                          e.preventDefault();
+                          return;
+                        }
+                        e.dataTransfer.effectAllowed = 'move';
+                        onDragStart?.(event);
+                      }}
+                      onDragEnd={() => onDragEnd?.()}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onEventClick?.(event);
+                      }}
+                      className={`
+                        text-[10px] leading-tight px-1 py-0.5 rounded truncate hover:opacity-80
+                        ${eventTypeColors[event.type]}
+                        ${isDraggable ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}
+                        ${draggedEvent?.id === event.id ? 'opacity-50' : ''}
+                      `}
+                      title={isDraggable ? `${event.title} (drag to move)` : event.title}
+                      data-testid={`event-${event.id}`}
+                    >
+                      {event.title}
+                    </div>
+                  );
+                })}
                 {dayEvents.length > 3 && (
                   <div className="text-[10px] text-muted-foreground px-1">
                     +{dayEvents.length - 3} more
