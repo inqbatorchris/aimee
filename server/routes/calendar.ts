@@ -1936,6 +1936,14 @@ router.get('/calendar/combined', authenticateToken, async (req: Request, res: Re
           filteredTasks = [];
         }
         
+        // Exclude cancelled tasks (workflow_status_id = 116) from calendar display
+        const cancelledStatusId = 116;
+        const beforeCancelFilter = filteredTasks.length;
+        filteredTasks = filteredTasks.filter((t: any) => parseInt(t.workflow_status_id) !== cancelledStatusId);
+        if (beforeCancelFilter !== filteredTasks.length) {
+          console.log(`[CALENDAR] Excluded ${beforeCancelFilter - filteredTasks.length} cancelled tasks from display`);
+        }
+        
         for (const t of filteredTasks) {
           // Use 'assignee' field for admin ID (assigned_to is just the assignment type string)
           const adminId = parseInt(t.assignee || '0');

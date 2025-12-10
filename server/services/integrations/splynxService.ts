@@ -970,7 +970,14 @@ export class SplynxService {
       
       // Filter tasks that affect this assignee's calendar
       // This includes: direct assignments, team assignments, and "anyone" assignments
+      // Excludes cancelled tasks (workflow_status_id = 116) as they should not block availability
+      const cancelledStatusId = 116;
       const assigneeTasks = allTasks.filter((task: any) => {
+        // Skip cancelled tasks - they should not block availability
+        if (parseInt(task.workflow_status_id) === cancelledStatusId) {
+          return false;
+        }
+        
         // Task is assigned to this admin directly
         if (task.assigned_to === 'assigned_to_administrator' && 
             parseInt(task.assignee) === params.assigneeId) {
