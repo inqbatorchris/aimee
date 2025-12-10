@@ -1968,6 +1968,55 @@ router.get('/splynx/workflows/:workflowId/statuses', async (req, res) => {
   }
 });
 
+// Get workflow statuses for a Splynx scheduling project
+router.get('/splynx/project/:projectId/workflow-statuses', async (req, res) => {
+  try {
+    if (!req.user?.organizationId) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const projectId = parseInt(req.params.projectId);
+    if (isNaN(projectId)) {
+      return res.status(400).json({ error: 'Invalid project ID' });
+    }
+
+    // Get Splynx integration for this organization
+    const [splynxIntegration] = await db
+      .select()
+      .from(integrations)
+      .where(
+        and(
+          eq(integrations.organizationId, req.user.organizationId),
+          eq(integrations.platformType, 'splynx')
+        )
+      )
+      .limit(1);
+
+    if (!splynxIntegration) {
+      return res.status(404).json({ error: 'Splynx integration not found' });
+    }
+
+    if (!splynxIntegration.credentialsEncrypted) {
+      return res.status(400).json({ error: 'Splynx credentials not configured' });
+    }
+
+    const credentials = JSON.parse(decrypt(splynxIntegration.credentialsEncrypted));
+    const { baseUrl, authHeader } = credentials;
+
+    if (!baseUrl || !authHeader) {
+      return res.status(400).json({ error: 'Splynx credentials incomplete' });
+    }
+
+    const splynxService = new SplynxService({ baseUrl, authHeader });
+    const statuses = await splynxService.getProjectWorkflowStatuses(projectId);
+
+    res.json({ statuses });
+  } catch (error: any) {
+    console.error('Error fetching Splynx project workflow statuses:', error);
+    res.status(500).json({ error: 'Failed to fetch workflow statuses', details: error.message });
+  }
+});
+
 // Get Splynx scheduling tasks for a project to find valid workflow status IDs
 router.get('/splynx/scheduling-tasks', async (req, res) => {
   try {

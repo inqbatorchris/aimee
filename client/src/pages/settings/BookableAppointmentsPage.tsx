@@ -549,6 +549,12 @@ interface AppointmentTypeSheetProps {
   teams: Team[];
 }
 
+interface WorkflowStatus {
+  id: number;
+  name: string;
+  color?: string;
+}
+
 function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSaving, teams }: AppointmentTypeSheetProps) {
   const [formData, setFormData] = useState<ExtendedBookableTaskType>({
     name: '',
@@ -607,6 +613,20 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
       });
     }
   }, [type]);
+
+  // Fetch workflow statuses when project ID changes
+  const { data: workflowStatuses, isLoading: statusesLoading } = useQuery<{ statuses: WorkflowStatus[] }>({
+    queryKey: ['/api/integrations/splynx/project', formData.splynxProjectId, 'workflow-statuses'],
+    queryFn: async () => {
+      if (!formData.splynxProjectId) return { statuses: [] };
+      const response = await fetch(`/api/integrations/splynx/project/${formData.splynxProjectId}/workflow-statuses`, {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Failed to fetch workflow statuses');
+      return response.json();
+    },
+    enabled: !!formData.splynxProjectId && formData.splynxProjectId > 0,
+  });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -776,14 +796,41 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
                   />
                 </div>
                 <div>
-                  <Label htmlFor="splynxWorkflowStatusId">Workflow Status ID</Label>
-                  <Input
-                    id="splynxWorkflowStatusId"
-                    type="number"
-                    value={formData.splynxWorkflowStatusId || ''}
-                    onChange={(e) => setFormData({ ...formData, splynxWorkflowStatusId: parseInt(e.target.value) || null })}
-                    data-testid="input-splynx-workflow"
-                  />
+                  <Label htmlFor="splynxWorkflowStatusId">Workflow Status</Label>
+                  {statusesLoading ? (
+                    <div className="flex items-center gap-2 h-10 px-3 text-sm text-muted-foreground border rounded-md">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading statuses...
+                    </div>
+                  ) : workflowStatuses?.statuses && workflowStatuses.statuses.length > 0 ? (
+                    <Select
+                      value={formData.splynxWorkflowStatusId?.toString() || ''}
+                      onValueChange={(value) => setFormData({ ...formData, splynxWorkflowStatusId: parseInt(value) || null })}
+                    >
+                      <SelectTrigger data-testid="select-splynx-workflow">
+                        <SelectValue placeholder="Select a workflow status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {workflowStatuses.statuses.map((status) => (
+                          <SelectItem key={status.id} value={status.id.toString()}>
+                            {status.name} (ID: {status.id})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      id="splynxWorkflowStatusId"
+                      type="number"
+                      value={formData.splynxWorkflowStatusId || ''}
+                      onChange={(e) => setFormData({ ...formData, splynxWorkflowStatusId: parseInt(e.target.value) || null })}
+                      placeholder="Enter workflow status ID"
+                      data-testid="input-splynx-workflow"
+                    />
+                  )}
+                  <p className="text-xs text-muted-foreground mt-1">
+                    {workflowStatuses?.statuses?.length ? 'Select the initial status for new tasks' : 'Enter project ID first to load available statuses'}
+                  </p>
                 </div>
               </div>
             </div>

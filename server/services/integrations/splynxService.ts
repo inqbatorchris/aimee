@@ -882,6 +882,44 @@ export class SplynxService {
   }
 
   /**
+   * Get workflow statuses for a scheduling project
+   * First fetches project details to get workflow_id, then fetches statuses
+   */
+  async getProjectWorkflowStatuses(projectId: number): Promise<Array<{ id: number; name: string; color?: string }>> {
+    try {
+      // First get the project to find its workflow_id
+      const projectUrl = this.buildUrl(`admin/scheduling/projects/${projectId}`);
+      console.log('[SPLYNX getProjectWorkflowStatuses] Fetching project:', projectUrl);
+      
+      const projectResponse = await axios.get(projectUrl, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      console.log('[SPLYNX getProjectWorkflowStatuses] Project data:', JSON.stringify(projectResponse.data).substring(0, 500));
+      
+      const workflowId = projectResponse.data?.workflow_id || projectResponse.data?.workflowId;
+      
+      if (!workflowId) {
+        console.log('[SPLYNX getProjectWorkflowStatuses] No workflow_id in project, trying to get statuses directly');
+        // Try to get statuses from the project's workflow directly
+        const fallbackStatuses = await this.getSchedulingTaskStatuses();
+        return fallbackStatuses.map(s => ({ id: s.id, name: s.title, color: s.color }));
+      }
+      
+      console.log('[SPLYNX getProjectWorkflowStatuses] Found workflow_id:', workflowId);
+      return this.getWorkflowStatuses(workflowId);
+    } catch (error: any) {
+      console.error('[SPLYNX getProjectWorkflowStatuses] Error:', error.message);
+      // Fall back to general statuses
+      const fallbackStatuses = await this.getSchedulingTaskStatuses();
+      return fallbackStatuses.map(s => ({ id: s.id, name: s.title, color: s.color }));
+    }
+  }
+
+  /**
    * Get available time slots for a specific assignee
    * Queries Splynx tasks for the date range and filters by assignee in code
    * (Splynx API doesn't support filtering by assignee directly)
