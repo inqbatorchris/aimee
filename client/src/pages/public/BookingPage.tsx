@@ -203,6 +203,28 @@ export default function BookingPage() {
       setCustomerName(user.displayName || user.email?.split('@')[0] || '');
       setCustomerEmail(user.email || '');
       setShowLogin(false);
+      
+      // Fetch customer details from Splynx to pre-fill phone and address
+      if (slug && user.uid) {
+        try {
+          const response = await fetch(`/api/public/appointment-types/${slug}/customer-details`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              firebaseUid: user.uid,
+              authToken: idToken,
+            }),
+          });
+          const data = await response.json();
+          if (data.customerDetails) {
+            if (data.customerDetails.name) setCustomerName(data.customerDetails.name);
+            if (data.customerDetails.phone) setCustomerPhone(data.customerDetails.phone);
+            if (data.customerDetails.address) setServiceAddress(data.customerDetails.address);
+          }
+        } catch (fetchError) {
+          console.error('Failed to fetch customer details:', fetchError);
+        }
+      }
     } catch (error: any) {
       console.error('Firebase login error:', error);
       let errorMessage = 'Login failed. Please check your credentials.';
@@ -219,7 +241,7 @@ export default function BookingPage() {
     } finally {
       setIsFirebaseLoggingIn(false);
     }
-  }, [firebaseAuth, loginEmail, loginPassword]);
+  }, [firebaseAuth, loginEmail, loginPassword, slug]);
   
   const loginMutation = useMutation({
     mutationFn: async () => {
@@ -455,7 +477,7 @@ export default function BookingPage() {
               <Input
                 id="contact-number"
                 type="tel"
-                placeholder="(555) 123-4567"
+                placeholder="07123 456789"
                 value={customerPhone}
                 onChange={(e) => setCustomerPhone(e.target.value)}
                 data-testid="input-contact-number"
@@ -574,7 +596,7 @@ export default function BookingPage() {
                       type="tel"
                       value={customerPhone}
                       onChange={(e) => setCustomerPhone(e.target.value)}
-                      placeholder="(555) 123-4567"
+                      placeholder="07123 456789"
                       data-testid="input-customer-phone"
                       className={inputClasses}
                     />

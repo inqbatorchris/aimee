@@ -872,6 +872,78 @@ router.get('/public/appointment-types/:slug', async (req, res) => {
 });
 
 /**
+ * PUBLIC ENDPOINT: Get customer details from Splynx for pre-filling booking form
+ * Uses Firebase auth to get SplynxID from Firestore, then fetches customer from Splynx
+ */
+router.post('/public/appointment-types/:slug/customer-details', async (req, res) => {
+  try {
+    const { slug } = req.params;
+    const { firebaseUid, authToken } = req.body;
+    
+    if (!firebaseUid || !authToken) {
+      return res.status(400).json({ error: 'Firebase UID and auth token required' });
+    }
+    
+    // Find appointment type by slug
+    const [appointmentType] = await db
+      .select()
+      .from(bookableTaskTypes)
+      .where(and(
+        eq(bookableTaskTypes.slug, slug),
+        eq(bookableTaskTypes.isActive, true)
+      ))
+      .limit(1);
+    
+    if (!appointmentType) {
+      return res.status(404).json({ error: 'Appointment type not found' });
+    }
+    
+    // Get SplynxID from Firestore
+    const firebaseService = new FirebaseService(appointmentType.organizationId);
+    await firebaseService.initializeRestOnly();
+    
+    const firestoreUser = await firebaseService.getUserDocumentByUid(firebaseUid, authToken);
+    
+    if (!firestoreUser?.SplynxID) {
+      return res.json({ customerDetails: null });
+    }
+    
+    const splynxCustomerId = parseInt(firestoreUser.SplynxID, 10);
+    if (isNaN(splynxCustomerId)) {
+      return res.json({ customerDetails: null });
+    }
+    
+    // Get customer details from Splynx
+    let splynxService: SplynxService;
+    try {
+      splynxService = await getSplynxServiceForOrg(appointmentType.organizationId);
+    } catch (error: any) {
+      console.error('[BOOKINGS] Splynx service error:', error.message);
+      return res.json({ customerDetails: null });
+    }
+    
+    const customer = await splynxService.getCustomerById(splynxCustomerId);
+    
+    if (!customer) {
+      return res.json({ customerDetails: null });
+    }
+    
+    res.json({
+      customerDetails: {
+        name: customer.name,
+        email: customer.email,
+        phone: customer.phone,
+        address: customer.address,
+        splynxCustomerId: customer.id,
+      }
+    });
+  } catch (error: any) {
+    console.error('[BOOKINGS] Error fetching customer details:', error);
+    res.json({ customerDetails: null });
+  }
+});
+
+/**
  * PUBLIC ENDPOINT: Get available slots for a slug-based appointment
  * 
  * Availability is calculated by checking:
