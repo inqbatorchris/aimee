@@ -820,15 +820,17 @@ export class SplynxService {
       }
     }
     
-    // Return comprehensive fallback statuses based on common Splynx status IDs
+    // Return comprehensive fallback statuses based on actual Splynx workflow status IDs
+    // These are known status IDs from the Country Connect Splynx instance
     console.log('[SPLYNX getSchedulingTaskStatuses] All paths failed, using comprehensive fallback statuses');
     return [
-      { id: 61, title: 'To Do', color: '#6b7280' },
-      { id: 62, title: 'In Progress', color: '#f59e0b' },
-      { id: 63, title: 'Done', color: '#22c55e' },
-      { id: 64, title: 'Cancelled', color: '#ef4444' },
-      { id: 65, title: 'On Hold', color: '#8b5cf6' },
-      { id: 66, title: 'Blocked', color: '#dc2626' },
+      { id: 20, title: 'Awaiting scheduling', color: '#f59e0b' },
+      { id: 21, title: 'Scheduled', color: '#3b82f6' },
+      { id: 23, title: 'Complete', color: '#22c55e' },
+      { id: 31, title: 'In progress', color: '#8b5cf6' },
+      { id: 43, title: 'New', color: '#6b7280' },
+      { id: 106, title: 'Scheduled (Field)', color: '#0ea5e9' },
+      { id: 116, title: 'Cancelled', color: '#ef4444' },
     ];
   }
 

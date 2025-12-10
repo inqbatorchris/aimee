@@ -1392,11 +1392,15 @@ router.get('/calendar/filters', authenticateToken, async (req: Request, res: Res
       console.log(`[CALENDAR] Fetched ${taskStatuses.length} task statuses from Splynx`);
     } catch (statusError: any) {
       console.log(`[CALENDAR] Failed to fetch task statuses, using fallback: ${statusError.message}`);
+      // Use actual Splynx workflow status IDs
       taskStatuses = [
-        { id: 61, title: 'New', color: '#3b82f6' },
-        { id: 62, title: 'In Progress', color: '#f59e0b' },
-        { id: 63, title: 'Completed', color: '#22c55e' },
-        { id: 64, title: 'Cancelled', color: '#ef4444' },
+        { id: 20, title: 'Awaiting scheduling', color: '#f59e0b' },
+        { id: 21, title: 'Scheduled', color: '#3b82f6' },
+        { id: 23, title: 'Complete', color: '#22c55e' },
+        { id: 31, title: 'In progress', color: '#8b5cf6' },
+        { id: 43, title: 'New', color: '#6b7280' },
+        { id: 106, title: 'Scheduled (Field)', color: '#0ea5e9' },
+        { id: 116, title: 'Cancelled', color: '#ef4444' },
       ];
     }
     
