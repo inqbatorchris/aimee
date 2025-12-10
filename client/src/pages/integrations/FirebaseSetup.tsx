@@ -131,7 +131,8 @@ export default function FirebaseSetup() {
       const response = await apiRequest('/api/integrations/firebase/test', {
         method: 'POST',
       });
-      return response as unknown as ConnectionTestResult;
+      const data = await response.json();
+      return data as ConnectionTestResult;
     },
     onSuccess: (data) => {
       setTestResult(data);
