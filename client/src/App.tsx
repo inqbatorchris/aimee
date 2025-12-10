@@ -96,6 +96,7 @@ const SplynxSetup = lazy(() => import("@/pages/integrations/SplynxSetup"));
 const SplynxAgents = lazy(() => import("@/pages/integrations/SplynxAgents"));
 const PXCSetup = lazy(() => import("@/pages/integrations/PXCSetup"));
 const GoogleMapsSetup = lazy(() => import("@/pages/integrations/GoogleMapsSetup"));
+const FirebaseSetup = lazy(() => import("@/pages/integrations/FirebaseSetup"));
 const AirtableSetup = lazy(() => import("@/pages/integrations/AirtableSetup"));
 const XeroSetup = lazy(() => import("@/pages/integrations/XeroSetup"));
 const XeroCallback = lazy(() => import("@/pages/integrations/XeroCallback"));
@@ -641,7 +642,7 @@ function AppContent() {
               <Route path="/finance/okr-analysis" component={OkrAnalysis} />
               <Route path="/vapi/performance" component={VapiPerformanceDashboard} />
               <Route path="/integrations/microsoft/setup" component={() => <ComingSoon featureName="Microsoft Outlook Integration" description="Sync your email and calendar with Microsoft Outlook" />} />
-              <Route path="/integrations/firebase/setup" component={() => <ComingSoon featureName="Firebase Integration" description="Connect to Google's Firebase platform for app development" />} />
+              <Route path="/integrations/firebase/setup" component={FirebaseSetup} />
               <Route path="/integrations/openai/setup" component={() => <ComingSoon featureName="OpenAI Integration" description="Integrate AI models for intelligent automation" />} />
               
               {/* Super Admin */}
