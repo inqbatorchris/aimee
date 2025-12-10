@@ -2184,6 +2184,19 @@ export class SplynxService {
         return null;
       }
 
+      // Build complete address from available fields
+      const addressParts = [
+        customer.street,
+        customer.city,
+        customer.zip_code || customer.zip,
+      ].filter(Boolean);
+      
+      const fullAddress = addressParts.length > 0 
+        ? addressParts.join(', ')
+        : customer.full_address || '';
+      
+      console.log(`[SPLYNX getCustomerById] Built address: "${fullAddress}" from parts:`, { street: customer.street, city: customer.city, zip: customer.zip_code || customer.zip });
+
       return {
         id: customer.id,
         name: customer.name || `${customer.first_name || ''} ${customer.last_name || ''}`.trim() || 'Unknown',
@@ -2191,7 +2204,7 @@ export class SplynxService {
         phone: customer.phone || customer.phone_mobile || '',
         status: customer.status || 'unknown',
         plan: customer.tariff_name || customer.tariff || 'Unknown Plan',
-        address: customer.street || customer.full_address || '',
+        address: fullAddress,
         createdAt: customer.date_add || customer.created_at || '',
         raw: customer,
       };
