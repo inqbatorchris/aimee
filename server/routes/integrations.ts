@@ -2118,16 +2118,19 @@ router.post('/splynx/workflow-status-mappings', async (req, res) => {
       .limit(1);
 
     if (existing) {
-      // Update existing mapping
+      // Update existing mapping (double-check org ownership for security)
       const [updated] = await db
         .update(splynxWorkflowStatuses)
         .set({
-          label,
+          label: label.trim(),
           color: color || null,
           isDefault: isDefault || false,
           updatedAt: new Date(),
         })
-        .where(eq(splynxWorkflowStatuses.id, existing.id))
+        .where(and(
+          eq(splynxWorkflowStatuses.id, existing.id),
+          eq(splynxWorkflowStatuses.organizationId, req.user.organizationId)
+        ))
         .returning();
       res.json({ mapping: updated, updated: true });
     } else {
@@ -2138,7 +2141,7 @@ router.post('/splynx/workflow-status-mappings', async (req, res) => {
           organizationId: req.user.organizationId,
           workflowId,
           statusId,
-          label,
+          label: label.trim(),
           color: color || null,
           isDefault: isDefault || false,
         })
