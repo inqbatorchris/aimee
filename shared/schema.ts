@@ -3898,6 +3898,38 @@ export const splynxAdministrators = pgTable("splynx_administrators", {
   index("idx_splynx_admin_id").on(table.splynxAdminId),
 ]);
 
+// Splynx Workflow Status Mappings - User-defined labels for status IDs (Splynx API doesn't return names)
+export const splynxWorkflowStatuses = pgTable("splynx_workflow_statuses", {
+  id: serial("id").primaryKey(),
+  organizationId: integer("organization_id").references(() => organizations.id).notNull(),
+  
+  // Splynx identifiers
+  workflowId: integer("workflow_id").notNull(),
+  statusId: integer("status_id").notNull(),
+  
+  // User-defined label
+  label: varchar("label", { length: 100 }).notNull(),
+  
+  // Optional metadata
+  color: varchar("color", { length: 20 }),
+  isDefault: boolean("is_default").default(false),
+  
+  // Timestamps
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+}, (table) => [
+  index("idx_splynx_workflow_statuses_org").on(table.organizationId),
+  index("idx_splynx_workflow_statuses_workflow").on(table.workflowId),
+]);
+
+export const insertSplynxWorkflowStatusSchema = createInsertSchema(splynxWorkflowStatuses).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertSplynxWorkflowStatus = z.infer<typeof insertSplynxWorkflowStatusSchema>;
+export type SplynxWorkflowStatus = typeof splynxWorkflowStatuses.$inferSelect;
+
 // ========================================
 // FIBER NETWORK MAPPING MODULE
 // ========================================
