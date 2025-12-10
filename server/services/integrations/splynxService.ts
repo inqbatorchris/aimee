@@ -1177,13 +1177,84 @@ export class SplynxService {
   }
 
   /**
-   * Discover valid workflow status IDs by examining existing tasks in a project
-   * This is a fallback when the direct workflow statuses endpoint doesn't exist
+   * Discover valid workflow status IDs by examining existing tasks across ALL projects
+   * with the same workflow_id. This gives us a comprehensive list of all possible statuses
+   * for the workflow.
    */
   async discoverProjectStatuses(projectId: number): Promise<Array<{ id: number; name: string; color?: string }>> {
     try {
-      console.log(`[SPLYNX discoverProjectStatuses] Discovering statuses from tasks in project ${projectId}`);
+      console.log(`[SPLYNX discoverProjectStatuses] Discovering statuses for project ${projectId}`);
       
+      // First, get the workflow_id for this project
+      const projectUrl = this.buildUrl(`admin/scheduling/projects/${projectId}`);
+      const projectResponse = await axios.get(projectUrl, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+      });
+      
+      const workflowId = projectResponse.data?.workflow_id;
+      console.log(`[SPLYNX discoverProjectStatuses] Project ${projectId} uses workflow_id: ${workflowId}`);
+      
+      if (!workflowId) {
+        // Fallback: query tasks from just this project
+        return this.discoverStatusesFromTasks(projectId);
+      }
+      
+      // Get all projects to find ones with the same workflow_id
+      const projects = await this.getSchedulingProjects();
+      
+      // Query tasks from ALL projects with the same workflow to get all possible statuses
+      const statusMap = new Map<number, string>();
+      
+      // Query recent tasks across all projects (without project filter) to get varied statuses
+      const url = this.buildUrl('admin/scheduling/tasks');
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+        params: {
+          limit: 500,
+        },
+      });
+
+      let tasksData: any[] = [];
+      if (Array.isArray(response.data)) {
+        tasksData = response.data;
+      } else if (response.data?.items) {
+        tasksData = response.data.items;
+      }
+
+      // Extract unique status IDs and names from tasks
+      for (const task of tasksData) {
+        const statusId = task.workflow_status_id || task.workflowStatusId;
+        const statusName = task.workflow_status_name || task.status_name || task.status || `Status ${statusId}`;
+        if (statusId && !statusMap.has(statusId)) {
+          statusMap.set(statusId, statusName);
+        }
+      }
+
+      const discoveredStatuses = Array.from(statusMap.entries()).map(([id, name]) => ({
+        id,
+        name,
+      }));
+
+      console.log(`[SPLYNX discoverProjectStatuses] Discovered ${discoveredStatuses.length} statuses from ${tasksData.length} tasks:`, discoveredStatuses);
+      
+      return discoveredStatuses;
+    } catch (error: any) {
+      console.error('[SPLYNX discoverProjectStatuses] Error:', error.message);
+      return [];
+    }
+  }
+
+  /**
+   * Helper to discover statuses from tasks in a specific project
+   */
+  private async discoverStatusesFromTasks(projectId: number): Promise<Array<{ id: number; name: string }>> {
+    try {
       const url = this.buildUrl('admin/scheduling/tasks');
       const response = await axios.get(url, {
         headers: {
@@ -1203,7 +1274,6 @@ export class SplynxService {
         tasksData = response.data.items;
       }
 
-      // Extract unique status IDs and names from tasks
       const statusMap = new Map<number, string>();
       for (const task of tasksData) {
         const statusId = task.workflow_status_id || task.workflowStatusId;
@@ -1213,16 +1283,8 @@ export class SplynxService {
         }
       }
 
-      const discoveredStatuses = Array.from(statusMap.entries()).map(([id, name]) => ({
-        id,
-        name,
-      }));
-
-      console.log(`[SPLYNX discoverProjectStatuses] Discovered ${discoveredStatuses.length} statuses from ${tasksData.length} tasks:`, discoveredStatuses);
-      
-      return discoveredStatuses;
-    } catch (error: any) {
-      console.error('[SPLYNX discoverProjectStatuses] Error:', error.message);
+      return Array.from(statusMap.entries()).map(([id, name]) => ({ id, name }));
+    } catch (error) {
       return [];
     }
   }

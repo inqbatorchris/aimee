@@ -390,6 +390,16 @@ export default function BookingPage() {
                   : `Reference: #${confirmationData.bookingId}. You'll receive a confirmation email shortly.`}
               </AlertDescription>
             </Alert>
+            
+            {appointmentType?.postBookingRedirectUrl && (
+              <Button
+                className="w-full mt-6"
+                onClick={() => window.location.href = appointmentType.postBookingRedirectUrl!}
+                data-testid="button-redirect-after-booking"
+              >
+                Continue
+              </Button>
+            )}
           </div>
         </Card>
       </div>
