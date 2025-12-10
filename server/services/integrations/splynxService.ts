@@ -910,12 +910,20 @@ export class SplynxService {
       }
       
       console.log('[SPLYNX getProjectWorkflowStatuses] Found workflow_id:', workflowId);
-      return this.getWorkflowStatuses(workflowId);
+      const workflowStatuses = await this.getWorkflowStatuses(workflowId);
+      
+      // If workflow endpoint returned empty (404), discover statuses from existing tasks
+      if (workflowStatuses.length === 0) {
+        console.log('[SPLYNX getProjectWorkflowStatuses] No statuses from workflow endpoint, discovering from tasks');
+        return this.discoverProjectStatuses(projectId);
+      }
+      
+      return workflowStatuses;
     } catch (error: any) {
       console.error('[SPLYNX getProjectWorkflowStatuses] Error:', error.message);
-      // Fall back to general statuses
-      const fallbackStatuses = await this.getSchedulingTaskStatuses();
-      return fallbackStatuses.map(s => ({ id: s.id, name: s.title, color: s.color }));
+      // Fall back to discovering statuses from existing tasks
+      console.log('[SPLYNX getProjectWorkflowStatuses] Falling back to task-based status discovery');
+      return this.discoverProjectStatuses(projectId);
     }
   }
 
@@ -1159,12 +1167,63 @@ export class SplynxService {
       
       // If the workflow-specific endpoint doesn't exist (404), fall back to general task statuses
       if (error.response?.status === 404) {
-        console.log('[SPLYNX getWorkflowStatuses] Falling back to general scheduling task statuses');
-        const fallbackStatuses = await this.getSchedulingTaskStatuses();
-        return fallbackStatuses.map(s => ({ id: s.id, name: s.title, color: s.color }));
+        console.log('[SPLYNX getWorkflowStatuses] Endpoint not available, cannot fetch workflow-specific statuses');
+        // Return empty - caller should use discoverProjectStatuses instead
+        return [];
       }
       
       throw new Error(`Failed to fetch workflow statuses from Splynx: ${error.message}`);
+    }
+  }
+
+  /**
+   * Discover valid workflow status IDs by examining existing tasks in a project
+   * This is a fallback when the direct workflow statuses endpoint doesn't exist
+   */
+  async discoverProjectStatuses(projectId: number): Promise<Array<{ id: number; name: string; color?: string }>> {
+    try {
+      console.log(`[SPLYNX discoverProjectStatuses] Discovering statuses from tasks in project ${projectId}`);
+      
+      const url = this.buildUrl('admin/scheduling/tasks');
+      const response = await axios.get(url, {
+        headers: {
+          'Authorization': this.credentials.authHeader,
+          'Content-Type': 'application/json',
+        },
+        params: {
+          main_attributes: { project_id: projectId },
+          limit: 100,
+        },
+      });
+
+      let tasksData: any[] = [];
+      if (Array.isArray(response.data)) {
+        tasksData = response.data;
+      } else if (response.data?.items) {
+        tasksData = response.data.items;
+      }
+
+      // Extract unique status IDs and names from tasks
+      const statusMap = new Map<number, string>();
+      for (const task of tasksData) {
+        const statusId = task.workflow_status_id || task.workflowStatusId;
+        const statusName = task.workflow_status_name || task.status_name || task.status || `Status ${statusId}`;
+        if (statusId && !statusMap.has(statusId)) {
+          statusMap.set(statusId, statusName);
+        }
+      }
+
+      const discoveredStatuses = Array.from(statusMap.entries()).map(([id, name]) => ({
+        id,
+        name,
+      }));
+
+      console.log(`[SPLYNX discoverProjectStatuses] Discovered ${discoveredStatuses.length} statuses from ${tasksData.length} tasks:`, discoveredStatuses);
+      
+      return discoveredStatuses;
+    } catch (error: any) {
+      console.error('[SPLYNX discoverProjectStatuses] Error:', error.message);
+      return [];
     }
   }
 
