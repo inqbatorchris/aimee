@@ -1156,6 +1156,14 @@ export class SplynxService {
     } catch (error: any) {
       console.error('[SPLYNX getWorkflowStatuses] Error:', error.message);
       console.error('[SPLYNX getWorkflowStatuses] Response:', error.response?.data);
+      
+      // If the workflow-specific endpoint doesn't exist (404), fall back to general task statuses
+      if (error.response?.status === 404) {
+        console.log('[SPLYNX getWorkflowStatuses] Falling back to general scheduling task statuses');
+        const fallbackStatuses = await this.getSchedulingTaskStatuses();
+        return fallbackStatuses.map(s => ({ id: s.id, name: s.title, color: s.color }));
+      }
+      
       throw new Error(`Failed to fetch workflow statuses from Splynx: ${error.message}`);
     }
   }
