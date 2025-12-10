@@ -246,13 +246,17 @@ function AppContent() {
     }
   }, [loading, currentUser?.organizationId, loadThemeForOrg]);
 
-  // Save last visited path (except auth pages and field app)
+  // Save last visited path (except auth pages, field app, and public booking pages)
   useEffect(() => {
     if (isAuthenticated && !loading) {
-      // Don't save auth-related paths or field app routes
+      // Don't save auth-related paths, field app routes, or public booking pages
       const authPaths = ['/login', '/forgot-password', '/reset-password', '/'];
       const currentPath = location.split('?')[0];
-      if (!authPaths.includes(currentPath) && !currentPath.startsWith('/field-app')) {
+      const isExcludedPath = authPaths.includes(currentPath) || 
+        currentPath.startsWith('/field-app') || 
+        currentPath.startsWith('/book/') || 
+        currentPath.startsWith('/public/bookings');
+      if (!isExcludedPath) {
         localStorage.setItem('lastVisitedPath', location);
       }
     }
