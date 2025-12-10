@@ -1546,8 +1546,22 @@ export class SplynxService {
       return response.data;
     } catch (error: any) {
       console.error('[SPLYNX createSplynxTask] Error:', error.message);
-      console.error('[SPLYNX createSplynxTask] Response:', error.response?.data);
-      throw new Error(`Failed to create task in Splynx: ${error.message}`);
+      console.error('[SPLYNX createSplynxTask] Response status:', error.response?.status);
+      console.error('[SPLYNX createSplynxTask] Response data:', JSON.stringify(error.response?.data, null, 2));
+      // Extract meaningful error message from Splynx response
+      let errorDetails = error.message;
+      if (error.response?.data) {
+        if (typeof error.response.data === 'string') {
+          errorDetails = error.response.data;
+        } else if (error.response.data.message) {
+          errorDetails = error.response.data.message;
+        } else if (error.response.data.error) {
+          errorDetails = error.response.data.error;
+        } else {
+          errorDetails = JSON.stringify(error.response.data);
+        }
+      }
+      throw new Error(`Failed to create task in Splynx: Request failed with status code ${error.response?.status || 'unknown'}. Details: ${errorDetails}`);
     }
   }
 
