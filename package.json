@@ -114,6 +114,7 @@
     "express-session": "^1.18.1",
     "extract-zip": "^2.0.1",
     "firebase": "^11.7.1",
+    "firebase-admin": "^13.6.0",
     "framer-motion": "^11.13.1",
     "glob": "^11.0.3",
     "google-auth-library": "^10.2.1",

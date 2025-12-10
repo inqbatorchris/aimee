@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useParams, useLocation } from 'wouter';
 import { useQuery, useMutation } from '@tanstack/react-query';
 import { Calendar, Clock, MapPin, AlertCircle, CheckCircle2, Loader2, User, LogIn, Moon, Sun, ArrowLeft } from 'lucide-react';
@@ -10,6 +10,15 @@ import { Textarea } from '@/components/ui/textarea';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { apiRequest } from '@/lib/queryClient';
 import { Separator } from '@/components/ui/separator';
+import { initializeApp, getApps, deleteApp } from 'firebase/app';
+import { getAuth, signInWithEmailAndPassword, GoogleAuthProvider, signInWithPopup, type User as FirebaseUser } from 'firebase/auth';
+
+interface FirebaseConfig {
+  apiKey: string;
+  authDomain: string;
+  projectId: string;
+  appId: string;
+}
 
 interface AppointmentType {
   id: number;
@@ -22,11 +31,13 @@ interface AppointmentType {
   duration: string;
   buttonLabel: string;
   confirmationMessage: string;
+  postBookingRedirectUrl?: string | null;
   organization: {
     id: number;
     name: string;
     logoUrl: string | null;
   };
+  firebaseConfig?: FirebaseConfig | null;
 }
 
 interface LegacyBookingInfo {
@@ -66,6 +77,9 @@ export default function BookingPage() {
   const [loginPassword, setLoginPassword] = useState('');
   const [authToken, setAuthToken] = useState<string | null>(null);
   const [loggedInUser, setLoggedInUser] = useState<any>(null);
+  const [firebaseAuth, setFirebaseAuth] = useState<ReturnType<typeof getAuth> | null>(null);
+  const [firebaseError, setFirebaseError] = useState<string | null>(null);
+  const [isFirebaseLoggingIn, setIsFirebaseLoggingIn] = useState(false);
   
   const [isDarkMode, setIsDarkMode] = useState(() => {
     const stored = localStorage.getItem('booking-theme');
@@ -129,6 +143,115 @@ export default function BookingPage() {
     enabled: (isLegacyTokenFlow ? !!legacyBooking : !!appointmentType) && !isConfirmed,
   });
   
+  // Initialize Firebase when appointment type with Firebase config is loaded
+  useEffect(() => {
+    if (!appointmentType?.firebaseConfig) return;
+    
+    const config = appointmentType.firebaseConfig;
+    const appName = `booking-${config.projectId}`;
+    
+    try {
+      // Check if app with this name already exists
+      const existingApps = getApps();
+      let app = existingApps.find(a => a.name === appName);
+      
+      if (!app) {
+        // Initialize Firebase with organization's config using unique app name
+        app = initializeApp(config, appName);
+        console.log('Firebase initialized for booking page:', appName);
+      }
+      
+      const auth = getAuth(app);
+      setFirebaseAuth(auth);
+    } catch (error) {
+      console.error('Error initializing Firebase:', error);
+      setFirebaseError('Failed to initialize authentication');
+    }
+    
+    // Cleanup on unmount (optional - helps prevent memory leaks)
+    return () => {
+      const apps = getApps();
+      const appToCleanup = apps.find(a => a.name === appName);
+      if (appToCleanup) {
+        deleteApp(appToCleanup).catch(console.error);
+      }
+    };
+  }, [appointmentType?.firebaseConfig]);
+  
+  // Check if Firebase auth is available
+  const useFirebaseAuth = !isLegacyTokenFlow && !!appointmentType?.firebaseConfig && !!firebaseAuth;
+  
+  // Handle Firebase email/password login
+  const handleFirebaseLogin = useCallback(async () => {
+    if (!firebaseAuth || !loginEmail || !loginPassword) return;
+    
+    setIsFirebaseLoggingIn(true);
+    setFirebaseError(null);
+    
+    try {
+      const userCredential = await signInWithEmailAndPassword(firebaseAuth, loginEmail, loginPassword);
+      const user = userCredential.user;
+      const idToken = await user.getIdToken();
+      
+      setAuthToken(idToken);
+      setLoggedInUser({
+        email: user.email,
+        displayName: user.displayName || user.email?.split('@')[0],
+        uid: user.uid,
+      });
+      setCustomerName(user.displayName || user.email?.split('@')[0] || '');
+      setCustomerEmail(user.email || '');
+      setShowLogin(false);
+    } catch (error: any) {
+      console.error('Firebase login error:', error);
+      let errorMessage = 'Login failed. Please check your credentials.';
+      if (error.code === 'auth/invalid-credential') {
+        errorMessage = 'Invalid email or password';
+      } else if (error.code === 'auth/user-not-found') {
+        errorMessage = 'No account found with this email';
+      } else if (error.code === 'auth/wrong-password') {
+        errorMessage = 'Incorrect password';
+      } else if (error.code === 'auth/too-many-requests') {
+        errorMessage = 'Too many failed attempts. Please try again later.';
+      }
+      setFirebaseError(errorMessage);
+    } finally {
+      setIsFirebaseLoggingIn(false);
+    }
+  }, [firebaseAuth, loginEmail, loginPassword]);
+  
+  // Handle Google sign-in
+  const handleGoogleSignIn = useCallback(async () => {
+    if (!firebaseAuth) return;
+    
+    setIsFirebaseLoggingIn(true);
+    setFirebaseError(null);
+    
+    try {
+      const provider = new GoogleAuthProvider();
+      const userCredential = await signInWithPopup(firebaseAuth, provider);
+      const user = userCredential.user;
+      const idToken = await user.getIdToken();
+      
+      setAuthToken(idToken);
+      setLoggedInUser({
+        email: user.email,
+        displayName: user.displayName || user.email?.split('@')[0],
+        uid: user.uid,
+      });
+      setCustomerName(user.displayName || '');
+      setCustomerEmail(user.email || '');
+      setShowLogin(false);
+    } catch (error: any) {
+      console.error('Google sign-in error:', error);
+      if (error.code !== 'auth/popup-closed-by-user') {
+        setFirebaseError('Google sign-in failed. Please try again.');
+      }
+    } finally {
+      setIsFirebaseLoggingIn(false);
+    }
+  }, [firebaseAuth]);
+  
   const loginMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest('/api/public/auth/login', {
@@ -168,7 +291,9 @@ export default function BookingPage() {
             customerPhone,
             serviceAddress,
             additionalNotes,
-            authToken
+            authToken,
+            authType: useFirebaseAuth ? 'firebase' : (authToken ? 'jwt' : undefined),
+            firebaseUid: useFirebaseAuth && loggedInUser?.uid ? loggedInUser.uid : undefined
           }
         });
         return response.json();
@@ -386,6 +511,41 @@ export default function BookingPage() {
             <Card className="p-4 mb-6 bg-gray-100 dark:bg-gray-700 dark:border-gray-600">
               <h3 className="font-medium mb-3 dark:text-white">Log in to continue</h3>
               <div className="space-y-3">
+                {useFirebaseAuth && (
+                  <Button
+                    variant="outline"
+                    className="w-full"
+                    onClick={handleGoogleSignIn}
+                    disabled={isFirebaseLoggingIn}
+                    data-testid="button-google-signin"
+                  >
+                    {isFirebaseLoggingIn ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <svg className="h-4 w-4 mr-2" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                      </svg>
+                    )}
+                    Continue with Google
+                  </Button>
+                )}
+                
+                {useFirebaseAuth && (
+                  <div className="relative">
+                    <div className="absolute inset-0 flex items-center">
+                      <span className="w-full border-t border-gray-300 dark:border-gray-600" />
+                    </div>
+                    <div className="relative flex justify-center text-xs uppercase">
+                      <span className="bg-gray-100 dark:bg-gray-700 px-2 text-gray-500 dark:text-gray-400">
+                        Or continue with email
+                      </span>
+                    </div>
+                  </div>
+                )}
+                
                 <div>
                   <Label htmlFor="login-email" className={labelClasses}>Email</Label>
                   <Input
@@ -410,21 +570,21 @@ export default function BookingPage() {
                     className={inputClasses}
                   />
                 </div>
-                {loginMutation.error && (
+                {(loginMutation.error || firebaseError) && (
                   <Alert variant="destructive">
-                    <AlertDescription>Invalid email or password</AlertDescription>
+                    <AlertDescription>{firebaseError || 'Invalid email or password'}</AlertDescription>
                   </Alert>
                 )}
                 <div className="flex gap-2">
                   <Button 
-                    onClick={() => loginMutation.mutate()}
-                    disabled={loginMutation.isPending || !loginEmail || !loginPassword}
+                    onClick={useFirebaseAuth ? handleFirebaseLogin : () => loginMutation.mutate()}
+                    disabled={(useFirebaseAuth ? isFirebaseLoggingIn : loginMutation.isPending) || !loginEmail || !loginPassword}
                     data-testid="button-login"
                   >
-                    {loginMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                    {(useFirebaseAuth ? isFirebaseLoggingIn : loginMutation.isPending) ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
                     Log In
                   </Button>
-                  <Button variant="ghost" onClick={() => setShowLogin(false)}>
+                  <Button variant="ghost" onClick={() => { setShowLogin(false); setFirebaseError(null); }}>
                     Cancel
                   </Button>
                 </div>

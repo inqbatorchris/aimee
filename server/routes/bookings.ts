@@ -3,6 +3,7 @@ import { db } from '../db';
 import { eq, and, gte, lte, sql, or, inArray } from 'drizzle-orm';
 import { bookableTaskTypes, bookingTokens, bookings, workItems, organizations, activityLogs, integrations, users, calendarBlocks, splynxTeams } from '@shared/schema';
 import { SplynxService } from '../services/integrations/splynxService';
+import { FirebaseService } from '../services/integrations/firebaseService';
 import { authenticateToken } from '../auth';
 import crypto from 'crypto';
 import jwt from 'jsonwebtoken';
@@ -806,6 +807,7 @@ router.get('/public/appointment-types/:slug', async (req, res) => {
           id: organizations.id,
           name: organizations.name,
           logoUrl: organizations.logoUrl,
+          firebaseConfig: organizations.firebaseConfig,
         }
       })
       .from(bookableTaskTypes)
@@ -820,6 +822,20 @@ router.get('/public/appointment-types/:slug', async (req, res) => {
       return res.status(404).json({ error: 'Appointment type not found' });
     }
     
+    // Extract Firebase config for client-side use (only if authenticated bookings are required)
+    let firebaseConfig = null;
+    if (appointmentType.appointmentType.accessMode === 'authenticated' && appointmentType.organization.firebaseConfig) {
+      const orgFirebaseConfig = appointmentType.organization.firebaseConfig as { projectId?: string; appId?: string; apiKey?: string };
+      if (orgFirebaseConfig.projectId && orgFirebaseConfig.apiKey) {
+        firebaseConfig = {
+          apiKey: orgFirebaseConfig.apiKey,
+          authDomain: `${orgFirebaseConfig.projectId}.firebaseapp.com`,
+          projectId: orgFirebaseConfig.projectId,
+          appId: orgFirebaseConfig.appId,
+        };
+      }
+    }
+    
     // Return public booking info
     res.json({
       id: appointmentType.appointmentType.id,
@@ -832,7 +848,13 @@ router.get('/public/appointment-types/:slug', async (req, res) => {
       duration: appointmentType.appointmentType.defaultDuration,
       buttonLabel: appointmentType.appointmentType.buttonLabel,
       confirmationMessage: appointmentType.appointmentType.confirmationMessage,
-      organization: appointmentType.organization
+      postBookingRedirectUrl: appointmentType.appointmentType.postBookingRedirectUrl,
+      organization: {
+        id: appointmentType.organization.id,
+        name: appointmentType.organization.name,
+        logoUrl: appointmentType.organization.logoUrl,
+      },
+      firebaseConfig
     });
   } catch (error: any) {
     console.error('Error fetching appointment type:', error);
@@ -988,7 +1010,9 @@ router.post('/public/appointment-types/:slug/book', async (req, res) => {
       customerPhone,
       serviceAddress,
       additionalNotes,
-      authToken // Optional - for authenticated bookings
+      authToken, // Optional - for authenticated bookings
+      authType, // 'firebase' | 'jwt' | undefined
+      firebaseUid // Firebase user ID when using Firebase auth
     } = req.body;
     
     // Validate required fields
@@ -1021,39 +1045,95 @@ router.post('/public/appointment-types/:slug/book', async (req, res) => {
     let splynxCustomerId: number | null = null;
     
     if (appointmentType.accessMode === 'authenticated') {
-      // Require valid auth token
-      if (!authToken) {
+      // Require valid auth token or Firebase auth
+      if (!authToken && authType !== 'firebase') {
         return res.status(401).json({ 
           error: 'Authentication required',
           requiresLogin: true 
         });
       }
       
-      try {
-        const decoded = jwt.verify(authToken, process.env.JWT_SECRET || 'fallback-secret') as any;
-        authenticatedUserId = decoded.userId;
-        
-        // Get user and check for Splynx customer ID
-        const [user] = await db
-          .select()
-          .from(users)
-          .where(eq(users.id, authenticatedUserId as number))
-          .limit(1);
-        
-        if (!user) {
-          return res.status(401).json({ error: 'User not found' });
-        }
-        
-        // Use splynxCustomerId field directly from users table
-        splynxCustomerId = user.splynxCustomerId || null;
-        
-        if (appointmentType.requireCustomerAccount && !splynxCustomerId) {
-          return res.status(403).json({ 
-            error: 'This appointment type requires a linked customer account' 
+      // Handle Firebase authentication
+      if (authType === 'firebase') {
+        // Verify Firebase ID token using Firebase Admin SDK
+        if (!authToken) {
+          return res.status(401).json({ 
+            error: 'Firebase ID token is required for Firebase authentication' 
           });
         }
-      } catch (error) {
-        return res.status(401).json({ error: 'Invalid authentication token' });
+        
+        try {
+          // Initialize Firebase service for this organization
+          const firebaseService = new FirebaseService(appointmentType.organizationId);
+          await firebaseService.initialize();
+          
+          // Verify the ID token
+          const decodedToken = await firebaseService.verifyIdToken(authToken);
+          
+          // Validate that the UID and email match
+          if (firebaseUid && decodedToken.uid !== firebaseUid) {
+            return res.status(401).json({ error: 'Firebase UID mismatch' });
+          }
+          
+          if (customerEmail && decodedToken.email && decodedToken.email !== customerEmail) {
+            return res.status(401).json({ error: 'Firebase email mismatch' });
+          }
+          
+          console.log(`[BOOKINGS] Firebase token verified - email: ${decodedToken.email}, uid: ${decodedToken.uid}`);
+          
+          // Try to find user by email to get their Splynx customer ID
+          if (decodedToken.email) {
+            const [existingUser] = await db
+              .select()
+              .from(users)
+              .where(eq(users.email, decodedToken.email))
+              .limit(1);
+            
+            if (existingUser) {
+              authenticatedUserId = existingUser.id;
+              splynxCustomerId = existingUser.splynxCustomerId || null;
+            }
+          }
+          
+          if (appointmentType.requireCustomerAccount && !splynxCustomerId) {
+            return res.status(403).json({ 
+              error: 'This appointment type requires a linked customer account' 
+            });
+          }
+        } catch (error: any) {
+          console.error('[BOOKINGS] Firebase token verification failed:', error);
+          return res.status(401).json({ 
+            error: 'Firebase authentication failed: ' + (error.message || 'Invalid token') 
+          });
+        }
+      } else {
+        // Handle legacy JWT authentication
+        try {
+          const decoded = jwt.verify(authToken, process.env.JWT_SECRET || 'fallback-secret') as any;
+          authenticatedUserId = decoded.userId;
+          
+          // Get user and check for Splynx customer ID
+          const [user] = await db
+            .select()
+            .from(users)
+            .where(eq(users.id, authenticatedUserId as number))
+            .limit(1);
+          
+          if (!user) {
+            return res.status(401).json({ error: 'User not found' });
+          }
+          
+          // Use splynxCustomerId field directly from users table
+          splynxCustomerId = user.splynxCustomerId || null;
+          
+          if (appointmentType.requireCustomerAccount && !splynxCustomerId) {
+            return res.status(403).json({ 
+              error: 'This appointment type requires a linked customer account' 
+            });
+          }
+        } catch (error) {
+          return res.status(401).json({ error: 'Invalid authentication token' });
+        }
       }
     }
     
