@@ -698,6 +698,9 @@ router.post('/public/bookings/:token/confirm', async (req, res) => {
     const defaultAssigneeUserId = (validation.booking!.taskType as any).defaultAssigneeUserId;
     const defaultAssigneeTeamId = (validation.booking!.taskType as any).defaultAssigneeTeamId;
     
+    console.log(`[BOOKINGS] Creating task with team config: defaultAssigneeTeamId=${defaultAssigneeTeamId}, defaultAssigneeUserId=${defaultAssigneeUserId}`);
+    console.log(`[BOOKINGS] Duration config: ${validation.booking!.taskType.defaultDuration}`);
+    
     const splynxTask = await splynxService.createSplynxTask({
       taskName: `${validation.booking!.taskType.name} - ${validation.booking!.booking.customerName}`,
       projectId: validation.booking!.taskType.splynxProjectId,

@@ -1365,10 +1365,12 @@ export class SplynxService {
       }
       
       // Add team ID
+      console.log(`[SPLYNX createSplynxTask] Team/Assignee input: teamId=${taskData.teamId}, team_id=${taskData.team_id}, assignee=${taskData.assignee}, assignee_id=${taskData.assignee_id}`);
       if (taskData.teamId || taskData.team_id) {
         const teamId = parseInt(String(taskData.teamId || taskData.team_id));
         if (!isNaN(teamId)) {
           splynxPayload.team_id = teamId;
+          console.log(`[SPLYNX createSplynxTask] ✓ Added team_id: ${teamId}`);
         }
       }
 
@@ -1448,17 +1450,26 @@ export class SplynxService {
         }
       }
       
-      // Handle duration (format: "Xh Ym")
+      // Handle duration (format: "Xh Ym" or "Xh" or "Xm")
       if (taskData.duration) {
-        // Validate format: should be like "0h 30m" or "1h 0m"
-        const durationPattern = /^\d+h\s+\d+m$/;
-        if (durationPattern.test(taskData.duration)) {
-          splynxPayload.formatted_duration = taskData.duration;
+        // Parse duration string to extract hours and minutes
+        const hourMatch = taskData.duration.match(/(\d+)\s*h/i);
+        const minuteMatch = taskData.duration.match(/(\d+)\s*m/i);
+        
+        const hours = hourMatch ? parseInt(hourMatch[1]) : 0;
+        const minutes = minuteMatch ? parseInt(minuteMatch[1]) : 0;
+        
+        if (hours > 0 || minutes > 0) {
+          // Format as "Xh Ym" for Splynx
+          splynxPayload.formatted_duration = `${hours}h ${minutes}m`;
+          console.log(`[SPLYNX createSplynxTask] Parsed duration "${taskData.duration}" to "${splynxPayload.formatted_duration}"`);
         } else {
-          // Try to convert plain minutes to "0h Xm" format
-          const minutes = parseInt(taskData.duration);
-          if (!isNaN(minutes)) {
-            splynxPayload.formatted_duration = `0h ${minutes}m`;
+          // Try to interpret as plain minutes number
+          const plainMinutes = parseInt(taskData.duration);
+          if (!isNaN(plainMinutes)) {
+            const h = Math.floor(plainMinutes / 60);
+            const m = plainMinutes % 60;
+            splynxPayload.formatted_duration = `${h}h ${m}m`;
           } else {
             console.warn(`[SPLYNX createSplynxTask] Invalid duration format: ${taskData.duration}, using default: "0h 5m"`);
             splynxPayload.formatted_duration = "0h 5m";
