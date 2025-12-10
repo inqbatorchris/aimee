@@ -5787,6 +5787,7 @@ export const bookableTaskTypes = pgTable("bookable_task_types", {
   
   // Post-booking redirect (for customer portal integration)
   postBookingRedirectUrl: text("post_booking_redirect_url"), // URL to redirect customer after successful booking
+  backToAppUrl: text("back_to_app_url"), // URL for "Back to Application" button on booking page
   
   // Audit
   createdAt: timestamp("created_at").defaultNow(),

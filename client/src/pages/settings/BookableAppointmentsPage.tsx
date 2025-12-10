@@ -52,6 +52,8 @@ interface BookableTaskType {
   buttonLabel: string;
   buttonColor: string;
   confirmationMessage: string;
+  postBookingRedirectUrl?: string | null;
+  backToAppUrl?: string | null;
   isActive: boolean;
   displayOrder: number;
   bookingUrl: string | null;
@@ -826,6 +828,20 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
                   />
                   <p className="text-xs text-muted-foreground mt-1">
                     Optional URL to redirect customers after successful booking. Leave empty to show the confirmation message instead.
+                  </p>
+                </div>
+                <div>
+                  <Label htmlFor="backToAppUrl">"Back to Application" Button URL</Label>
+                  <Input
+                    id="backToAppUrl"
+                    type="url"
+                    value={(formData as any).backToAppUrl || ''}
+                    onChange={(e) => setFormData({ ...formData, backToAppUrl: e.target.value } as any)}
+                    placeholder="https://example.com/portal (optional)"
+                    data-testid="input-back-url"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    URL for the "Back to Application" button on the booking page. Leave empty to redirect to the main app.
                   </p>
                 </div>
               </div>
