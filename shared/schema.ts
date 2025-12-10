@@ -5750,7 +5750,10 @@ export const bookableTaskTypes = pgTable("bookable_task_types", {
   name: varchar("name", { length: 255 }).notNull(),
   slug: varchar("slug", { length: 100 }).notNull(), // URL-friendly unique identifier per org
   description: text("description"), // Public description shown on booking page
-  taskCategory: varchar("task_category", { length: 50 }).notNull(), // 'support_session', 'field_visit', 'custom'
+  taskCategory: varchar("task_category", { length: 50 }), // DEPRECATED - replaced by teamId
+  
+  // Team Assignment - Which team handles these appointments
+  teamId: integer("team_id").references(() => teams.id), // Link to internal team
   
   // Access Control
   accessMode: bookingAccessModeEnum("access_mode").default("open").notNull(), // 'open' = anyone can book, 'authenticated' = require login

@@ -374,10 +374,10 @@ function AppContent() {
   useEffect(() => {
     // Only redirect to login if auth is fully initialized and user is not authenticated
     if (!loading && !isAuthenticated && !localStorage.getItem('authToken')) {
-      // Allow public routes without authentication (including field app)
+      // Allow public routes without authentication (including field app and booking pages)
       const publicRoutes = ['/', '/login', '/forgot-password', '/reset-password', '/register'];
       const isPublicRoute = publicRoutes.some(route => 
-        location === route || location.startsWith('/reset-password/') || location.startsWith('/field-app')
+        location === route || location.startsWith('/reset-password/') || location.startsWith('/field-app') || location.startsWith('/book/') || location.startsWith('/public/bookings')
       );
       
       // Only redirect to landing page if not already on a public route

@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db';
 import { eq, and, gte, lte, sql, or, inArray } from 'drizzle-orm';
-import { bookableTaskTypes, bookingTokens, bookings, workItems, organizations, activityLogs, integrations, users, calendarBlocks, splynxTeams } from '@shared/schema';
+import { bookableTaskTypes, bookingTokens, bookings, workItems, organizations, activityLogs, integrations, users, calendarBlocks, splynxTeams, teams } from '@shared/schema';
 import { SplynxService } from '../services/integrations/splynxService';
 import { FirebaseService } from '../services/integrations/firebaseService';
 import { authenticateToken } from '../auth';
@@ -339,16 +339,24 @@ router.get('/bookable-task-types', authenticateToken, async (req, res) => {
     }
     
     const types = await db
-      .select()
+      .select({
+        taskType: bookableTaskTypes,
+        team: {
+          id: teams.id,
+          name: teams.name,
+        },
+      })
       .from(bookableTaskTypes)
+      .leftJoin(teams, eq(bookableTaskTypes.teamId, teams.id))
       .where(eq(bookableTaskTypes.organizationId, organizationId))
       .orderBy(bookableTaskTypes.displayOrder);
     
-    // Add booking URLs to each type
+    // Add booking URLs and flatten team info
     const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 5000}`;
-    const typesWithUrls = types.map(type => ({
-      ...type,
-      bookingUrl: type.slug ? `${baseUrl}/book/${type.slug}` : null
+    const typesWithUrls = types.map(({ taskType, team }) => ({
+      ...taskType,
+      team: team?.id ? team : null,
+      bookingUrl: taskType.slug ? `${baseUrl}/book/${taskType.slug}` : null
     }));
     
     res.json(typesWithUrls);

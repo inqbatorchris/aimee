@@ -37,6 +37,8 @@ interface BookableTaskType {
   slug: string;
   description: string | null;
   taskCategory: string;
+  teamId: number | null;
+  team?: { id: number; name: string } | null;
   accessMode: 'open' | 'authenticated';
   requireCustomerAccount: boolean;
   splynxProjectId: number | null;
@@ -57,15 +59,16 @@ interface BookableTaskType {
   updatedAt: string;
 }
 
+interface Team {
+  id: number;
+  name: string;
+}
+
 const accessModeLabels: Record<string, { label: string; description: string }> = {
   open: { label: 'Open', description: 'Anyone with the link can book' },
   authenticated: { label: 'Login Required', description: 'Customers must log in to book' },
 };
 
-const categoryLabels: Record<string, { label: string; icon: typeof Calendar; color: string }> = {
-  field_visit: { label: 'Field Visit', icon: Wrench, color: 'bg-blue-100 text-blue-800' },
-  support_session: { label: 'Support Session', icon: Phone, color: 'bg-green-100 text-green-800' },
-};
 
 export default function BookableAppointmentsPage() {
   const [selectedType, setSelectedType] = useState<BookableTaskType | null>(null);
@@ -78,6 +81,10 @@ export default function BookableAppointmentsPage() {
 
   const { data: types, isLoading } = useQuery<BookableTaskType[]>({
     queryKey: ['/api/bookings/bookable-task-types'],
+  });
+
+  const { data: teams } = useQuery<Team[]>({
+    queryKey: ['/api/teams'],
   });
 
   const createMutation = useMutation({
@@ -223,7 +230,7 @@ export default function BookableAppointmentsPage() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Name</TableHead>
-                  <TableHead>Category</TableHead>
+                  <TableHead>Team</TableHead>
                   <TableHead>Access Mode</TableHead>
                   <TableHead>Duration</TableHead>
                   <TableHead>Status</TableHead>
@@ -233,12 +240,7 @@ export default function BookableAppointmentsPage() {
               </TableHeader>
               <TableBody>
                 {types.map((type) => {
-                  const category = categoryLabels[type.taskCategory] || { 
-                    label: type.taskCategory, 
-                    icon: Calendar, 
-                    color: 'bg-gray-100 text-gray-800' 
-                  };
-                  const CategoryIcon = category.icon;
+                  const teamName = type.team?.name || teams?.find(t => t.id === type.teamId)?.name;
                   
                   return (
                     <TableRow key={type.id} data-testid={`row-appointment-type-${type.id}`}>
@@ -249,10 +251,13 @@ export default function BookableAppointmentsPage() {
                         )}
                       </TableCell>
                       <TableCell>
-                        <Badge variant="secondary" className={category.color}>
-                          <CategoryIcon className="h-3 w-3 mr-1" />
-                          {category.label}
-                        </Badge>
+                        {teamName ? (
+                          <Badge variant="secondary" className="bg-blue-100 text-blue-800">
+                            {teamName}
+                          </Badge>
+                        ) : (
+                          <span className="text-muted-foreground text-sm">No team</span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge variant={type.accessMode === 'open' ? 'outline' : 'default'}>
@@ -401,6 +406,7 @@ export default function BookableAppointmentsPage() {
           }
         }}
         isSaving={createMutation.isPending || updateMutation.isPending}
+        teams={teams || []}
       />
     </div>
   );
@@ -429,6 +435,7 @@ interface CalendarFiltersResponse {
 }
 
 interface ExtendedBookableTaskType extends Partial<BookableTaskType> {
+  teamId?: number | null;
   defaultAssigneeTeamId?: number | null;
   defaultAssigneeUserId?: number | null;
   fallbackAssigneeUserId?: number | null;
@@ -537,13 +544,14 @@ interface AppointmentTypeSheetProps {
   isCreating: boolean;
   onSave: (data: Partial<BookableTaskType>) => void;
   isSaving: boolean;
+  teams: Team[];
 }
 
-function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSaving }: AppointmentTypeSheetProps) {
+function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSaving, teams }: AppointmentTypeSheetProps) {
   const [formData, setFormData] = useState<ExtendedBookableTaskType>({
     name: '',
     description: '',
-    taskCategory: 'field_visit',
+    teamId: null,
     accessMode: 'open',
     requireCustomerAccount: false,
     defaultDuration: '2h 30m',
@@ -567,6 +575,7 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
     if (type) {
       setFormData({
         ...type,
+        teamId: type.teamId ?? null,
         defaultAssigneeTeamId: (type as any).defaultAssigneeTeamId ?? null,
         defaultAssigneeUserId: (type as any).defaultAssigneeUserId ?? null,
         fallbackAssigneeUserId: (type as any).fallbackAssigneeUserId ?? null,
@@ -575,7 +584,7 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
       setFormData({
         name: '',
         description: '',
-        taskCategory: 'field_visit',
+        teamId: null,
         accessMode: 'open',
         requireCustomerAccount: false,
         defaultDuration: '2h 30m',
@@ -640,19 +649,26 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
             </div>
 
             <div>
-              <Label htmlFor="taskCategory">Category *</Label>
+              <Label htmlFor="teamId">Team</Label>
               <Select
-                value={formData.taskCategory}
-                onValueChange={(value) => setFormData({ ...formData, taskCategory: value })}
+                value={formData.teamId?.toString() || 'none'}
+                onValueChange={(value) => setFormData({ ...formData, teamId: value === 'none' ? null : parseInt(value) })}
               >
-                <SelectTrigger data-testid="select-category">
-                  <SelectValue placeholder="Select category" />
+                <SelectTrigger data-testid="select-team">
+                  <SelectValue placeholder="Select team" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="field_visit">Field Visit (On-site)</SelectItem>
-                  <SelectItem value="support_session">Support Session (Remote)</SelectItem>
+                  <SelectItem value="none">No team assigned</SelectItem>
+                  {teams.map((team) => (
+                    <SelectItem key={team.id} value={team.id.toString()}>
+                      {team.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-muted-foreground mt-1">
+                The team responsible for handling these appointments.
+              </p>
             </div>
 
             <div className="border-t pt-4">
