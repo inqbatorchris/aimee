@@ -1071,18 +1071,28 @@ router.post('/public/appointment-types/:slug/book', async (req, res) => {
           });
         }
         
+        if (!firebaseUid) {
+          return res.status(401).json({ 
+            error: 'Firebase UID is required for Firebase authentication' 
+          });
+        }
+        
         try {
-          // Try to initialize Firebase service for this organization
+          // Initialize Firebase service for this organization
           const firebaseService = new FirebaseService(appointmentType.organizationId);
           
+          let verifiedEmail: string | null = null;
+          let verifiedUid: string = firebaseUid;
+          
           try {
+            // Try to initialize with Admin SDK for token verification
             await firebaseService.initialize();
             
             // Verify the ID token
             const decodedToken = await firebaseService.verifyIdToken(authToken);
             
-            // Validate that the UID and email match
-            if (firebaseUid && decodedToken.uid !== firebaseUid) {
+            // Validate that the UID matches
+            if (decodedToken.uid !== firebaseUid) {
               return res.status(401).json({ error: 'Firebase UID mismatch' });
             }
             
@@ -1090,53 +1100,51 @@ router.post('/public/appointment-types/:slug/book', async (req, res) => {
               return res.status(401).json({ error: 'Firebase email mismatch' });
             }
             
-            console.log(`[BOOKINGS] Firebase token verified - email: ${decodedToken.email}, uid: ${decodedToken.uid}`);
+            verifiedEmail = decodedToken.email || customerEmail;
+            verifiedUid = decodedToken.uid;
             
-            // Try to find user by email to get their Splynx customer ID
-            if (decodedToken.email) {
-              const [existingUser] = await db
-                .select()
-                .from(users)
-                .where(eq(users.email, decodedToken.email))
-                .limit(1);
-              
-              if (existingUser) {
-                authenticatedUserId = existingUser.id;
-                splynxCustomerId = existingUser.splynxCustomerId || null;
-              }
-            }
+            console.log(`[BOOKINGS] Firebase token verified - email: ${verifiedEmail}, uid: ${verifiedUid}`);
           } catch (serviceError: any) {
-            // Service account not configured - skip server-side verification
-            // but still trust client-side Firebase auth since user is logged in
-            if (serviceError.message?.includes('service account credentials required')) {
-              console.log(`[BOOKINGS] Firebase service account not configured - trusting client-side auth for ${customerEmail}`);
-              
-              // Try to find user by email provided
-              if (customerEmail) {
-                const [existingUser] = await db
-                  .select()
-                  .from(users)
-                  .where(eq(users.email, customerEmail))
-                  .limit(1);
-                
-                if (existingUser) {
-                  authenticatedUserId = existingUser.id;
-                  splynxCustomerId = existingUser.splynxCustomerId || null;
-                }
+            // Service account not configured - use REST-only mode
+            // Trust the client-provided UID since user is already authenticated
+            console.log(`[BOOKINGS] Firebase Admin SDK not available - using REST API mode for ${customerEmail}`);
+            await firebaseService.initializeRestOnly();
+            verifiedEmail = customerEmail;
+          }
+          
+          // Query Firestore to get the user document and SplynxID
+          console.log(`[BOOKINGS] Looking up Firestore user document for UID: ${verifiedUid}`);
+          
+          const firestoreUser = await firebaseService.getUserDocumentByUid(verifiedUid, authToken);
+          
+          if (firestoreUser) {
+            console.log(`[BOOKINGS] Found Firestore user document:`, JSON.stringify({
+              email: firestoreUser.email,
+              SplynxID: firestoreUser.SplynxID,
+            }));
+            
+            // Get SplynxID from Firestore user document (note: capital S and ID)
+            if (firestoreUser.SplynxID) {
+              // SplynxID is stored as a string in Firestore, convert to number
+              splynxCustomerId = parseInt(firestoreUser.SplynxID, 10);
+              if (isNaN(splynxCustomerId)) {
+                console.warn(`[BOOKINGS] Invalid SplynxID format in Firestore: ${firestoreUser.SplynxID}`);
+                splynxCustomerId = null;
+              } else {
+                console.log(`[BOOKINGS] Found SplynxID in Firestore: ${splynxCustomerId}`);
               }
-            } else {
-              // Other Firebase initialization error - propagate
-              throw serviceError;
             }
+          } else {
+            console.log(`[BOOKINGS] No Firestore user document found for UID: ${verifiedUid}`);
           }
           
           if (appointmentType.requireCustomerAccount && !splynxCustomerId) {
             return res.status(403).json({ 
-              error: 'This appointment type requires a linked customer account' 
+              error: 'This appointment type requires a linked customer account. Please ensure your account has a SplynxID configured.' 
             });
           }
         } catch (error: any) {
-          console.error('[BOOKINGS] Firebase token verification failed:', error);
+          console.error('[BOOKINGS] Firebase authentication failed:', error);
           return res.status(401).json({ 
             error: 'Firebase authentication failed: ' + (error.message || 'Invalid token') 
           });

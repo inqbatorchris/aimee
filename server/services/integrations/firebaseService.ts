@@ -38,6 +38,8 @@ export class FirebaseService {
   private app: FirebaseApp | null = null;
   private organizationId: number;
   private firebaseAdmin: any = null;
+  private projectId: string | null = null;
+  private hasAdminSdk: boolean = false;
 
   constructor(organizationId: number) {
     this.organizationId = organizationId;
@@ -70,6 +72,9 @@ export class FirebaseService {
       serviceAccount: credentials.serviceAccount,
     };
 
+    // Store projectId for REST API fallback
+    this.projectId = firebaseConfig.projectId;
+
     // Initialize Firebase Admin SDK if service account is provided
     if (firebaseConfig.serviceAccount) {
       try {
@@ -86,13 +91,130 @@ export class FirebaseService {
         } else {
           this.app = this.firebaseAdmin.app();
         }
+        this.hasAdminSdk = true;
       } catch (error) {
         console.error('Firebase Admin SDK initialization failed:', error);
         throw new Error('Failed to initialize Firebase Admin SDK');
       }
     } else {
-      throw new Error('Firebase service account credentials required for server-side operations');
+      // No service account - will use REST API for Firestore operations
+      console.log(`[FIREBASE] No service account configured for org ${this.organizationId} - using REST API mode`);
+      this.hasAdminSdk = false;
     }
+  }
+
+  /**
+   * Initialize in REST-only mode (no Admin SDK required)
+   * Used when we only need to query Firestore with an ID token
+   */
+  async initializeRestOnly(): Promise<void> {
+    const integration = await storage.getIntegration(this.organizationId, 'firebase');
+    
+    if (!integration) {
+      throw new Error('Firebase integration not configured');
+    }
+
+    if (!integration.credentialsEncrypted) {
+      throw new Error('Firebase credentials not configured');
+    }
+
+    // Decrypt credentials
+    const decryptedData = decrypt(integration.credentialsEncrypted);
+    const credentials = JSON.parse(decryptedData);
+    
+    this.projectId = credentials.projectId;
+    this.hasAdminSdk = false;
+  }
+
+  /**
+   * Get user document from Firestore by Firebase UID
+   * Returns the SplynxID field if present
+   * Uses Admin SDK if available, otherwise falls back to REST API with ID token
+   */
+  async getUserDocumentByUid(firebaseUid: string, idToken?: string): Promise<{ SplynxID?: string; email?: string; [key: string]: any } | null> {
+    // Try Admin SDK first if available
+    if (this.hasAdminSdk && this.app) {
+      try {
+        const doc = await this.app.firestore().collection('users').doc(firebaseUid).get();
+        if (!doc.exists) {
+          console.log(`[FIREBASE] No user document found for UID: ${firebaseUid}`);
+          return null;
+        }
+        return doc.data();
+      } catch (error: any) {
+        console.error(`[FIREBASE] Admin SDK Firestore query failed:`, error.message);
+        // Fall through to REST API if Admin SDK fails
+      }
+    }
+
+    // Use REST API with ID token
+    if (!this.projectId) {
+      throw new Error('Firebase project ID not configured');
+    }
+
+    if (!idToken) {
+      throw new Error('ID token required for REST API Firestore access');
+    }
+
+    try {
+      const url = `https://firestore.googleapis.com/v1/projects/${this.projectId}/databases/(default)/documents/users/${firebaseUid}`;
+      
+      const response = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${idToken}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.status === 404) {
+        console.log(`[FIREBASE] No user document found for UID: ${firebaseUid} (REST API)`);
+        return null;
+      }
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error(`[FIREBASE] Firestore REST API error:`, response.status, errorText);
+        throw new Error(`Firestore REST API error: ${response.status}`);
+      }
+
+      const firestoreDoc = await response.json();
+      
+      // Convert Firestore REST format to plain object
+      return this.convertFirestoreDocument(firestoreDoc.fields || {});
+    } catch (error: any) {
+      console.error(`[FIREBASE] REST API Firestore query failed:`, error.message);
+      throw error;
+    }
+  }
+
+  /**
+   * Convert Firestore REST API document format to plain object
+   */
+  private convertFirestoreDocument(fields: Record<string, any>): Record<string, any> {
+    const result: Record<string, any> = {};
+    
+    for (const [key, value] of Object.entries(fields)) {
+      result[key] = this.convertFirestoreValue(value);
+    }
+    
+    return result;
+  }
+
+  private convertFirestoreValue(value: any): any {
+    if (value.stringValue !== undefined) return value.stringValue;
+    if (value.integerValue !== undefined) return parseInt(value.integerValue, 10);
+    if (value.doubleValue !== undefined) return value.doubleValue;
+    if (value.booleanValue !== undefined) return value.booleanValue;
+    if (value.nullValue !== undefined) return null;
+    if (value.timestampValue !== undefined) return new Date(value.timestampValue);
+    if (value.arrayValue !== undefined) {
+      return (value.arrayValue.values || []).map((v: any) => this.convertFirestoreValue(v));
+    }
+    if (value.mapValue !== undefined) {
+      return this.convertFirestoreDocument(value.mapValue.fields || {});
+    }
+    return value;
   }
 
   private ensureInitialized(): void {
