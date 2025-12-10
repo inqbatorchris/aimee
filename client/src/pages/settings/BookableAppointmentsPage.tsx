@@ -614,6 +614,18 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
     }
   }, [type]);
 
+  // Fetch Splynx scheduling projects
+  const { data: projectsData, isLoading: projectsLoading } = useQuery<{ projects: Array<{ id: number; title: string }> }>({
+    queryKey: ['/api/integrations/splynx/scheduling-projects'],
+    queryFn: async () => {
+      const response = await fetch('/api/integrations/splynx/scheduling-projects', {
+        credentials: 'include',
+      });
+      if (!response.ok) throw new Error('Failed to fetch projects');
+      return response.json();
+    },
+  });
+
   // Fetch workflow statuses when project ID changes
   const { data: workflowStatuses, isLoading: statusesLoading } = useQuery<{ statuses: WorkflowStatus[] }>({
     queryKey: ['/api/integrations/splynx/project', formData.splynxProjectId, 'workflow-statuses'],
@@ -786,14 +798,38 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
               <h4 className="font-medium mb-3">Splynx Integration</h4>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="splynxProjectId">Splynx Project ID</Label>
-                  <Input
-                    id="splynxProjectId"
-                    type="number"
-                    value={formData.splynxProjectId || ''}
-                    onChange={(e) => setFormData({ ...formData, splynxProjectId: parseInt(e.target.value) || null })}
-                    data-testid="input-splynx-project"
-                  />
+                  <Label htmlFor="splynxProjectId">Splynx Project</Label>
+                  {projectsLoading ? (
+                    <div className="flex items-center gap-2 h-10 px-3 text-sm text-muted-foreground border rounded-md">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading projects...
+                    </div>
+                  ) : projectsData?.projects && projectsData.projects.length > 0 ? (
+                    <Select
+                      value={formData.splynxProjectId?.toString() || ''}
+                      onValueChange={(value) => setFormData({ ...formData, splynxProjectId: parseInt(value) || null })}
+                    >
+                      <SelectTrigger data-testid="select-splynx-project">
+                        <SelectValue placeholder="Select a project" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {projectsData.projects.map((project) => (
+                          <SelectItem key={project.id} value={project.id.toString()}>
+                            {project.title}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Input
+                      id="splynxProjectId"
+                      type="number"
+                      value={formData.splynxProjectId || ''}
+                      onChange={(e) => setFormData({ ...formData, splynxProjectId: parseInt(e.target.value) || null })}
+                      placeholder="Enter project ID"
+                      data-testid="input-splynx-project"
+                    />
+                  )}
                 </div>
                 <div>
                   <Label htmlFor="splynxWorkflowStatusId">Workflow Status</Label>
@@ -813,7 +849,7 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
                       <SelectContent>
                         {workflowStatuses.statuses.map((status) => (
                           <SelectItem key={status.id} value={status.id.toString()}>
-                            {status.name} (ID: {status.id})
+                            {status.name}
                           </SelectItem>
                         ))}
                       </SelectContent>
@@ -824,12 +860,12 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
                       type="number"
                       value={formData.splynxWorkflowStatusId || ''}
                       onChange={(e) => setFormData({ ...formData, splynxWorkflowStatusId: parseInt(e.target.value) || null })}
-                      placeholder="Enter workflow status ID"
+                      placeholder="Select project first"
                       data-testid="input-splynx-workflow"
                     />
                   )}
                   <p className="text-xs text-muted-foreground mt-1">
-                    {workflowStatuses?.statuses?.length ? 'Select the initial status for new tasks' : 'Enter project ID first to load available statuses'}
+                    {workflowStatuses?.statuses?.length ? 'Initial status for new bookings' : 'Select a project to load statuses'}
                   </p>
                 </div>
               </div>
