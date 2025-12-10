@@ -1062,6 +1062,22 @@ router.get('/assignments', authenticateToken, async (req, res) => {
   }
 });
 
+// Get current user's document assignments (My Training view)
+router.get('/my-assignments', authenticateToken, async (req, res) => {
+  try {
+    const user = req.user as User;
+    if (!user?.id) {
+      return res.status(400).json({ error: 'User not found' });
+    }
+
+    const assignments = await coreStorage.getUserDocumentAssignments(user.id);
+    res.json(assignments);
+  } catch (error) {
+    console.error('Error fetching user document assignments:', error);
+    res.status(500).json({ error: 'Failed to fetch your assignments' });
+  }
+});
+
 // Create document assignment (supports both users and teams)
 router.post('/assignments', authenticateToken, async (req, res) => {
   try {

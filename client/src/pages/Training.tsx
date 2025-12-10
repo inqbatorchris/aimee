@@ -52,10 +52,22 @@ interface AssignmentDetail {
   priority?: string;
 }
 
+interface MyAssignment {
+  id: number;
+  documentId: number;
+  documentTitle: string;
+  documentDescription: string;
+  status: 'pending' | 'completed';
+  dueDate?: string;
+  completedAt?: string;
+  assignedAt: string;
+  priority?: string;
+}
+
 export default function Training() {
   const { currentUser } = useAuth();
   const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState<"documents" | "progress">("documents");
+  const [activeTab, setActiveTab] = useState<"my-training" | "documents" | "progress">("my-training");
   
   // Enhanced document editor panel state
   const [documentPanelOpen, setDocumentPanelOpen] = useState(false);
@@ -105,6 +117,12 @@ export default function Training() {
   const { data: assignmentDetails = [], isLoading: assignmentsLoading } = useQuery<AssignmentDetail[]>({
     queryKey: ["/api/knowledge-base/assignments"],
     enabled: activeTab === "progress" && isAdmin
+  });
+
+  // Fetch current user's own assignments
+  const { data: myAssignments = [], isLoading: myAssignmentsLoading } = useQuery<MyAssignment[]>({
+    queryKey: ["/api/knowledge-base/my-assignments"],
+    enabled: activeTab === "my-training"
   });
 
   const handleCreateDocument = () => {
@@ -289,12 +307,25 @@ export default function Training() {
         <div className="border-b border-gray-200">
           <nav className="-mb-px flex space-x-4">
             <button
+              onClick={() => setActiveTab("my-training")}
+              className={`py-1 px-2 border-b-2 font-medium text-xs ${
+                activeTab === "my-training"
+                  ? "border-indigo-500 text-indigo-600"
+                  : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+              }`}
+              data-testid="tab-my-training"
+            >
+              <FileText className="w-3 h-3 inline mr-1" />
+              My Training
+            </button>
+            <button
               onClick={() => setActiveTab("documents")}
               className={`py-1 px-2 border-b-2 font-medium text-xs ${
                 activeTab === "documents"
                   ? "border-indigo-500 text-indigo-600"
                   : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
               }`}
+              data-testid="tab-documents"
             >
               <BookOpen className="w-3 h-3 inline mr-1" />
               Documents
@@ -307,6 +338,7 @@ export default function Training() {
                     ? "border-indigo-500 text-indigo-600"
                     : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                 }`}
+                data-testid="tab-team-progress"
               >
                 <Users className="w-3 h-3 inline mr-1" />
                 Team Progress
@@ -315,6 +347,137 @@ export default function Training() {
           </nav>
         </div>
       </div>
+
+      {/* My Training Tab */}
+      {activeTab === "my-training" && (
+        <div className="space-y-3">
+          <div>
+            <h2 className="text-sm font-medium text-gray-900">My Training</h2>
+            <p className="text-xs text-gray-600 mt-0.5">
+              Training documents assigned to you
+            </p>
+          </div>
+
+          {myAssignmentsLoading ? (
+            <div className="space-y-2">
+              {[...Array(3)].map((_, i) => (
+                <Card key={i} className="animate-pulse">
+                  <CardContent className="p-3">
+                    <div className="h-4 bg-gray-200 rounded w-3/4 mb-2"></div>
+                    <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : myAssignments.length === 0 ? (
+            <Card>
+              <CardContent className="flex flex-col items-center justify-center py-8">
+                <BookOpen className="w-8 h-8 text-gray-400 mb-2" />
+                <h3 className="text-sm font-medium text-gray-900 mb-1">No training assigned</h3>
+                <p className="text-xs text-gray-600 text-center">
+                  You don't have any training documents assigned yet.
+                </p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-2">
+              {/* Summary Stats */}
+              <div className="grid grid-cols-3 gap-2 mb-3">
+                <Card className="p-2">
+                  <div className="text-center">
+                    <div className="text-lg font-semibold text-gray-900">{myAssignments.length}</div>
+                    <div className="text-xs text-gray-500">Total</div>
+                  </div>
+                </Card>
+                <Card className="p-2">
+                  <div className="text-center">
+                    <div className="text-lg font-semibold text-green-600">
+                      {myAssignments.filter(a => a.status === 'completed').length}
+                    </div>
+                    <div className="text-xs text-gray-500">Completed</div>
+                  </div>
+                </Card>
+                <Card className="p-2">
+                  <div className="text-center">
+                    <div className="text-lg font-semibold text-amber-600">
+                      {myAssignments.filter(a => a.status === 'pending').length}
+                    </div>
+                    <div className="text-xs text-gray-500">Pending</div>
+                  </div>
+                </Card>
+              </div>
+              
+              {/* Assignment List */}
+              {myAssignments.map((assignment) => (
+                <Card 
+                  key={assignment.id} 
+                  className="cursor-pointer hover:bg-gray-50 transition-colors"
+                  data-testid={`assignment-card-${assignment.id}`}
+                >
+                  <CardContent className="p-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="text-sm font-medium text-gray-900 truncate">
+                            {assignment.documentTitle}
+                          </h3>
+                          <Badge 
+                            variant={assignment.status === 'completed' ? 'default' : 'secondary'}
+                            className={`text-xs ${
+                              assignment.status === 'completed' 
+                                ? 'bg-green-100 text-green-700' 
+                                : 'bg-amber-100 text-amber-700'
+                            }`}
+                          >
+                            {assignment.status === 'completed' ? 'Completed' : 'Pending'}
+                          </Badge>
+                          {assignment.priority && (
+                            <Badge variant="outline" className="text-xs">
+                              {assignment.priority}
+                            </Badge>
+                          )}
+                        </div>
+                        {assignment.documentDescription && (
+                          <p className="text-xs text-gray-600 line-clamp-2 mb-1">
+                            {assignment.documentDescription}
+                          </p>
+                        )}
+                        <div className="flex items-center gap-3 text-xs text-gray-500">
+                          <span>Assigned: {new Date(assignment.assignedAt).toLocaleDateString()}</span>
+                          {assignment.dueDate && (
+                            <span className={`${
+                              new Date(assignment.dueDate) < new Date() && assignment.status !== 'completed'
+                                ? 'text-red-500 font-medium'
+                                : ''
+                            }`}>
+                              Due: {new Date(assignment.dueDate).toLocaleDateString()}
+                            </span>
+                          )}
+                          {assignment.completedAt && (
+                            <span className="text-green-600">
+                              Completed: {new Date(assignment.completedAt).toLocaleDateString()}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <Button 
+                        size="sm" 
+                        variant="ghost" 
+                        className="h-7 px-2"
+                        onClick={() => window.location.href = `/kb/documents/${assignment.documentId}`}
+                        data-testid={`view-document-${assignment.id}`}
+                      >
+                        <BookOpen className="w-3 h-3 mr-1" />
+                        View
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Documents Tab */}
       {activeTab === "documents" && (

@@ -160,6 +160,7 @@ export interface ICoreStorage {
   // Document User Assignments
   getDocumentAssignments(documentId: number): Promise<any[]>;
   getAllDocumentAssignments(organizationId: number): Promise<any[]>;
+  getUserDocumentAssignments(userId: number): Promise<any[]>;
   createDocumentAssignment(assignment: { documentId: number; userId: number; assignerId: number; dueDate?: Date | null; status: string; assignedAt: Date }): Promise<any>;
   updateDocumentAssignment(assignmentId: number, updates: any): Promise<any>;
   deleteDocumentAssignment(assignmentId: number): Promise<boolean>;
@@ -1229,6 +1230,45 @@ export class CoreDatabaseStorage implements ICoreStorage {
       completedAt: a.document_assignments.completedAt,
       assignerId: a.document_assignments.assignerId
     }));
+  }
+
+  // Get document assignments for a specific user (for My Training view)
+  async getUserDocumentAssignments(userId: number): Promise<any[]> {
+    const assignments = await db.select()
+      .from(documentAssignments)
+      .leftJoin(knowledgeDocuments, eq(documentAssignments.documentId, knowledgeDocuments.id))
+      .leftJoin(workItems, eq(documentAssignments.workItemId, workItems.id))
+      .where(eq(documentAssignments.userId, userId))
+      .orderBy(desc(documentAssignments.assignedAt));
+    
+    return assignments.map(a => {
+      const content = a.knowledge_documents?.content || '';
+      const summary = a.knowledge_documents?.summary;
+      const documentDescription = summary || (content.length > 150 ? content.substring(0, 150) + '...' : content) || '';
+      
+      return {
+        id: a.document_assignments.id,
+        documentId: a.document_assignments.documentId,
+        documentTitle: a.knowledge_documents?.title || 'Unknown Document',
+        documentType: a.knowledge_documents?.documentType,
+        documentDescription,
+        status: a.document_assignments.status,
+        priority: a.document_assignments.priority,
+        dueDate: a.document_assignments.dueDate,
+        assignedAt: a.document_assignments.assignedAt,
+        completedAt: a.document_assignments.completedAt,
+        acknowledgedUnderstanding: a.document_assignments.acknowledgedUnderstanding,
+        completionNotes: a.document_assignments.completionNotes,
+        timeSpentMinutes: a.document_assignments.timeSpentMinutes,
+        workItemId: a.document_assignments.workItemId,
+        workItem: a.work_items ? {
+          id: a.work_items.id,
+          title: a.work_items.title,
+          status: a.work_items.status,
+          workflowTemplateId: a.work_items.workflowTemplateId
+        } : null
+      };
+    });
   }
 
   // Feature-Page Linking Methods (JSON field approach)

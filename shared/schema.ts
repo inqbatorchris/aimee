@@ -11,6 +11,7 @@ import {
   jsonb,
   index,
   unique,
+  uniqueIndex,
   date,
   pgEnum,
   uuid,
@@ -207,6 +208,14 @@ export const organizations = pgTable("organizations", {
   // Organization settings
   settings: jsonb("settings"), // Custom organization-wide settings
   features: jsonb("features"), // Enabled feature flags per organization
+  
+  // Firebase configuration for customer auth (encrypted)
+  firebaseConfig: jsonb("firebase_config").$type<{
+    projectId?: string;
+    appId?: string;
+    apiKey?: string;
+    authDomain?: string;
+  }>(),
   
   // Audit
   createdAt: timestamp("created_at").defaultNow(),
@@ -825,6 +834,7 @@ export const teamMembers = pgTable("team_members", {
   createdAt: timestamp("created_at").defaultNow(),
 }, (table) => [
   index("idx_team_members_team").on(table.teamId),
+  uniqueIndex("idx_team_members_team_user").on(table.teamId, table.userId),
 ]);
 
 // Objectives Snapshots (migration 007)
@@ -5771,6 +5781,9 @@ export const bookableTaskTypes = pgTable("bookable_task_types", {
   confirmationMessage: text("confirmation_message"),
   isActive: boolean("is_active").default(true),
   displayOrder: integer("display_order").default(0),
+  
+  // Post-booking redirect (for customer portal integration)
+  postBookingRedirectUrl: text("post_booking_redirect_url"), // URL to redirect customer after successful booking
   
   // Audit
   createdAt: timestamp("created_at").defaultNow(),

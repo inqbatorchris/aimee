@@ -432,6 +432,7 @@ interface ExtendedBookableTaskType extends Partial<BookableTaskType> {
   defaultAssigneeTeamId?: number | null;
   defaultAssigneeUserId?: number | null;
   fallbackAssigneeUserId?: number | null;
+  postBookingRedirectUrl?: string | null;
 }
 
 interface AssigneeSelectorProps {
@@ -552,6 +553,7 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
     buttonLabel: 'Book Appointment',
     buttonColor: 'primary',
     confirmationMessage: 'Your appointment has been scheduled.',
+    postBookingRedirectUrl: '',
     isActive: true,
     displayOrder: 1,
     splynxProjectId: 1,
@@ -583,6 +585,7 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
         buttonLabel: 'Book Appointment',
         buttonColor: 'primary',
         confirmationMessage: 'Your appointment has been scheduled.',
+        postBookingRedirectUrl: '',
         isActive: true,
         displayOrder: 1,
         splynxProjectId: 1,
@@ -794,6 +797,20 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
                     placeholder="Message shown after booking is confirmed"
                     data-testid="input-confirmation"
                   />
+                </div>
+                <div>
+                  <Label htmlFor="postBookingRedirectUrl">Post-Booking Redirect URL</Label>
+                  <Input
+                    id="postBookingRedirectUrl"
+                    type="url"
+                    value={formData.postBookingRedirectUrl || ''}
+                    onChange={(e) => setFormData({ ...formData, postBookingRedirectUrl: e.target.value })}
+                    placeholder="https://example.com/thank-you (optional)"
+                    data-testid="input-redirect-url"
+                  />
+                  <p className="text-xs text-muted-foreground mt-1">
+                    Optional URL to redirect customers after successful booking. Leave empty to show the confirmation message instead.
+                  </p>
                 </div>
               </div>
             </div>
