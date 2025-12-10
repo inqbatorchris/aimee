@@ -660,8 +660,65 @@ router.post('/:platformType/test', async (req, res) => {
 
       case 'firebase':
         // Test Firebase connection
-        testResult = { message: 'Firebase test connection not yet implemented' };
-        connectionStatus = 'disconnected';
+        try {
+          const { projectId, apiKey, appId, serviceAccount } = credentials;
+          
+          if (!projectId) {
+            throw new Error('Missing Project ID');
+          }
+          
+          if (!apiKey) {
+            throw new Error('Missing API Key');
+          }
+          
+          // Basic validation of Firebase config format
+          const projectIdPattern = /^[a-z0-9-]+$/;
+          if (!projectIdPattern.test(projectId)) {
+            throw new Error('Invalid Project ID format');
+          }
+          
+          // Check if service account is provided for server-side verification
+          if (serviceAccount) {
+            // Initialize Firebase Admin SDK to verify credentials
+            const firebaseAdmin = await import('firebase-admin');
+            const appName = `test-${user.organizationId}-${Date.now()}`;
+            
+            try {
+              const testApp = firebaseAdmin.initializeApp({
+                credential: firebaseAdmin.credential.cert(serviceAccount),
+                projectId: projectId,
+              }, appName);
+              
+              // Try to verify auth is working
+              await testApp.auth().listUsers(1);
+              
+              // Clean up test app
+              await testApp.delete();
+              
+              connectionStatus = 'connected';
+              testResult = { 
+                message: 'Firebase Admin SDK connected successfully',
+                projectId,
+                hasServiceAccount: true
+              };
+            } catch (firebaseError: any) {
+              throw new Error(`Firebase Admin SDK error: ${firebaseError.message}`);
+            }
+          } else {
+            // Without service account, we can only validate the config format
+            connectionStatus = 'connected';
+            testResult = { 
+              message: 'Firebase configuration validated (client-side only)',
+              projectId,
+              hasServiceAccount: false,
+              warning: 'Add Service Account JSON for server-side token verification'
+            };
+          }
+        } catch (error: any) {
+          testError = error.message;
+          connectionStatus = 'error';
+          testResult = { error: testError };
+        }
         break;
 
       case 'openai':
