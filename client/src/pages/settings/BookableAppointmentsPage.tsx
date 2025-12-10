@@ -27,10 +27,7 @@ import {
   Link,
   ExternalLink,
   Phone,
-  Wrench,
-  Check,
-  X,
-  Pencil
+  Wrench
 } from 'lucide-react';
 
 interface BookableTaskType {
@@ -643,50 +640,6 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
     enabled: !!formData.splynxProjectId && formData.splynxProjectId > 0,
   });
 
-  // Fetch status label mappings for inline editing
-  const { data: statusMappingsData, refetch: refetchMappings } = useQuery<{ mappings: Array<{ id: number; workflowId: number; statusId: number; label: string }> }>({
-    queryKey: ['/api/integrations/splynx/workflow-status-mappings'],
-    queryFn: async () => {
-      const response = await fetch('/api/integrations/splynx/workflow-status-mappings', {
-        credentials: 'include',
-      });
-      if (!response.ok) throw new Error('Failed to fetch status mappings');
-      return response.json();
-    },
-  });
-
-  // State for inline editing
-  const [editingStatusId, setEditingStatusId] = useState<number | null>(null);
-  const [editingLabel, setEditingLabel] = useState('');
-
-  // Helper to get status display name
-  const getStatusLabel = (statusId: number, workflowId: number) => {
-    const mapping = statusMappingsData?.mappings?.find(
-      m => m.statusId === statusId && m.workflowId === workflowId
-    );
-    return mapping?.label || `Status ${statusId}`;
-  };
-
-  // Get workflow ID - use the project ID as a proxy since Splynx doesn't expose workflow IDs easily
-  const workflowId = formData.splynxProjectId || 0;
-
-  // Save status label mapping
-  const saveStatusLabel = async (statusId: number, label: string) => {
-    try {
-      await fetch('/api/integrations/splynx/workflow-status-mappings', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ workflowId, statusId, label }),
-      });
-      refetchMappings();
-      setEditingStatusId(null);
-      setEditingLabel('');
-    } catch (error) {
-      console.error('Failed to save status label:', error);
-    }
-  };
-
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSave(formData);
@@ -886,87 +839,21 @@ function AppointmentTypeSheet({ isOpen, onClose, type, isCreating, onSave, isSav
                       Loading statuses...
                     </div>
                   ) : workflowStatuses?.statuses && workflowStatuses.statuses.length > 0 ? (
-                    <div className="space-y-2">
-                      <Select
-                        value={formData.splynxWorkflowStatusId?.toString() || ''}
-                        onValueChange={(value) => setFormData({ ...formData, splynxWorkflowStatusId: parseInt(value) || null })}
-                      >
-                        <SelectTrigger data-testid="select-splynx-workflow">
-                          <SelectValue placeholder="Select a workflow status" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {workflowStatuses.statuses.map((status) => (
-                            <SelectItem key={status.id} value={status.id.toString()}>
-                              {getStatusLabel(status.id, workflowId)} (ID: {status.id})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <div className="border rounded-md p-2 bg-muted/30">
-                        <p className="text-xs font-medium mb-2">Status Labels (click to edit):</p>
-                        <div className="flex flex-wrap gap-1">
-                          {workflowStatuses.statuses.map((status) => (
-                            <div key={status.id} className="flex items-center gap-1">
-                              {editingStatusId === status.id ? (
-                                <div className="flex items-center gap-1">
-                                  <Input
-                                    className="h-6 w-24 text-xs"
-                                    value={editingLabel}
-                                    onChange={(e) => setEditingLabel(e.target.value)}
-                                    onKeyDown={(e) => {
-                                      if (e.key === 'Enter') {
-                                        saveStatusLabel(status.id, editingLabel);
-                                      } else if (e.key === 'Escape') {
-                                        setEditingStatusId(null);
-                                        setEditingLabel('');
-                                      }
-                                    }}
-                                    autoFocus
-                                    placeholder="Label..."
-                                  />
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-6 w-6 p-0"
-                                    onClick={() => saveStatusLabel(status.id, editingLabel)}
-                                  >
-                                    <Check className="h-3 w-3" />
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="ghost"
-                                    className="h-6 w-6 p-0"
-                                    onClick={() => {
-                                      setEditingStatusId(null);
-                                      setEditingLabel('');
-                                    }}
-                                  >
-                                    <X className="h-3 w-3" />
-                                  </Button>
-                                </div>
-                              ) : (
-                                <Badge
-                                  variant="outline"
-                                  className="cursor-pointer hover:bg-muted text-xs"
-                                  onClick={() => {
-                                    setEditingStatusId(status.id);
-                                    setEditingLabel(getStatusLabel(status.id, workflowId).replace(`Status ${status.id}`, ''));
-                                  }}
-                                >
-                                  {getStatusLabel(status.id, workflowId)}
-                                  <Pencil className="h-2.5 w-2.5 ml-1" />
-                                </Badge>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-1">
-                          Click any status to give it a friendly name
-                        </p>
-                      </div>
-                    </div>
+                    <Select
+                      value={formData.splynxWorkflowStatusId?.toString() || ''}
+                      onValueChange={(value) => setFormData({ ...formData, splynxWorkflowStatusId: parseInt(value) || null })}
+                    >
+                      <SelectTrigger data-testid="select-splynx-workflow">
+                        <SelectValue placeholder="Select a workflow status" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {workflowStatuses.statuses.map((status) => (
+                          <SelectItem key={status.id} value={status.id.toString()}>
+                            {status.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   ) : (
                     <Input
                       id="splynxWorkflowStatusId"

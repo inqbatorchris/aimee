@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { storage } from '../storage';
 import { authenticateToken } from '../auth';
-import { insertIntegrationSchema, insertDatabaseConnectionSchema, type InsertIntegration, integrations, users, splynxWorkflowStatuses } from '../../shared/schema';
+import { insertIntegrationSchema, insertDatabaseConnectionSchema, type InsertIntegration, integrations, users } from '../../shared/schema';
 import { z } from 'zod';
 import crypto from 'crypto';
 import axios from 'axios';
@@ -2058,125 +2058,6 @@ router.get('/splynx/project/:projectId/workflow-statuses', async (req, res) => {
   } catch (error: any) {
     console.error('Error fetching Splynx project workflow statuses:', error);
     res.status(500).json({ error: 'Failed to fetch workflow statuses', details: error.message });
-  }
-});
-
-// Get workflow status label mappings for an organization
-router.get('/splynx/workflow-status-mappings', async (req, res) => {
-  try {
-    if (!req.user?.organizationId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const workflowId = req.query.workflowId ? parseInt(req.query.workflowId as string) : undefined;
-
-    let query = db
-      .select()
-      .from(splynxWorkflowStatuses)
-      .where(eq(splynxWorkflowStatuses.organizationId, req.user.organizationId));
-
-    if (workflowId) {
-      query = db
-        .select()
-        .from(splynxWorkflowStatuses)
-        .where(and(
-          eq(splynxWorkflowStatuses.organizationId, req.user.organizationId),
-          eq(splynxWorkflowStatuses.workflowId, workflowId)
-        ));
-    }
-
-    const mappings = await query;
-    res.json({ mappings });
-  } catch (error: any) {
-    console.error('Error fetching workflow status mappings:', error);
-    res.status(500).json({ error: 'Failed to fetch workflow status mappings', details: error.message });
-  }
-});
-
-// Create or update a workflow status label mapping
-router.post('/splynx/workflow-status-mappings', async (req, res) => {
-  try {
-    if (!req.user?.organizationId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const { workflowId, statusId, label, color, isDefault } = req.body;
-
-    if (!workflowId || !statusId || !label) {
-      return res.status(400).json({ error: 'workflowId, statusId, and label are required' });
-    }
-
-    // Check if mapping already exists
-    const [existing] = await db
-      .select()
-      .from(splynxWorkflowStatuses)
-      .where(and(
-        eq(splynxWorkflowStatuses.organizationId, req.user.organizationId),
-        eq(splynxWorkflowStatuses.workflowId, workflowId),
-        eq(splynxWorkflowStatuses.statusId, statusId)
-      ))
-      .limit(1);
-
-    if (existing) {
-      // Update existing mapping (double-check org ownership for security)
-      const [updated] = await db
-        .update(splynxWorkflowStatuses)
-        .set({
-          label: label.trim(),
-          color: color || null,
-          isDefault: isDefault || false,
-          updatedAt: new Date(),
-        })
-        .where(and(
-          eq(splynxWorkflowStatuses.id, existing.id),
-          eq(splynxWorkflowStatuses.organizationId, req.user.organizationId)
-        ))
-        .returning();
-      res.json({ mapping: updated, updated: true });
-    } else {
-      // Create new mapping
-      const [created] = await db
-        .insert(splynxWorkflowStatuses)
-        .values({
-          organizationId: req.user.organizationId,
-          workflowId,
-          statusId,
-          label: label.trim(),
-          color: color || null,
-          isDefault: isDefault || false,
-        })
-        .returning();
-      res.json({ mapping: created, created: true });
-    }
-  } catch (error: any) {
-    console.error('Error saving workflow status mapping:', error);
-    res.status(500).json({ error: 'Failed to save workflow status mapping', details: error.message });
-  }
-});
-
-// Delete a workflow status label mapping
-router.delete('/splynx/workflow-status-mappings/:id', async (req, res) => {
-  try {
-    if (!req.user?.organizationId) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const id = parseInt(req.params.id);
-    if (isNaN(id)) {
-      return res.status(400).json({ error: 'Invalid mapping ID' });
-    }
-
-    await db
-      .delete(splynxWorkflowStatuses)
-      .where(and(
-        eq(splynxWorkflowStatuses.id, id),
-        eq(splynxWorkflowStatuses.organizationId, req.user.organizationId)
-      ));
-
-    res.json({ success: true });
-  } catch (error: any) {
-    console.error('Error deleting workflow status mapping:', error);
-    res.status(500).json({ error: 'Failed to delete workflow status mapping', details: error.message });
   }
 });
 
