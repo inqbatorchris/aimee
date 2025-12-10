@@ -1366,25 +1366,31 @@ export class SplynxService {
         splynxPayload.address = taskData.address;
       }
       
-      // Add team ID
+      // Handle assignment - Splynx uses mutually exclusive assignment modes:
+      // - assigned_to_team: assignee field contains team ID
+      // - assigned_to_administrator: assignee field contains admin ID
+      // - assigned_to_anyone: assignee is 0 (unassigned)
       console.log(`[SPLYNX createSplynxTask] Team/Assignee input: teamId=${taskData.teamId}, team_id=${taskData.team_id}, assignee=${taskData.assignee}, assignee_id=${taskData.assignee_id}`);
-      if (taskData.teamId || taskData.team_id) {
-        const teamId = parseInt(String(taskData.teamId || taskData.team_id));
-        if (!isNaN(teamId)) {
-          splynxPayload.team_id = teamId;
-          console.log(`[SPLYNX createSplynxTask] ✓ Added team_id: ${teamId}`);
-        }
+      
+      const teamId = taskData.teamId || taskData.team_id ? parseInt(String(taskData.teamId || taskData.team_id)) : null;
+      const assigneeId = taskData.assignee || taskData.assignee_id ? parseInt(String(taskData.assignee || taskData.assignee_id)) : null;
+      
+      if (assigneeId && !isNaN(assigneeId) && assigneeId > 0) {
+        // Individual assignment takes priority - assign to specific administrator
+        splynxPayload.assigned_to = "assigned_to_administrator";
+        splynxPayload.assignee = assigneeId;
+        console.log(`[SPLYNX createSplynxTask] ✓ Assigned to administrator: ${assigneeId}`);
+      } else if (teamId && !isNaN(teamId) && teamId > 0) {
+        // Team assignment - assign to team (team ID goes in assignee field)
+        splynxPayload.assigned_to = "assigned_to_team";
+        splynxPayload.assignee = teamId;
+        console.log(`[SPLYNX createSplynxTask] ✓ Assigned to team: ${teamId}`);
+      } else {
+        // No assignment - leave as unassigned
+        splynxPayload.assigned_to = "assigned_to_anyone";
+        splynxPayload.assignee = 0;
+        console.log(`[SPLYNX createSplynxTask] ✓ Unassigned (assigned_to_anyone)`);
       }
-
-      // Add assignee (only include if user sets it in UI)
-      if (taskData.assignee || taskData.assignee_id) {
-        const assigneeId = parseInt(String(taskData.assignee || taskData.assignee_id));
-        if (!isNaN(assigneeId)) {
-          splynxPayload.assignee = assigneeId;
-          splynxPayload.assigned_to = "assigned_to_team";
-        }
-      }
-      // Note: If assignee is not set, we don't include assigned_to or assignee fields
       
       // Add priority (with priority_ prefix and lowercase normalization)
       if (taskData.priority) {
