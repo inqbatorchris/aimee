@@ -2012,6 +2012,16 @@ router.get('/splynx/scheduling-projects', async (req, res) => {
   }
 });
 
+// Hardcoded Splynx workflow status mappings (Splynx API doesn't return names)
+const SPLYNX_WORKFLOW_STATUS_NAMES: Record<number, string> = {
+  20: 'Awaiting scheduling',
+  21: 'Scheduled',
+  23: 'Complete',
+  31: 'In progress',
+  43: 'New',
+  116: 'Cancelled',
+};
+
 // Get workflow statuses for a Splynx scheduling project
 router.get('/splynx/project/:projectId/workflow-statuses', async (req, res) => {
   try {
@@ -2024,35 +2034,15 @@ router.get('/splynx/project/:projectId/workflow-statuses', async (req, res) => {
       return res.status(400).json({ error: 'Invalid project ID' });
     }
 
-    // Get Splynx integration for this organization
-    const [splynxIntegration] = await db
-      .select()
-      .from(integrations)
-      .where(
-        and(
-          eq(integrations.organizationId, req.user.organizationId),
-          eq(integrations.platformType, 'splynx')
-        )
-      )
-      .limit(1);
+    // Return the known workflow statuses with human-readable names
+    // These are the valid statuses for scheduling tasks in Splynx
+    const statuses = Object.entries(SPLYNX_WORKFLOW_STATUS_NAMES).map(([id, name]) => ({
+      id: parseInt(id),
+      name,
+    }));
 
-    if (!splynxIntegration) {
-      return res.status(404).json({ error: 'Splynx integration not found' });
-    }
-
-    if (!splynxIntegration.credentialsEncrypted) {
-      return res.status(400).json({ error: 'Splynx credentials not configured' });
-    }
-
-    const credentials = JSON.parse(decrypt(splynxIntegration.credentialsEncrypted));
-    const { baseUrl, authHeader } = credentials;
-
-    if (!baseUrl || !authHeader) {
-      return res.status(400).json({ error: 'Splynx credentials incomplete' });
-    }
-
-    const splynxService = new SplynxService({ baseUrl, authHeader });
-    const statuses = await splynxService.getProjectWorkflowStatuses(projectId);
+    // Sort by name for better UX
+    statuses.sort((a, b) => a.name.localeCompare(b.name));
 
     res.json({ statuses });
   } catch (error: any) {
