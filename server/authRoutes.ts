@@ -359,10 +359,6 @@ router.post('/forgot-password', async (req: Request, res: Response) => {
     const resetLink = `/reset-password/${resetToken}`;
     
     if (isDevelopment) {
-      console.log('=== Password Reset Link (Development Mode) ===');
-      console.log(`Reset Link: ${resetLink}`);
-      console.log('==============================================');
-      
       // In development, return the link for testing
       return res.json({ 
         message: 'Password reset link generated',
