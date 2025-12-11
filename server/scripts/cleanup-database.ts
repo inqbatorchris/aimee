@@ -3,6 +3,13 @@
 import { db } from '../db';
 import { sql } from 'drizzle-orm';
 
+function quoteIdentifier(name: string): string {
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+    throw new Error(`Invalid table name: ${name}`);
+  }
+  return `"${name}"`;
+}
+
 // List of tables that should be kept (have data or are core to the new architecture)
 const TABLES_TO_KEEP = [
   // Core system tables
@@ -88,7 +95,7 @@ async function cleanupDatabase() {
   // Remove legacy tables
   for (const tableName of TABLES_TO_REMOVE) {
     try {
-      await db.execute(sql.raw(`DROP TABLE IF EXISTS "${tableName}" CASCADE`));
+      await db.execute(sql`DROP TABLE IF EXISTS ${sql.raw(quoteIdentifier(tableName))} CASCADE`);
       console.log(`✅ Removed table: ${tableName}`);
       totalRemoved++;
     } catch (error) {
