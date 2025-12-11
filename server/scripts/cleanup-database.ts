@@ -1,6 +1,7 @@
 #!/usr/bin/env tsx
 
 import { db } from '../db';
+import { sql } from 'drizzle-orm';
 
 // List of tables that should be kept (have data or are core to the new architecture)
 const TABLES_TO_KEEP = [
@@ -87,7 +88,7 @@ async function cleanupDatabase() {
   // Remove legacy tables
   for (const tableName of TABLES_TO_REMOVE) {
     try {
-      await db.execute(`DROP TABLE IF EXISTS "${tableName}" CASCADE`);
+      await db.execute(sql.raw(`DROP TABLE IF EXISTS "${tableName}" CASCADE`));
       console.log(`✅ Removed table: ${tableName}`);
       totalRemoved++;
     } catch (error) {
@@ -108,7 +109,7 @@ async function cleanupDatabase() {
   
   // Show remaining tables
   console.log('\n📋 Remaining tables:');
-  const result = await db.execute(`
+  const result = await db.execute(sql`
     SELECT table_name 
     FROM information_schema.tables 
     WHERE table_schema = 'public' 
