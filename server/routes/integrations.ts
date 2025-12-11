@@ -498,18 +498,8 @@ router.post('/:platformType/test', async (req, res) => {
     // Decrypt credentials for testing
     let credentials;
     try {
-      console.log('[TEST ENDPOINT] 🔐 DECRYPTION DEBUG:');
-      console.log('  ENCRYPTION_KEY defined:', ENCRYPTION_KEY !== undefined);
-      console.log('  ENCRYPTION_KEY value:', ENCRYPTION_KEY);
-      console.log('  ENCRYPTION_KEY type:', typeof ENCRYPTION_KEY);
-      console.log('  process.env.ENCRYPTION_KEY:', process.env.ENCRYPTION_KEY);
-      console.log('  Encrypted creds preview:', integration.credentialsEncrypted.substring(0, 50) + '...');
-      console.log('  Encrypted creds length:', integration.credentialsEncrypted.length);
-      
       const decryptedData = decrypt(integration.credentialsEncrypted);
       credentials = JSON.parse(decryptedData);
-      console.log('[TEST ENDPOINT] ✓ Credentials decrypted successfully');
-      console.log('[TEST ENDPOINT] Credentials structure:', Object.keys(credentials));
     } catch (decryptError: any) {
       console.error('[TEST ENDPOINT] Credentials decryption failed:', decryptError);
       return res.status(400).json({ 
