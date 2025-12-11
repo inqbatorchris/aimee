@@ -2758,35 +2758,19 @@ Generate a draft response that addresses the customer's issue professionally and
       // This will be undefined, matching how the credentials were encrypted
       const IV_LENGTH = 16;
       
-      // DEBUG: Log encryption key info
-      console.log('[WorkflowExecutor] 🔐 DECRYPTION DEBUG:');
-      console.log('  ENCRYPTION_KEY defined:', ENCRYPTION_KEY !== undefined);
-      console.log('  ENCRYPTION_KEY value:', ENCRYPTION_KEY);
-      console.log('  ENCRYPTION_KEY type:', typeof ENCRYPTION_KEY);
-      console.log('  process.env.ENCRYPTION_KEY:', process.env.ENCRYPTION_KEY);
-      console.log('  Encrypted creds preview:', encryptedCreds.substring(0, 50) + '...');
-      console.log('  Encrypted creds length:', encryptedCreds.length);
-      
       // Decrypt the credentials
       const parts = encryptedCreds.split(':');
       if (parts.length !== 2) {
         throw new Error('Invalid encrypted credentials format');
       }
       
-      console.log('  IV (first part):', parts[0]);
-      console.log('  Encrypted text preview:', parts[1].substring(0, 50) + '...');
-      
       const iv = Buffer.from(parts[0], 'hex');
       const encryptedText = parts[1];
       const key = crypto.createHash('sha256').update(String(ENCRYPTION_KEY)).digest();
       
-      console.log('  Key hash (first 16 bytes):', key.toString('hex').substring(0, 32));
-      
       const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
       let decrypted = decipher.update(encryptedText, 'hex', 'utf8');
       decrypted += decipher.final('utf8');
-      
-      console.log('  ✓ Decryption successful!');
       
       // Parse and return the credentials object
       return JSON.parse(decrypted);
