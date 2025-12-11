@@ -23,7 +23,10 @@ function encrypt(text: string): string {
 
 async function initializeGoogleMapsIntegration() {
   try {
-    const API_KEY = 'AIzaSyA85ztbpqolTz2wu1h_cnX-bAJikgzDVgc';
+    const API_KEY = process.env.GOOGLE_MAPS_API_KEY;
+    if (!API_KEY) {
+      throw new Error('GOOGLE_MAPS_API_KEY environment variable is not set');
+    }
     const ORGANIZATION_ID = 3; // Default organization ID
     
     console.log('🗺️  Initializing Google Maps integration...');
