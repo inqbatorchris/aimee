@@ -185,11 +185,6 @@ export const authenticateToken = async (req: Request, res: Response, next: NextF
     token = req.cookies.authToken;
   }
 
-  // Debug auth in development
-  if (req.path.includes('/api/features') && process.env.NODE_ENV === 'development') {
-    console.log('Feature API Auth:', req.path, token ? 'Token present' : 'No token');
-  }
-
   if (!token) {
     return res.status(401).json({ message: 'Access token required' });
   }
