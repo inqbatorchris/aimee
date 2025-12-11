@@ -745,8 +745,6 @@ router.post('/:platformType/test', async (req, res) => {
         try {
           const apiKey = credentials.apiKey;
           
-          console.log('[VAPI TEST] API key present:', !!apiKey);
-          
           if (!apiKey) {
             throw new Error('Missing API key');
           }
