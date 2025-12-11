@@ -532,8 +532,6 @@ router.post('/:platformType/test', async (req, res) => {
           const authHeader = credentials.authHeader;
           
           console.log('[SPLYNX TEST] Base URL:', baseUrl);
-          console.log('[SPLYNX TEST] Auth header present:', !!authHeader);
-          console.log('[SPLYNX TEST] Auth header length:', authHeader?.length);
           
           if (!baseUrl || !authHeader) {
             throw new Error(`Missing ${!baseUrl ? 'base URL' : 'auth header'}`);
